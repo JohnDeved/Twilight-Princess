@@ -45,6 +45,13 @@ The project can target the following supported versions:
 - `Shield`: Nvidia Shield - China
 - `ShieldD`: Nvidia Shield - China (Debug Version)
 
+### GameCube USA (`GZ2E01`) vs Europe (`GZ2P01`)
+
+In this codebase, the main differences between the GameCube USA and EU versions are region settings:
+- **Video mode behavior**: USA uses NTSC settings, while EU uses PAL/EURGB60 handling.
+- **Localization behavior**: EU includes PAL language handling (English, German, French, Spanish, Italian) for things like error text, save comments, and some UI text handling.
+- **Gameplay logic** is otherwise shared between both GameCube builds.
+
 More information about the project can be found here: <https://zsrtp.link>  
 
 <!--ts-->
