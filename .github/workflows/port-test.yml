@@ -36,9 +36,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}-
             ccache-${{ runner.os }}-
 
       - name: Cache FetchContent deps

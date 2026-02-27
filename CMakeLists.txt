@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
 project(tp-pc LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
@@ -66,7 +69,6 @@ set(SDL_SYSTEM_ICONV OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     sdl3
     URL            https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.8.tar.gz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(sdl3)
 
