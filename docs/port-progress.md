@@ -8,9 +8,9 @@
 | Field | Value |
 |---|---|
 | **Highest CI Milestone** | `15` (RENDER_FRAME — bgfx Noop backend running, all frame milestones reached) |
-| **Current Step** | Step 5a complete — bgfx integrated via FetchContent, RENDER_FRAME milestone reached |
+| **Current Step** | Step 5b-5d substantially complete — GX state machine, texture decode, SDL3 windowing |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | Steps 5b-5e: GX state machine, TEV shaders, texture decode for real rendering |
+| **Blocking Issue** | Step 5c: TEV → bgfx shader generator for visible geometry rendering |
 
 ## Step Checklist
 
@@ -87,7 +87,7 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] **128MB MEM2 arena**: Increased from 32MB for ARAM→MEM overhead
 - [x] **LOGO_SCENE milestone (6)**: Logo scene creates from real disc data
 - [x] **FRAMES_60/300/1800 milestones**: 2000+ frames stable with real game data
-- [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
+- [x] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
 - [ ] `pal_save.cpp` — fstream save/load (~150 LOC)
@@ -106,9 +106,9 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] GXInit calls pal_gx_bgfx_init(), GXCopyDisp calls pal_gx_end_frame()
 - [x] RENDER_FRAME milestone fires on first bgfx frame
 - [x] CI workflow updated with bgfx deps (libgl-dev, libwayland-dev)
-- [ ] 5b. GX state machine + bgfx flush in `src/pal/gx/gx_state.cpp` (~2,500 LOC)
+- [x] 5b. GX state machine + bgfx flush in `src/pal/gx/gx_state.cpp` (~2,500 LOC)
 - [ ] 5c. TEV → bgfx shader generator in `src/pal/gx/gx_tev.cpp` (~1,500 LOC)
-- [ ] 5d. Texture decode (10 GX formats → RGBA8) in `src/pal/gx/gx_texture.cpp` (~1,000 LOC)
+- [x] 5d. Texture decode (10 GX formats → RGBA8) in `src/pal/gx/gx_texture.cpp` (~1,000 LOC)
 - [ ] 5e. Display list record/replay in `src/pal/gx/gx_displaylist.cpp` (~400 LOC)
 - [ ] Verify: milestone reaches 6–8 (LOGO_SCENE through PLAY_SCENE)
 
@@ -179,6 +179,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **GX state machine + SDL3 (Step 5b/5d/SDL3)**: Created gx_state.h/cpp — full GX state machine captures vertex format (GXSetVtxDesc/GXSetVtxAttrFmt), TEV stages (color/alpha combiners), texture bindings (GXLoadTexObj with data retrieval), matrix state (projection, pos/nrm/tex matrices), blend/z/cull/scissor/viewport. Replaced GX no-op stubs with state-capturing implementations. Redirected GXVert.h inline vertex write functions through pal_gx_write_vtx_* for vertex data capture. Implemented GXProject with real math. Created gx_texture.cpp — decodes all 8 major GX tile formats (I4/I8/IA4/IA8/RGB565/RGB5A3/RGBA8/CMPR) to linear RGBA8. Integrated SDL3 via FetchContent (release-3.2.8) — window creation, event polling, native X11/Wayland handle for bgfx. bgfx now uses game's clear color from GX state, per-frame draw stats logged. | 15 (no change, infrastructure improvement) | Step 5c: TEV→bgfx shader generator, Step 5e: display list replay |
 | 2026-02-27 | **bgfx integration (Step 5a)**: Added bgfx via CMake FetchContent (v1.129.8958-499). Created gx_bgfx.cpp for bgfx init/shutdown/frame, wired into GXInit→pal_gx_bgfx_init() and GXCopyDisp→pal_gx_end_frame(). Headless uses Noop renderer, windowed uses auto-select. RENDER_FRAME milestone reached. All frame milestones (60/300/1800) now fire with real bgfx frames. Updated CI deps. | 6 → 15 (RENDER_FRAME + all frame milestones) | Steps 5b-5e: GX state machine, TEV shaders, texture decode |
 | 2026-02-27 | **LOGO_SCENE + game data**: Auto-download ROM via ROMS_TOKEN, RARC endian swap with 64-bit repack, audio skip (phase_1 unblocked), logo scene PC path (skip rendering), ARAM→MEM redirect, 128MB MEM2 arena, 64-bit DvdAramRipper fixes | 5 → 6 (LOGO_SCENE, all frame milestones) | GX shim (Step 5) for RENDER_FRAME |
 | 2026-02-27 | **Honest milestones**: Scene milestones moved from fpcBs_Create (allocation) to fpcBs_SubCreate (after create() completes with assets loaded). RENDER_FRAME gated on gx_shim_active. LOGO_SCENE no longer fires without real assets. CI workflow broadened to cover all src/include changes. | 12 → 5 (honest) | Fix audio init stubs so scene create proceeds; provide game assets |
@@ -202,7 +203,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `CMakeLists.txt` — Root CMake build system (parses Shield/splits.txt, 533 sources)
 - `include/pal/pal_platform.h` — Compatibility header (std lib, fabsf, isnan, stricmp)
 - `include/pal/pal_intrinsics.h` — MWCC → GCC/Clang intrinsic equivalents
-- `include/pal/pal_milestone.h` — Boot milestone logging (12 milestones)
+- `include/pal/pal_milestone.h` — Boot milestone logging (16 milestones)
 - `include/pal/gx/gx_stub_tracker.h` — GX stub hit coverage tracker
 - `src/pal/pal_os_stubs.cpp` — OS function stubs (OSReport, cache, time, interrupts)
 - `src/pal/pal_gx_stubs.cpp` — 120 GX/GD graphics function stubs
@@ -218,6 +219,12 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/gx/gx_fifo.cpp` — GX FIFO RAM buffer infrastructure
 - `src/pal/gx/gx_bgfx.cpp` — bgfx rendering backend (init/shutdown/frame)
 - `include/pal/gx/gx_bgfx.h` — bgfx backend header
+- `include/pal/gx/gx_state.h` — GX state machine (vertex format, TEV, textures, matrices, blend)
+- `src/pal/gx/gx_state.cpp` — GX state machine implementation + vertex data capture
+- `include/pal/gx/gx_texture.h` — GX texture decoder header
+- `src/pal/gx/gx_texture.cpp` — GX texture format decoder (I4/I8/IA4/IA8/RGB565/RGB5A3/RGBA8/CMPR)
+- `include/pal/pal_window.h` — SDL3 window management header
+- `src/pal/pal_window.cpp` — SDL3 window creation, event polling, native handle extraction
 - `tools/setup_game_data.py` — Game data auto-download script (ROM + nodtool extract)
 - `.github/workflows/port-test.yml` — CI workflow for port testing
 - `tools/parse_milestones.py` — CI milestone parser
@@ -227,7 +234,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
 - `include/revolution/private/GXRegs.h` — GX_WRITE_* redirect for PLATFORM_PC
 - `include/revolution/os/OSExec.h` — AT_ADDRESS extern fix for GCC
-- `include/revolution/gx/GXVert.h` — GXWGFifo redirect to pal_gx_wgpipe on PC
+- `include/revolution/gx/GXVert.h` — GXWGFifo redirect to pal_gx_wgpipe on PC; vertex write functions redirect to pal_gx_write_vtx_* for state machine capture
 - `include/pal/pal_platform.h` — OS_BASE_CACHED/OSPhysicalToCached override for PC
 - `include/JSystem/JMath/JMath.h` — C fallbacks for MWERKS-only math inlines
 - `include/JSystem/J3DGraphBase/J3DTransform.h` — C fallbacks for PPC paired-single matrix ops
