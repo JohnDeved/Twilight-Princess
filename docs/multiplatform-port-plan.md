@@ -60,11 +60,11 @@ intercept GX calls:
 | Shield intercept point | What Shield does | What we do instead |
 |---|---|---|
 | `GXWGFifo` at `0xCC008000` | Binary translation intercepts volatile writes | Redirect `GX_WRITE_*` macros to RAM command buffer |
-| `GXInit()` / `EnableWriteGatherPipe()` | Translation layer hooks PPC register setup | Initialize OpenGL context + GX state tracker |
-| `GXDrawDone()` / `GXCopyDisp()` | Translation layer intercepts PE register writes | Flush command buffer → OpenGL draw calls |
+| `GXInit()` / `EnableWriteGatherPipe()` | Translation layer hooks PPC register setup | `bgfx::init()` + GX state tracker |
+| `GXDrawDone()` / `GXCopyDisp()` | Translation layer intercepts PE register writes | Flush command buffer → `bgfx::frame()` |
 | `GXSaveCPUFifo()` | **Disabled** (`#if !PLATFORM_SHIELD`) | Same — our shim owns FIFO state, no save needed |
-| `NVGXNameTex` / `NVGXDestroyTex` | Maps GX textures to Tegra GPU handles | Map `GXTexObj` to OpenGL texture objects |
-| `NVGXCreateGroup` / `NVGXReleaseGroup` | Groups draw calls for GPU scheduling | Not needed — OpenGL handles draw ordering |
+| `NVGXNameTex` / `NVGXDestroyTex` | Maps GX textures to Tegra GPU handles | Map `GXTexObj` to `bgfx::TextureHandle` |
+| `NVGXCreateGroup` / `NVGXReleaseGroup` | Groups draw calls for GPU scheduling | Not needed — bgfx views handle draw ordering |
 | `J3D_sqrtf()` PPC assembly | **Disabled** (`#if !PLATFORM_SHIELD`) | Same — use standard `sqrtf()` |
 
 ### The GX API contract is our shim surface
@@ -72,30 +72,133 @@ intercept GX calls:
 The key insight is that **GX already has a clean API boundary**. The public GX functions
 (`GXInit`, `GXSetViewport`, `GXBegin`, `GXLoadTexObj`, etc.) and the `GXTexObj` / `GXTlutObj`
 opaque structs (defined as `u32 dummy[8]` — intentionally hiding implementation) form a
-well-defined contract. Our GX shim provides the same function signatures backed by OpenGL:
+well-defined contract. Our GX shim provides the same function signatures backed by bgfx:
 
 ```
 Game/J3D code                    Shield (translation layer)       PC port (native shim)
 ─────────────                    ────────────────────────         ─────────────────────
-GXInitTexObj(&obj, img, ...)  →  PPC binary → Tegra GPU driver   →  glGenTextures + glTexImage2D
-GXBegin(GX_TRIANGLES, ...)    →  PPC binary → Tegra FIFO         →  begin RAM vertex buffer
-GXPosition3f32(x, y, z)      →  PPC binary → Tegra FIFO write   →  write to RAM vertex buffer
-GXEnd()                       →  PPC binary → Tegra FIFO flush   →  glBufferData + glDrawArrays
-GXSetTevOp(stage, mode)       →  PPC binary → Tegra TEV          →  generate GLSL fragment shader
+GXInitTexObj(&obj, img, ...)  →  PPC binary → Tegra GPU driver   →  bgfx::createTexture2D
+GXBegin(GX_TRIANGLES, ...)    →  PPC binary → Tegra FIFO         →  bgfx::allocTransientVertexBuffer
+GXPosition3f32(x, y, z)      →  PPC binary → Tegra FIFO write   →  write to TransientVertexBuffer
+GXEnd()                       →  PPC binary → Tegra FIFO flush   →  bgfx::setVertexBuffer + bgfx::submit
+GXSetTevOp(stage, mode)       →  PPC binary → Tegra TEV          →  select bgfx::ProgramHandle
 ```
 
 This is exactly the approach used by Dolphin Emulator's GPU backend and other GX → GL
 projects. Shield proves the GX API surface is stable enough for a non-GCN GPU to render
 correctly — our shim just does the translation in C++ instead of binary translation.
 
+## bgfx as Rendering Backend — Why Not Raw OpenGL
+
+The GX shim needs a rendering backend to submit draw calls to. The plan uses **bgfx** instead
+of raw OpenGL for several reasons that directly accelerate the port:
+
+### What is bgfx
+
+[bgfx](https://github.com/bkaradzic/bgfx) is a cross-platform, graphics API agnostic
+rendering library (BSD-2-clause license). It provides a single C/C++ API that auto-selects the
+best native GPU backend per platform:
+
+| Platform | bgfx backend | Why it matters |
+|---|---|---|
+| Windows | D3D12 (primary), D3D11 fallback | Native Windows rendering, not deprecated OpenGL |
+| Linux | Vulkan (primary), OpenGL fallback | Modern GPU access, better driver support |
+| macOS | Metal | Apple deprecated OpenGL in 2018; Metal is the only supported path |
+| NX Homebrew | OpenGL ES 3.1 (Mesa/Nouveau) | Same API — bgfx auto-selects GLES backend |
+| Web (future) | WebGPU / WebGL 2.0 | Bonus: browser target becomes possible |
+
+### Why bgfx is a better fit than raw OpenGL for GX translation
+
+| GX concept | Raw OpenGL approach | bgfx approach | Why bgfx wins |
+|---|---|---|---|
+| `GXBegin`/`GXEnd` vertex submission | Build VBO, `glBufferData`, `glDrawArrays` | `bgfx::allocTransientVertexBuffer` → `bgfx::submit` | Transient VBs are per-frame, auto-freed — perfect match for GX's immediate-mode draws |
+| `GXTexObj` textures | `glGenTextures`, `glTexImage2D`, manage GL state | `bgfx::createTexture2D` → `TextureHandle` | Opaque handles, format conversion built in, no GL state leaks |
+| TEV stages → shaders | Generate GLSL strings, compile at runtime | Generate bgfx shader bytecode via `shaderc` | One shader source → all backends. No per-platform GLSL/HLSL/MSL variants |
+| `GXSetBlendMode` / `GXSetZMode` | `glEnable(GL_BLEND)`, `glBlendFunc(...)` | `BGFX_STATE_BLEND_*` \| `BGFX_STATE_DEPTH_*` flags | Per-draw state uint64 — no global state to track/leak |
+| `GXLoadPosMtxImm` matrices | `glUniformMatrix4fv` | `bgfx::setUniform` | Same, but uniform handles are backend-agnostic |
+| `GXCallDisplayList` | Record GL commands somehow | Record bgfx encoder commands | bgfx encoders are thread-safe; can submit from multiple threads |
+| `GXDrawDone` frame submission | `glFinish` + `SDL_GL_SwapWindow` | `bgfx::frame()` | Handles swap, multithreading, back-buffer management |
+| EFB copy (render-to-texture) | FBO setup, bind/unbind | `bgfx::createFrameBuffer` → `bgfx::setViewFrameBuffer` | Views with render targets — clean abstraction |
+
+### bgfx + SDL3 = complementary, not competing
+
+bgfx handles **rendering only**. SDL3 handles **everything else**:
+
+```
+SDL3 responsibilities:              bgfx responsibilities:
+─────────────────────               ────────────────────────
+Window creation + management        GPU initialization (auto-select backend)
+Gamepad / keyboard / mouse input    Vertex/index buffer management
+Audio device + mixing               Texture creation + upload
+File I/O helpers                    Shader program management
+Timer + threading                   Draw state (blend, depth, stencil)
+                                    Frame submission + swap
+                                    RenderDoc integration (built-in)
+                                    ImGui rendering (built-in)
+```
+
+bgfx takes the native window handle from SDL3 via `bgfx::PlatformData::nwh` — they connect
+at exactly one point. This means we can swap SDL3 for libnx on NX without touching any bgfx
+rendering code.
+
+### macOS solved: Metal instead of deprecated OpenGL
+
+The original plan specified OpenGL 4.1 for macOS. Apple deprecated OpenGL in macOS 10.14
+(2018) and has not updated it since. This means:
+- No compute shader support beyond GL 4.1
+- Driver bugs will never be fixed
+- Performance is degraded compared to Metal
+- Future macOS versions may remove OpenGL entirely
+
+With bgfx, the GX shim emits the same calls on all platforms, and bgfx uses **Metal** on
+macOS automatically. Zero macOS-specific code needed.
+
+### Transient vertex buffers: the key GX match
+
+GX's rendering model is immediate-mode: `GXBegin()` → write vertices to FIFO →
+`GXEnd()` → GPU draws them. This maps poorly to traditional OpenGL (requires VBO management,
+lifecycle tracking). It maps **perfectly** to bgfx's transient vertex buffers:
+
+```c
+// GX shim: GXBegin() allocates transient VB
+bgfx::TransientVertexBuffer tvb;
+bgfx::allocTransientVertexBuffer(&tvb, vertex_count, layout);
+
+// GX shim: GXPosition3f32/GXColor4u8/GXTexCoord2f32 write into tvb.data
+// (same as writing to RAM buffer, but bgfx manages the memory)
+
+// GX shim: at draw time, submit
+bgfx::setVertexBuffer(0, &tvb);
+bgfx::setState(gx_state_to_bgfx_flags(current_gx_state));
+bgfx::submit(view_id, tev_program);
+```
+
+Transient buffers are allocated per-frame and automatically freed at `bgfx::frame()` — no
+manual cleanup, no VBO lifecycle management. This eliminates an entire category of resource
+management bugs that would plague a raw OpenGL implementation.
+
+### Shader strategy with bgfx
+
+TEV stage combinations still need to be compiled to shaders. With bgfx:
+
+1. **Offline**: Pre-compile common TEV patterns using `shaderc` (bgfx's shader compiler) →
+   one source compiles to D3D12/Metal/Vulkan/GLSL bytecode.
+2. **Runtime**: Cache TEV config hash → bgfx `ProgramHandle`. Generate shader source for
+   novel TEV combinations on first encounter, compile via embedded `shaderc`.
+3. **Fallback**: Unknown TEV configs get a solid-color debug shader (same fail-soft approach).
+
+bgfx's `shaderc` uses GLSL-like syntax but outputs to all backends — we write one shader
+generator, not four.
+
 ## Scope
 
 - Port baseline: **ShieldD build configuration** (4,028 source files, 804 REL modules).
 - Canonical gameplay: **GCN behavior** (Shield already preserves GCN input model and content).
 - Target platforms: **Windows, Linux, macOS, NX Switch (homebrew)**.
-- Primary rendering backend: **OpenGL**.
+- Rendering abstraction: **bgfx** (auto-selects D3D12/Metal/Vulkan/OpenGL per platform).
+- Platform services: **SDL3** (windowing, input, audio — bgfx handles rendering).
 - Build system: **CMake** (parallel to existing Ninja/configure.py decomp toolchain).
-- Development tooling: **ImGui** integrated from the start (replaces `lingcod` debug hooks).
+- Development tooling: **ImGui** integrated via bgfx's built-in ImGui renderer (replaces `lingcod` debug hooks).
 
 ## Codebase Snapshot (Measured)
 
@@ -119,19 +222,26 @@ correctly — our shim just does the translation in C++ instead of binary transl
 
 ## Platform Matrix
 
-| Platform | Graphics | Platform Layer |
+| Platform | Rendering (via bgfx) | Windowing / Input / Audio |
 |---|---|---|
-| Windows | OpenGL 4.5 | SDL3 |
-| Linux | OpenGL 4.5 | SDL3 |
-| macOS | OpenGL 4.1 | SDL3 |
-| NX Homebrew | OpenGL 4.3 (Mesa/Nouveau) | libnx + EGL |
+| Windows | D3D12 (primary), D3D11 fallback, Vulkan alt | SDL3 |
+| Linux | Vulkan (primary), OpenGL fallback | SDL3 |
+| macOS | Metal (native, not deprecated) | SDL3 |
+| NX Homebrew | OpenGL ES 3.1 (Mesa/Nouveau) | libnx + EGL |
+
+**Why bgfx instead of raw OpenGL**: bgfx is a cross-platform rendering abstraction library
+(BSD-2-clause) that auto-selects the best native backend per platform. Our GX shim emits bgfx
+calls instead of raw OpenGL — this gives us D3D12 on Windows, Metal on macOS, and Vulkan on
+Linux from day one, with zero backend-specific code in the shim. See the "bgfx as Rendering
+Backend" section below for the full analysis.
 
 ## Core Principles
 
 - **Shield-derived, not from-scratch**: start from the ShieldD configuration as the closest
   existing non-Nintendo target. Inherit its platform conditionals and behavioral choices.
 - **GCN-first semantics**: preserve GameCube gameplay feel and content (Shield already does this).
-- **One renderer first**: OpenGL everywhere for initial ship.
+- **One rendering abstraction**: bgfx everywhere — auto-selects D3D12/Metal/Vulkan/OpenGL per
+  platform. No backend-specific code in the GX shim.
 - **Boundary-only porting**: replace `src/dolphin/`, `src/revolution/` SDK layers with PAL +
   GX shim; keep everything above `src/m_Do/` untouched.
 - **Fail-soft, not fail-hard**: unknown GX paths render with safe defaults + log once.
@@ -152,10 +262,11 @@ Game Logic (src/d/, src/d/actor/)       ~994 files — DO NOT TOUCH (same as Shi
   → Framework (src/f_pc/, src/f_op/, src/f_ap/)   56 files — DO NOT TOUCH
     → Machine Layer (src/m_Do/)          17 files — THIN ADAPTATION (reuse Shield conditionals)
       → PAL (src/pal/)                   NEW — replaces src/dolphin/ + src/revolution/
-         → GX Shim (src/pal/gx/)        NEW — replaces revolution/gx/ (GX → OpenGL)
+         → GX Shim (src/pal/gx/)        NEW — replaces revolution/gx/ (GX → bgfx)
          │                                Uses GX_WRITE_* macro redirect (same intercept
          │                                point as Shield's binary translation layer)
-         → Platform (src/pal/platform/)  NEW — replaces dolphin/os,dvd,pad,dsp,vi + lingcod
+         │                                Outputs bgfx calls → auto-selects D3D12/Metal/Vulkan/GL
+         → Platform (src/pal/platform/)  NEW — SDL3 for window/input/audio + libnx for NX
 ```
 
 **Key insight — the Shield port already marks the exact boundaries.** Every
@@ -194,11 +305,11 @@ The 63+ files with `PLATFORM_SHIELD` conditionals fall into clear categories:
 
 | Layer | Directories | Rules |
 |---|---|---|
-| Game logic | `src/d/`, `src/d/actor/`, `src/f_*` | No platform headers, no OpenGL. Compile unchanged. |
+| Game logic | `src/d/`, `src/d/actor/`, `src/f_*` | No platform headers, no bgfx/OpenGL. Compile unchanged. |
 | Machine layer | `src/m_Do/` | Extend existing `PLATFORM_SHIELD` conditionals with `PLATFORM_PC`. |
-| GX shim | `src/pal/gx/` | Owns GX → OpenGL translation. Replaces `revolution/gx/` + `dolphin/gx/`. |
-| Platform services | `src/pal/platform/` | SDL3 / libnx backends. Replaces `dolphin/os,dvd,pad,dsp,vi` + `lingcod`. |
-| Debug UI | `src/pal/imgui/` | ImGui overlays; replaces `lingcod` debug hooks. |
+| GX shim | `src/pal/gx/` | Owns GX → bgfx translation. Replaces `revolution/gx/` + `dolphin/gx/`. |
+| Platform services | `src/pal/platform/` | SDL3 for windowing/input/audio; libnx for NX. Replaces `dolphin/os,dvd,pad,dsp,vi` + `lingcod`. |
+| Debug UI | `src/pal/imgui/` | ImGui overlays via bgfx's built-in ImGui renderer; replaces `lingcod` debug hooks. |
 
 ## Step-by-Step Execution Plan
 
@@ -259,7 +370,7 @@ through a PowerPC translation layer. Our port replaces those 372 files with ~6 t
 
 | PAL module | Replaces | PC backend | NX backend |
 |---|---|---|---|
-| `pal_window` | `dolphin/vi`, `revolution/vi` (video init) | SDL3 | libnx + EGL |
+| `pal_window` | `dolphin/vi`, `revolution/vi` (video init) | SDL3 window → bgfx `PlatformData` | libnx + EGL → bgfx `PlatformData` |
 | `pal_os` | `dolphin/os` (timers, threads, exceptions) | `<chrono>` + `<thread>` | libnx |
 | `pal_fs` | `dolphin/dvd` + NAND filesystem | `<filesystem>` | libnx romfs |
 | `pal_input` | `dolphin/pad` (Shield reuses GCN pad path) | SDL3 gamepad | libnx HID |
@@ -271,7 +382,7 @@ through a PowerPC translation layer. Our port replaces those 372 files with ~6 t
 | m_Do file | Shield's current behavior | PC PAL replacement |
 |---|---|---|
 | `m_Do_main.cpp` | Uses `sRootHeap2` (dual heap, `PLATFORM_WII \|\| PLATFORM_SHIELD`) | Inherit dual heap → both backed by host RAM |
-| `m_Do_graphic.cpp` | 15+ Shield conditionals (widescreen, framebuffer, cursor) | Inherit widescreen path, wire to `pal_window` + GX shim |
+| `m_Do_graphic.cpp` | 15+ Shield conditionals (widescreen, framebuffer, cursor) | Inherit widescreen path, wire to `pal_window` + GX shim (bgfx) |
 | `m_Do_controller_pad.cpp` | Uses GCN `JUTGamePad` path (not WPAD) | Wire `JUTGamePad` to `pal_input` (SDL3 gamepad) |
 | `m_Do_audio.cpp` | Loads `Z2CSRes.arc`, inits `Z2AudioCS` | Keep audio archive loading via `pal_fs` |
 | `m_Do_MemCard.cpp` | Skips `CARDInit`, uses `NANDSimpleSafe*` for saves | Replace NAND with `pal_save` file I/O |
@@ -298,16 +409,16 @@ PowerPC translation. We simplify further:
 **Time saver**: The Shield port proves these subsystems work when ARAM is just memory —
 the translation layer was already treating ARAM addresses as regular RAM. We formalize that.
 
-### Step 5: GX Shim (Replace Shield's Translated GX With Native OpenGL)
+### Step 5: GX Shim (Replace Shield's Translated GX With bgfx)
 
 **Scope**: The Shield build compiles all 20 `revolution/gx/*.c` files and runs them through
 NVIDIA's proprietary PowerPC binary translation layer. We replace that entire layer with a
-native C++ GX → OpenGL shim. See "Shield's GX Graphics Path" above for the full analysis of
-Shield's intercept points and how our shim maps to each one.
+native C++ GX → bgfx shim. See "Shield's GX Graphics Path" and "bgfx as Rendering Backend"
+above for the full analysis.
 
 **Key Shield insight**: The GX API surface is a clean, well-defined contract. `GXTexObj` and
 other state objects use opaque structs (`u32 dummy[8]`), which means we can redefine internals
-to hold OpenGL handles without any game code knowing. Shield's NVGX texture naming functions
+to hold bgfx handles without any game code knowing. Shield's NVGX texture naming functions
 (`NVGXNameTex`, `NVGXDestroyTex`) prove this approach works — they map GX texture objects to
 a different GPU's handle space at runtime.
 
@@ -339,22 +450,23 @@ equivalent interception in hardware; we do it in software at the macro level.
 
 #### Tier A — First Playable (title → field → combat)
 
-| GX area | Key functions | Primary consumers | Shield behavior |
-|---|---|---|---|
-| State init | `GXInit`, `GXSetViewport`, `GXSetScissor` | `m_Do_graphic.cpp` | Translation layer initializes Tegra GPU |
-| Vertex format | `GXSetVtxDesc`, `GXSetVtxAttrFmt`, `GXClearVtxDesc` | J3D material setup | Translated to Tegra vertex state |
-| Matrix | `GXLoadPosMtxImm`, `GXLoadNrmMtxImm`, `GXSetCurrentMtx` | J3D draw, actors | Translated to Tegra matrix registers |
-| Draw | `GXBegin`, `GXEnd`, FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) | J3D shape draw, 2D UI | FIFO writes intercepted by translation layer |
-| Texture | `GXInitTexObj`, `GXLoadTexObj`, `GXInitTlutObj`, `GXLoadTlut` | J3D, particle, UI | Mapped via `NVGXNameTex` to Tegra handles |
-| TEV | `GXSetTevOp`, `GXSetTevOrder`, `GXSetNumTevStages`, `GXSetTevColor` | 41+ files — dominant material path | Translated to Tegra shader pipeline |
-| Blend/Z | `GXSetBlendMode`, `GXSetZMode`, `GXSetAlphaCompare` | J3D pixel setup | Translated to Tegra blend state |
-| Display list | `GXCallDisplayList` | 10 files: `J3DShapeDraw`, `J3DPacket`, `d_a_player`, etc. | Replayed through translation layer |
+| GX area | Key functions | Primary consumers | Shield behavior | bgfx mapping |
+|---|---|---|---|---|
+| State init | `GXInit`, `GXSetViewport`, `GXSetScissor` | `m_Do_graphic.cpp` | Translation layer initializes Tegra GPU | `bgfx::init()`, `bgfx::setViewRect` |
+| Vertex format | `GXSetVtxDesc`, `GXSetVtxAttrFmt`, `GXClearVtxDesc` | J3D material setup | Translated to Tegra vertex state | `bgfx::VertexLayout` |
+| Matrix | `GXLoadPosMtxImm`, `GXLoadNrmMtxImm`, `GXSetCurrentMtx` | J3D draw, actors | Translated to Tegra matrix registers | `bgfx::setUniform` (Mat4) |
+| Draw | `GXBegin`, `GXEnd`, FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) | J3D shape draw, 2D UI | FIFO writes intercepted by translation layer | `bgfx::TransientVertexBuffer` → `bgfx::submit` |
+| Texture | `GXInitTexObj`, `GXLoadTexObj`, `GXInitTlutObj`, `GXLoadTlut` | J3D, particle, UI | Mapped via `NVGXNameTex` to Tegra handles | `bgfx::createTexture2D` → `TextureHandle` |
+| TEV | `GXSetTevOp`, `GXSetTevOrder`, `GXSetNumTevStages`, `GXSetTevColor` | 41+ files — dominant material path | Translated to Tegra shader pipeline | `bgfx::ProgramHandle` (TEV → bgfx shader via `shaderc`) |
+| Blend/Z | `GXSetBlendMode`, `GXSetZMode`, `GXSetAlphaCompare` | J3D pixel setup | Translated to Tegra blend state | `BGFX_STATE_BLEND_*` \| `BGFX_STATE_DEPTH_*` flags |
+| Display list | `GXCallDisplayList` | 10 files: `J3DShapeDraw`, `J3DPacket`, `d_a_player`, etc. | Replayed through translation layer | Record as command buffer, replay through bgfx encoder |
+| Frame submit | `GXDrawDone`, `GXCopyDisp` | `m_Do_graphic.cpp` | Translation layer intercepts PE register writes | `bgfx::frame()` |
 
 **Shield confirms**:
 - `GXSaveCPUFifo()` disabled — our shim owns state, no hardware FIFO save needed.
 - `J3D_sqrtf()` PPC assembly disabled — standard `sqrtf()` works correctly.
 - `NVGXNameTex`/`NVGXDestroyTex` exist — proves GX texture objects can be mapped to any GPU.
-- `GXDrawDone()` triggers PE interrupt 0x13 — we trigger `glFinish()` + swap instead.
+- `GXDrawDone()` triggers PE interrupt 0x13 — we trigger `bgfx::frame()` instead.
 
 #### Tier B — Expand by Demand
 
@@ -363,13 +475,16 @@ equivalent interception in hardware; we do it in software at the macro level.
 - Rare TEV/texture filter modes.
 
 **Implementation strategy**:
-- `gx_state` struct captures all GX state; flush to OpenGL at draw time.
-- Redefine `GXTexObj` internals to hold `GLuint` texture handle (opaque `u32 dummy[8]` allows
+- `gx_state` struct captures all GX state; flush to bgfx at draw time.
+- Redefine `GXTexObj` internals to hold `bgfx::TextureHandle` (opaque `u32 dummy[8]` allows
   this — same approach as Shield's `NVGXNameTex` mapping to Tegra handles).
-- FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) → RAM vertex buffer, uploaded as GL VBO.
-- TEV stages → generated GLSL fragment shader (cache by TEV config hash).
+- FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) → bgfx `TransientVertexBuffer`.
+- TEV stages → bgfx shader program (compile via `shaderc`, cache by TEV config hash).
+  One shader source → all backends (D3D12/Metal/Vulkan/GLSL).
 - **Time saver**: J3D is the dominant draw path. Getting J3D materials correct covers the
   majority of in-game rendering. Focus TEV combiner on J3D's common patterns first.
+- **Time saver**: bgfx's transient vertex buffers are per-frame and auto-freed — no VBO
+  lifecycle management, no resource leak bugs.
 
 ### Step 6: Audio Bring-Up
 
@@ -411,12 +526,13 @@ Shield's audio architecture tells us exactly what to do:
 
 ### Step 9: NX Homebrew Bring-Up
 
-- Same GX → OpenGL renderer (no changes).
-- Swap PAL backends: `pal_window` → libnx/EGL, `pal_input` → HID, `pal_audio` → audren,
-  `pal_fs` → romfs, `pal_save` → libnx account/save.
+- Same GX → bgfx renderer (no changes — bgfx auto-selects OpenGL ES backend on NX).
+- Swap PAL backends: `pal_window` → libnx/EGL (provides native window handle to bgfx),
+  `pal_input` → HID, `pal_audio` → audren, `pal_fs` → romfs, `pal_save` → libnx account/save.
 - Define `VERSION_NX_HB = 14` and `#define PLATFORM_NX_HB (VERSION == VERSION_NX_HB)` in `global.h`,
   inheriting the same Shield-derived conditionals as `PLATFORM_PC`.
 - **Time saver**: ~1–2 weeks after PC is playable. PAL interface is identical, only backend swaps.
+  bgfx handles the GPU backend switch automatically — zero rendering code changes for NX.
 
 ### Step 10: Polish for Shipment
 
@@ -444,9 +560,10 @@ Step 1 (CMake build from ShieldD file list)
    *(Shield's static linking eliminates REL loader; conditional extension is mechanical.)*
 2. **PAL + DVD/ARAM** (Steps 3–4): one person, ~1.5 weeks.
    *(Shield's NAND error handling and disc-less code path carry over directly.)*
-3. **GX shim** (Step 5): one person (GX/GL experience), ~3–4 weeks for Tier A.
+3. **GX shim** (Step 5): one person (GX/GPU experience), ~3–4 weeks for Tier A.
    *(Faster — `GX_WRITE_*` macro redirect captures 2,500 call sites; `GXTexObj` opacity trick
-   avoids texture plumbing; Shield's NVGX proves the GX API surface supports GPU handle mapping.)*
+   avoids texture plumbing; bgfx transient VBs match GX immediate mode; one shader target for
+   all backends via `shaderc`; Shield's NVGX proves the GX API surface supports GPU handle mapping.)*
 4. **Audio** (Step 6): one person, Phase A in ~1 day, Phase B ~2–4 weeks.
    *(Faster — Shield's audio routing is pre-mapped; fixed output mode; no hardware queries.)*
 5. **Input + Save** (Step 7): one person, ~2–3 days.
@@ -464,7 +581,7 @@ per-callsite work, static linking skips REL loader, Shield conditionals are mech
 | Extend `PLATFORM_SHIELD` conditionals | 63+ files already have the decision points marked | Mechanical `#if` extension — ~63 files, ~1 line each |
 | Inherit Shield's hardware exclusions | `!PLATFORM_SHIELD` guards skip CARDInit, GXSaveCPUFifo, etc. | Same exclusions apply to PC — zero new analysis needed |
 | Redirect `GX_WRITE_*` macros | 4 macros in `GXRegs.h` control all FIFO writes | Captures ~2,500 GX call sites with 4 `#define` changes |
-| Redefine `GXTexObj` internals | Opaque `u32 dummy[8]` struct hides implementation | Store `GLuint` handle inside — same trick as Shield's `NVGXNameTex` |
+| Redefine `GXTexObj` internals | Opaque `u32 dummy[8]` struct hides implementation | Store `bgfx::TextureHandle` inside — same trick as Shield's `NVGXNameTex` |
 | Reuse Shield's GCN input path | Shield uses `JUTGamePad`, not WPAD/KPAD | Map SDL3 gamepad → GCN PadStatus; skip Wii input entirely |
 | Reuse Shield's save simplification | Shield uses `NANDSimpleSafe*` instead of memory cards | Replace one NAND layer instead of reimplementing card I/O |
 | Inherit Shield's dual-heap architecture | `sRootHeap2` already works on Shield | Both heaps map to host RAM — no heap redesign needed |
@@ -528,15 +645,15 @@ the same error state machine — no redesign needed.
 The `GXTexObj` struct is intentionally opaque (`typedef struct { u32 dummy[8]; } GXTexObj`)
 with internal fields (`__GXTexObjInt`) hidden from public API. Shield's `NVGXNameTex` /
 `NVGXDestroyTex` functions exploit this opacity to map GX textures to Tegra GPU handles.
-We do the same: redefine `__GXTexObjInt` internals to include a `GLuint` texture ID, keeping
-the 32-byte public struct size but storing OpenGL handles inside.
+We do the same: redefine `__GXTexObjInt` internals to include a `bgfx::TextureHandle`, keeping
+the 32-byte public struct size but storing bgfx handles inside.
 
 ### 8. Display List Replay Already Works Through Translation
 
 Shield replays `GXCallDisplayList` through its translation layer — proving display lists
 (used in 10+ files including `J3DShapeDraw`, `J3DPacket`, `d_a_player`) contain standard
 GX commands that can be intercepted and re-executed. Our shim records display lists as
-command buffers and replays them through the OpenGL backend.
+command buffers and replays them through bgfx.
 
 ### Summary: Revised Time Estimate With All Shield Optimizations
 
@@ -544,7 +661,7 @@ command buffers and replays them through the OpenGL backend.
 |---|---|---|---|
 | Build + conditionals | ~1 week | ~3–4 days | Static linking eliminates REL loader |
 | PAL + DVD/ARAM | ~2 weeks | ~1.5 weeks | Shield's NAND error handling carries over |
-| GX shim Tier A | ~3–5 weeks | ~3–4 weeks | `GX_WRITE_*` macro redirect + `GXTexObj` opacity trick |
+| GX shim Tier A | ~3–5 weeks | ~3–4 weeks | `GX_WRITE_*` macro redirect + `GXTexObj` opacity trick; bgfx transient VBs match GX immediate mode |
 | Audio | Phase A: ~2 days | Phase A: ~1 day | Audio routing pre-mapped by Shield conditionals |
 | Input + Save | ~3–5 days | ~2–3 days | GCN pad path + NAND save path are exact patterns |
 
@@ -576,8 +693,11 @@ Revisit after the core playable loop is stable.
 - Exact post-processing parity (bloom, DoF, motion blur — `lingcod` scale values are the starting point).
 - Full feature parity for all niche overlays and scenes.
 - Wider input remapping UX and keyboard/mouse support.
-- Additional graphics backends beyond OpenGL (Vulkan, Metal).
 - Deep visual/performance tuning beyond required playability.
 - Region selection (PAL/JPN) — default to USA for first ship.
 - Wii-specific content or control schemes.
 - Shield-specific features (`REGION_CHN`, `Z2AudioCS` Chinese sound resources).
+
+**Note**: Additional graphics backends (Vulkan, Metal, D3D12) are **no longer deferred** —
+bgfx provides them from day one. The GX shim writes to bgfx's API, and bgfx auto-selects
+the best native backend per platform.
