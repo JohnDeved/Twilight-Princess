@@ -18,6 +18,7 @@
 extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_state.h"
+#include "pal/pal_window.h"
 
 /* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
 extern int gx_shim_active;
@@ -35,25 +36,35 @@ int pal_gx_bgfx_init(void) {
     if (s_bgfx_initialized)
         return 1;
 
+    /* Initialize SDL3 window first */
+    pal_window_init(s_frame_width, s_frame_height, "Twilight Princess");
+
     bgfx::Init init;
 
     /* Check for headless mode */
-    const char* headless = getenv("TP_HEADLESS");
-    if (headless && headless[0] == '1') {
+    if (pal_window_is_headless()) {
         init.type = bgfx::RendererType::Noop;
         fprintf(stderr, "{\"gx_bgfx\":\"init\",\"renderer\":\"Noop\",\"headless\":true}\n");
     } else {
         /* Auto-select best renderer for platform */
         init.type = bgfx::RendererType::Count; /* auto */
-        fprintf(stderr, "{\"gx_bgfx\":\"init\",\"renderer\":\"auto\",\"headless\":false}\n");
+
+        /* Set platform data from SDL3 window */
+        void* native_handle = pal_window_get_native_handle();
+        void* native_display = pal_window_get_native_display();
+        if (native_handle) {
+            init.platformData.nwh = native_handle;
+            init.platformData.ndt = native_display;
+            fprintf(stderr, "{\"gx_bgfx\":\"init\",\"renderer\":\"auto\",\"headless\":false,\"nwh\":\"%p\"}\n",
+                    native_handle);
+        } else {
+            fprintf(stderr, "{\"gx_bgfx\":\"init\",\"renderer\":\"auto\",\"headless\":false,\"nwh\":null}\n");
+        }
     }
 
     init.resolution.width = s_frame_width;
     init.resolution.height = s_frame_height;
     init.resolution.reset = BGFX_RESET_VSYNC;
-
-    /* For headless mode, no platform data needed (Noop renderer).
-     * For windowed mode, SDL3 window handle would be set here. */
 
     if (!bgfx::init(init)) {
         fprintf(stderr, "{\"gx_bgfx\":\"init_failed\"}\n");
@@ -79,11 +90,15 @@ void pal_gx_bgfx_shutdown(void) {
         s_bgfx_initialized = 0;
         gx_shim_active = 0;
     }
+    pal_window_shutdown();
 }
 
 void pal_gx_begin_frame(void) {
     if (!s_bgfx_initialized)
         return;
+
+    /* Process SDL3 events (window close, input, etc.) */
+    pal_window_poll();
 
     /* Apply GX clear color from state machine */
     GXColor cc = g_gx_state.clear_color;

@@ -32,6 +32,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(bgfx)
 
+# --- SDL3 for windowing, input, and audio ---
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    sdl3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG        release-3.2.8
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(sdl3)
+
 # --- Parse source file list from Shield splits.txt (non-debug) ---
 file(STRINGS "${CMAKE_SOURCE_DIR}/config/Shield/splits.txt" SPLITS_LINES)
 
@@ -83,6 +98,7 @@ set(PAL_SOURCES
     src/pal/pal_game_stubs.cpp
     src/pal/pal_remaining_stubs.cpp
     src/pal/pal_profile_list.cpp
+    src/pal/pal_window.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
     src/pal/gx/gx_bgfx.cpp
@@ -112,8 +128,8 @@ add_executable(tp-pc ${GAME_SOURCES} ${PAL_SOURCES} ${REL_SOURCES})
 
 target_include_directories(tp-pc PRIVATE ${INCLUDE_DIRS})
 
-# Link bgfx rendering backend
-target_link_libraries(tp-pc PRIVATE bgfx bimg bx)
+# Link bgfx rendering backend and SDL3 platform layer
+target_link_libraries(tp-pc PRIVATE bgfx bimg bx SDL3::SDL3-static)
 
 # --- Compiler settings ---
 target_compile_definitions(tp-pc PRIVATE
