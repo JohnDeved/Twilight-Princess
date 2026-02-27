@@ -217,6 +217,7 @@ Step 1 (CMake)  ──►  Step 2 (conditionals)
 - Prefer additive shims over invasive rewrites
 - When in doubt, check what Shield does
 - Track stub-hit counts to prioritize Tier B by frequency
+- CI-driven: every commit triggers headless boot test — see [AI Agent Testing Plan](ai-agent-testing-plan.md)
 
 ## Deferred
 

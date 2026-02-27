@@ -211,7 +211,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y cmake ninja-build libsdl3-dev mesa-utils libegl1-mesa-dev
+          sudo apt-get install -y cmake ninja-build mesa-utils libegl1-mesa-dev
+
+      - name: Build SDL3 from source
+        run: |
+          git clone --depth 1 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+          cmake -S /tmp/SDL3 -B /tmp/SDL3/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          ninja -C /tmp/SDL3/build
+          sudo ninja -C /tmp/SDL3/build install
 
       - name: Build PC port
         run: |
