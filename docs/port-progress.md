@@ -8,7 +8,7 @@
 | Field | Value |
 |---|---|
 | **Highest CI Milestone** | `-1` (not yet building) |
-| **Current Step** | Step 0 — Not started |
+| **Current Step** | Step 1 — Not started |
 | **Last Updated** | 2026-02-27 |
 | **Blocking Issue** | No port code exists yet — start at Step 1 |
 
@@ -23,7 +23,7 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [ ] Add `VERSION_PC = 13` and `PLATFORM_PC` to `include/global.h`
 - [ ] Create `include/pal/pal_intrinsics.h` (MWCC → GCC/Clang, cache no-ops)
 - [ ] Create `include/pal/pal_milestone.h` (boot milestone logging)
-- [ ] Verify: `cmake -B build && ninja -C build` produces compiler errors (expected — missing PAL stubs)
+- [ ] Verify: `cmake -B build && cmake --build build` produces compiler errors (expected — missing PAL stubs)
 
 ### Step 2 — Extend Shield Conditionals (~100 LOC changes)
 - [ ] `PLATFORM_WII || PLATFORM_SHIELD` → add `|| PLATFORM_PC` (~85 sites across ~42 files)
@@ -97,7 +97,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 | 8 | PLAY_SCENE | Gameplay scene loaded | Step 5: GX stubs by frequency |
 | 9 | STAGE_LOADED | Specific stage loaded | Step 5/7: rendering + input |
 | 10 | FRAMES_60 | 1 second stable | Step 5: top stub hits |
-| 11 | FRAMES_300 | 5 seconds stable | Step 6B/8: polish |
+| 11 | FRAMES_300 | 5 seconds stable | Step 6 Phase B and Step 8: polish |
 | 12 | FRAMES_1800 | 30 seconds stable | Step 8: first playable achieved 🎉 |
 
 ## Session Log
@@ -131,6 +131,8 @@ _None yet — start with Step 2_
 1. Work on the next unchecked item in the **Step Checklist**
 2. Follow the detailed instructions in [Agent Port Workflow](agent-port-workflow.md)
 3. Validate your work against the expected milestone for that step
+4. If you need assets, ROM files, disc images, or other resources you cannot obtain
+   yourself, **leave a comment on the PR** describing what you need and why
 
 ### Before Ending Your Session
 1. Mark completed items `[x]` in the **Step Checklist**

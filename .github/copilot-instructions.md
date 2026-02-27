@@ -20,7 +20,7 @@ it already solved most platform-abstraction problems.
 | File | Purpose |
 |---|---|
 | `docs/port-progress.md` | **Read first** — tracks what's done, what's next, session log |
-| `include/global.h` | Platform macros: `PLATFORM_GCN`, `PLATFORM_WII`, `PLATFORM_SHIELD`, `PLATFORM_PC` |
+| `include/global.h` | Platform macros: `PLATFORM_GCN`, `PLATFORM_WII`, `PLATFORM_SHIELD` (add `PLATFORM_PC` in Step 1) |
 | `include/revolution/private/GXRegs.h` | `GX_WRITE_*` macros — redirect for PC port |
 | `src/m_Do/m_Do_main.cpp` | Main entry + game loop (`main01()`) |
 | `config/ShieldD/splits.txt` | Battle-tested file list (4,028 files for non-Nintendo build) |
@@ -69,6 +69,9 @@ it already solved most platform-abstraction problems.
 8. **Prioritize by frequency**: Implement the most-called GX stubs first (check `milestone-summary.json`).
 9. **Update `docs/port-progress.md` before ending your session** — mark completed items,
    update the current status, and add a session log entry so the next agent knows where to continue.
+10. **Ask for what you need**: If you require assets, ROM files, disc images, tools, or any
+    resources you cannot obtain yourself, **leave a comment on the PR** describing exactly what
+    you need and why. Do not silently skip work that depends on missing resources.
 
 ## Version Numbers
 
