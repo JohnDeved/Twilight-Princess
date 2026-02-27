@@ -37,19 +37,6 @@ void GDSetArrayRaw(GXAttr attr, u32 base_ptr_raw, u8 stride) {
 }
 void GDSetVtxDescv(const GXVtxDescList* attrPtr) { (void)attrPtr; }
 
-/* --- GF wrappers --- */
-void GFSetBlendModeEtc(GXBlendMode type, GXBlendFactor src_factor, GXBlendFactor dst_factor,
-                       GXLogicOp logic_op, u8 color_upd, u8 alpha_upd, u8 dither) {
-    (void)type; (void)src_factor; (void)dst_factor; (void)logic_op;
-    (void)color_upd; (void)alpha_upd; (void)dither;
-}
-void GFSetFog(GXFogType fog_type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor color) {
-    (void)fog_type; (void)startz; (void)endz; (void)nearz; (void)farz; (void)color;
-}
-void GFSetZMode(u8 compare_enable, GXCompare func, u8 update_enable) {
-    (void)compare_enable; (void)func; (void)update_enable;
-}
-
 /* --- DVD extras --- */
 BOOL DVDCheckDiskAsync(DVDCommandBlock* block, DVDCBCallback callback) {
     (void)block; (void)callback; return FALSE;
@@ -91,10 +78,11 @@ BOOL OSUnlink(OSModuleInfo* module) { (void)module; return TRUE; }
 /* --- PAD extras --- */
 void PADSetAnalogMode(u32 mode) { (void)mode; }
 
-/* --- VI extras --- */
-void VIEnableDimming(u8 enable) { (void)enable; }
-void VISetGamma(u8 gamma) { (void)gamma; }
+/* --- VI extras (use proper types from headers) --- */
+#include "revolution/vi/vifuncs.h"
 void VISetTrapFilter(u8 enable) { (void)enable; }
+BOOL VIEnableDimming(BOOL enable) { (void)enable; return FALSE; }
+void VISetGamma(VIGamma gamma) { (void)gamma; }
 
 /* --- WPAD extras --- */
 u32 WPADGetAcceptConnection(void) { return 0; }
@@ -116,14 +104,21 @@ s32 WENCGetEncodeData(void* enc, u32 flag, const s16* pcm, s32 samples, u8* out)
     (void)enc; (void)flag; (void)pcm; (void)samples; (void)out; return 0;
 }
 
-/* --- Math: J3DPSMtxArrayConcat --- */
-typedef float Mtx_t[3][4];
-void J3DPSMtxArrayConcat(Mtx_t* a, Mtx_t* b, Mtx_t* out, u32 count) {
+#ifdef __cplusplus
+}
+#endif
+
+/* ========================= C++ stubs ========================= */
+
+/* --- Math: J3DPSMtxArrayConcat (C++ linkage) --- */
+#include "JSystem/J3DGraphBase/J3DTransform.h"
+void J3DPSMtxArrayConcat(f32 (*a)[4], f32 (*b)[4], f32 (*out)[4], u32 count) {
+    /* Each matrix is 3 rows of 4 floats, so stride is 3*4 = 12 floats */
     u32 i;
     for (i = 0; i < count; i++) {
-        float (*ma)[4] = a[i];
-        float (*mb)[4] = b[i];
-        float (*mo)[4] = out[i];
+        f32 (*ma)[4] = a + i * 3;
+        f32 (*mb)[4] = b + i * 3;
+        f32 (*mo)[4] = out + i * 3;
         int r, c;
         for (r = 0; r < 3; r++) {
             for (c = 0; c < 4; c++) {
@@ -134,15 +129,51 @@ void J3DPSMtxArrayConcat(Mtx_t* a, Mtx_t* b, Mtx_t* out, u32 count) {
     }
 }
 
-#ifdef __cplusplus
-}
-#endif
-
-/* ========================= C++ stubs ========================= */
-
-/* --- JSUOutputStream (not in Shield splits.txt) --- */
+/* --- JSUOutputStream / JSURandomOutputStream / JSUMemoryOutputStream --- */
 #include "JSystem/JSupport/JSUOutputStream.h"
+#include "JSystem/JSupport/JSURandomOutputStream.h"
+#include "JSystem/JSupport/JSUMemoryStream.h"
+
 JSUOutputStream::~JSUOutputStream() {}
 s32 JSUOutputStream::skip(s32 count, s8 fill) { (void)count; (void)fill; return 0; }
+
+s32 JSURandomOutputStream::seek(s32 offset, JSUStreamSeekFrom origin) {
+    (void)offset; (void)origin; return 0;
+}
+s32 JSURandomOutputStream::getAvailable() const { return 0; }
+
+s32 JSUMemoryOutputStream::getPosition() const { return mPosition; }
+s32 JSUMemoryOutputStream::seek(s32 offset, JSUStreamSeekFrom origin) {
+    switch (origin) {
+    case JSUStreamSeekFrom_SET: mPosition = offset; break;
+    case JSUStreamSeekFrom_CUR: mPosition += offset; break;
+    case JSUStreamSeekFrom_END: mPosition = mLength + offset; break;
+    }
+    return mPosition;
+}
+s32 JSUMemoryOutputStream::getAvailable() const {
+    return mLength - mPosition;
+}
+
+/* --- JORMContext --- */
+#include "JSystem/JHostIO/JORMContext.h"
+void JORMContext::genCheckBoxSub(u32 kind, const char* label, u32 id, u32 style,
+                                 u16 initValue, u16 mask, JOREventListener* pListener,
+                                 u16 posX, u16 posY, u16 width, u16 height) {
+    (void)kind; (void)label; (void)id; (void)style; (void)initValue;
+    (void)mask; (void)pListener; (void)posX; (void)posY; (void)width; (void)height;
+}
+
+/* --- JStudio_JParticle (source files not in Shield splits.txt) --- */
+#include "JSystem/JStudio/JStudio_JParticle/control.h"
+namespace JStudio_JParticle {
+    TCreateObject::~TCreateObject() {}
+    bool TCreateObject::create(JStudio::TObject** out,
+                               const JStudio::stb::data::TParse_TBlock_object& blk) {
+        (void)out; (void)blk; return false;
+    }
+    JPABaseEmitter* TCreateObject::emitter_create(u32 id) { (void)id; return NULL; }
+    void TCreateObject::emitter_destroy(JPABaseEmitter* emitter) { (void)emitter; }
+}
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

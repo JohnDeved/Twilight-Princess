@@ -172,25 +172,23 @@ void Z2SeMgr::homeMenuSeCallback(s32 param) { (void)param; }
 /* GF wrapper functions                                             */
 /* ================================================================ */
 
-/* GF functions use GX enum types from the headers already included */
-/* by the game headers above. Use int params to avoid include conflicts. */
-extern "C" {
+/* GF wrappers - C++ linkage (no extern "C"), proper GX enum types */
+#include "revolution/gf/GFPixel.h"
 
-void GFSetFog(int type, f32 startz, f32 endz, f32 nearz, f32 farz, int color) {
+void GFSetFog(GXFogType type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor color) {
     (void)type; (void)startz; (void)endz; (void)nearz; (void)farz; (void)color;
 }
 
-void GFSetBlendModeEtc(int type, int src_factor, int dst_factor, int logic_op,
-                       u8 color_update_enable, u8 alpha_update_enable, u8 dither_enable) {
+void GFSetBlendModeEtc(GXBlendMode type, GXBlendFactor src_factor, GXBlendFactor dst_factor,
+                       GXLogicOp logic_op, u8 color_update_enable, u8 alpha_update_enable,
+                       u8 dither_enable) {
     (void)type; (void)src_factor; (void)dst_factor; (void)logic_op;
     (void)color_update_enable; (void)alpha_update_enable; (void)dither_enable;
 }
 
-void GFSetZMode(u8 compare_enable, int func, u8 update_enable) {
+void GFSetZMode(u8 compare_enable, GXCompare func, u8 update_enable) {
     (void)compare_enable; (void)func; (void)update_enable;
 }
-
-} /* extern "C" */
 
 /* ================================================================ */
 /* JSU Stream classes                                               */
