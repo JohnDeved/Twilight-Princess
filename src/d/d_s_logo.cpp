@@ -105,16 +105,15 @@ void dScnLogo_c::checkProgSelect() {
 }
 
 int dScnLogo_c::draw() {
+    cLib_calcTimer<u16>(&mTimer);
 #if PLATFORM_PC
     /* No GX rendering and no textures loaded — skip all logo draw commands.
-     * Advance the timer manually to progress through the logo sequence. */
-    cLib_calcTimer<u16>(&mTimer);
+     * Auto-transition to next scene once the timer expires. */
     if (mTimer == 0) {
         mExecCommand = EXEC_SCENE_CHANGE;
     }
     return 1;
 #endif
-    cLib_calcTimer<u16>(&mTimer);
     (this->*l_execFunc[mExecCommand])();
     return 1;
 }
