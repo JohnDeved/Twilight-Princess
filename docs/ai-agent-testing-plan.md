@@ -215,7 +215,7 @@ jobs:
 
       - name: Build SDL3 from source
         run: |
-          git clone --depth 1 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+          git clone --depth 1 --branch release-3.2.x https://github.com/libsdl-org/SDL.git /tmp/SDL3
           cmake -S /tmp/SDL3 -B /tmp/SDL3/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           ninja -C /tmp/SDL3/build
           sudo ninja -C /tmp/SDL3/build install
