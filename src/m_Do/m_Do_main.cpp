@@ -6,6 +6,7 @@
 #include "m_Do/m_Do_main.h"
 #include "DynamicLink.h"
 #include "JSystem/JAudio2/JASAudioThread.h"
+#include "JSystem/JAudio2/JAUSectionHeap.h"
 #include "JSystem/JAudio2/JAUSoundTable.h"
 #include "JSystem/JFramework/JFWSystem.h"
 #include "JSystem/JKernel/JKRAram.h"
