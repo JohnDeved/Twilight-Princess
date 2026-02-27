@@ -18,6 +18,7 @@
 extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_tev.h"
 #include "pal/pal_window.h"
 
 /* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
@@ -79,6 +80,9 @@ int pal_gx_bgfx_init(void) {
     s_bgfx_initialized = 1;
     gx_shim_active = 1;
 
+    /* Initialize TEV shader system */
+    pal_tev_init();
+
     fprintf(stderr, "{\"gx_bgfx\":\"ready\",\"width\":%u,\"height\":%u}\n",
             s_frame_width, s_frame_height);
     return 1;
@@ -86,6 +90,7 @@ int pal_gx_bgfx_init(void) {
 
 void pal_gx_bgfx_shutdown(void) {
     if (s_bgfx_initialized) {
+        pal_tev_shutdown();
         bgfx::shutdown();
         s_bgfx_initialized = 0;
         gx_shim_active = 0;
@@ -96,6 +101,9 @@ void pal_gx_bgfx_shutdown(void) {
 void pal_gx_begin_frame(void) {
     if (!s_bgfx_initialized)
         return;
+
+    /* Reset per-frame stub tracking for honest milestone gating */
+    gx_stub_frame_reset();
 
     /* Process SDL3 events (window close, input, etc.) */
     pal_window_poll();

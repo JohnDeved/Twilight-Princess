@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_tev.h"
 
 /* ================================================================ */
 /* Global state machine instance                                    */
@@ -492,6 +493,9 @@ void pal_gx_end(void) {
     /* Track statistics */
     g_gx_state.draw_calls++;
     g_gx_state.total_verts += g_gx_state.draw.verts_written;
+
+    /* Flush draw call to bgfx via TEV pipeline */
+    pal_tev_flush_draw();
 
     g_gx_state.draw.active = 0;
 }

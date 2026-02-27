@@ -537,12 +537,15 @@ void GXSetDispCopyGamma(GXGamma gamma) { (void)gamma; }
 void GXCopyDisp(void* dest, GXBool clear) {
     (void)dest; (void)clear;
     /* When the GX shim is active (bgfx initialized), this presents
-     * the rendered frame. Fire RENDER_FRAME milestone on first real
-     * frame — proving actual pixels were drawn, not just stubs called. */
+     * the rendered frame. Fire RENDER_FRAME milestone only when the frame
+     * is valid — no GX stubs were hit and real draw calls were submitted,
+     * ensuring a valid verifiable image was produced. */
     if (gx_shim_active) {
         pal_gx_end_frame();
-        if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)) {
-            pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME, "first real rendered frame via GXCopyDisp");
+        if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
+            && gx_stub_frame_is_valid()) {
+            pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME,
+                          "first stub-free frame with valid draw calls");
         }
     }
 }

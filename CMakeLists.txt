@@ -19,7 +19,7 @@ endif()
 # --- bgfx rendering library (GX shim backend) ---
 include(FetchContent)
 
-set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
 set(BGFX_CUSTOM_TARGETS OFF CACHE BOOL "" FORCE)
@@ -46,6 +46,159 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(sdl3)
+
+# --- Compile GX TEV shaders with bgfx shaderc ---
+set(SHADER_DIR "${CMAKE_SOURCE_DIR}/src/pal/gx/shaders")
+set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
+set(BGFX_SHADER_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/build/_deps/bgfx-src/bgfx/src")
+file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
+
+# Find bgfx shader include directory (for bgfx_shader.sh)
+set(BGFX_SHADER_INCLUDE "${bgfx_SOURCE_DIR}/bgfx/src")
+
+# Shader list: vertex shaders
+set(VS_SHADERS vs_gx_tev)
+# Shader list: fragment shaders
+set(FS_SHADERS fs_gx_passclr fs_gx_replace fs_gx_modulate fs_gx_blend fs_gx_decal)
+
+# Determine platform flags for shaderc
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(SHADERC_PLATFORM "linux")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(SHADERC_PLATFORM "osx")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(SHADERC_PLATFORM "windows")
+else()
+    set(SHADERC_PLATFORM "linux")
+endif()
+
+set(COMPILED_SHADER_HEADERS "")
+
+# Compile vertex shaders for each backend
+foreach(SHADER ${VS_SHADERS})
+    set(SHADER_SRC "${SHADER_DIR}/${SHADER}.sc")
+    # GLSL 140
+    set(GLSL_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_glsl.bin.h")
+    add_custom_command(
+        OUTPUT ${GLSL_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${GLSL_OUT}
+            --type vertex
+            --platform ${SHADERC_PLATFORM}
+            --profile 140
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_glsl
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling vertex shader ${SHADER} (GLSL 140)"
+    )
+    # ESSL 100
+    set(ESSL_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_essl.bin.h")
+    add_custom_command(
+        OUTPUT ${ESSL_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${ESSL_OUT}
+            --type vertex
+            --platform android
+            --profile 100_es
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_essl
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling vertex shader ${SHADER} (ESSL 100)"
+    )
+    # SPIR-V
+    set(SPIRV_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_spv.bin.h")
+    add_custom_command(
+        OUTPUT ${SPIRV_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${SPIRV_OUT}
+            --type vertex
+            --platform ${SHADERC_PLATFORM}
+            --profile spirv
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_spv
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling vertex shader ${SHADER} (SPIR-V)"
+    )
+    list(APPEND COMPILED_SHADER_HEADERS ${GLSL_OUT} ${ESSL_OUT} ${SPIRV_OUT})
+endforeach()
+
+# Compile fragment shaders for each backend
+foreach(SHADER ${FS_SHADERS})
+    set(SHADER_SRC "${SHADER_DIR}/${SHADER}.sc")
+    # GLSL 140
+    set(GLSL_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_glsl.bin.h")
+    add_custom_command(
+        OUTPUT ${GLSL_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${GLSL_OUT}
+            --type fragment
+            --platform ${SHADERC_PLATFORM}
+            --profile 140
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_glsl
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling fragment shader ${SHADER} (GLSL 140)"
+    )
+    # ESSL 100
+    set(ESSL_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_essl.bin.h")
+    add_custom_command(
+        OUTPUT ${ESSL_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${ESSL_OUT}
+            --type fragment
+            --platform android
+            --profile 100_es
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_essl
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling fragment shader ${SHADER} (ESSL 100)"
+    )
+    # SPIR-V
+    set(SPIRV_OUT "${SHADER_OUTPUT_DIR}/${SHADER}_spv.bin.h")
+    add_custom_command(
+        OUTPUT ${SPIRV_OUT}
+        COMMAND shaderc
+            -f ${SHADER_SRC}
+            -o ${SPIRV_OUT}
+            --type fragment
+            --platform ${SHADERC_PLATFORM}
+            --profile spirv
+            -i ${BGFX_SHADER_INCLUDE}
+            --varyingdef ${SHADER_DIR}/varying.def.sc
+            --bin2c ${SHADER}_spv
+        DEPENDS ${SHADER_SRC} ${SHADER_DIR}/varying.def.sc shaderc
+        COMMENT "Compiling fragment shader ${SHADER} (SPIR-V)"
+    )
+    list(APPEND COMPILED_SHADER_HEADERS ${GLSL_OUT} ${ESSL_OUT} ${SPIRV_OUT})
+endforeach()
+
+# Generate a combined header that includes all shader binaries
+set(SHADER_COMBINED_HEADER "${SHADER_OUTPUT_DIR}/gx_tev_shaders.h")
+set(SHADER_HEADER_CONTENT "/* Auto-generated shader binaries — do not edit */\n#pragma once\n")
+foreach(VS ${VS_SHADERS})
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${VS}_glsl.bin.h\"\n")
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${VS}_essl.bin.h\"\n")
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${VS}_spv.bin.h\"\n")
+endforeach()
+foreach(FS ${FS_SHADERS})
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${FS}_glsl.bin.h\"\n")
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${FS}_essl.bin.h\"\n")
+    string(APPEND SHADER_HEADER_CONTENT "#include \"${FS}_spv.bin.h\"\n")
+endforeach()
+file(WRITE ${SHADER_COMBINED_HEADER} ${SHADER_HEADER_CONTENT})
+
+# Custom target to compile all shaders
+add_custom_target(compile_shaders DEPENDS ${COMPILED_SHADER_HEADERS})
 
 # --- Parse source file list from Shield splits.txt (non-debug) ---
 file(STRINGS "${CMAKE_SOURCE_DIR}/config/Shield/splits.txt" SPLITS_LINES)
@@ -104,6 +257,7 @@ set(PAL_SOURCES
     src/pal/gx/gx_bgfx.cpp
     src/pal/gx/gx_state.cpp
     src/pal/gx/gx_texture.cpp
+    src/pal/gx/gx_tev.cpp
 )
 
 # --- REL modules that are dynamically loaded on console but statically linked on PC ---
@@ -126,7 +280,10 @@ set(INCLUDE_DIRS
 # --- Executable ---
 add_executable(tp-pc ${GAME_SOURCES} ${PAL_SOURCES} ${REL_SOURCES})
 
-target_include_directories(tp-pc PRIVATE ${INCLUDE_DIRS})
+target_include_directories(tp-pc PRIVATE ${INCLUDE_DIRS} ${SHADER_OUTPUT_DIR})
+
+# Ensure shaders are compiled before tp-pc
+add_dependencies(tp-pc compile_shaders)
 
 # Link bgfx rendering backend and SDL3 platform layer
 target_link_libraries(tp-pc PRIVATE bgfx bimg bx SDL3::SDL3-static)
