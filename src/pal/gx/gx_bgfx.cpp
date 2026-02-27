@@ -21,10 +21,14 @@ extern "C" {
 /* Provided by pal_gx_stubs.cpp — set to 1 once bgfx is initialized */
 extern int gx_shim_active;
 
+/* Default frame dimensions (GameCube EFB resolution) */
+#define GX_DEFAULT_WIDTH  640
+#define GX_DEFAULT_HEIGHT 480
+
 /* bgfx backend state */
 static int s_bgfx_initialized = 0;
-static uint32_t s_frame_width = 640;
-static uint32_t s_frame_height = 480;
+static uint32_t s_frame_width = GX_DEFAULT_WIDTH;
+static uint32_t s_frame_height = GX_DEFAULT_HEIGHT;
 
 int pal_gx_bgfx_init(void) {
     if (s_bgfx_initialized)

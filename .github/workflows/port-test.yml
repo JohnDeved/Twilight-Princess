@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y cmake ninja-build libgl-dev libx11-dev libwayland-dev
+          sudo apt-get install -y cmake ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
 
       - name: Set up game data
         if: env.ROMS_TOKEN != ''
