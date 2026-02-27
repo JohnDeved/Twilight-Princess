@@ -32,6 +32,7 @@
 #include "revolution/gd/GDBase.h"
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/gx/gx_bgfx.h"
 
 extern "C" {
 
@@ -45,6 +46,10 @@ static GXFifoObj s_gx_fifo;
 GXFifoObj* GXInit(void* base, u32 size) {
     (void)base; (void)size;
     memset(&s_gx_fifo, 0, sizeof(s_gx_fifo));
+
+    /* Initialize bgfx rendering backend */
+    pal_gx_bgfx_init();
+
     return &s_gx_fifo;
 }
 
@@ -425,8 +430,11 @@ void GXCopyDisp(void* dest, GXBool clear) {
     /* When the GX shim is active (bgfx initialized), this presents
      * the rendered frame. Fire RENDER_FRAME milestone on first real
      * frame — proving actual pixels were drawn, not just stubs called. */
-    if (gx_shim_active && !pal_milestone_was_reached(MILESTONE_RENDER_FRAME)) {
-        pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME, "first real rendered frame via GXCopyDisp");
+    if (gx_shim_active) {
+        pal_gx_end_frame();
+        if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)) {
+            pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME, "first real rendered frame via GXCopyDisp");
+        }
     }
 }
 void GXCopyTex(void* dest, GXBool clear) { (void)dest; (void)clear; }

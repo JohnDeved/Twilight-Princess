@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(tp-pc LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Platform version ---
@@ -15,6 +15,22 @@ elseif(TP_VERSION STREQUAL "NX_HB")
 else()
     message(FATAL_ERROR "TP_VERSION must be PC or NX_HB")
 endif()
+
+# --- bgfx rendering library (GX shim backend) ---
+include(FetchContent)
+
+set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
+set(BGFX_CUSTOM_TARGETS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    bgfx
+    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
+    GIT_TAG        v1.129.8958-499
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(bgfx)
 
 # --- Parse source file list from Shield splits.txt (non-debug) ---
 file(STRINGS "${CMAKE_SOURCE_DIR}/config/Shield/splits.txt" SPLITS_LINES)
@@ -69,6 +85,7 @@ set(PAL_SOURCES
     src/pal/pal_profile_list.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
+    src/pal/gx/gx_bgfx.cpp
 )
 
 # --- REL modules that are dynamically loaded on console but statically linked on PC ---
@@ -92,6 +109,9 @@ set(INCLUDE_DIRS
 add_executable(tp-pc ${GAME_SOURCES} ${PAL_SOURCES} ${REL_SOURCES})
 
 target_include_directories(tp-pc PRIVATE ${INCLUDE_DIRS})
+
+# Link bgfx rendering backend
+target_link_libraries(tp-pc PRIVATE bgfx bimg bx)
 
 # --- Compiler settings ---
 target_compile_definitions(tp-pc PRIVATE

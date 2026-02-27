@@ -36,6 +36,10 @@
 #include <revolution/sc.h>
 #endif
 
+#if PLATFORM_PC
+#include "pal/gx/gx_bgfx.h"
+#endif
+
 #if PLATFORM_WII
 #include "d/d_cursor_mng.h"
 #endif
@@ -1520,10 +1524,10 @@ static void drawItem3D() {
 
 int mDoGph_Painter() {
 #if PLATFORM_PC
-    /* On PC without GX shim or game assets, skip entire render pipeline.
-     * This prevents NULL dereferences from unloaded actors/resources.
-     * Re-enable once GX shim (Step 5) is implemented. */
+    /* On PC, use bgfx for rendering. Currently just clears the frame.
+     * Full GX→bgfx translation is Step 5b+. */
     if (JFWDisplay::getManager() != NULL) {
+        pal_gx_begin_frame();
         mDoGph_gInf_c::beginRender();
         mDoGph_gInf_c::endRender();
     }
