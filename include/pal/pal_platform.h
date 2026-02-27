@@ -65,4 +65,30 @@ static inline float __fres(float x) { return 1.0f / x; }
 
 #endif /* !__MWERKS__ */
 
+/*
+ * Override OS_BASE_CACHED for PC port.
+ * On GameCube/Wii, physical address 0 maps to cached address 0x80000000.
+ * On x86_64, we provide a fake "low memory" buffer so OSPhysicalToCached(0)
+ * returns a valid pointer (used by JKRHeap, OSBootInfo, etc.).
+ */
+#if PLATFORM_PC || PLATFORM_NX_HB
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char pal_fake_mem1[]; /* defined in pal_sdk_stubs.cpp */
+#ifdef __cplusplus
+}
+#endif
+
+/* Redefine the cached region prefix so that all OS_BASE_CACHED-relative
+ * addresses point into our fake buffer instead of 0x80000000. */
+#undef OS_CACHED_REGION_PREFIX
+#undef OS_BASE_CACHED
+#undef OSPhysicalToCached
+#undef OSCachedToPhysical
+#define OS_BASE_CACHED          ((unsigned long)(pal_fake_mem1))
+#define OSPhysicalToCached(paddr)  ((void*)((unsigned long)(pal_fake_mem1) + (unsigned long)(paddr)))
+#define OSCachedToPhysical(caddr)  ((unsigned long)((unsigned long)(caddr) - (unsigned long)(pal_fake_mem1)))
+#endif /* PLATFORM_PC || PLATFORM_NX_HB */
+
 #endif /* PAL_PLATFORM_H */

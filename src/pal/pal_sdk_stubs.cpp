@@ -76,6 +76,14 @@ extern "C" {
 static void pal_init_main_thread(void);
 
 /* ================================================================ */
+/* Fake MEM1 region for OSPhysicalToCached/OSCachedToPhysical       */
+/* On GC/Wii, physical 0 maps to cached 0x80000000. On PC, we      */
+/* provide a zeroed buffer so code reading low-memory globals works. */
+/* ================================================================ */
+
+unsigned char pal_fake_mem1[0x4000] __attribute__((aligned(4096)));
+
+/* ================================================================ */
 /* OS Init / System                                                 */
 /* ================================================================ */
 
