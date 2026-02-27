@@ -250,7 +250,9 @@ void OSSignalCond(OSCond* cond) { (void)cond; }
 /* ================================================================ */
 
 /* Message queue — simple synchronous implementation for single-threaded mode.
- * Stores one message at a time. OSSendMessage stores it, OSReceiveMessage gets it. */
+ * LIMITATION: Uses global state — all message queues share one slot. This works
+ * because in single-threaded mode, only one queue is active at a time. If
+ * multi-threading is added later, this must be changed to per-queue storage. */
 void OSInitMessageQueue(OSMessageQueue* mq, void* msgArray, s32 msgCount) {
     if (mq) memset(mq, 0, 32);
 }
@@ -582,13 +584,13 @@ void ARSetSize(void) {}
 void ARClear(u32 flag) { (void)flag; }
 u32 ARGetDMAStatus(void) { return 0; }
 void ARStartDMA(u32 type, u32 mainmem_addr, u32 aram_addr, u32 length) {
-    /* type 0 = ARAM→main, type 1 = main→ARAM */
-    if (!s_aram_mem || aram_addr + length > PAL_ARAM_SIZE) return;
-    if (type == 0) {
-        memcpy((void*)(uintptr_t)mainmem_addr, s_aram_mem + aram_addr, length);
-    } else {
-        memcpy(s_aram_mem + aram_addr, (void*)(uintptr_t)mainmem_addr, length);
-    }
+    /* type 0 = ARAM→main, type 1 = main→ARAM.
+     * Note: On Wii, mainmem_addr is a physical address. On PC, ARAM DMA is
+     * not really used (audio goes through stubs), so this is mostly a no-op. */
+    if (!s_aram_mem || aram_addr >= PAL_ARAM_SIZE || length > PAL_ARAM_SIZE - aram_addr) return;
+    /* Skip mainmem operations — u32 addresses can't represent 64-bit pointers.
+     * Real ARAM DMA is not needed for the PC port. */
+    (void)type; (void)mainmem_addr;
 }
 ARQCallback ARRegisterDMACallback(ARQCallback callback) { (void)callback; return NULL; }
 
