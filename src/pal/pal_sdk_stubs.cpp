@@ -30,9 +30,7 @@ struct OSMessageQueue;
 struct OSAlarm;
 struct OSStopwatch;
 
-struct DVDDiskID;
-struct DVDCommandBlock;
-struct DVDFileInfo;
+#include "dolphin/dvd.h" /* DVDDiskID, DVDCommandBlock, DVDFileInfo, etc. */
 
 struct GXRenderModeObj;
 
@@ -397,11 +395,39 @@ void OSCheckStopwatch(OSStopwatch* sw) { (void)sw; }
 void OSDumpStopwatch(OSStopwatch* sw) { (void)sw; }
 
 /* ================================================================ */
-/* DVD                                                              */
+/* DVD — Host filesystem implementation                             */
+/* Maps DVD paths to files in a "data/" directory on the host.      */
+/* Paths like "/res/Object/Lk.arc" → "data/res/Object/Lk.arc"      */
 /* ================================================================ */
 
 static u8 s_dvd_disk_id_storage[32];
 static int s_dvd_disk_id_init = 0;
+
+/* Simple path→entrynum table. Entry 0 = unused. */
+#define PAL_DVD_MAX_ENTRIES 2048
+static char  s_dvd_paths[PAL_DVD_MAX_ENTRIES][256];
+static s32   s_dvd_next_entry = 1; /* 0 = invalid */
+
+/* Per-DVDFileInfo host file state (stored via startAddr/length reuse) */
+/* We store a FILE* handle table keyed by a simple index stored in startAddr */
+#define PAL_DVD_MAX_OPEN 128
+static FILE* s_dvd_files[PAL_DVD_MAX_OPEN];
+static char  s_dvd_open_paths[PAL_DVD_MAX_OPEN][256];
+static s32   s_dvd_next_handle = 1;
+
+/* Base directory for game data files */
+static const char* pal_dvd_get_data_dir(void) {
+    const char* env = getenv("TP_DATA_DIR");
+    return env ? env : "data";
+}
+
+/* Build host path from DVD path */
+static void pal_dvd_build_host_path(char* out, size_t outSize, const char* dvdPath) {
+    const char* dataDir = pal_dvd_get_data_dir();
+    /* Strip leading slash from dvdPath if present */
+    if (dvdPath && dvdPath[0] == '/') dvdPath++;
+    snprintf(out, outSize, "%s/%s", dataDir, dvdPath ? dvdPath : "");
+}
 
 void DVDInit(void) {}
 
@@ -421,18 +447,71 @@ DVDDiskID* DVDGetCurrentDiskID(void) {
     return (DVDDiskID*)s_dvd_disk_id_storage;
 }
 
-s32 DVDConvertPathToEntrynum(const char* pathPtr) { (void)pathPtr; return -1; }
-
-BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
-    (void)fileName; (void)fileInfo;
-    return FALSE;
+s32 DVDConvertPathToEntrynum(const char* pathPtr) {
+    if (!pathPtr) return -1;
+    /* Check if we already have this path */
+    for (s32 i = 1; i < s_dvd_next_entry; i++) {
+        if (strcmp(s_dvd_paths[i], pathPtr) == 0) return i;
+    }
+    /* Check if the file exists on the host filesystem */
+    char hostPath[512];
+    pal_dvd_build_host_path(hostPath, sizeof(hostPath), pathPtr);
+    FILE* test = fopen(hostPath, "rb");
+    if (!test) {
+        /* File not found — return -1 (normal for assets not yet extracted) */
+        return -1;
+    }
+    fclose(test);
+    /* Register new entry */
+    if (s_dvd_next_entry >= PAL_DVD_MAX_ENTRIES) return -1;
+    s32 entry = s_dvd_next_entry++;
+    strncpy(s_dvd_paths[entry], pathPtr, 255);
+    s_dvd_paths[entry][255] = '\0';
+    return entry;
 }
 
-BOOL DVDClose(DVDFileInfo* fileInfo) { (void)fileInfo; return TRUE; }
+BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
+    if (!fileName || !fileInfo) return FALSE;
+    char hostPath[512];
+    pal_dvd_build_host_path(hostPath, sizeof(hostPath), fileName);
+    FILE* fp = fopen(hostPath, "rb");
+    if (!fp) return FALSE;
+    /* Get file size */
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    /* Store handle */
+    if (s_dvd_next_handle >= PAL_DVD_MAX_OPEN) { fclose(fp); return FALSE; }
+    s32 handle = s_dvd_next_handle++;
+    s_dvd_files[handle] = fp;
+    strncpy(s_dvd_open_paths[handle], hostPath, 255);
+    s_dvd_open_paths[handle][255] = '\0';
+    /* Encode handle index into DVDFileInfo fields */
+    fileInfo->startAddr = (u32)handle;
+    fileInfo->length = (u32)sz;
+    return TRUE;
+}
+
+BOOL DVDClose(DVDFileInfo* fileInfo) {
+    if (!fileInfo) return TRUE;
+    s32 handle = (s32)fileInfo->startAddr;
+    if (handle > 0 && handle < PAL_DVD_MAX_OPEN && s_dvd_files[handle]) {
+        fclose(s_dvd_files[handle]);
+        s_dvd_files[handle] = NULL;
+    }
+    fileInfo->startAddr = 0;
+    return TRUE;
+}
 
 s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 prio) {
-    (void)fileInfo; (void)addr; (void)length; (void)offset; (void)prio;
-    return -1;
+    (void)prio;
+    if (!fileInfo || !addr) return -1;
+    s32 handle = (s32)fileInfo->startAddr;
+    if (handle <= 0 || handle >= PAL_DVD_MAX_OPEN || !s_dvd_files[handle]) return -1;
+    FILE* fp = s_dvd_files[handle];
+    if (fseek(fp, offset, SEEK_SET) != 0) return -1;
+    size_t bytesRead = fread(addr, 1, (size_t)length, fp);
+    return (s32)bytesRead;
 }
 
 int DVDReadAbsAsyncPrio(DVDCommandBlock* block, void* addr, s32 length, s32 offset,
@@ -461,17 +540,27 @@ s32 DVDCancelAll(void) { return 0; }
 BOOL DVDCancelAsync(DVDCommandBlock* block, DVDCBCallback callback) { (void)block; (void)callback; return FALSE; }
 s32 DVDGetFileInfoStatus(const DVDFileInfo* fileInfo) { (void)fileInfo; return 0; }
 
-BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) { (void)entrynum; (void)fileInfo; return FALSE; }
-s32 DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
-                     void (*callback)(s32, DVDFileInfo*), s32 prio) {
-    (void)fileInfo; (void)addr; (void)length; (void)offset; (void)callback; (void)prio;
-    return -1;
+BOOL DVDFastOpen(s32 entrynum, DVDFileInfo* fileInfo) {
+    if (entrynum <= 0 || entrynum >= s_dvd_next_entry || !fileInfo) return FALSE;
+    /* Use the stored path to open the file */
+    return DVDOpen(s_dvd_paths[entrynum], fileInfo);
 }
 
-BOOL DVDChangeDir(const char* dirName) { (void)dirName; return FALSE; }
-BOOL DVDGetCurrentDir(char* path, u32 maxlen) { (void)path; (void)maxlen; return FALSE; }
+BOOL DVDReadAsyncPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset,
+                      DVDCallback callback, s32 prio) {
+    /* Execute synchronously on PC */
+    s32 result = DVDReadPrio(fileInfo, addr, length, offset, prio);
+    if (callback) callback(result, fileInfo);
+    return result >= 0 ? TRUE : FALSE;
+}
 
-void DVDSetAutoInvalidation(BOOL autoInval) { (void)autoInval; }
+BOOL DVDChangeDir(const char* dirName) { (void)dirName; return TRUE; }
+BOOL DVDGetCurrentDir(char* path, u32 maxlen) {
+    if (path && maxlen > 1) { path[0] = '/'; path[1] = '\0'; }
+    return TRUE;
+}
+
+BOOL DVDSetAutoInvalidation(BOOL autoInval) { (void)autoInval; return FALSE; }
 
 BOOL DVDCompareDiskID(const DVDDiskID* id1, const DVDDiskID* id2) {
     (void)id1; (void)id2;
