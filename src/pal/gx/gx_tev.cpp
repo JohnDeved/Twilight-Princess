@@ -23,7 +23,6 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -44,19 +43,60 @@ extern "C" {
  * These are generated at build time by shaderc from .sc source files. */
 #include "gx_tev_shaders.h"
 
-/* Embedded shader tables for createEmbeddedShader */
-static const bgfx::EmbeddedShader s_vs_gx_tev[] = {
-    BGFX_EMBEDDED_SHADER(vs_gx_tev),
-    BGFX_EMBEDDED_SHADER_END()
+/* Shader binary selection based on renderer type */
+struct ShaderBinEntry {
+    const uint8_t* data;
+    uint32_t       size;
 };
 
-static const bgfx::EmbeddedShader s_fs_shaders[] = {
-    BGFX_EMBEDDED_SHADER(fs_gx_passclr),
-    BGFX_EMBEDDED_SHADER(fs_gx_replace),
-    BGFX_EMBEDDED_SHADER(fs_gx_modulate),
-    BGFX_EMBEDDED_SHADER(fs_gx_blend),
-    BGFX_EMBEDDED_SHADER(fs_gx_decal),
-    BGFX_EMBEDDED_SHADER_END()
+/* Helper to select the correct shader binary for the active renderer */
+static ShaderBinEntry select_shader_bin(
+    bgfx::RendererType::Enum renderer,
+    const uint8_t* glsl, uint32_t glsl_size,
+    const uint8_t* essl, uint32_t essl_size,
+    const uint8_t* spv,  uint32_t spv_size)
+{
+    ShaderBinEntry entry = {NULL, 0};
+    switch (renderer) {
+    case bgfx::RendererType::OpenGLES:
+        entry.data = essl; entry.size = essl_size; break;
+    case bgfx::RendererType::OpenGL:
+        entry.data = glsl; entry.size = glsl_size; break;
+    case bgfx::RendererType::Vulkan:
+        entry.data = spv; entry.size = spv_size; break;
+    case bgfx::RendererType::Noop:
+        /* Noop doesn't need real shaders, use GLSL as dummy */
+        entry.data = glsl; entry.size = glsl_size; break;
+    default:
+        /* Try SPIR-V as fallback */
+        entry.data = spv; entry.size = spv_size; break;
+    }
+    return entry;
+}
+
+static bgfx::ShaderHandle create_shader_from_bin(const uint8_t* data, uint32_t size) {
+    if (!data || size == 0) return BGFX_INVALID_HANDLE;
+    const bgfx::Memory* mem = bgfx::copy(data, size);
+    return bgfx::createShader(mem);
+}
+
+/* Fragment shader binary table */
+struct FSShaderBins {
+    const uint8_t *glsl, *essl, *spv;
+    uint32_t glsl_size, essl_size, spv_size;
+};
+
+static const FSShaderBins s_fs_bins[GX_TEV_SHADER_COUNT] = {
+    { fs_gx_passclr_glsl,  fs_gx_passclr_essl,  fs_gx_passclr_spv,
+      sizeof(fs_gx_passclr_glsl), sizeof(fs_gx_passclr_essl), sizeof(fs_gx_passclr_spv) },
+    { fs_gx_replace_glsl,  fs_gx_replace_essl,  fs_gx_replace_spv,
+      sizeof(fs_gx_replace_glsl), sizeof(fs_gx_replace_essl), sizeof(fs_gx_replace_spv) },
+    { fs_gx_modulate_glsl, fs_gx_modulate_essl, fs_gx_modulate_spv,
+      sizeof(fs_gx_modulate_glsl), sizeof(fs_gx_modulate_essl), sizeof(fs_gx_modulate_spv) },
+    { fs_gx_blend_glsl,    fs_gx_blend_essl,    fs_gx_blend_spv,
+      sizeof(fs_gx_blend_glsl), sizeof(fs_gx_blend_essl), sizeof(fs_gx_blend_spv) },
+    { fs_gx_decal_glsl,    fs_gx_decal_essl,    fs_gx_decal_spv,
+      sizeof(fs_gx_decal_glsl), sizeof(fs_gx_decal_essl), sizeof(fs_gx_decal_spv) },
 };
 
 static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
@@ -136,13 +176,13 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
     if (!rgba_data)
         return BGFX_INVALID_HANDLE;
 
-    int ok = pal_gx_decode_texture(
-        (const uint8_t*)binding->image_ptr,
+    u32 decoded = pal_gx_decode_texture(
+        binding->image_ptr, rgba_data,
         binding->width, binding->height,
         binding->format,
-        rgba_data, rgba_size);
+        NULL, 0);
 
-    if (!ok) {
+    if (decoded == 0) {
         free(rgba_data);
         return BGFX_INVALID_HANDLE;
     }
@@ -423,33 +463,40 @@ void pal_tev_init(void) {
 
     bgfx::RendererType::Enum renderer = bgfx::getRendererType();
 
-    /* Create vertex shader (shared by all presets) */
-    bgfx::ShaderHandle vsh = bgfx::createEmbeddedShader(s_vs_gx_tev, renderer, "vs_gx_tev");
-    if (!bgfx::isValid(vsh)) {
-        fprintf(stderr, "{\"tev\":\"vs_create_failed\"}\n");
-        return;
-    }
+    /* Select vertex shader binary for current renderer */
+    ShaderBinEntry vs_bin = select_shader_bin(renderer,
+        vs_gx_tev_glsl, sizeof(vs_gx_tev_glsl),
+        vs_gx_tev_essl, sizeof(vs_gx_tev_essl),
+        vs_gx_tev_spv,  sizeof(vs_gx_tev_spv));
 
     /* Create fragment shaders and programs for each preset */
     int all_ok = 1;
     for (int i = 0; i < GX_TEV_SHADER_COUNT; i++) {
-        bgfx::ShaderHandle fsh = bgfx::createEmbeddedShader(s_fs_shaders, renderer, s_fs_names[i]);
-        if (!bgfx::isValid(fsh)) {
-            fprintf(stderr, "{\"tev\":\"fs_create_failed\",\"shader\":\"%s\"}\n", s_fs_names[i]);
+        /* Create vertex shader (each program needs its own copy) */
+        bgfx::ShaderHandle vsh = create_shader_from_bin(vs_bin.data, vs_bin.size);
+        if (!bgfx::isValid(vsh)) {
+            fprintf(stderr, "{\"tev\":\"vs_create_failed\",\"preset\":%d}\n", i);
             all_ok = 0;
             s_programs[i] = BGFX_INVALID_HANDLE;
             continue;
         }
 
-        /* Each program needs its own copy of the vertex shader */
-        bgfx::ShaderHandle vsh_copy;
-        if (i == 0) {
-            vsh_copy = vsh; /* First program uses the original */
-        } else {
-            vsh_copy = bgfx::createEmbeddedShader(s_vs_gx_tev, renderer, "vs_gx_tev");
+        /* Select and create fragment shader */
+        ShaderBinEntry fs_bin = select_shader_bin(renderer,
+            s_fs_bins[i].glsl, s_fs_bins[i].glsl_size,
+            s_fs_bins[i].essl, s_fs_bins[i].essl_size,
+            s_fs_bins[i].spv,  s_fs_bins[i].spv_size);
+
+        bgfx::ShaderHandle fsh = create_shader_from_bin(fs_bin.data, fs_bin.size);
+        if (!bgfx::isValid(fsh)) {
+            fprintf(stderr, "{\"tev\":\"fs_create_failed\",\"shader\":\"%s\"}\n", s_fs_names[i]);
+            bgfx::destroy(vsh);
+            all_ok = 0;
+            s_programs[i] = BGFX_INVALID_HANDLE;
+            continue;
         }
 
-        s_programs[i] = bgfx::createProgram(vsh_copy, fsh, true /* destroy shaders */);
+        s_programs[i] = bgfx::createProgram(vsh, fsh, true /* destroy shaders */);
         if (!bgfx::isValid(s_programs[i])) {
             fprintf(stderr, "{\"tev\":\"program_create_failed\",\"preset\":%d}\n", i);
             all_ok = 0;
