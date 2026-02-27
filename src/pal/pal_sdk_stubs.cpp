@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
+#include <time.h>
 
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
@@ -483,7 +484,15 @@ void VISetNextFrameBuffer(void* fb) { (void)fb; }
 void VISetNextRightFrameBuffer(void* fb) { (void)fb; }
 void VISetBlack(BOOL black) { (void)black; }
 void VISet3D(BOOL flag) { (void)flag; }
-u32 VIGetRetraceCount(void) { return 0; }
+u32 VIGetRetraceCount(void) {
+    /* Simulate retrace count based on elapsed time (~60 Hz) */
+    static u32 s_start_ms = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    u32 now_ms = (u32)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    if (s_start_ms == 0) s_start_ms = now_ms;
+    return (now_ms - s_start_ms) * 60 / 1000; /* ~60 Hz */
+}
 u32 VIGetNextField(void) { return 0; }
 u32 VIGetCurrentLine(void) { return 0; }
 u32 VIGetTvFormat(void) { return 0; /* VI_NTSC */ }
