@@ -82,6 +82,26 @@ it already solved most platform-abstraction problems.
 
 These follow after `VERSION_SHIELD_DEBUG = 12` in `global.h`.
 
+## Commit Early and Often
+
+Your session can be terminated at any time — crashes, tool errors, timeouts, or context
+limits will cause you to lose all uncommitted work. **Commit frequently so progress is
+never lost.**
+
+- **Commit immediately after every meaningful edit** (a file compiles, a stub is wired up,
+  a build-system change works, a header is ported, etc.). Do not batch multiple unrelated
+  changes into one large commit.
+- **Commit before any risky operation** (large refactors, build-system changes, merge
+  conflict resolution). If the operation fails and the session dies, the prior progress
+  is safe.
+- **Commit before ending any logical unit of work.** If you have been working for several
+  minutes and have touched more than one or two files, stop and commit now.
+- **Use concise, descriptive commit messages** that explain *what* changed and *why*
+  (e.g., `"pal: add SDL3 window init stub"`, `"cmake: exclude dolphin/ sources for PC"`).
+- **Never leave uncommitted changes while waiting for a build or test.** Stage and commit
+  first, then run the build. If the build fails you can fix-and-commit again.
+- **If in doubt, commit.** An extra small commit is always better than lost work.
+
 ## What NOT to Do
 
 - Don't modify game logic files without `#if PLATFORM_PC` guards
