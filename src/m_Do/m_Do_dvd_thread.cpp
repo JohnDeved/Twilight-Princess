@@ -131,10 +131,16 @@ mDoDvdThd_command_c* mDoDvdThd_param_c::getFirstCommand() {
 }
 
 void mDoDvdThd_param_c::addition(mDoDvdThd_command_c* pCommand) {
+#if PLATFORM_PC
+    /* Single-threaded mode: execute DVD commands synchronously instead of
+     * queuing them for the DVD thread (which doesn't run on PC). */
+    pCommand->execute();
+#else
     OSLockMutex(&mMutext);
     cLs_Addition(&mNodeList, pCommand);
     OSUnlockMutex(&mMutext);
     this->kick();
+#endif
 }
 
 void mDoDvdThd_param_c::cut(mDoDvdThd_command_c* param_0) {
