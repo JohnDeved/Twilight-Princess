@@ -76,7 +76,7 @@ jobs:
             objdiff.json
             .ninja_deps
             .ninja_log
-          key: build-${{ runner.os }}-${{ matrix.version }}-${{ github.sha }}-${{ hashFiles('configure.py', 'build_iso.sh', 'tools/project.py', 'tools/rarc_pack.py', 'tools/normalize_cache_mtime.py', '.github/workflows/build.yml') }}
+          key: build-${{ runner.os }}-${{ matrix.version }}-${{ hashFiles('configure.py', 'build_iso.sh', 'tools/project.py', 'tools/rarc_pack.py', 'tools/normalize_cache_mtime.py', '.github/workflows/build.yml') }}
           restore-keys: |
             build-${{ runner.os }}-${{ matrix.version }}-
 
@@ -110,7 +110,19 @@ jobs:
       - name: Build RVZ artifact
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.debug_incremental) }}
         run: |
-          if [ "${{ steps.cache-build.outputs.cache-hit }}" = "true" ] && [ -f build.ninja ]; then
+          GRAPH_SIG="${{ hashFiles('configure.py', 'tools/project.py') }}"
+          GRAPH_SIG_FILE="build/${{ matrix.version }}/.ci_graph_sig"
+          SOURCE_SHA_FILE="build/${{ matrix.version }}/.ci_source_sha"
+          CACHED_GRAPH_SIG=""
+          CACHED_SOURCE_SHA=""
+          if [ -f "$GRAPH_SIG_FILE" ]; then
+            CACHED_GRAPH_SIG="$(cat "$GRAPH_SIG_FILE")"
+          fi
+          if [ -f "$SOURCE_SHA_FILE" ]; then
+            CACHED_SOURCE_SHA="$(cat "$SOURCE_SHA_FILE")"
+          fi
+
+          if [ -f build.ninja ] && [ "$CACHED_GRAPH_SIG" = "$GRAPH_SIG" ] && [ "$CACHED_SOURCE_SHA" = "${GITHUB_SHA}" ]; then
             echo "Exact cache hit: skipping compile graph"
             ./build_iso.sh --version ${{ matrix.version }} --setup --no-build
             ISO_PATH="build/${{ matrix.version }}/TheLegendOfZeldaTwilightPrincess_${{ matrix.version }}.iso"
@@ -124,19 +136,34 @@ jobs:
             else
               echo "RVZ already up to date"
             fi
+            printf "%s\n" "$GRAPH_SIG" > "$GRAPH_SIG_FILE"
+            printf "%s\n" "${GITHUB_SHA}" > "$SOURCE_SHA_FILE"
           else
-            python3 configure.py --version ${{ matrix.version }} --no-check
+            if [ ! -f build.ninja ] || [ "$CACHED_GRAPH_SIG" != "$GRAPH_SIG" ]; then
+              python3 configure.py --version ${{ matrix.version }} --no-check
+            else
+              echo "Skipping configure; using cached build graph"
+            fi
             ./build_iso.sh --version ${{ matrix.version }} --setup
             ninja rvz
+            printf "%s\n" "$GRAPH_SIG" > "$GRAPH_SIG_FILE"
+            printf "%s\n" "${GITHUB_SHA}" > "$SOURCE_SHA_FILE"
           fi
 
       - name: Build RVZ artifact (debug explain)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_incremental }}
         run: |
-          if [ "${{ steps.cache-build.outputs.cache-hit }}" != "true" ] || [ ! -f build.ninja ]; then
+          GRAPH_SIG="${{ hashFiles('configure.py', 'tools/project.py') }}"
+          GRAPH_SIG_FILE="build/${{ matrix.version }}/.ci_graph_sig"
+          CACHED_GRAPH_SIG=""
+          if [ -f "$GRAPH_SIG_FILE" ]; then
+            CACHED_GRAPH_SIG="$(cat "$GRAPH_SIG_FILE")"
+          fi
+
+          if [ ! -f build.ninja ] || [ "$CACHED_GRAPH_SIG" != "$GRAPH_SIG" ]; then
             python3 configure.py --version ${{ matrix.version }} --no-check
           else
-            echo "Using cached build.ninja/config artifacts"
+            echo "Using cached build graph"
           fi
           ./build_iso.sh --version ${{ matrix.version }} --setup
           ninja -d explain rvz
