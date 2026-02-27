@@ -5,6 +5,14 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- ccache support (auto-detected if installed) ---
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "PC port: ccache found — ${CCACHE_PROGRAM}")
+endif()
+
 # --- Platform version ---
 set(TP_VERSION "PC" CACHE STRING "Target platform: PC or NX_HB")
 
@@ -18,6 +26,7 @@ endif()
 
 # --- bgfx rendering library (GX shim backend) ---
 include(FetchContent)
+set(FETCHCONTENT_QUIET ON)
 
 set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -32,12 +41,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(bgfx)
 
-# --- SDL3 for windowing and input (disable unused subsystems for faster builds) ---
+# --- SDL3 for windowing only (all other subsystems disabled for faster builds) ---
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
@@ -48,12 +58,15 @@ set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
 set(SDL_POWER OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
 set(SDL_DIALOG OFF CACHE BOOL "" FORCE)
+set(SDL_MISC OFF CACHE BOOL "" FORCE)
+set(SDL_LOCALE OFF CACHE BOOL "" FORCE)
+set(SDL_FILE_DIALOG OFF CACHE BOOL "" FORCE)
+set(SDL_SYSTEM_ICONV OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     sdl3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-3.2.8
-    GIT_SHALLOW    TRUE
+    URL            https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.8.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(sdl3)
 
@@ -160,6 +173,7 @@ target_compile_definitions(tp-pc PRIVATE
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tp-pc PRIVATE
         -include ${CMAKE_SOURCE_DIR}/include/pal/pal_platform.h
+        -pipe
         -Wno-multichar
         -Wno-invalid-offsetof
         -Wno-write-strings
