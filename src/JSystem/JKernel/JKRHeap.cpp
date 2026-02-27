@@ -131,7 +131,13 @@ bool JKRHeap::initArena2(char** memory, u32* size, int maxHeaps) {
     if (arenaLo == arenaHi) {
         return false;
     }
+#if PLATFORM_PC
+    /* On PC, use the actual MEM2 arena pointers (host malloc buffer).
+     * The Wii hardcodes 0x91100000 which is invalid on PC. */
+    arenaLo = (void*)ALIGN_NEXT(uintptr_t(arenaLo), 32);
+#else
     arenaLo = (void*)0x91100000;
+#endif
     arenaHi = (void*)ALIGN_PREV(uintptr_t(arenaHi), 32);
     OSSetMEM2ArenaLo(arenaHi);
     OSSetMEM2ArenaHi(arenaHi);

@@ -88,7 +88,16 @@ unsigned char pal_fake_mem1[0x4000] __attribute__((aligned(4096)));
 /* OS Init / System                                                 */
 /* ================================================================ */
 
-void OSInit(void) { pal_init_main_thread(); }
+void OSInit(void) {
+    pal_init_main_thread();
+    /* Populate OSBootInfo at pal_fake_mem1[0] (physical address 0).
+     * JKRHeap::initArena reads memorySize from here. */
+    /* OSBootInfo layout: DVDDiskID(32) + magic(4) + version(4) + memorySize(4) */
+    u32* bootInfo = (u32*)(pal_fake_mem1 + 32); /* skip DVDDiskID */
+    bootInfo[0] = 0x0D15EA5E; /* magic */
+    bootInfo[1] = 1;          /* version */
+    bootInfo[2] = 24 * 1024 * 1024; /* memorySize: 24 MB (GC MEM1) */
+}
 void OSRegisterVersion(const char* id) { (void)id; }
 /* Return GameCube/Wii-compatible memory sizes for SDK compatibility */
 u32 OSGetPhysicalMemSize(void) { return 24 * 1024 * 1024; }

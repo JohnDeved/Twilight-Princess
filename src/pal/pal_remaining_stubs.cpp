@@ -61,15 +61,21 @@ s32 NANDSimpleSafeClose(NANDFileInfo* info) { (void)info; return 0; }
 /* --- OS extras --- */
 s32 OSCheckActiveThreads(void) { return 1; }
 u8 OSGetLanguage(void) { return 1; }
-void* OSGetMEM2ArenaHi(void) { static u8 mem2[0x1000]; return mem2 + sizeof(mem2); }
-void* OSGetMEM2ArenaLo(void) { static u8 mem2lo[0x1000]; return mem2lo; }
+
+/* MEM2 arena: On Wii, this is 64MB of external memory starting at 0x90000000.
+ * On PC, we provide a 32MB malloc-backed buffer. */
+static u8 s_mem2_arena[32 * 1024 * 1024];
+static u8* s_mem2_lo = s_mem2_arena;
+static u8* s_mem2_hi = s_mem2_arena + sizeof(s_mem2_arena);
+void* OSGetMEM2ArenaHi(void) { return s_mem2_hi; }
+void* OSGetMEM2ArenaLo(void) { return s_mem2_lo; }
 BOOL OSGetResetSwitchState(void) { return FALSE; }
 BOOL OSLink(OSModuleInfo* module, void* bss) { (void)module; (void)bss; return TRUE; }
 BOOL OSLinkFixed(OSModuleInfo* module, void* bss) { (void)module; (void)bss; return TRUE; }
 void OSRestart(u32 resetCode) { (void)resetCode; }
 void OSReturnToMenu(void) {}
-void OSSetMEM2ArenaHi(void* addr) { (void)addr; }
-void OSSetMEM2ArenaLo(void* addr) { (void)addr; }
+void OSSetMEM2ArenaHi(void* addr) { s_mem2_hi = (u8*)addr; }
+void OSSetMEM2ArenaLo(void* addr) { s_mem2_lo = (u8*)addr; }
 void OSSetSoundMode(u32 mode) { (void)mode; }
 void OSSetStringTable(void* table) { (void)table; }
 void OSShutdownSystem(void) {}
