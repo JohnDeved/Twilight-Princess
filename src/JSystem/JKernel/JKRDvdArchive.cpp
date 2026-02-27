@@ -8,6 +8,9 @@
 #include "JSystem/JUtility/JUTException.h"
 #include <cmath>
 #include <string>
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 #include "global.h"
 #include <stdint.h>
 
@@ -77,6 +80,18 @@ bool JKRDvdArchive::open(s32 entryNum) {
                     JKRDvdRipper::ALLOC_DIRECTION_FORWARD, 0, &mCompression, NULL);
     DCInvalidateRange(arcHeader, sizeof(SArcHeader));
 
+#if PLATFORM_PC
+    /* Swap the SArcHeader fields from big-endian */
+    arcHeader->signature        = pal_swap32(arcHeader->signature);
+    arcHeader->file_length      = pal_swap32(arcHeader->file_length);
+    arcHeader->header_length    = pal_swap32(arcHeader->header_length);
+    arcHeader->file_data_offset = pal_swap32(arcHeader->file_data_offset);
+    arcHeader->file_data_length = pal_swap32(arcHeader->file_data_length);
+    arcHeader->field_0x14       = pal_swap32(arcHeader->field_0x14);
+    arcHeader->field_0x18       = pal_swap32(arcHeader->field_0x18);
+    arcHeader->field_0x1c       = pal_swap32(arcHeader->field_0x1c);
+#endif
+
     int alignment;
     alignment = mMountDirection == MOUNT_DIRECTION_HEAD ? 0x20 : -0x20;
 
@@ -90,6 +105,40 @@ bool JKRDvdArchive::open(s32 entryNum) {
                     arcHeader->file_data_offset, NULL, JKRDvdRipper::ALLOC_DIRECTION_FORWARD,
                     sizeof(SArcHeader), NULL, NULL);
     DCInvalidateRange(mArcInfoBlock, arcHeader->file_data_offset);
+
+#if PLATFORM_PC
+    /* Swap data info block, nodes, and file entries from big-endian */
+    {
+        SArcDataInfo* info = mArcInfoBlock;
+        info->num_nodes           = pal_swap32(info->num_nodes);
+        info->node_offset         = pal_swap32(info->node_offset);
+        info->num_file_entries    = pal_swap32(info->num_file_entries);
+        info->file_entry_offset   = pal_swap32(info->file_entry_offset);
+        info->string_table_length = pal_swap32(info->string_table_length);
+        info->string_table_offset = pal_swap32(info->string_table_offset);
+        info->next_free_file_id   = pal_swap16(info->next_free_file_id);
+
+        u8* nodesBase = (u8*)&info->num_nodes + info->node_offset;
+        for (u32 i = 0; i < info->num_nodes; i++) {
+            SDIDirEntry* node = (SDIDirEntry*)(nodesBase + i * sizeof(SDIDirEntry));
+            node->type             = pal_swap32(node->type);
+            node->name_offset      = pal_swap32(node->name_offset);
+            node->field_0x8        = pal_swap16(node->field_0x8);
+            node->num_entries      = pal_swap16(node->num_entries);
+            node->first_file_index = pal_swap32(node->first_file_index);
+        }
+
+        u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
+        for (u32 i = 0; i < info->num_file_entries; i++) {
+            SDIFileEntry* entry = (SDIFileEntry*)(filesBase + i * 20);
+            entry->file_id                   = pal_swap16(entry->file_id);
+            entry->name_hash                 = pal_swap16(entry->name_hash);
+            entry->type_flags_and_name_offset = pal_swap32(entry->type_flags_and_name_offset);
+            entry->data_offset               = pal_swap32(entry->data_offset);
+            entry->data_size                 = pal_swap32(entry->data_size);
+        }
+    }
+#endif
 
     mNodes = (SDIDirEntry*)((intptr_t)&mArcInfoBlock->num_nodes + mArcInfoBlock->node_offset);
     mFiles = (SDIFileEntry*)((intptr_t)&mArcInfoBlock->num_nodes + mArcInfoBlock->file_entry_offset);

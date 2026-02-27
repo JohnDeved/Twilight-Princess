@@ -58,6 +58,7 @@ message(STATUS "PC port: ${NUM_GAME_SOURCES} game source files from splits.txt")
 # --- PAL sources (new port code) ---
 set(PAL_SOURCES
     src/pal/pal_crash.cpp
+    src/pal/pal_endian.cpp
     src/pal/pal_milestone.cpp
     src/pal/pal_os_stubs.cpp
     src/pal/pal_gx_stubs.cpp
@@ -124,6 +125,37 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -fpermissive
         -fno-exceptions
     )
+endif()
+
+# --- Game data setup (auto-download if ROMS_TOKEN is available) ---
+# Creates a 'setup_game_data' target that downloads and extracts the disc image.
+# Run: cmake --build build --target setup_game_data
+# Or:  ninja -C build setup_game_data
+find_package(Python3 COMPONENTS Interpreter QUIET)
+find_program(GH_CLI gh)
+if(Python3_FOUND AND GH_CLI AND DEFINED ENV{ROMS_TOKEN})
+    add_custom_target(setup_game_data
+        COMMAND ${CMAKE_COMMAND} -E env
+            "ROMS_TOKEN=$ENV{ROMS_TOKEN}"
+            ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/setup_game_data.py
+            --data-dir ${CMAKE_SOURCE_DIR}/data
+            --rom-dir ${CMAKE_SOURCE_DIR}/orig/GZ2E01
+            --extract-dir ${CMAKE_BINARY_DIR}/extract/GZ2E01
+            --tools-dir ${CMAKE_BINARY_DIR}/tools
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Downloading and extracting game data..."
+        VERBATIM
+    )
+    # Check if data/ exists; if not, remind the user
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/res")
+        message(STATUS "PC port: Game data not found in data/ — run 'ninja setup_game_data' to download")
+    else()
+        message(STATUS "PC port: Game data found in data/")
+    endif()
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/data/res")
+    message(STATUS "PC port: Game data found in data/")
+else()
+    message(STATUS "PC port: No game data (set ROMS_TOKEN and install gh CLI to auto-download)")
 endif()
 
 message(STATUS "PC port: target tp-pc configured (VERSION=${TP_VERSION})")

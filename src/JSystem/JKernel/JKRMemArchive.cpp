@@ -8,6 +8,9 @@
 #include <string>
 #include "global.h"
 #include <stdint.h>
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 
 JKRMemArchive::JKRMemArchive(s32 entryNum, JKRArchive::EMountDirection mountDirection)
     : JKRArchive(entryNum, MOUNT_MEM) {
@@ -66,8 +69,8 @@ bool JKRMemArchive::open(s32 entryNum, JKRArchive::EMountDirection mountDirectio
     mIsOpen = false;
     mMountDirection = mountDirection;
 
+    u32 loadedSize = 0;
     if (mMountDirection == JKRArchive::MOUNT_DIRECTION_HEAD) {
-        u32 loadedSize;
         mArcHeader = (SArcHeader *)JKRDvdToMainRam(
             entryNum, NULL, EXPAND_SWITCH_UNKNOWN1, 0, mHeap, JKRDvdRipper::ALLOC_DIRECTION_FORWARD,
             0, (int *)&mCompression, &loadedSize);
@@ -76,7 +79,6 @@ bool JKRMemArchive::open(s32 entryNum, JKRArchive::EMountDirection mountDirectio
         }
     }
     else {
-        u32 loadedSize;
         mArcHeader = (SArcHeader *)JKRDvdToMainRam(
             entryNum, NULL, EXPAND_SWITCH_UNKNOWN1, 0, mHeap,
             JKRDvdRipper::ALLOC_DIRECTION_BACKWARD, 0, (int *)&mCompression, &loadedSize);
@@ -89,6 +91,9 @@ bool JKRMemArchive::open(s32 entryNum, JKRArchive::EMountDirection mountDirectio
         mMountMode = UNKNOWN_MOUNT_MODE;
     }
     else {
+#if PLATFORM_PC
+        pal_swap_rarc(mArcHeader, loadedSize);
+#endif
         JUT_ASSERT(438, mArcHeader->signature == 'RARC');
         mArcInfoBlock = (SArcDataInfo *)((u8 *)mArcHeader + mArcHeader->header_length);
         mNodes = (SDIDirEntry *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->node_offset);

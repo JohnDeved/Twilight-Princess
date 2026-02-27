@@ -8,6 +8,7 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
       - 'tools/parse_milestones.py'
+      - 'tools/setup_game_data.py'
   pull_request:
     paths:
       - 'src/**'
@@ -15,6 +16,7 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
       - 'tools/parse_milestones.py'
+      - 'tools/setup_game_data.py'
 
 jobs:
   test:
@@ -30,7 +32,27 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y cmake ninja-build
 
+      - name: Set up game data
+        if: env.ROMS_TOKEN != ''
+        env:
+          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
+        run: |
+          python3 tools/setup_game_data.py \
+            --data-dir data \
+            --rom-dir orig/GZ2E01 \
+            --extract-dir build/extract/GZ2E01 \
+            --tools-dir build/tools
+
+      - name: Cache disc image
+        if: env.ROMS_TOKEN != ''
+        uses: actions/cache@v4
+        with:
+          path: orig/GZ2E01/GZ2E01.rvz
+          key: rom-GZ2E01-v1
+
       - name: Build PC port
+        env:
+          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
