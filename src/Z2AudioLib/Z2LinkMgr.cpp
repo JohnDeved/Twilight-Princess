@@ -1,7 +1,7 @@
 #include "Z2AudioLib/Z2LinkMgr.h"
 #include "d/d_com_inf_game.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include "Z2AudioCS/Z2AudioCS.h"
 #endif
 
@@ -199,7 +199,7 @@ void Z2CreatureLink::setWolfEyeOpen(bool wolfEyeOpen) {
     mWolfEyeOpen = wolfEyeOpen;
 
     if (mWolfEyeOpen) {
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if (Z2GetSceneMgr()->isSceneExist()) {
             Z2AudioCS::start(0x55, 0);
         }
@@ -209,7 +209,7 @@ void Z2CreatureLink::setWolfEyeOpen(bool wolfEyeOpen) {
         Z2GetFxLineMgr()->setFxForceOff(true);
         Z2GetSoundObjMgr()->setGhostEnemyState(32);
     } else {
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if (Z2GetSceneMgr()->isSceneExist()) {
             Z2AudioCS::start(0x56, 0);
         }
@@ -257,7 +257,7 @@ Z2SoundHandlePool* Z2CreatureLink::startLinkSound(JAISoundID soundID, u32 mapinf
 }
 
 JAISoundHandle* Z2CreatureLink::startLinkSoundLevel(JAISoundID soundID, u32 mapinfo, s8 reverb) {
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     if (Z2GetSceneMgr()->isSceneExist()) {
         int iVar3 = -1;
         switch((u32)soundID) {
@@ -460,7 +460,7 @@ void Z2CreatureLink::startLinkSwordSound(JAISoundID soundID, u32 mapinfo, s8 rev
 
     switch (sound_ID) {
     case Z2SE_SWORD_POWER_COME:
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if (Z2GetSceneMgr()->isSceneExist()) {
             Z2AudioCS::startLevel(0x2F, 0);
         }
@@ -468,7 +468,7 @@ void Z2CreatureLink::startLinkSwordSound(JAISoundID soundID, u32 mapinfo, s8 rev
         startCreatureExtraSoundLevel(sound_ID, mapinfo, reverb);
         break;
     case Z2SE_WOLF_POWER_COME:
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if (Z2GetSceneMgr()->isSceneExist()) {
             Z2AudioCS::startLevel(0x6B, 0);
         }

@@ -1132,7 +1132,7 @@ static void e_po_dead(e_po_class* i_this) {
             camera_player->mCamera.SetTrimSize(0);
             dComIfGp_event_reset();
             dComIfGs_addPohSpiritNum();
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
             if (dComIfGs_getPohSpiritNum() == 0x14) {
                 /* dSv_event_flag_c::F_0457 - Castle Town - Revived cat */
                 dComIfGs_onEventBit(dSv_event_flag_c::saveBitLabels[457]);

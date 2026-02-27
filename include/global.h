@@ -144,7 +144,7 @@ static const float INF = 2000000000.0f;
 #endif
 
 // potential fakematch?
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     #define UNSET_FLAG(var, flag, type) (var) &= (type)~(flag)
 #else
     #define UNSET_FLAG(var, flag, type) (var) &= ~(flag)

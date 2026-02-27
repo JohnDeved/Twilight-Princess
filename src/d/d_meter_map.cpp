@@ -17,7 +17,7 @@
 #include "m_Do/m_Do_controller_pad.h"
 #include "d/d_camera.h"
 
-#if (PLATFORM_WII || PLATFORM_SHIELD)
+#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
 dMeter_map_HIO_c g_meter_mapHIO;
 #endif
 
@@ -267,7 +267,7 @@ bool dMeterMap_c::isEnableDispMapAndMapDispSizeTypeNo() {
 }
 
 f32 dMeterMap_c::getMapDispEdgeBottomY_Layout() {
-    #if (PLATFORM_WII || PLATFORM_SHIELD)
+    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
     if (dComIfGs_getOptPointer() == 0) {
         return g_meter_mapHIO.mGcY;
     }
@@ -299,7 +299,7 @@ bool dMeterMap_c::isEventRunCheck() {
 }
 
 f32 dMeterMap_c::getMapDispEdgeLeftX_Layout() {
-    #if (PLATFORM_WII || PLATFORM_SHIELD)
+    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
     if (mDoGph_gInf_c::isWide()) {
         return g_meter_mapHIO.mWideBottomLeftX + field_0x28;
     }

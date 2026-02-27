@@ -286,7 +286,7 @@ int dEvt_control_c::talkXyCheck(dEvt_order_c* order) {
         mTalkXyType = 2;
         itemIndex = SELECT_ITEM_Y;
         break;
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     case 8:
         mTalkXyType = 3;
         itemIndex = 2;
@@ -1075,7 +1075,7 @@ int dEvt_control_c::Step() {
         mEventStatus = 1;
         clearSkipSystem();
 
-        #if PLATFORM_SHIELD || PLATFORM_WII
+        #if PLATFORM_SHIELD || PLATFORM_WII || PLATFORM_PC
         field_0x130 = 0;
         #endif
 
@@ -1109,7 +1109,7 @@ int dEvt_control_c::Step() {
     if (mEventStatus != 0) {
         evtMng->Experts();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if (field_0x130) {
             mDoGph_gInf_c::onWideZoom();
         }

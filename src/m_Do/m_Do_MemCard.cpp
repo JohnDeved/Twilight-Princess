@@ -10,7 +10,7 @@
 #include "m_Do/m_Do_MemCardRWmng.h"
 #include "m_Do/m_Do_Reset.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/nand.h>
 #include <revolution/sc.h>
 #endif
@@ -54,7 +54,7 @@ s32 my_CARDOpen(s32 chan, const char* fileName, CARDFileInfo* fileInfo) {
 #if PLATFORM_WII
 #define NAND_OPEN  NANDSafeOpen
 #define NAND_CLOSE NANDSafeClose
-#elif PLATFORM_SHIELD
+#elif PLATFORM_SHIELD || PLATFORM_PC
 #define NAND_OPEN  NANDSimpleSafeOpen
 #define NAND_CLOSE NANDSimpleSafeClose
 #endif
@@ -72,7 +72,7 @@ static u8 MemCardStack[STACK_SIZE];
 static OSThread MemCardThread;
 
 void mDoMemCd_Ctrl_c::ThdInit() {
-    #if !PLATFORM_SHIELD
+    #if !PLATFORM_SHIELD && !PLATFORM_PC
     CARDInit();
     #endif
 
@@ -117,7 +117,7 @@ void mDoMemCd_Ctrl_c::main() {
         case COMM_DETACH_e:
             detach();
             break;
-        #elif PLATFORM_SHIELD
+        #elif PLATFORM_SHIELD || PLATFORM_PC
         case COMM_RESTORE_e:
         case COMM_STORE_e:
         case COMM_FORMAT_e:
@@ -126,7 +126,7 @@ void mDoMemCd_Ctrl_c::main() {
             break;
         #endif
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         case COMM_RESTORE_NAND_e:
             restoreNAND();
             break;
@@ -182,7 +182,7 @@ void mDoMemCd_Ctrl_c::load() {
     }
 }
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
 void mDoMemCd_Ctrl_c::restore() {
     CARDFileInfo file;
     field_0x1fc8 = 0;
@@ -238,7 +238,7 @@ void mDoMemCd_Ctrl_c::save(void* i_buffer, u32 i_size, u32 i_position) {
     }
 }
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
 void mDoMemCd_Ctrl_c::store() {
     CARDFileInfo file;
     s32 ret;
@@ -366,7 +366,7 @@ void mDoMemCd_Ctrl_c::command_format() {
     }
 }
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
 void mDoMemCd_Ctrl_c::format() {
     field_0x1fc8 = 0;
 
@@ -406,7 +406,7 @@ s32 mDoMemCd_Ctrl_c::FormatSync() {
     return ret;
 }
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
 void mDoMemCd_Ctrl_c::attach() {
     s32 mem_size;
     s32 sector_size;
@@ -555,7 +555,7 @@ void mDoMemCd_Ctrl_c::setCardState(s32 i_result) {
 }
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void mDoMemCd_Ctrl_c::loadNAND() {
     if (OSTryLockMutex(&mMutex)) {
         field_0x1fc8 = 0;

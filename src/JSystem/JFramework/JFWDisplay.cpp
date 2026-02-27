@@ -508,7 +508,7 @@ static void JFWDrawDoneAlarm() {
     s32 status = OSDisableInterrupts();
     alarm.createAlarm();
     alarm.appendLink();
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
     OSSetAlarm(&alarm, OSSecondsToTicks(0.5), JFWGXAbortAlarmHandler);
 #endif
     GXDrawDone();

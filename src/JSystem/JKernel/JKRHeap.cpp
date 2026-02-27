@@ -25,7 +25,7 @@ JKRHeap* JKRHeap::sCurrentHeap;
 
 JKRHeap* JKRHeap::sRootHeap;
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 JKRHeap* JKRHeap::sRootHeap2;
 #endif
 
@@ -121,7 +121,7 @@ bool JKRHeap::initArena(char** memory, u32* size, int maxHeaps) {
     return true;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 bool JKRHeap::initArena2(char** memory, u32* size, int maxHeaps) {
     void* arenaLo = OSGetMEM2ArenaLo();
     void* arenaHi = OSGetMEM2ArenaHi();
@@ -302,7 +302,7 @@ JKRHeap* JKRHeap::findFromRoot(void* ptr) {
     if (sRootHeap->mStart <= ptr && ptr < sRootHeap->mEnd) {
         return sRootHeap->find(ptr);
     }
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     if (sRootHeap2->mStart <= ptr && ptr < sRootHeap2->mEnd) {
         return sRootHeap2->find(ptr);
     }

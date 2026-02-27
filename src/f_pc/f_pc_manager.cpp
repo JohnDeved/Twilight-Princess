@@ -95,7 +95,7 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
             Z2GetSoundMgr()->pauseAllGameSound(true);
 #if PLATFORM_GCN
 #define FPCM_MANAGEMENT_GAMEPAD_COUNT 1
-#elif PLATFORM_SHIELD && !DEBUG
+#elif (PLATFORM_SHIELD || PLATFORM_PC) && !DEBUG
 #define FPCM_MANAGEMENT_GAMEPAD_COUNT 0
 #else
 #define FPCM_MANAGEMENT_GAMEPAD_COUNT 4

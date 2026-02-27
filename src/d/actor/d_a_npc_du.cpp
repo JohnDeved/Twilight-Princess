@@ -210,7 +210,7 @@ static void npc_du_normal(npc_du_class* i_this) {
 static void npc_du_away(npc_du_class* i_this) {
     // Fakematch???
     fopAc_ac_c* actor = (fopAc_ac_c*)&i_this->actor;
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     fopAc_ac_c* player = dComIfGp_getPlayer(0);
     #endif
     cXyz pos_delta, sp5c;
@@ -218,7 +218,7 @@ static void npc_du_away(npc_du_class* i_this) {
     f32 maxStepF = 2.0f;
     s16 maxStepS = 0x1800;
 
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     pos_delta = actor->current.pos - player->current.pos;
     #else
     pos_delta = actor->current.pos - dComIfGp_getPlayer(0)->current.pos;

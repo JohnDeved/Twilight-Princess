@@ -325,7 +325,7 @@ public:
     }
 
     int orderEvent() {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         if (mFlowNodeNum > 0)
 #else
         if ((!mIsDarkWorld || daPy_py_c::checkNowWolfEyeUp()) &&

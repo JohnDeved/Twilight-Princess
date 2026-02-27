@@ -43,7 +43,7 @@ public:
     virtual ~TObject();
 
     void setFlag_operation(u8, int);
-#if PLATFORM_SHIELD && !DEBUG
+#if (PLATFORM_SHIELD || PLATFORM_PC) && !DEBUG
     void reset(void const* arg1) {
         bSequence_ = 0;
         mStatus = STATUS_STILL;

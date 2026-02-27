@@ -1111,7 +1111,7 @@ u16 dMsgFlow_c::query021(mesg_flow_node_branch* i_flowNode_p, fopAc_ac_c* i_spea
         if (dComIfGs_getItem(dComIfGs_getSelectItemIndex(0), true) == prm0 ||
             dComIfGs_getItem(dComIfGs_getSelectItemIndex(1), true) == prm0 ||
             dComIfGs_getItem(dComIfGs_getSelectItemIndex(2), true) == prm0
-#if (PLATFORM_WII || PLATFORM_SHIELD)
+#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
             || dComIfGs_getItem(dComIfGs_getSelectItemIndex(3), true) == prm0
 #endif
            )

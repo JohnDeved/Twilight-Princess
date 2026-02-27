@@ -249,7 +249,7 @@ void dFile_select_c::_create() {
     }
 
     mSelectNum = 0;
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     field_0x4332 = 0;
     #endif
 
@@ -317,7 +317,7 @@ static DataSelProcFunc DataSelProc[] = {
     &dFile_select_c::ToNameMove2,
     &dFile_select_c::nextModeWait,
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     &dFile_select_c::dataSelectInCopy,
     &dFile_select_c::cardToNandDataCopy,
     &dFile_select_c::cardToNandDataCopyWait,
@@ -745,7 +745,7 @@ void dFile_select_c::dataSelectInit() {
             selFileCursorShow();
         }
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectNum;
         #endif
 
@@ -855,7 +855,7 @@ void dFile_select_c::dataSelectStart() {
 
         mLastSelectMenuNum = mSelectMenuNum;
 
-        #if PLATFORM_SHIELD
+        #if PLATFORM_SHIELD || PLATFORM_PC
         ketteiTxtDispAnmInit(0);
         #endif
 
@@ -1114,7 +1114,7 @@ void dFile_select_c::selectDataOpenMove() {
         m3mSelPane[mSelectMenuNum]->getPanePtr()->setAnimation((J2DAnmTransform*)NULL);
         menuCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectMenuNum;
         #endif
 
@@ -1148,7 +1148,7 @@ void dFile_select_c::selectDataOpenEraseMove() {
         mCommand = 2;
         yesnoCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = field_0x0268;
         #endif
 
@@ -1428,7 +1428,7 @@ void dFile_select_c::nameInput() {
         mpName->hideIcon();
         mFadeTimer = 15;
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         mDoGph_gInf_c::startFadeOut(15);
         mFadeFlag = true;
         #endif
@@ -1448,7 +1448,7 @@ void dFile_select_c::nameToDataSelectMove() {
         modoruTxtChange(0);
         selFileCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectNum;
         #endif
 
@@ -1474,7 +1474,7 @@ void dFile_select_c::nameInputFade() {
 
         mFadeTimer = 15;
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         mDoGph_gInf_c::startFadeIn(15);
         mFadeFlag = false;
         #endif
@@ -1514,7 +1514,7 @@ void dFile_select_c::nameInput2() {
         mpName->hideIcon();
         mFadeTimer = 15;
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         mDoGph_gInf_c::startFadeOut(15);
         mFadeFlag = true;
         #endif
@@ -1544,7 +1544,7 @@ void dFile_select_c::backNameInputMove0() {
 
         mFadeTimer = 15;
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         mDoGph_gInf_c::startFadeIn(15);
         mFadeFlag = false;
         #endif
@@ -1584,7 +1584,7 @@ void dFile_select_c::ToCopyPaneMove() {
         mSelIcon2->setPos(pos.x, pos.y, mCpSelPane[field_0x026b]->getPanePtr(), true);
         mSelIcon2->setAlphaRate(1.0f);
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = field_0x026b;
         #endif
 
@@ -1599,7 +1599,7 @@ void dFile_select_c::ToErasePaneMove() {
     if (isHeaderTxtChange == true && isYnMenuMove == true) {
         yesnoCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = field_0x0268;
         #endif
 
@@ -1619,7 +1619,7 @@ void dFile_select_c::backSelectMove() {
         selFileCursorShow();
         mpFileSelect3d->drawOff();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectNum;
         #endif
 
@@ -1902,7 +1902,7 @@ void dFile_select_c::copyToSelBack() {
 
         menuCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectMenuNum;
         #endif
 
@@ -1916,7 +1916,7 @@ void dFile_select_c::copyToSelPaneMove() {
     if (isHeaderTxtChange == true && isYnMenuMove == true) {
         yesnoCursorShow();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = field_0x0268;
         #endif
 
@@ -1930,7 +1930,7 @@ void dFile_select_c::yesnoMenuMoveAnmInitSet(int param_1, int param_2) {
         field_0x0269 = true;
     }
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     field_0x4333 = field_0x0268;
     #endif
 
@@ -1990,7 +1990,7 @@ bool dFile_select_c::yesnoMenuMoveAnm() {
     return rv;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 bool dFile_select_c::GCtoWiiTimeConvert() {
     u8 err_num = 0;
     SaveDataBuf* save_raw_p = mSaveData;
@@ -2244,7 +2244,7 @@ void dFile_select_c::YesNoCancelMove() {
                 mSelIcon->setAlphaRate(1.0f);
                 mSelIcon->setParam(0.96f, 0.84f, 0.06f, 0.5f, 0.5f);
 
-                #if PLATFORM_WII || PLATFORM_SHIELD
+                #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
                 field_0x4333 = mSelectMenuNum;
                 #endif
             }
@@ -2253,7 +2253,7 @@ void dFile_select_c::YesNoCancelMove() {
         case 2:
             selFileCursorShow();
 
-            #if PLATFORM_WII || PLATFORM_SHIELD
+            #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
             field_0x4333 = mSelectNum;
             #endif
 
@@ -2262,7 +2262,7 @@ void dFile_select_c::YesNoCancelMove() {
         case 0:
             mSelIcon2->setAlphaRate(1.0f);
 
-            #if PLATFORM_WII || PLATFORM_SHIELD
+            #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
             field_0x4333 = field_0x026b;
             #endif
 
@@ -2451,7 +2451,7 @@ void dFile_select_c::eraseEndBackSelect() {
         selFileCursorShow();
         mpFileSelect3d->drawOff();
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectNum;
         #endif
 
@@ -2593,7 +2593,7 @@ void dFile_select_c::backDatSelPaneMove() {
             menuCursorShow();
         }
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         field_0x4333 = mSelectMenuNum;
         #endif
 
@@ -2629,7 +2629,7 @@ void dFile_select_c::backDatSelWait2() {
 
 void dFile_select_c::nextModeWait() {}
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void dFile_select_c::dataSelectInCopy() {
     bool isHeaderTxtChange = headerTxtChangeAnm();
     bool isSelectDataBaseMove = selectDataBaseMoveAnm();
@@ -3923,7 +3923,7 @@ void dFile_select_c::errDispInitSet(int param_1, int param_2) {
     mCardCheckProc = MEMCARDCHECKPROC_MSG_WINDOW_INIT_OPEN;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void dFile_select_c::errDispInitSet(char* i_errMesg) {
     headerTxtSet(1, 1, 0);
 
@@ -3995,7 +3995,7 @@ static MemCardCheckFuncT MemCardCheckProc[] = {
     &dFile_select_c::MemCardErrYesNoCursorMoveAnm,
     &dFile_select_c::MemCardSaveDataClear,
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     &dFile_select_c::nandStatCheck,
     &dFile_select_c::gameFileInitSel,
     &dFile_select_c::gameFileInitSelDisp,
@@ -4194,7 +4194,7 @@ void dFile_select_c::MemCardLoadWait() {
             mDataSelProc = DATASELPROC_DATA_SELECT_IN;
         }
     } else if (loadRes == 2) {
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         OS_REPORT("== NAND LOAD ERR %d ==\n", loadRes);
         mCardCheckProc = MEMCARDCHECKPROC_NAND_STAT_CHECK;
         #else
@@ -4203,7 +4203,7 @@ void dFile_select_c::MemCardLoadWait() {
     }
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void dFile_select_c::nandStatCheck() {
     u32 status = mDoMemCd_getStatusNAND();
 
@@ -4318,7 +4318,7 @@ void dFile_select_c::cardDataCopySel() {
                 }
             }
         } else {
-            #if PLATFORM_SHIELD
+            #if PLATFORM_SHIELD || PLATFORM_PC
             cardDataCopyNoSelect();
             #else
             field_0x4332 = 0;
@@ -4347,7 +4347,7 @@ void dFile_select_c::cardDataCopySel2() {
             mDoMemCd_LoadNAND();
             mCardCheckProc = MEMCARDCHECKPROC_LOAD_WAIT_NAND;
         } else {
-            #if PLATFORM_SHIELD
+            #if PLATFORM_SHIELD || PLATFORM_PC
             cardDataCopyNoSelect();
             #else
             field_0x4332 = 0;
@@ -4581,7 +4581,7 @@ void dFile_select_c::formatYesSelDispInitSet() {
     field_0x0268 = 0;
     field_0x0269 = 1;
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     field_0x4333 = field_0x0268;
     #endif
 
@@ -4788,7 +4788,7 @@ void dFile_select_c::MemCardMakeGameFileCheck() {
     }
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void dFile_select_c::gameFileInitSel() {
     if (errYesNoSelect() != 0) {
         if (field_0x0268 != 0) {
@@ -5125,7 +5125,7 @@ bool dFile_select_c::nameMoveAnm() {
     return ret;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void dFile_select_c::saveDataClearInit() {
     setInitSaveData();
     dataSave();

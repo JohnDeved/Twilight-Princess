@@ -73,7 +73,7 @@ qS4 =  7.70381505559019352791e-02; /* 0x3FB3B8C5, 0xB12E9282 */
 		else return pi+2.0*pio2_lo;	/* acos(-1)= pi */
 	    }
 
-		#if PLATFORM_SHIELD
+		#if PLATFORM_SHIELD || PLATFORM_PC
            errno = EDOM;
         #endif
 

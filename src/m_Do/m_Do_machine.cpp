@@ -393,7 +393,7 @@ void myHeapCheckRecursive(JKRHeap* p_heap) {
 
 void mDoMch_HeapCheckAll() {
     myHeapCheckRecursive(JKRGetRootHeap());
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     myHeapCheckRecursive(JKRGetRootHeap2());
 #endif
 #if DEBUG

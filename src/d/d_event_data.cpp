@@ -1325,7 +1325,7 @@ void dEvDtStaff_c::specialProcTimekeeper() {
         case 'COUN':
             idata = dComIfGp_evmng_getMyIntegerP(staffId, "Timer");
 
-            #if PLATFORM_SHIELD
+            #if PLATFORM_SHIELD || PLATFORM_PC
             if (idata == NULL) {
                 idata = dComIfGp_evmng_getMyIntegerP(staffId, "S");
             }

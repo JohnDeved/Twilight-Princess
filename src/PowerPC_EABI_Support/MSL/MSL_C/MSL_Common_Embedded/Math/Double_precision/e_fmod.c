@@ -120,7 +120,7 @@ double __ieee754_fmod(x, y) double x, y;
     while (n--) {
         hz = hx - hy;
         lz = lx - ly;
-        #if PLATFORM_SHIELD
+        #if PLATFORM_SHIELD || PLATFORM_PC
         if (!hz)
             if((lx >> diff) == (ly >> diff))
                 return Zero[(unsigned)sx>>31];
@@ -140,7 +140,7 @@ double __ieee754_fmod(x, y) double x, y;
     }
     hz = hx - hy;
     lz = lx - ly;
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     if (!hz)
         if((lx >> diff) == (ly >> diff))
             return Zero[(unsigned)sx>>31];

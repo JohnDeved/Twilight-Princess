@@ -54,7 +54,7 @@ struct DynamicModuleControlBase {
     static u8 verbose;
     #endif
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     static JKRHeap* getHeap() { return m_heap; }
 
     static JKRHeap* m_heap;

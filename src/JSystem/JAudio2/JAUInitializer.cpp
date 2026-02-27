@@ -75,7 +75,7 @@ void JAU_JASInitializer::initJASystem(JKRSolidHeap* heap) {
         JASWaveArcLoader::setCurrentDir(waveArcDir_);
     }
 
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     JASDriver::setOutputMode(1);
     #else
     switch (OSGetSoundMode()) {

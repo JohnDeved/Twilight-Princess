@@ -23,7 +23,7 @@ public:
         COMM_ATTACH_e,
         COMM_DETACH_e,
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         COMM_RESTORE_NAND_e,
         COMM_STORE_NAND_e,
         COMM_STORE_SETUP_NAND_e,
@@ -84,7 +84,7 @@ public:
     s32 checkspace();
     void setCardState(s32);
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     void loadNAND();
     void restoreNAND();
     s32 LoadSyncNAND(void* i_buffer, u32 i_size, u32 i_position);
@@ -204,7 +204,7 @@ inline void mDoMemCd_UpDate() {
     g_mDoMemCd_control.update();
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 inline void mDoMemCd_saveNAND(void* data, u32 length, u32 position) {
     g_mDoMemCd_control.saveNAND(data, length, position);
 }

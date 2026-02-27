@@ -2177,7 +2177,7 @@ dMenu_Fmap2DTop_c::dMenu_Fmap2DTop_c(JKRExpHeap* i_heap, STControl* i_stick) {
     dPaneClass_showNullPane(mpTitleScreen);
     mpTitleRoot = new CPaneMgrAlphaMorf(mpTitleScreen, 'ROOT', 2, NULL);
     JUT_ASSERT(3881, mpTitleRoot != NULL);
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     for (int i = 0; i < 2; i++) {
         mpArrowLAlpha[i] = NULL;
         mpArrowRAlpha[i] = NULL;
@@ -2201,7 +2201,7 @@ dMenu_Fmap2DTop_c::dMenu_Fmap2DTop_c(JKRExpHeap* i_heap, STControl* i_stick) {
     mpAnalogStick = new CPaneMgr(mpTitleScreen, 'as_n', 0, NULL);
     mpDpad = new CPaneMgr(mpTitleScreen, 'juji_c_n', 0, NULL);
 #endif
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     mpButtonA = new CPaneMgr(mpTitleScreen, 'abtn_n', 2, NULL);
     JUT_ASSERT(3935, mpButtonA != NULL);
     mpButtonB = new CPaneMgr(mpTitleScreen, 'bbtn_n', 2, NULL);

@@ -76,7 +76,7 @@ struct TProcessor {
             JUT_ASSERT(192, upsz_>0);
             upsz_--;
 
-            #if PLATFORM_SHIELD
+            #if PLATFORM_SHIELD || PLATFORM_PC
             stack[upsz_] = NULL;
             #endif
         }

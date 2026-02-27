@@ -32,7 +32,7 @@
 #include "d/d_s_play.h"
 #include "DynamicLink.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/sc.h>
 #endif
 
@@ -194,7 +194,7 @@ static void drawHeapMap() {
                 heap = mDoExt_getGameHeap();
                 OSReport_Error("ゲームヒープマップ表示\n");
             } else if (l_heapMapMode == 2) {
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
                 heap = (JKRExpHeap*)DynamicModuleControlBase::getHeap();
                 OSReport_Error("ダイナミックリンクヒープマップ表示\n");
 #endif
@@ -248,7 +248,7 @@ static ResTIMG* createTimg(u16 width, u16 height, u32 format) {
 
 JUTFader* mDoGph_gInf_c::mFader;
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 ResTIMG* mDoGph_gInf_c::m_fullFrameBufferTimg;
 void* mDoGph_gInf_c::m_fullFrameBufferTex;
 #endif
@@ -278,7 +278,7 @@ u8 mDoGph_gInf_c::mFade;
 bool mDoGph_gInf_c::mAutoForcus;
 
 void mDoGph_gInf_c::create() {
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     VISetTrapFilter(0);
     #endif
 
@@ -300,7 +300,7 @@ void mDoGph_gInf_c::create() {
     JUTProcBar::getManager()->setVisible(false);
     JUTDbPrint::getManager()->setVisible(false);
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     m_fullFrameBufferTimg = createTimg(FB_WIDTH, FB_HEIGHT, 6);
     JUT_ASSERT(366, m_fullFrameBufferTimg != NULL);
     m_fullFrameBufferTex = (char*)m_fullFrameBufferTimg + sizeof(ResTIMG);
@@ -321,7 +321,7 @@ void mDoGph_gInf_c::create() {
     mBackColor = g_clearColor;
     mFadeColor = g_clearColor;
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     if (SCGetAspectRatio() == 0) {
         offWide();
     } else {
@@ -335,7 +335,7 @@ void mDoGph_gInf_c::create() {
 static bool data_80450BE8;
 
 void mDoGph_gInf_c::beginRender() {
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     VISetTrapFilter(fapGmHIO_getTrapFilter() ? 1 : 0);
     VISetGamma((VIGamma)fapGmHIO_getGamma());
     #endif
@@ -346,12 +346,12 @@ void mDoGph_gInf_c::beginRender() {
 
     JFWDisplay::getManager()->beginRender();
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     VIEnableDimming(1);
     #endif
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void mDoGph_gInf_c::resetDimming() {
     VIEnableDimming(0);
 }
@@ -375,7 +375,7 @@ void mDoGph_gInf_c::onBlure() {
     onBlure(cMtx_getIdentity());
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 GXTexObj mDoGph_gInf_c::m_fullFrameBufferTexObj;
 #endif
 
@@ -469,7 +469,7 @@ void mDoGph_gInf_c::calcFade() {
     }
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 u32 mDoGph_gInf_c::csr_c::m_blurID;
 
 void mDoGph_gInf_c::csr_c::particleExecute() {
@@ -488,13 +488,13 @@ f32 mDoGph_gInf_c::m_minXF;
 
 f32 mDoGph_gInf_c::m_minYF;
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 mDoGph_gInf_c::csr_c* mDoGph_gInf_c::m_baseCsr;
 
 mDoGph_gInf_c::csr_c* mDoGph_gInf_c::m_csr;
 #endif
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
 JKRHeap* mDoGph_gInf_c::m_heap;
 #endif
 
@@ -664,7 +664,7 @@ void mDoGph_gInf_c::setWideZoomLightProjection(Mtx& m) {
 }
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 void mDoGph_gInf_c::entryBaseCsr(mDoGph_gInf_c::csr_c* i_entry) {
     JUT_ASSERT(876, m_baseCsr == NULL);
     m_baseCsr = i_entry;
@@ -2125,7 +2125,7 @@ int mDoGph_Create() {
     mDoExt_restoreCurrentHeap();
 
     OS_REPORT("mDoGph_Create 使用ヒープサイズ=%08x\n", var_r30);
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     mDoGph_gInf_c::setHeap(heap);
     #endif
 

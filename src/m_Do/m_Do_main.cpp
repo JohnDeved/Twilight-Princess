@@ -35,8 +35,14 @@
 #include "SSystem/SComponent/c_counter.h"
 #include <string>
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/sc.h>
+#endif
+
+#if PLATFORM_PC || PLATFORM_NX_HB
+#include "pal/pal_milestone.h"
+#include "pal/gx/gx_stub_tracker.h"
+#include <stdlib.h>
 #endif
 
 class mDoMain_HIO_c : public mDoHIO_entry_c {
@@ -46,7 +52,7 @@ public:
 };
 
 void version_check() {
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
     if (!strcmp("20Apr2004", "20Apr2004") && !strcmp("Patch2", "Patch2")) {
         return;
     }
@@ -670,6 +676,10 @@ void main01(void) {
     // Setup heaps, setup exception manager, set RNG seed, setup DVDError Thread, setup Memory card Thread
     mDoMch_Create();
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_milestone("HEAP_INIT", MILESTONE_HEAP_INIT, "mDoMch_Create done");
+#endif
+
     #if DEBUG
     FixedMemoryCheck* local_20 = FixedMemoryCheck::easyCreate(_f_text, intptr_t(_e_text - _f_text));
     FixedMemoryCheck* local_24 = FixedMemoryCheck::easyCreate(_f_ctors, intptr_t(_e_ctors - _f_ctors));
@@ -680,8 +690,16 @@ void main01(void) {
     // setup FrameBuffer and ZBuffer, init display lists
     mDoGph_Create();
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_milestone("GFX_INIT", MILESTONE_GFX_INIT, "mDoGph_Create done");
+#endif
+
     // Setup control pad
     mDoCPd_c::create();
+
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_milestone("PAD_INIT", MILESTONE_PAD_INIT, "mDoCPd_c::create done");
+#endif
 
     RootHeapCheck.setHeap((JKRExpHeap*)JKRGetRootHeap());
     SystemHeapCheck.setHeap((JKRExpHeap*)JKRGetSystemHeap());
@@ -712,6 +730,10 @@ void main01(void) {
     mDoDvdThd_callback_c::create((mDoDvdThd_callback_func)LOAD_COPYDATE, NULL);
     fapGm_Create(); // init framework
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_milestone("FRAMEWORK_INIT", MILESTONE_FRAMEWORK_INIT, "fapGm_Create done");
+#endif
+
     #if DEBUG
     mDoMain_HIO.entryHIO("メイン");
     g_regHIO.id = mDoHIO_createChild("レジスタ", &g_regHIO);
@@ -727,6 +749,25 @@ void main01(void) {
     do {
         static u32 frame;
         frame++;
+
+#if PLATFORM_PC || PLATFORM_NX_HB
+        if (frame == 1)
+            pal_milestone_frame("FIRST_FRAME", MILESTONE_FIRST_FRAME, frame);
+        if (frame == 60)
+            pal_milestone_frame("FRAMES_60", MILESTONE_FRAMES_60, frame);
+        if (frame == 300)
+            pal_milestone_frame("FRAMES_300", MILESTONE_FRAMES_300, frame);
+        if (frame == 1800)
+            pal_milestone_frame("FRAMES_1800", MILESTONE_FRAMES_1800, frame);
+        if (getenv("TP_TEST_FRAMES")) {
+            u32 max_frames = (u32)atoi(getenv("TP_TEST_FRAMES"));
+            if (frame >= max_frames) {
+                pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
+                gx_stub_report();
+                exit(0);
+            }
+        }
+#endif
 
         #if DEBUG
         if (memorycheck_check_frame != 0 && frame % memorycheck_check_frame == 0) {
@@ -866,13 +907,19 @@ static u8 mainThreadStack[32768];
 OSThread mainThread;
 
 void main(int argc, const char* argv[]) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_milestone_init();
+    pal_milestone("BOOT_START", MILESTONE_BOOT_START, "main entry");
+    extern void pal_crash_init(void);
+    pal_crash_init();
+#endif
     OSThread* current_thread = OSGetCurrentThread();
     u8* stack = mainThreadStack;
     mDoMain::sPowerOnTime = OSGetTime();
     OSReportInit();
     version_check();
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     mDoRst::setResetData((mDoRstData*)OSAllocFromMEM1ArenaLo(0x18, 4));
     #else
     mDoRst::setResetData((mDoRstData*)OSAllocFromArenaLo(0x18, 4));
@@ -896,13 +943,13 @@ void main(int argc, const char* argv[]) {
         mDoRst::offReturnToMenu();
     }
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     SCInit();
     #endif
 
     dComIfG_ct();
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     u32 status;
     do {
         status = SCCheckStatus();

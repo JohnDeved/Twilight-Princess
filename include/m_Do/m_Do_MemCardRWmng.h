@@ -4,7 +4,7 @@
 #include "global.h"
 #include <dolphin/card.h>
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/nand.h>
 #endif
 
@@ -31,7 +31,7 @@ static u64 mDoMemCdRWm_CalcCheckSumGameData(void* data, u32 size);
 BOOL mDoMemCdRWm_TestCheckSumGameData(void* data);
 void mDoMemCdRWm_SetCheckSumGameData(u8* data, u8 dataNum);
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 s32 mDoMemCdRWm_RestoreNAND(NANDFileInfo* param_0, void* param_1, u32 param_2);
 s32 mDoMemCdRWm_StoreNAND(NANDFileInfo* param_0, void* param_1, u32 param_2);
 s32 mDoMemCdRWm_StoreBannerNAND(NANDFileInfo*);

@@ -1026,7 +1026,7 @@ public:
 #if VERSION > VERSION_GCN_JPN
     const
 #endif
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     s16
 #else
     u16

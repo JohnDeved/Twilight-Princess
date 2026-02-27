@@ -4,7 +4,7 @@
 #include <revolution/mtx.h>
 #include <revolution/kpad.h>
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
 #define RECPD_SAMPLING_BUF_COUNT 16
 #else
 #define RECPD_SAMPLING_BUF_COUNT 10
@@ -60,12 +60,12 @@ public:
         void calcDpdPlayBoxPos();
 
         /* 0x0000 */ int field_0x0;
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         /* 0x0004 */ u8 unk_shield_0x04[0x8 - 0x4];
 #endif
         /* 0x0004 */ KPADStatus field_0x4[RECPD_SAMPLING_BUF_COUNT];
         /* 0x0554 */ int field_0x554;
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         /* 0x0558 */ u8 unk_shield_0x558[0x55c - 0x558];
 #endif
         /* 0x0558 */ KPADStatus field_0x558;

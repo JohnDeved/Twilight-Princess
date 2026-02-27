@@ -699,7 +699,7 @@ void daNpcBouS_c::setParam() {
     attention_info.distances[fopAc_attn_LOCK_e] = getDistTableIdx(attention_distance, attention_angle);
     attention_info.distances[fopAc_attn_TALK_e] = attention_info.distances[fopAc_attn_LOCK_e];
     attention_info.distances[fopAc_attn_SPEAK_e] = getDistTableIdx(talk_distance, talk_angle);
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     attention_info.flags = fopAc_AttnFlag_SPEAK_e | fopAc_AttnFlag_TALK_e;
     #else
     attention_info.flags = mMsgNo > 0 ? fopAc_AttnFlag_SPEAK_e | fopAc_AttnFlag_TALK_e : 0;

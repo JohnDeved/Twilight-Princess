@@ -545,7 +545,7 @@ skip:
 void dMenu_Option_c::_draw() {
     if (mpArchive != NULL) {
         J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
-        #if (PLATFORM_WII || PLATFORM_SHIELD)
+        #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
         if (mpCalibration != NULL && field_0x3f4 != 5 && field_0x3f4 != 0 && field_0x3f4 != 4) {
             mpCalibration->draw();
             return;

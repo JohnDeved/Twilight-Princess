@@ -189,7 +189,7 @@ void JKRThreadSwitch::callback(OSThread* current, OSThread* next) {
                     next_heap = JKRHeap::getCurrentHeap();
                 } else if (JKRHeap::getRootHeap()->isSubHeap(next_heap)) {
                     continue;
-                #if PLATFORM_WII || PLATFORM_SHIELD
+                #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
                 } else if (JKRHeap::getRootHeap2()->isSubHeap(next_heap)) {
                     continue;
                 #endif

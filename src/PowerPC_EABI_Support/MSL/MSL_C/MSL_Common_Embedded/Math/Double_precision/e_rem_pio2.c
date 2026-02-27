@@ -131,7 +131,7 @@ double x, y[];
             i = j - (((__HI(y[0])) >> 20) & 0x7ff);
             if (i > 16) { /* 2nd iteration needed, good to 118 */
                 t = r;
-				#if PLATFORM_WII || PLATFORM_SHIELD
+				#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
                 w = fn * pio2_2;
 				r = t - w;
 				w = fn * pio2_2t - ((t - r) - w);

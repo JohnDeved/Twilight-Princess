@@ -428,7 +428,7 @@ f64 TFunctionValue_composite::composite_divide(TVector_pointer<TFunctionValue*> 
     return fData;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #define NUMERIC_LIMIT double
 #else
 #define NUMERIC_LIMIT float

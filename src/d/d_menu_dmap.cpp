@@ -24,7 +24,7 @@
 #include "f_op/f_op_msg_mng.h"
 #include "m_Do/m_Do_graphic.h"
 
-#if (PLATFORM_WII || PLATFORM_SHIELD)
+#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
 #define POINTER_OPT dComIfGs_getOptPointer()
 #else
 #define POINTER_OPT 0
@@ -145,7 +145,7 @@ void dMenu_DmapBg_c::mapScreenInit() {
         dPaneClass_showNullPane(mMapScreen[i]);
     }
     
-    #if (PLATFORM_WII || PLATFORM_SHIELD)
+    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
     mpBlack = new CPaneMgrAlpha(mMapScreen[0], 'm_black', 2, NULL);
     JUT_ASSERT(699, mpBlack != NULL);
     mpBlack->setAlphaRate(0.0f);
@@ -300,7 +300,7 @@ void dMenu_DmapBg_c::buttonIconScreenInit() {
     JUT_ASSERT(922, fg != false);
     dPaneClass_showNullPane(mButtonScreen);
 
-    #if (PLATFORM_WII || PLATFORM_SHIELD)
+    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
     mDecorateScreen = new J2DScreen();
     JUT_ASSERT(926, mDecorateScreen != NULL);
 
