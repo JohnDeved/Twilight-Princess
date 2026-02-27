@@ -136,6 +136,8 @@ void J3DPSMtxArrayConcat(f32 (*a)[4], f32 (*b)[4], f32 (*out)[4], u32 count) {
 
 JSUOutputStream::~JSUOutputStream() {}
 s32 JSUOutputStream::skip(s32 count, s8 fill) { (void)count; (void)fill; return 0; }
+s32 JSUOutputStream::write(const void* src, s32 length) { (void)src; (void)length; return 0; }
+void JSUOutputStream::write(const char* str) { (void)str; }
 
 s32 JSURandomOutputStream::seek(s32 offset, JSUStreamSeekFrom origin) {
     (void)offset; (void)origin; return 0;

@@ -144,13 +144,10 @@ void dMsgObject_c::setSelectWord(int i_no, const char* i_word) { (void)i_no; (vo
 /* mDoExt packet classes                                            */
 /* ================================================================ */
 
-#include "m_Do/m_Do_ext.h"
+/* m_Do_ext.cpp now compiled - only keep destructors if still needed */
 
 mDoExt_offCupOnAupPacket::~mDoExt_offCupOnAupPacket() {}
-void mDoExt_offCupOnAupPacket::draw() {}
-
 mDoExt_onCupOffAupPacket::~mDoExt_onCupOffAupPacket() {}
-void mDoExt_onCupOffAupPacket::draw() {}
 
 /* ================================================================ */
 /* mDoMemCd_Ctrl_c::command_attach                                  */
@@ -194,40 +191,6 @@ void GFSetZMode(u8 compare_enable, GXCompare func, u8 update_enable) {
 /* JSU Stream classes                                               */
 /* ================================================================ */
 
-#include "JSystem/JSupport/JSUInputStream.h"
-#include "JSystem/JSupport/JSUOutputStream.h"
-
-JSUInputStream::~JSUInputStream() {}
-
-s32 JSUInputStream::skip(s32 amount) {
-    (void)amount;
-    return 0;
-}
-
-s32 JSUInputStream::read(void* dst, s32 length) {
-    (void)dst; (void)length;
-    return 0;
-}
-
-char* JSUInputStream::read(char* dst) {
-    if (dst) dst[0] = '\0';
-    return dst;
-}
-
-JSUOutputStream::~JSUOutputStream() {}
-
-s32 JSUOutputStream::skip(s32 amount, s8 fill) {
-    (void)amount; (void)fill;
-    return 0;
-}
-
-s32 JSUOutputStream::write(const void* src, s32 length) {
-    (void)src; (void)length;
-    return 0;
-}
-
-void JSUOutputStream::write(const char* str) {
-    (void)str;
-}
+/* JSU stream stubs are in pal_remaining_stubs.cpp; JSUInputStream is compiled from source */
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

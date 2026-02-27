@@ -28,6 +28,11 @@ void DCStoreRangeNoSync(void* addr, u32 nBytes) { (void)addr; (void)nBytes; }
 void DCInvalidateRange(void* addr, u32 nBytes) { (void)addr; (void)nBytes; }
 void ICInvalidateRange(void* addr, u32 nBytes) { (void)addr; (void)nBytes; }
 
+/* ---- Globals from OSExec.h (AT_ADDRESS → extern on GCC) ---- */
+typedef struct { int valid; u32 restartCode; u32 bootDol; void* regionStart; void* regionEnd; int argsUseDefault; void* argsAddr; } OSExecParams;
+OSExecParams* __OSExecParams = NULL;
+s32 __OSAppLoaderOffset = 0;
+
 /* ---- OS functions ---- */
 void OSReport(const char* fmt, ...) {
     va_list args;
