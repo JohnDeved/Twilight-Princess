@@ -435,3 +435,5 @@ from the first successful compile:
 
 The agent can work on Steps 3–7 in parallel, with CI continuously reporting which milestone
 each commit reaches. No human needs to run the game manually at any point.
+
+For the step-by-step agent implementation guide, see [Agent Port Workflow](agent-port-workflow.md).
