@@ -128,7 +128,7 @@ u32 OSGetPhysicalMem2Size(void) { return 64 * 1024 * 1024; }
 /* OS Arena / Memory                                                */
 /* ================================================================ */
 
-static u8 s_arena_mem[32 * 1024 * 1024]; /* 32 MB arena */
+static u8 s_arena_mem[64 * 1024 * 1024]; /* 64 MB arena — headroom for 64-bit pointer overhead + heap structure padding */
 static u8* s_arena_lo = s_arena_mem;
 static u8* s_arena_hi = s_arena_mem + sizeof(s_arena_mem);
 
@@ -341,9 +341,27 @@ void OSFillFPUContext(OSContext* context) { (void)context; }
 
 static u8 s_stack_buf[4096] __attribute__((aligned(32)));
 
-u32 OSGetStackPointer(void) { return (u32)(uintptr_t)(s_stack_buf + sizeof(s_stack_buf)); }
-u32 OSSwitchStack(u32 newsp) { (void)newsp; return (u32)(uintptr_t)(s_stack_buf + sizeof(s_stack_buf)); }
+u32 OSGetStackPointer(void) {
+    /* Return the actual stack pointer so bounds checks pass on 64-bit.
+     * This avoids falling into OSSwitchFiberEx path in mDoPrintf. */
+    void* sp;
+#if defined(__x86_64__)
+    __asm__ volatile("movq %%rsp, %0" : "=r"(sp));
+#elif defined(__aarch64__)
+    __asm__ volatile("mov %0, sp" : "=r"(sp));
+#else
+    sp = s_stack_buf + sizeof(s_stack_buf);
+#endif
+    return (u32)(uintptr_t)sp;
+}
+u32 OSSwitchStack(u32 newsp) { (void)newsp; return OSGetStackPointer(); }
 int OSSwitchFiber(u32 pc, u32 newsp) { (void)pc; (void)newsp; return 0; }
+void OSSwitchFiberEx(u32 arg0, u32 arg1, u32 arg2, u32 arg3, u32 pc, u32 newsp) {
+    /* On PC, function pointers don't fit in u32. Just call vprintf directly
+     * since that's the only caller (mDoPrintf_vprintf_Interrupt). */
+    (void)arg2; (void)arg3; (void)pc; (void)newsp;
+    vprintf((const char*)(uintptr_t)arg0, *(va_list*)(uintptr_t)arg1);
+}
 
 /* ================================================================ */
 /* OS Error                                                         */

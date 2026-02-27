@@ -833,6 +833,11 @@ int mDoMch_Create() {
     arenaSize -= 0x6C00;
     arenaSize -= 0xC800;
     #endif
+    #if PLATFORM_PC
+    /* On 64-bit, JKRExpHeap node headers are larger (8-byte pointers).
+     * Reduce system heap to leave room for sub-heap allocation overhead. */
+    arenaSize -= 0x10000;
+    #endif
     JFWSystem::setSysHeapSize(arenaSize);
     my_PrintHeap("システムヒープ", arenaSize);
 
