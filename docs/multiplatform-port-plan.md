@@ -144,7 +144,7 @@ rendering code.
 ### macOS solved: Metal instead of deprecated OpenGL
 
 The original plan specified OpenGL 4.1 for macOS. Apple deprecated OpenGL in macOS 10.14
-(2018) and has not updated it since. This means:
+(2018) and has not updated it since the deprecation. This means:
 - No compute shader support beyond GL 4.1
 - Driver bugs will never be fixed
 - Performance is degraded compared to Metal
