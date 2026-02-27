@@ -80,15 +80,10 @@ extern unsigned char pal_fake_mem1[]; /* defined in pal_sdk_stubs.cpp */
 }
 #endif
 
-/* Redefine the cached region prefix so that all OS_BASE_CACHED-relative
- * addresses point into our fake buffer instead of 0x80000000. */
-#undef OS_CACHED_REGION_PREFIX
-#undef OS_BASE_CACHED
-#undef OSPhysicalToCached
-#undef OSCachedToPhysical
-#define OS_BASE_CACHED          ((unsigned long)(pal_fake_mem1))
-#define OSPhysicalToCached(paddr)  ((void*)((unsigned long)(pal_fake_mem1) + (unsigned long)(paddr)))
-#define OSCachedToPhysical(caddr)  ((unsigned long)((unsigned long)(caddr) - (unsigned long)(pal_fake_mem1)))
+/* OS_BASE_CACHED + OSPhysicalToCached/OSCachedToPhysical overrides are now
+ * directly in include/revolution/os.h and include/dolphin/os.h so they apply
+ * at the definition site (needed for static initializers and correct 64-bit
+ * address handling). */
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */
 
 #endif /* PAL_PLATFORM_H */

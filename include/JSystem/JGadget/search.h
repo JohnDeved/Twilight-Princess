@@ -16,6 +16,14 @@ struct TExpandStride_<s32> {
     static s32 get(s32 n) { return n << 3; }
 };
 
+#if defined(VERSION) && (VERSION == 13 || VERSION == 14)
+/* On 64-bit, iterator difference_type is 'long', not 'int' (s32). */
+template <>
+struct TExpandStride_<long> {
+    static long get(long n) { return n << 3; }
+};
+#endif
+
 struct TPR1IsEqual_string_ {
     TPR1IsEqual_string_(const char* sz) {
         string_ = sz;

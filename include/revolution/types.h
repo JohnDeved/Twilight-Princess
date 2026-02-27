@@ -5,8 +5,15 @@ typedef signed   char          s8;
 typedef unsigned char          u8;
 typedef signed   short int     s16;
 typedef unsigned short int     u16;
+#if defined(VERSION) && (VERSION == 13 || VERSION == 14)
+/* PC/NX port: 'unsigned long' is 8 bytes on 64-bit Linux/macOS.
+ * Use 'unsigned int' for 32-bit types to match the original 32-bit ABI. */
+typedef signed   int           s32;
+typedef unsigned int           u32;
+#else
 typedef signed   long          s32;
 typedef unsigned long          u32;
+#endif
 typedef signed   long long int s64;
 typedef unsigned long long int u64;
 

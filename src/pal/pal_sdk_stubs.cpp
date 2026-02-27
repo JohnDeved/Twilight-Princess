@@ -80,7 +80,35 @@ static void pal_init_main_thread(void);
 /* provide a zeroed buffer so code reading low-memory globals works. */
 /* ================================================================ */
 
-unsigned char pal_fake_mem1[0x4000] __attribute__((aligned(4096)));
+/* Pre-initialized fake MEM1 region.
+ * On GC/Wii, physical address 0 maps to cached 0x80000000.
+ * Critical values that are read during C++ static initialization:
+ *   +0x00: OSBootInfo (DVDDiskID + magic + version + memorySize)
+ *   +0xF8: __OSBusClock (read by OS_TIMER_CLOCK macro)
+ *   +0xFC: __OSCoreClock
+ * These must be non-zero BEFORE any static constructors run.
+ *
+ * We use a constructor with the lowest possible priority (101) and
+ * also ensure CMakeLists puts pal_sdk_stubs.cpp first in link order.
+ * The real solution uses .init_array ordering.
+ */
+#define PAL_MEM1_SIZE 0x4000
+unsigned char pal_fake_mem1[PAL_MEM1_SIZE] __attribute__((aligned(4096)));
+
+/* This must run before ANY other static initializer in the program.
+ * By placing it in .init_array with priority 101 (just after glibc's
+ * own priority-100 entries), it runs before C++ static initializers
+ * which have the default priority 65535. */
+static void __attribute__((constructor(101))) pal_early_init(void) {
+    /* Wii bus clock: 243 MHz */
+    *(u32*)(pal_fake_mem1 + 0xF8) = 243000000u;
+    /* Wii core clock: 729 MHz */
+    *(u32*)(pal_fake_mem1 + 0xFC) = 729000000u;
+    /* OSBootInfo at offset 0x20 (after 32-byte DVDDiskID) */
+    *(u32*)(pal_fake_mem1 + 0x20) = 0x0D15EA5Eu; /* magic */
+    *(u32*)(pal_fake_mem1 + 0x24) = 1u;          /* version */
+    *(u32*)(pal_fake_mem1 + 0x28) = 24u * 1024u * 1024u; /* memorySize */
+}
 
 /* ================================================================ */
 /* OS Init / System                                                 */
@@ -88,13 +116,8 @@ unsigned char pal_fake_mem1[0x4000] __attribute__((aligned(4096)));
 
 void OSInit(void) {
     pal_init_main_thread();
-    /* Populate OSBootInfo at pal_fake_mem1[0] (physical address 0).
-     * JKRHeap::initArena reads memorySize from here. */
-    /* OSBootInfo layout: DVDDiskID(32) + magic(4) + version(4) + memorySize(4) */
-    u32* bootInfo = (u32*)(pal_fake_mem1 + 32); /* skip DVDDiskID */
-    bootInfo[0] = 0x0D15EA5E; /* magic */
-    bootInfo[1] = 1;          /* version */
-    bootInfo[2] = 24 * 1024 * 1024; /* memorySize: 24 MB (GC MEM1) */
+    /* pal_fake_mem1 is pre-initialized at compile time with:
+     *   OSBootInfo (memorySize=24MB), __OSBusClock=243MHz, __OSCoreClock=729MHz */
 }
 void OSRegisterVersion(const char* id) { (void)id; }
 /* Return GameCube/Wii-compatible memory sizes for SDK compatibility */
