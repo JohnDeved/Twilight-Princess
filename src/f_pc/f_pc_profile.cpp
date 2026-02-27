@@ -9,5 +9,8 @@ process_profile_definition** g_fpcPf_ProfileList_p;
 
 process_profile_definition* fpcPf_Get(s16 i_profname) {
     int index = i_profname;
+#if PLATFORM_PC
+    if (g_fpcPf_ProfileList_p == NULL) return NULL;
+#endif
     return g_fpcPf_ProfileList_p[index];
 }

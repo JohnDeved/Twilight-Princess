@@ -1519,6 +1519,16 @@ static void drawItem3D() {
 }
 
 int mDoGph_Painter() {
+#if PLATFORM_PC
+    /* On PC without GX shim or game assets, skip entire render pipeline.
+     * This prevents NULL dereferences from unloaded actors/resources.
+     * Re-enable once GX shim (Step 5) is implemented. */
+    if (JFWDisplay::getManager() != NULL) {
+        mDoGph_gInf_c::beginRender();
+        mDoGph_gInf_c::endRender();
+    }
+    return 1;
+#else
     #if DEBUG
     drawHeapMap();
     #endif
@@ -2107,6 +2117,7 @@ int mDoGph_Painter() {
     mDoGph_gInf_c::offWideZoom();
     #endif
     return 1;
+#endif /* !PLATFORM_PC */
 }
 
 #if DEBUG

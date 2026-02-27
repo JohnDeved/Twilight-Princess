@@ -68,6 +68,13 @@ set(PAL_SOURCES
     src/pal/gx/gx_fifo.cpp
 )
 
+# --- REL modules that are dynamically loaded on console but statically linked on PC ---
+# Note: f_pc_profile_lst.cpp references hundreds of actor profiles from other RELs.
+# Instead of compiling it, we call ModuleProlog directly (which sets g_fpcPf_ProfileList_p)
+# via a stub in pal_remaining_stubs.cpp that only includes profiles already compiled.
+set(REL_SOURCES
+)
+
 # --- Include directories ---
 set(INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}
@@ -79,7 +86,7 @@ set(INCLUDE_DIRS
 )
 
 # --- Executable ---
-add_executable(tp-pc ${GAME_SOURCES} ${PAL_SOURCES})
+add_executable(tp-pc ${GAME_SOURCES} ${PAL_SOURCES} ${REL_SOURCES})
 
 target_include_directories(tp-pc PRIVATE ${INCLUDE_DIRS})
 

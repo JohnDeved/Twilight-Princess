@@ -946,12 +946,18 @@ int cDyl_LinkASync(s16 i_ProfName) {
 static int cDyl_InitCallback(void* param_0) {
     JUT_ASSERT(335, !cDyl_Initialized);
 
+#if PLATFORM_PC
+    /* On PC, the profile list is not loaded from RELS.arc.
+     * g_fpcPf_ProfileList_p stays NULL — fpcPf_Get handles this case.
+     * Scene/actor creation requests will be safely ignored. */
+    cDyl_Initialized = true;
+    return 1;
+#else
     #if PLATFORM_GCN
     JKRHeap* parentHeap = mDoExt_getArchiveHeap();
     #else
     JKRHeap* parentHeap = DynamicModuleControlBase::getHeap();
     #endif
-
     JKRFileCache* loader = JKRMountDvdDrive("/", parentHeap, NULL);
     DynamicModuleControl::initialize();
 
@@ -973,6 +979,7 @@ static int cDyl_InitCallback(void* param_0) {
 
     fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
     return 1;
+#endif
 }
 
 static mDoDvdThd_callback_c* cDyl_DVD;

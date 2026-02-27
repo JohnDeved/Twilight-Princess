@@ -118,6 +118,9 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
     u32 size;
 
     pprofile = (process_profile_definition*)fpcPf_Get(i_profname);
+#if PLATFORM_PC
+    if (pprofile == NULL) return NULL;
+#endif
     size = pprofile->process_size + pprofile->unk_size;
 
     pprocess = (base_process_class*)cMl::memalignB(-4, size);
