@@ -339,6 +339,7 @@ void pal_gx_write_vtx_u16(u16 val);
 void pal_gx_write_vtx_u8(u8 val);
 void pal_gx_write_vtx_s16(s16 val);
 void pal_gx_write_vtx_s8(s8 val);
+void pal_gx_write_vtx_s32(s32 val);
 
 /* Clear */
 void pal_gx_set_copy_clear(GXColor color, u32 z);

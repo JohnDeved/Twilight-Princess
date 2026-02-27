@@ -44,6 +44,35 @@ extern volatile PPCWGPipe pal_gx_wgpipe;
 #define FUNC_INDEX8(name)    void name##1x8(const u8 x);
 #define FUNC_INDEX16(name)   void name##1x16(const u16 x);
 
+#elif PLATFORM_PC || PLATFORM_NX_HB
+
+// PC port: redirect vertex data to state machine capture buffer
+void pal_gx_write_vtx_f32(f32 val);
+void pal_gx_write_vtx_u32(u32 val);
+void pal_gx_write_vtx_u16(u16 val);
+void pal_gx_write_vtx_u8(u8 val);
+void pal_gx_write_vtx_s16(s16 val);
+void pal_gx_write_vtx_s8(s8 val);
+void pal_gx_write_vtx_s32(s32 val);
+
+#define FUNC_1PARAM(name, T) \
+static inline void name##1##T(const T x) { pal_gx_write_vtx_##T(x); }
+
+#define FUNC_2PARAM(name, T) \
+static inline void name##2##T(const T x, const T y) { pal_gx_write_vtx_##T(x); pal_gx_write_vtx_##T(y); }
+
+#define FUNC_3PARAM(name, T) \
+static inline void name##3##T(const T x, const T y, const T z) { pal_gx_write_vtx_##T(x); pal_gx_write_vtx_##T(y); pal_gx_write_vtx_##T(z); }
+
+#define FUNC_4PARAM(name, T) \
+static inline void name##4##T(const T x, const T y, const T z, const T w) { pal_gx_write_vtx_##T(x); pal_gx_write_vtx_##T(y); pal_gx_write_vtx_##T(z); pal_gx_write_vtx_##T(w); }
+
+#define FUNC_INDEX8(name) \
+static inline void name##1x8(const u8 x) { pal_gx_write_vtx_u8(x); }
+
+#define FUNC_INDEX16(name) \
+static inline void name##1x16(const u16 x) { pal_gx_write_vtx_u16(x); }
+
 #else
 
 // inline functions
