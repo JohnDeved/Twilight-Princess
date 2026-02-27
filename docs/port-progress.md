@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `0` (binary links, runtime stubs functional but not yet tested) |
-| **Current Step** | Step 3 in progress — runtime stubs functional, need asset loading |
+| **Highest CI Milestone** | `12` (FRAMES_1800 — binary runs 1800 frames without crashing) |
+| **Current Step** | Step 3 mostly complete — game loop runs, needs SDL3+bgfx integration |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | No game assets available for DVD loading — headless test needed |
+| **Blocking Issue** | Game assets needed for scene loading; GX shim needed for rendering |
 
 ## Step Checklist
 
@@ -66,6 +66,15 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] **Skip Wii arena reduction** — guard 0x1800000 MEM1 subtraction with #if !PLATFORM_PC
 - [x] **Skip font init** — embedded font is big-endian PPC data, crashes on little-endian PC
 - [x] **DVDReadAsyncPrio/DVDSetAutoInvalidation** — fix return types to match SDK headers
+- [x] **64-bit heap fix** — 64MB arena + 0x10000 system heap headroom for 64-bit node overhead
+- [x] **GXWGFifo redirect** — pal_gx_wgpipe RAM buffer (was writing to unmapped 0xCC008000)
+- [x] **MWERKS inline fallbacks** — JMath, J3DTransform, JGeometry C implementations
+- [x] **C_QUATRotAxisRad** — math stub for quaternion rotation
+- [x] **Profile system** — NULL-safe fpcPf_Get, skip DynamicLink module loading on PC
+- [x] **Render bypass** — skip mDoGph_Painter on PC (crashes without GX shim + game assets)
+- [x] **-fno-exceptions** — disable C++ exceptions (game uses MWCC exception model, not DWARF)
+- [x] **Font resource null guard** — mDoExt_initFontCommon returns safely when archives missing
+- [x] **Verify**: binary reaches all 12 milestones including FRAMES_1800 (1800 frames, no crash)
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
@@ -141,6 +150,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **ALL 12 MILESTONES!** Render bypass, profile system NULL safety, MWERKS inline fallbacks, GXWGFifo redirect, -fno-exceptions, 64MB arena + heap headroom, C_QUATRotAxisRad, font null guard | 0 → 12 (FRAMES_1800) | GX shim (Step 5), SDL3 windowing, game asset loading |
 | 2026-02-27 | Step 3: Made OS stubs functional — 64-bit arena, threads, SCCheckStatus, DVDDiskID, ARAM emu, MEM1 fake, waitForTick skip, DVD sync exec | 0 → 0 (runtime ready) | Test headless boot, add pal_fs for assets |
 | 2026-02-27 | Updated port-progress.md to reflect completed Steps 1+2, SDK stubs, full link | -1 → 0 | Step 3: PAL bootstrap (SDL3+bgfx) |
 | 2026-02-27 | Achieved full link: fixed duplicate symbols, extern OSExec globals, 0 undefined refs | -1 → 0 | Update progress tracker |
@@ -176,11 +186,22 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
 - `include/revolution/private/GXRegs.h` — GX_WRITE_* redirect for PLATFORM_PC
 - `include/revolution/os/OSExec.h` — AT_ADDRESS extern fix for GCC
+- `include/revolution/gx/GXVert.h` — GXWGFifo redirect to pal_gx_wgpipe on PC
 - `include/pal/pal_platform.h` — OS_BASE_CACHED/OSPhysicalToCached override for PC
+- `include/JSystem/JMath/JMath.h` — C fallbacks for MWERKS-only math inlines
+- `include/JSystem/J3DGraphBase/J3DTransform.h` — C fallbacks for PPC paired-single matrix ops
+- `include/JSystem/JGeometry.h` — C fallbacks for TUtil::sqrt/inv_sqrt
 - `.gitignore` — Allow CMakeLists.txt (!CMakeLists.txt exception)
 - `.github/copilot-instructions.md` — Added "Commit Early and Often" rule
 - `src/m_Do/m_Do_main.cpp` — Milestone instrumentation
+- `src/m_Do/m_Do_machine.cpp` — System heap headroom for 64-bit node overhead
+- `src/m_Do/m_Do_graphic.cpp` — Render bypass on PC (skip mDoGph_Painter without GX shim)
+- `src/m_Do/m_Do_ext.cpp` — Font resource null guard for missing archives
 - `src/m_Do/m_Do_dvd_thread.cpp` — Synchronous DVD command execution on PC
+- `src/c/c_dylink.cpp` — Skip DynamicLink module loading on PC
+- `src/f_pc/f_pc_profile.cpp` — NULL-safe profile lookup
+- `src/f_pc/f_pc_base.cpp` — NULL profile guard in process creation
+- `src/DynamicLink.cpp` — Guard empty ModuleProlog/Epilog from conflicting on PC
 - `src/JSystem/JFramework/JFWDisplay.cpp` — Skip retrace-based wait on PC
 - 77 files — Extended `PLATFORM_SHIELD` conditionals to include `PLATFORM_PC`
 
