@@ -1,169 +1,229 @@
-# Twilight Princess Multiplatform Port Plan (GCN-First, Time-to-Ship Optimized)
+# Twilight Princess — Multiplatform Port Plan
 
-## Scope
+## Strategy
 
-- Canonical game behavior/content: **GameCube version**.
-- Target platforms: **Windows, Linux, macOS, NX Switch (homebrew)**.
-- Primary rendering backend for first ship: **OpenGL**.
-- Tooling direction: modern C++ build with **CMake**.
-- Development tooling: **ImGui** integrated from the start.
+Start from the **ShieldD build** (4,028 source files, 1.1M LOC) instead of bare GCN. The
+Shield port already solves platform abstraction in 63+ files via `PLATFORM_SHIELD` conditionals.
+We add `PLATFORM_PC` alongside `PLATFORM_SHIELD` in those same `#if` chains — mechanical, not
+exploratory. **Total new code: ~7,800 LOC** to port a 1.1M LOC codebase.
 
-## Platform Matrix
+**Rendering**: GX → **bgfx** shim (auto-selects D3D12/Metal/Vulkan/GLES per platform).
+**Platform services**: **SDL3** (windowing, input, audio). bgfx + SDL3 connect at one point
+(`bgfx::PlatformData::nwh` from SDL3 window).
 
-| Platform | Graphics | Platform Layer |
+| Platform | GPU (via bgfx) | Platform layer |
 |---|---|---|
-| Windows | OpenGL 4.5 | SDL3 |
-| Linux | OpenGL 4.5 | SDL3 |
-| macOS | OpenGL 4.1 | SDL3 |
-| NX Homebrew | OpenGL 4.3 (Mesa/Nouveau) | libnx + EGL |
+| Windows | D3D12 / D3D11 | SDL3 |
+| Linux | Vulkan / OpenGL | SDL3 |
+| macOS | Metal | SDL3 |
+| NX Homebrew | GLES 3.1 | libnx + EGL |
 
-## Core Principles
+## Codebase Inventory
 
-- **GCN-first semantics**: preserve GameCube gameplay feel, camera behavior, and content assumptions.
-- **One renderer first**: OpenGL everywhere for initial ship.
-- **Boundary-only porting**: convert at PAL and GX boundaries; avoid rewriting gameplay systems.
-- **Fail-soft, not fail-hard**: unknown GX paths render with safe defaults + log once.
-- **Playable-first**: prioritize title -> field -> combat -> menu/save flow over perfect visual parity.
-
-## What We Intentionally Skip Early
-
-- Wii-specific systems (WPAD/KPAD, Wii speaker, Z2AudioCS-specific paths).
-- Exact parity for heavy post-processing (DoF/bloom/motion blur) in first playable.
-- Mirror-heavy and movie paths in first pass.
-- Full async disc emulation (threaded DVD behavior).
-- Full GX API upfront (implement hot path first, long tail on demand).
-- Broad settings UI and advanced remapping in v1 (basic stable mapping first).
+| Layer | LOC | Files | Port action |
+|---|---|---|---|
+| Game logic (`src/d/actor/`) | 665K | 767 | **Unchanged** |
+| Game systems (`src/d/` non-actor) | 169K | 169 | **Unchanged** (15 files do raw GX draws) |
+| Framework (`src/f_pc/`, `src/f_op/`, `src/f_ap/`) | 9.5K | 56 | **Unchanged** |
+| JSystem engine (`src/JSystem/`) | 67K | 311 | Extend Shield conditionals in ~10 files |
+| Machine layer (`src/m_Do/`) | 11.7K | 17 | Extend conditionals + wire PAL (~400 LOC new) |
+| SSystem math (`src/SSystem/`) | 6K | 40 | **Unchanged** — pure math, no PPC |
+| Z2AudioLib (`src/Z2AudioLib/`) | 15K | 23 | Inherit Shield audio routing |
+| Math libs (`src/c/`) | 1.1K | 6 | Inherit Shield errno guards |
+| Dolphin SDK (`src/dolphin/`) | 66.5K | 180 | **Replaced** by PAL modules |
+| Revolution SDK (`src/revolution/`) | 83K | 192 | **Replaced** by PAL + GX shim |
+| Lingcod stubs (`src/lingcod/`) | 29 | 1 | **Replaced** by ImGui |
+| **Total existing** | **1,116K** | **~1,800** | |
+| **Total new code** | **~7,800** | **~25** | See LOC breakdown below |
 
 ## Architecture
 
 ```
-Game Logic (d/, d/actor/)
-  -> Framework (f_pc/, f_op/, f_ap/)
-    -> Machine Layer (m_Do/)
-      -> PAL (src/pal/)
-         -> GX Shim (src/pal/gx/) -> OpenGL
-         -> Platform Services (window/input/audio/fs/os/save)
+Game Logic (src/d/, src/f_*)         ~1,050 files, 844K LOC — UNCHANGED
+  → Machine Layer (src/m_Do/)        17 files, 11.7K LOC — extend Shield conditionals
+    → PAL (src/pal/)                 NEW ~7,800 LOC — replaces src/dolphin/ + src/revolution/
+       ├─ GX shim (gx/)             ~5,000 LOC — GX API → bgfx
+       ├─ Platform (platform/)       ~1,250 LOC — SDL3 window/input/audio; libnx on NX
+       └─ Debug UI (imgui/)          ~300 LOC — replaces lingcod stubs
 ```
 
-- Keep game logic/framework mostly intact.
-- Replace hardware/platform dependencies behind PAL.
-- Route GX API calls to a GX shim that translates to OpenGL.
+## Shield Conditionals — What We Inherit
 
-## Separation of Concerns
+| What Shield does | Files | PC action |
+|---|---|---|
+| Widescreen/framebuffer (`PLATFORM_WII \|\| PLATFORM_SHIELD`) | `m_Do_graphic.cpp` + ~15 | Add `\|\| PLATFORM_PC` |
+| Skip CARDInit, GXSaveCPUFifo (`!PLATFORM_SHIELD`) | `m_Do_MemCard.cpp`, `JUTGraphFifo.h` | Same exclusions |
+| Dual heap (`sRootHeap2`) | JKernel, `m_Do_main.cpp` | Inherit — both map to host RAM |
+| Fixed audio mode (`setOutputMode(1)`) | `JAUInitializer.cpp` | Inherit |
+| GCN input path (JUTGamePad, not WPAD) | `m_Do_controller_pad.cpp` | Wire to SDL3 gamepad |
+| Math errno guards | `e_acos.c`, `e_asin.c`, `e_fmod.c` | Inherit — prevents x86 crashes |
+| Disabled REL dynamic linking (12 blocks) | `c_dylink.cpp` | Statically link everything |
+| Larger sampling buffer (16 vs 10) | `m_Re_controller_pad.h` | Inherit |
+| Disabled debug reporting | `JAISeMgr.cpp` | Inherit for release |
+| Extra SE categories 10–11, optimized audio routing | Z2AudioLib (19 refs) | Inherit |
+| Streamlined frame processor | `f_pc_manager.cpp` | Inherit |
 
-- `src/d`, `src/d/actor`, `src/f_*`: no direct platform headers, no OpenGL headers.
-- `src/m_Do`: interacts with PAL-facing interfaces only.
-- `src/pal/gx`: owns GX -> OpenGL translation and render state.
-- `src/pal`: owns SDL3/libnx/EGL/input/audio/fs/save implementations.
-- `src/pal/imgui`: owns debug UI and runtime tooling; no gameplay ownership.
+**Replace with native code**: `NANDSimpleSafe*` → `pal_save` file I/O; `lingcod_*` stubs → ImGui;
+GX FIFO pipe → RAM buffer; PPC assembly → standard math; dolphin/revolution SDK → PAL modules.
 
-## Step-by-Step Execution Plan
+## Time Savers (Measured)
 
-### Step 1: Build Modernization Without Big-Bang Deletion
+| Technique | Impact | Why it saves time |
+|---|---|---|
+| **J3D handles most rendering** | ~800 actor models render through J3DPacket/J3DShape display lists | Get J3D right → most of the game renders. Only 15 game files do raw `GXBegin` draws |
+| **`GX_WRITE_*` macro redirect** | 4 `#define` changes capture ~2,500 GX call sites | Software equivalent of Shield's hardware FIFO intercept — no per-file changes |
+| **`GXTexObj` opacity trick** | Store `bgfx::TextureHandle` in opaque `u32 dummy[8]` | Same as Shield's `NVGXNameTex` — zero game code changes |
+| **Only 5 TEV preset modes used** | Game code uses GX_PASSCLR (23×), REPLACE (8×), MODULATE (7×), BLEND (4×), DECAL (2×) | J3D auto-generates complex TEV; game-side TEV is trivial to shim |
+| **DCStore/DCFlush → no-ops** | 134 cache-coherency calls become `#define` no-ops | x86/ARM have coherent caches — 1 line in PAL header |
+| **Yaz0 decompressor is portable** | JKRDecomp.cpp (292 LOC) has zero PPC dependencies | Reuse as-is — no rewrite needed |
+| **SSystem math is portable** | 6K LOC — pure math, no PPC assembly | Collision, vectors, matrices compile unchanged |
+| **JKernel heap is portable** | JKRHeap manages `malloc`'d blocks, no hardware dependency | Dual-heap inherits from Shield; just back with host RAM |
+| **Static linking eliminates REL loader** | 12 `!PLATFORM_SHIELD` blocks disable `c_dylink` | Skip entire REL load/relocate/resolve pipeline (~1 week saved) |
+| **Only 19 MWCC intrinsics outside SDK** | 6 are in `d_a_movie_player.cpp` (`__cntlzw` → `__builtin_clz`) | Rest in SDK (excluded). Trivial mechanical replacement |
+| **ShieldD file list is battle-tested** | 4,028 files that compile for a non-Nintendo target | Zero guesswork on which files form a complete build |
+| **Asset pre-conversion option** | Convert RARC/BMD/BTK from big-endian at build time | JSUInputStream byte-swap (87 LOC) or offline tool — either way, localized |
+| **GX texture decode is well-documented** | 10 formats used; Dolphin's TextureDecoder is open-source reference | Untile + decode per-format: ~100 LOC each, proven algorithms |
+| **Framework and collision are pure game logic** | f_pc/f_op (9.5K LOC), c_cc collision (3.1K LOC) — no hardware deps | Compile unchanged with no porting work |
 
-- Introduce root CMake build.
-- Keep legacy directories in tree initially, but exclude from first modern build target.
-- Convert compiler-specific MWCC constructs only where needed to compile.
-- Keep code motion minimal to avoid destabilization.
+## GX Shim — Shield's Blueprint (~5,000 LOC)
 
-### Step 2: Flatten Version Branching Toward GCN Behavior
+Shield compiles all 20 `revolution/gx/*.c` files and runs them through NVIDIA's proprietary
+binary translation layer. We can't reuse that layer, but it reveals the exact intercept points:
 
-- For mixed GCN/Wii code paths, keep GCN behavior as canonical.
-- Remove/defer Wii-only input/speaker/control features.
-- Keep platform conditionals only where platform APIs differ (PC vs NX).
+**`GX_WRITE_*` macro redirect** — The single most impactful change. Four macros in `GXRegs.h`
+control all FIFO writes to `0xCC008000`. Redirecting them to a RAM buffer captures **~2,500 GX
+call sites** with 4 `#define` changes:
 
-### Step 3: PAL Bootstrap (Minimal Surface)
+```c
+#if PLATFORM_PC
+  #define GX_WRITE_U8(ub)   gx_fifo_write_u8(ub)
+  #define GX_WRITE_U16(us)  gx_fifo_write_u16(us)
+  #define GX_WRITE_U32(ui)  gx_fifo_write_u32(ui)
+  #define GX_WRITE_F32(f)   gx_fifo_write_f32(f)
+#endif
+```
 
-- Implement `pal_window`, `pal_os`, `pal_fs`, `pal_input`, `pal_audio`, `pal_save`.
-- PC side: SDL3.
-- NX side: libnx + EGL + mesa.
-- Boot to running main loop with window + ImGui overlay.
+**GX → bgfx mapping** (Tier A — first playable):
 
-### Step 4: Replace DVD Async Internals With Synchronous Completion
+| GX function | bgfx equivalent |
+|---|---|
+| `GXInit` | `bgfx::init()` |
+| `GXBegin`/`GXEnd` + FIFO writes | `bgfx::TransientVertexBuffer` → `bgfx::submit` |
+| `GXInitTexObj`/`GXLoadTexObj` | `bgfx::createTexture2D` → `TextureHandle` (injected into opaque `GXTexObj`) |
+| `GXSetTevOp`/`GXSetTevOrder` | `bgfx::ProgramHandle` (TEV → shader via `shaderc`) |
+| `GXSetBlendMode`/`GXSetZMode` | `BGFX_STATE_BLEND_*` / `BGFX_STATE_DEPTH_*` flags |
+| `GXLoadPosMtxImm` | `bgfx::setUniform` (Mat4) |
+| `GXCallDisplayList` | Record + replay through bgfx encoder |
+| `GXDrawDone` | `bgfx::frame()` |
 
-- Keep `mDoDvdThd_*` interfaces unchanged.
-- Execute load work immediately in `create(...)`, mark command done.
-- Preserve callsites and polling logic (`sync()`) without thread/queue complexity.
+**Why bgfx over raw OpenGL**: Transient VBs match GX's immediate-mode draws (per-frame,
+auto-freed). Per-draw state flags avoid OpenGL global state leaks. One shader source → all
+backends via `shaderc`. Metal on macOS (Apple deprecated OpenGL in 2018). Built-in ImGui +
+RenderDoc.
 
-### Step 5: ARAM-to-RAM Simplification
+**Tier B** (expand on demand): remaining `GXSet*` variants, lighting, fog, indirect textures,
+readback, perf counters. Gate heavy files behind ImGui toggles (`d_kankyo_rain.cpp` — 766 GX
+calls, `d_a_movie_player.cpp` — 111, `d_a_mirror.cpp` — 73).
 
-- Preserve JKR/JAudio interfaces but collapse ARAM-backed behavior into RAM-backed behavior.
-- Keep mount/load contracts stable; remove hardware transfer assumptions internally.
+### GX shim LOC breakdown
 
-### Step 6: GX Shim Bring-Up in Priority Tiers
+| Component | LOC | Notes |
+|---|---|---|
+| State machine + bgfx flush | ~2,500 | `gx_state` struct captures all GX state; flush at draw time |
+| TEV → bgfx shader generator | ~1,500 | Compile via `shaderc`, cache by TEV config hash |
+| Texture decode (untile + format) | ~1,000 | 10 GX formats → linear RGBA8 for bgfx; ~100 LOC/format |
+| Display list record/replay | ~400 | Record GX FIFO to RAM; replay through bgfx encoder |
+| **Total GX shim** | **~5,000** | |
 
-#### Tier A (first playable)
+## Execution Plan
 
-- GX state tracker basics.
-- Vertex format + matrix upload + draw submission.
-- Texture upload/decoding for common formats.
-- TEV basics for dominant material paths.
-- Display list replay for J3D draw flow.
+### Step 1 — Build (~250 LOC new: CMakeLists.txt)
+- `config/ShieldD/splits.txt` → CMake source list (exclude dolphin/revolution/lingcod/PPC libs)
+- Define `VERSION_PC = 13`, `#define PLATFORM_PC (VERSION == VERSION_PC)` in `global.h`
+- Convert 19 MWCC intrinsics: `__cntlzw` → `__builtin_clz`; `__dcbf/__sync` → no-ops
+- `DCStoreRange`/`DCFlushRange`/`ICInvalidateRange` → no-op macros (134 calls, 0 logic changes)
 
-#### Tier B (expand by demand)
+### Step 2 — Extend Shield Conditionals (~100 LOC changes across 63+ files)
+- `PLATFORM_WII || PLATFORM_SHIELD` → add `|| PLATFORM_PC`
+- `!PLATFORM_SHIELD` → `!PLATFORM_SHIELD && !PLATFORM_PC`
+- Mechanical — no logic changes, ~1–2 lines per file
 
-- Add missing GX functions when encountered in real scenes.
-- Keep one-time warning logs and counters for missing symbols.
-- Avoid implementing rare functions until they block progression.
+### Step 3 — PAL Bootstrap (~1,250 LOC new)
 
-### Step 7: Visual Scope for First Playable
+| PAL module | Replaces | Backend | LOC |
+|---|---|---|---|
+| `pal_window` | dolphin/vi (4K LOC) | SDL3 → bgfx `PlatformData` | ~150 |
+| `pal_os` | dolphin/os (15K LOC) | `<chrono>` + `<thread>` | ~200 |
+| `pal_fs` | dolphin/dvd (3.5K LOC) + NAND | `<filesystem>` | ~300 |
+| `pal_input` | dolphin/pad (993 LOC) | SDL3 gamepad | ~200 |
+| `pal_audio` | dolphin/dsp + ai (967 LOC) | SDL3 audio | ~250 (A) / ~800 (B) |
+| `pal_save` | NANDSimpleSafe* | `<fstream>` | ~150 |
 
-- Prioritize correctness in core gameplay scenes and essential UI.
-- Defer exact parity in expensive edge paths (mirrors, heavy weather, movie player).
-- Use feature toggles in ImGui to disable problematic effects at runtime.
+### Step 4 — DVD/ARAM Simplification (~200 LOC changes)
+- DVD: `mDoDvdThd_command_c::create()` → sync read via `pal_fs`, mark done. 835+ actor files untouched.
+- ARAM: `aramToMainRam`/`mainRamToAram` → `memcpy`. JKRAram* (1,394 LOC) → thin wrappers around host `malloc`.
 
-### Step 8: Audio Bring-Up in Two Phases
+### Step 5 — GX Shim Tier A (~5,000 LOC new)
+- Redirect `GX_WRITE_*` macros (4 defines → ~2,500 sites captured)
+- Implement GX → bgfx mapping table above
+- `gx_state` struct → flush to bgfx at draw time
+- TEV → bgfx shader: compile via `shaderc`, cache by TEV config hash
+- Texture decode: untile 10 GX formats → linear RGBA8 for bgfx (~100 LOC/format)
 
-- Phase A: null/stub output path so gameplay loop is unblocked.
-- Phase B: replace hardware-coupled JAudio2 portions with software equivalents behind PAL audio.
-- Keep higher-level Z2/game audio logic unchanged where possible.
+### Step 6 — Audio (~100 LOC phase A / ~800 LOC phase B)
+- **Phase A** (~1 day): `pal_audio` returns silence. Game loop runs unblocked.
+- **Phase B**: Software mixer replaces DSP/ARAM mixing (JAudio2: 11.7K LOC) → SDL3 PCM output.
 
-### Step 9: Input and Save Stability
+### Step 7 — Input + Save (~350 LOC new)
+- Wire `JUTGamePad` → `pal_input` → SDL3 gamepad (Shield's GCN pad path)
+- Replace NAND calls with `pal_save` file I/O (keep quest-log format)
 
-- Start with one stable GCN-style gamepad mapping.
-- Add keyboard/mouse later where useful.
-- Keep save format behavior stable; platform-specific file locations behind PAL.
+### Step 8 — First Playable
+- Target: title → Ordon → Faron → Forest Temple → save/load cycle
+- ImGui toggles for problematic effects (~300 LOC)
 
-### Step 10: NX Homebrew Bring-Up
+### Step 9 — NX Homebrew (~500 LOC new)
+- Same bgfx renderer (auto-selects GLES). Swap PAL backends: libnx/EGL, HID, audren, romfs.
+- `VERSION_NX_HB = 14`, `PLATFORM_NX_HB` inherits same conditionals as `PLATFORM_PC`.
 
-- Reuse same GX/OpenGL renderer.
-- Swap only platform services (window/input/audio/fs/os/save) to libnx/EGL/audren/hid.
-- Resolve driver quirks with local workarounds rather than renderer redesign.
+## Critical Path
 
-### Step 11: Polish for Shipment
+```
+Step 1 (CMake)  ──►  Step 2 (conditionals)
+                       ├─► Steps 3–4 (PAL + DVD/ARAM)  ───────┐
+                       ├─► Step 5 (GX shim Tier A)  ──────────┤──► Step 8 (first playable)
+                       ├─► Step 6A (audio stubs)               │      └─► Step 10 (polish)
+                       ├─► Step 7 (input + save)               │
+                       └─► Step 9 (NX — after PC playable)     │
+```
 
-- Validate core progression loop and menu/save reliability.
-- Add missing GX long-tail only when blocking content.
-- Package outputs for PC and NX homebrew.
-- Keep advanced visual parity and non-critical systems as post-ship enhancements.
+| Work stream | LOC (new) | Estimate | Key acceleration |
+|---|---|---|---|
+| Build + conditionals (1–2) | ~350 | ~3–4 days | Static linking skips REL loader; 19 intrinsics trivial; mechanical `#if` extension |
+| PAL + DVD/ARAM (3–4) | ~1,450 | ~1.5 weeks | Shield's disc-less/NAND paths carry over; replaces 150K LOC SDK with 1.4K |
+| GX shim Tier A (5) | ~5,000 | ~3–4 weeks | Macro redirect captures 2,500 sites; J3D covers ~800 actors; only 5 TEV presets in game code; bgfx transient VBs match GX |
+| Audio (6) | ~100–800 | A: ~1 day / B: ~2 weeks | Shield's fixed audio mode; stub-first unblocks gameplay |
+| Input + Save (7) | ~350 | ~2–3 days | Shield's GCN pad path + NAND save path |
+| NX bring-up (9) | ~500 | ~1–2 weeks | Same bgfx renderer; only PAL backends swap |
 
-## High-Impact Time Savers (Confirmed)
+**Total new code: ~7,800 LOC** to port **1,116K LOC** codebase.
+**Total to first playable: ~4–6 weeks** (parallel streams).
 
-- Keep API shapes, replace internals (DVD/ARAM/audio backend) to minimize callsite churn.
-- Implement high-frequency GX subset first; long-tail by telemetry.
-- Use ImGui to control runtime feature gates and debug visibility.
-- Build a narrow playable vertical slice before broad parity work.
-- Avoid giant refactors up front; defer broad deletions until modern path is stable.
+## Rules
 
-## Known Heavy Areas To Defer or Gate
+- Never block on rare visual edge cases
+- Unsupported GX → log once + safe fallback
+- Game logic (`src/d/`, `src/f_*`) stays untouched — 844K LOC unchanged
+- Prefer additive shims over invasive rewrites
+- When in doubt, check what Shield does
+- Track stub-hit counts to prioritize Tier B by frequency
+- CI-driven: every commit triggers headless boot test — see [AI Agent Testing Plan](ai-agent-testing-plan.md)
+- Agent workflow: step-by-step implementation guide — see [Agent Port Workflow](agent-port-workflow.md)
 
-- `src/d/d_kankyo_rain.cpp` (high GX volume).
-- `src/d/actor/d_a_mirror.cpp` (special rendering path).
-- `src/d/actor/d_a_movie_player.cpp` (video/display complexity).
-- `src/d/d_home_button.cpp` (non-core overlay path).
+## Deferred
 
-## Operational Rules During Port
-
-- Never block progress on rare visual edge cases.
-- Any unsupported render feature gets a safe fallback + diagnostic log.
-- Keep gameplay logic untouched unless a blocker demands targeted edits.
-- Prefer additive shims over invasive rewrites.
-- Keep first ship focused on stable gameplay over perfect parity.
-
-## Post-Ship Backlog (Intentionally Deferred)
-
-- Exact post-processing parity.
-- Full feature parity for all niche overlays and scenes.
-- Wider input remapping UX.
-- Additional graphics backend experimentation beyond OpenGL.
-- Deep visual/performance tuning beyond required playability.
+- Exact post-processing parity (bloom, DoF, motion blur)
+- Mirror/movie special rendering paths
+- Keyboard/mouse support, advanced input remapping
+- Region selection (PAL/JPN) — ship USA first
+- Wii-specific content/controls
