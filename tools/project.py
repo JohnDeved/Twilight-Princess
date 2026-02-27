@@ -190,6 +190,9 @@ class ProjectConfig:
         self.custom_build_steps: Optional[Dict[str, List[Dict[str, Any]]]] = (
             None  # Custom build steps, types are ["pre-compile", "post-compile", "post-link", "post-build"]
         )
+        self.custom_ninja_targets: Optional[List[Dict[str, Any]]] = (
+            None  # Additional standalone ninja targets (not part of default build graph)
+        )
         self.generate_compile_commands: bool = (
             True  # Generate compile_commands.json for clangd
         )
@@ -233,7 +236,6 @@ class ProjectConfig:
             "build_dir",
             "src_dir",
             "tools_dir",
-            "check_sha_path",
             "config_path",
             "ldflags",
             "linker_version",
@@ -1298,6 +1300,31 @@ def generate_build_ninja(
         # Add all build steps needed post-build (re-building archives and such)
         write_custom_step("post-build", "post-link")
 
+        # Add standalone custom targets (e.g. packaging tasks such as ISO/RVZ)
+        if config.custom_ninja_targets:
+            n.comment("Custom standalone ninja targets")
+            for custom_target in config.custom_ninja_targets:
+                outputs = custom_target.get("outputs")
+                if outputs is None:
+                    continue
+
+                inputs = custom_target.get("inputs", None)
+                if inputs == "$link_outputs":
+                    inputs = link_outputs
+
+                n.build(
+                    outputs=cast(Any, outputs),
+                    rule=cast(str, custom_target.get("rule")),
+                    inputs=inputs,
+                    implicit=custom_target.get("implicit", None),
+                    order_only=custom_target.get("order_only", None),
+                    variables=custom_target.get("variables", None),
+                    implicit_outputs=custom_target.get("implicit_outputs", None),
+                    pool=custom_target.get("pool", None),
+                    dyndep=custom_target.get("dyndep", None),
+                )
+                n.newline()
+
         ###
         # Helper rule for building all source files
         ###
@@ -1312,22 +1339,31 @@ def generate_build_ninja(
         ###
         # Check hash
         ###
-        n.comment("Check hash")
         ok_path = build_path / "ok"
-        quiet = "-q " if len(link_steps) > 3 else ""
-        n.rule(
-            name="check",
-            command=f"{dtk} shasum {quiet} -c $in -o $out",
-            description="CHECK $in",
-        )
-        n.build(
-            outputs=ok_path,
-            rule="check",
-            inputs=config.check_sha_path,
-            implicit=[dtk, *link_outputs],
-            order_only="post-build",
-        )
-        n.newline()
+        if config.check_sha_path is not None:
+            n.comment("Check hash")
+            quiet = "-q " if len(link_steps) > 3 else ""
+            n.rule(
+                name="check",
+                command=f"{dtk} shasum {quiet} -c $in -o $out",
+                description="CHECK $in",
+            )
+            n.build(
+                outputs=ok_path,
+                rule="check",
+                inputs=config.check_sha_path,
+                implicit=[dtk, *link_outputs],
+                order_only="post-build",
+            )
+            n.newline()
+        else:
+            n.comment("Check hash (disabled)")
+            n.build(
+                outputs=ok_path,
+                rule="phony",
+                inputs=link_outputs,
+            )
+            n.newline()
 
         ###
         # Calculate progress
