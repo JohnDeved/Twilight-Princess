@@ -34,6 +34,7 @@
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_bgfx.h"
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_displaylist.h"
 
 extern "C" {
 
@@ -600,9 +601,11 @@ f32 GXGetYScaleFactor(u16 efbHeight, u16 xfbHeight) { (void)efbHeight; (void)xfb
 /* ================================================================ */
 
 void GXCallDisplayList(void* list, u32 nbytes) {
-    (void)list; (void)nbytes;
-    gx_stub_hit(GX_STUB_CALL_DISPLAY_LIST, "GXCallDisplayList");
+    /* Replay pre-recorded GX display list by parsing FIFO byte stream */
+    pal_gx_call_display_list(list, nbytes);
 }
+void GXBeginDisplayList(void* list, u32 size) { (void)list; (void)size; }
+u32 GXEndDisplayList(void) { return 0; }
 
 /* ================================================================ */
 /* GX Indirect Texture (Bump)                                       */
