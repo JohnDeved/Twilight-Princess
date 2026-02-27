@@ -50,7 +50,6 @@ FetchContent_MakeAvailable(sdl3)
 # --- Compile GX TEV shaders with bgfx shaderc ---
 set(SHADER_DIR "${CMAKE_SOURCE_DIR}/src/pal/gx/shaders")
 set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
-set(BGFX_SHADER_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/build/_deps/bgfx-src/bgfx/src")
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
 
 # Find bgfx shader include directory (for bgfx_shader.sh)

@@ -339,7 +339,7 @@ static uint64_t convert_cull_state(void) {
 
 static uint64_t convert_primitive_state(GXPrimitive prim) {
     switch (prim) {
-    case GX_TRIANGLES:      return BGFX_STATE_PT_TRISTRIP & 0; /* default triangles */
+    case GX_TRIANGLES:      return 0; /* bgfx default is triangle list */
     case GX_TRIANGLESTRIP:  return BGFX_STATE_PT_TRISTRIP;
     case GX_TRIANGLEFAN:    return BGFX_STATE_PT_TRISTRIP; /* approx */
     case GX_LINES:          return BGFX_STATE_PT_LINES;
@@ -506,15 +506,15 @@ void pal_tev_init(void) {
     /* Create texture sampler uniform */
     s_tex_uniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 
-    s_tev_ready = all_ok || (renderer == bgfx::RendererType::Noop);
-
-    fprintf(stderr, "{\"tev\":\"init\",\"ready\":%d,\"renderer\":\"%s\"}\n",
-            s_tev_ready, bgfx::getRendererName(renderer));
+    s_tev_ready = all_ok;
 
     /* For Noop renderer, mark ready even if shader creation "fails" (it's a no-op anyway) */
     if (renderer == bgfx::RendererType::Noop) {
         s_tev_ready = 1;
     }
+
+    fprintf(stderr, "{\"tev\":\"init\",\"ready\":%d,\"renderer\":\"%s\"}\n",
+            s_tev_ready, bgfx::getRendererName(renderer));
 
     /* Initialize texture cache */
     memset(s_tex_cache, 0, sizeof(s_tex_cache));
