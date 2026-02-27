@@ -2,7 +2,8 @@
 
 Step-by-step guide for AI agents implementing the Twilight Princess PC port.
 Read this alongside the [port plan](multiplatform-port-plan.md) and the
-[testing plan](ai-agent-testing-plan.md).
+[testing plan](ai-agent-testing-plan.md). Track your progress in
+[port-progress.md](port-progress.md).
 
 ## Prerequisites
 
