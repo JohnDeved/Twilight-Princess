@@ -36,13 +36,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: .github/requirements-ci.txt
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y ninja-build gh libegl1
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pyisotools==2.4.7
+          NEED_APT=0
+          command -v ninja >/dev/null || NEED_APT=1
+          command -v gh >/dev/null || NEED_APT=1
+          ldconfig -p | grep -q 'libEGL.so.1' || NEED_APT=1
+
+          if [ "$NEED_APT" -eq 1 ]; then
+            sudo apt-get update -q
+            PKGS=()
+            command -v ninja >/dev/null || PKGS+=(ninja-build)
+            command -v gh >/dev/null || PKGS+=(gh)
+            ldconfig -p | grep -q 'libEGL.so.1' || PKGS+=(libegl1)
+            if [ "${#PKGS[@]}" -gt 0 ]; then
+              sudo apt-get install -y "${PKGS[@]}"
+            fi
+          fi
+
+          python3 -m pip install --disable-pip-version-check -r .github/requirements-ci.txt
 
       - name: Cache source disc image
         uses: actions/cache@v4
