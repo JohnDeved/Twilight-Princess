@@ -12,8 +12,8 @@
 
 | Area | Files | Notes |
 |---|---|---|
-| `src/d/` (game logic) | ~159 .cpp | Core game systems (camera, save, stage, etc.) |
-| `src/d/actor/` | ~835 .cpp | All actors — largest directory by far |
+| `src/d/` (game logic, excl. actor/) | ~159 .cpp | Core game systems (camera, save, stage, etc.) |
+| `src/d/actor/` | ~835 .cpp | All actors — largest directory (~994 total under `src/d/`) |
 | `src/f_pc/` (process framework) | 32 .cpp | Generic process management |
 | `src/f_op/` (operation framework) | 23 .cpp | Actor/scene/camera operations |
 | `src/f_ap/` (application) | 1 .cpp | Top-level game mode |
@@ -116,7 +116,9 @@ This avoids mass-editing — new platform code is additive.
 - Convert MWCC constructs that block compilation:
   - `#pragma pack` → `__attribute__((packed))` or already portable (check `include/types.h`).
   - `__declspec(weak)` → `__attribute__((weak))` (already handled by `DECL_WEAK` macro in `types.h`).
-  - MWCC intrinsics (`__cntlzw`, `__dcbf`, `__sync` in `global.h`) → GCC/Clang builtins or no-ops.
+  - MWCC intrinsics in `global.h`: `__cntlzw` → `__builtin_clz` (direct equivalent);
+    cache-control intrinsics (`__dcbf`, `__dcbst`, `__icbi`) → no-ops on x86 (no coherence needed);
+    `__sync` → no-op or `__sync_synchronize()` (x86 is strongly ordered, rarely matters).
 - **Time saver**: `DECL_WEAK`, `ATTRIBUTE_ALIGN`, `NO_INLINE` macros in `types.h`/`global.h`
   already abstract most compiler differences. Only MWCC intrinsics need new shims.
 
@@ -311,9 +313,9 @@ Step 1 (CMake build compiles)
 
 | File | Lines | GX calls | Reason to defer |
 |---|---|---|---|
-| `src/d/d_kankyo_rain.cpp` | 6,353 | ~766 | Extreme GX density — weather/rain effects |
-| `src/d/actor/d_a_movie_player.cpp` | 4,215 | ~111 | Video playback + display pipeline |
-| `src/d/actor/d_a_mirror.cpp` | 635 | ~73 | Special multi-pass rendering |
+| `src/d/d_kankyo_rain.cpp` | 6,353 | ~766 state calls | Extreme GX density — weather/rain effects |
+| `src/d/actor/d_a_movie_player.cpp` | 4,215 | ~111 state calls | Video playback + display pipeline |
+| `src/d/actor/d_a_mirror.cpp` | 635 | ~73 state calls | Special multi-pass rendering |
 | `src/d/d_home_button.cpp` | — | — | Wii-only overlay, not needed on PC/NX |
 
 **Strategy**: Gate these behind ImGui toggles. Implement stubs that skip rendering and log once.
