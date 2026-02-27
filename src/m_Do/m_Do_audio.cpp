@@ -45,6 +45,15 @@ static void dummy() {
 #endif
 
 static void mDoAud_Create() {
+#if PLATFORM_PC
+    /* Phase A: Skip audio initialization on PC.
+     * The BAA/BMS/etc data from disc is big-endian and the J-Audio engine
+     * can't parse it on little-endian yet. Just mark audio as initialized
+     * so the game loop continues. */
+    mDoAud_zelAudio_c::onInitFlag();
+    mDoDvdThd::SyncWidthSound = true;
+    return;
+#endif
     if (l_affCommand == NULL) {
 #if DEBUG
         if (!mDoRst::getLogoScnFlag()) {
@@ -154,6 +163,12 @@ static void mDoAud_Create() {
 }
 
 void mDoAud_Execute() {
+#if PLATFORM_PC
+    if (!mDoAud_zelAudio_c::isInitFlag()) {
+        mDoAud_Create();
+    }
+    return;
+#endif
     if (!mDoAud_zelAudio_c::isInitFlag()) {
         if (!mDoRst::isShutdown() && !mDoRst::isReturnToMenu()) {
             mDoAud_Create();

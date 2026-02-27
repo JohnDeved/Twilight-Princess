@@ -10,6 +10,8 @@
 #include <string>
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
+#include <stdlib.h>
+#include <string.h>
 #endif
 #include "global.h"
 #include <stdint.h>
@@ -107,7 +109,8 @@ bool JKRDvdArchive::open(s32 entryNum) {
     DCInvalidateRange(mArcInfoBlock, arcHeader->file_data_offset);
 
 #if PLATFORM_PC
-    /* Swap data info block, nodes, and file entries from big-endian */
+    /* Swap data info block, nodes, and file entries from big-endian.
+     * Also repack file entries from 20-byte (on-disc) to native stride. */
     {
         SArcDataInfo* info = mArcInfoBlock;
         info->num_nodes           = pal_swap32(info->num_nodes);
@@ -128,14 +131,34 @@ bool JKRDvdArchive::open(s32 entryNum) {
             node->first_file_index = pal_swap32(node->first_file_index);
         }
 
+        /* Repack file entries from 20-byte stride to native sizeof(SDIFileEntry) */
         u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
-        for (u32 i = 0; i < info->num_file_entries; i++) {
-            SDIFileEntry* entry = (SDIFileEntry*)(filesBase + i * 20);
-            entry->file_id                   = pal_swap16(entry->file_id);
-            entry->name_hash                 = pal_swap16(entry->name_hash);
-            entry->type_flags_and_name_offset = pal_swap32(entry->type_flags_and_name_offset);
-            entry->data_offset               = pal_swap32(entry->data_offset);
-            entry->data_size                 = pal_swap32(entry->data_size);
+        u32 numFiles = info->num_file_entries;
+        if (sizeof(SDIFileEntry) != 20 && numFiles > 0) {
+            SDIFileEntry* repacked = (SDIFileEntry*)malloc(numFiles * sizeof(SDIFileEntry));
+            if (repacked) {
+                struct DiscEntry { u16 fid; u16 hash; u32 tflags; u32 doff; u32 dsz; u32 dptr; };
+                for (u32 i = 0; i < numFiles; i++) {
+                    DiscEntry* d = (DiscEntry*)(filesBase + i * 20);
+                    repacked[i].file_id                   = pal_swap16(d->fid);
+                    repacked[i].name_hash                 = pal_swap16(d->hash);
+                    repacked[i].type_flags_and_name_offset = pal_swap32(d->tflags);
+                    repacked[i].data_offset               = pal_swap32(d->doff);
+                    repacked[i].data_size                 = pal_swap32(d->dsz);
+                    repacked[i].data                      = NULL;
+                }
+                memcpy(filesBase, repacked, numFiles * sizeof(SDIFileEntry));
+                free(repacked);
+            }
+        } else {
+            for (u32 i = 0; i < numFiles; i++) {
+                SDIFileEntry* entry = (SDIFileEntry*)(filesBase + i * 20);
+                entry->file_id                   = pal_swap16(entry->file_id);
+                entry->name_hash                 = pal_swap16(entry->name_hash);
+                entry->type_flags_and_name_offset = pal_swap32(entry->type_flags_and_name_offset);
+                entry->data_offset               = pal_swap32(entry->data_offset);
+                entry->data_size                 = pal_swap32(entry->data_size);
+            }
         }
     }
 #endif
