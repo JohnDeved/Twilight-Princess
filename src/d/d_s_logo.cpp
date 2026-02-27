@@ -110,7 +110,10 @@ int dScnLogo_c::draw() {
     /* On PC, render the Nintendo logo via J2D → GX → bgfx pipeline.
      * Skip warning/progressive/dolby states — just show the Nintendo logo. */
     if (mNintendoLogo) {
+        OSReport("[LOGO] draw: adding logo to draw list (ptr=%p)\n", mNintendoLogo);
         dComIfGd_set2DOpa(mNintendoLogo);
+    } else {
+        OSReport("[LOGO] draw: mNintendoLogo is NULL\n");
     }
     if (mTimer == 0) {
         mExecCommand = EXEC_SCENE_CHANGE;
@@ -656,6 +659,9 @@ int dScnLogo_c::create() {
 
 void dScnLogo_c::logoInitGC() {
     ResTIMG* nintendoImg = (ResTIMG*)dComIfG_getObjectRes(LOGO_ARC, 4);
+#if PLATFORM_PC
+    OSReport("[LOGO] logoInitGC: nintendoImg=%p\n", nintendoImg);
+#endif
     mNintendoLogo = new dDlst_2D_c(nintendoImg, 117, 154, 376, 104, 255);
 #if VERSION == VERSION_GCN_JPN
     mNintendoLogo->getPicture()->setWhite(JUtility::TColor(0, 70, 255, 255));

@@ -38,6 +38,7 @@
 
 #if PLATFORM_PC
 #include "pal/gx/gx_bgfx.h"
+#include "pal/gx/gx_state.h"
 #endif
 
 #if PLATFORM_WII
@@ -1541,6 +1542,9 @@ int mDoGph_Painter() {
         /* Flush 2D draw lists (logo, menus, etc.) */
         dComIfGd_draw2DOpa();
         dComIfGd_draw2DXlu();
+
+        OSReport("[GFX] Painter: 2D draw lists flushed, draw_calls=%u verts=%u\n",
+                 g_gx_state.draw_calls, g_gx_state.total_verts);
 
         mDoGph_gInf_c::endRender();
     }

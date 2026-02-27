@@ -526,6 +526,10 @@ void J2DPicture::drawFullSet(f32 param_0, f32 param_1, f32 param_2, f32 param_3,
 
 void J2DPicture::draw(f32 x, f32 y, f32 width, f32 height, bool mirrorX, bool mirrorY,
                       bool rotate90) {
+#if PLATFORM_PC
+    OSReport("[J2D] draw: visible=%d texNum=%d tex0=%p\n",
+             isVisible(), mTextureNum, mTexture[0]);
+#endif
     if (isVisible() && mTextureNum != 0 && mTexture[0] != NULL) {
         f32 x2 = x + width;
         f32 y2 = y + height;

@@ -490,6 +490,11 @@ void pal_gx_begin(GXPrimitive prim, GXVtxFmt fmt, u16 nverts) {
 void pal_gx_end(void) {
     if (!g_gx_state.draw.active) return;
 
+    /* Derive vertex count from data written */
+    if (g_gx_state.draw.vtx_data_pos > 0 && g_gx_state.draw.verts_written == 0) {
+        g_gx_state.draw.verts_written = g_gx_state.draw.nverts;
+    }
+
     /* Track statistics */
     g_gx_state.draw_calls++;
     g_gx_state.total_verts += g_gx_state.draw.verts_written;
