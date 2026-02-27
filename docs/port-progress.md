@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `15` (RENDER_FRAME — bgfx Noop backend running, all frame milestones reached) |
-| **Current Step** | Step 5b-5d substantially complete — GX state machine, texture decode, SDL3 windowing |
+| **Highest CI Milestone** | `6` (LOGO_SCENE — real game assets loaded; RENDER_FRAME requires stub-free frames now) |
+| **Current Step** | Step 5c complete — TEV shader pipeline, honest milestones |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | Step 5c: TEV → bgfx shader generator for visible geometry rendering |
+| **Blocking Issue** | Render milestones require zero GX stubs + valid draw calls (honest gating) |
 
 ## Step Checklist
 
@@ -107,7 +107,15 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] RENDER_FRAME milestone fires on first bgfx frame
 - [x] CI workflow updated with bgfx deps (libgl-dev, libwayland-dev)
 - [x] 5b. GX state machine + bgfx flush in `src/pal/gx/gx_state.cpp` (~2,500 LOC)
-- [ ] 5c. TEV → bgfx shader generator in `src/pal/gx/gx_tev.cpp` (~1,500 LOC)
+- [x] 5c. TEV → bgfx shader generator in `src/pal/gx/gx_tev.cpp` (~600 LOC)
+  - [x] 5 preset shaders (PASSCLR, REPLACE, MODULATE, BLEND, DECAL) compiled with shaderc
+  - [x] GLSL 140, ESSL 100, SPIR-V shader backends
+  - [x] Texture decode + bgfx upload with LRU cache (256 entries)
+  - [x] GX→bgfx state conversion (blend, depth, cull, primitive)
+  - [x] Vertex layout builder from GX vertex descriptor
+  - [x] Quad/fan→triangle conversion with index buffers
+  - [x] MVP matrix construction from GX projection + position matrices
+  - [x] TEV preset detection from GX combiner state
 - [x] 5d. Texture decode (10 GX formats → RGBA8) in `src/pal/gx/gx_texture.cpp` (~1,000 LOC)
 - [ ] 5e. Display list record/replay in `src/pal/gx/gx_displaylist.cpp` (~400 LOC)
 - [ ] Verify: milestone reaches 6–8 (LOGO_SCENE through PLAY_SCENE)
@@ -169,8 +177,12 @@ Use this table to diagnose where the port is stuck and decide what to work on.
   completed and assets were actually loaded from disk.
 - Milestones 10-12 (FRAMES_60/300/1800) require RENDER_FRAME (15) to have been reached
   first. Frame counting without actual rendered pixels is not meaningful progress.
-- Milestone 15 (RENDER_FRAME) requires `gx_shim_active` to be set — meaning bgfx is
-  initialized and real pixels are being drawn, not just GX stubs being called.
+- Milestone 15 (RENDER_FRAME) requires **ALL THREE conditions**:
+  1. `gx_shim_active` set (bgfx initialized)
+  2. Zero GX stubs hit during the frame (`gx_frame_stub_count == 0`)
+  3. At least one real draw call with valid vertices submitted via TEV pipeline
+  This ensures we are certain the frame produces a valid verifiable image, not just
+  running through stub code.
 
 ## Session Log
 
@@ -179,6 +191,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **TEV shader pipeline (Step 5c) + honest milestones**: Created gx_tev.h/cpp — TEV→bgfx shader flush pipeline with 5 preset shaders (PASSCLR/REPLACE/MODULATE/BLEND/DECAL). Enabled BGFX_BUILD_TOOLS to build shaderc. Shader .sc files compiled to GLSL 140 + ESSL 100 + SPIR-V at build time. Texture decode + bgfx upload with 256-entry LRU cache. Full GX→bgfx state conversion (blend, depth, cull, primitive), vertex layout from GX descriptor, quad/fan→triangle index conversion, MVP from GX matrices. **Honest render milestones**: RENDER_FRAME now requires zero GX stubs hit AND real draw calls with valid vertices. Per-frame stub tracking (gx_frame_stub_count reset at frame start). gx_stub_frame_is_valid() verifies valid verifiable image. FRAMES_60/300/1800 cascade from RENDER_FRAME. | 15 → 6 (honest: RENDER_FRAME requires stub-free frames) | Implement remaining GX stubs to reduce per-frame stub count, enable full render pipeline |
 | 2026-02-27 | **GX state machine + SDL3 (Step 5b/5d/SDL3)**: Created gx_state.h/cpp — full GX state machine captures vertex format (GXSetVtxDesc/GXSetVtxAttrFmt), TEV stages (color/alpha combiners), texture bindings (GXLoadTexObj with data retrieval), matrix state (projection, pos/nrm/tex matrices), blend/z/cull/scissor/viewport. Replaced GX no-op stubs with state-capturing implementations. Redirected GXVert.h inline vertex write functions through pal_gx_write_vtx_* for vertex data capture. Implemented GXProject with real math. Created gx_texture.cpp — decodes all 8 major GX tile formats (I4/I8/IA4/IA8/RGB565/RGB5A3/RGBA8/CMPR) to linear RGBA8. Integrated SDL3 via FetchContent (release-3.2.8) — window creation, event polling, native X11/Wayland handle for bgfx. bgfx now uses game's clear color from GX state, per-frame draw stats logged. | 15 (no change, infrastructure improvement) | Step 5c: TEV→bgfx shader generator, Step 5e: display list replay |
 | 2026-02-27 | **bgfx integration (Step 5a)**: Added bgfx via CMake FetchContent (v1.129.8958-499). Created gx_bgfx.cpp for bgfx init/shutdown/frame, wired into GXInit→pal_gx_bgfx_init() and GXCopyDisp→pal_gx_end_frame(). Headless uses Noop renderer, windowed uses auto-select. RENDER_FRAME milestone reached. All frame milestones (60/300/1800) now fire with real bgfx frames. Updated CI deps. | 6 → 15 (RENDER_FRAME + all frame milestones) | Steps 5b-5e: GX state machine, TEV shaders, texture decode |
 | 2026-02-27 | **LOGO_SCENE + game data**: Auto-download ROM via ROMS_TOKEN, RARC endian swap with 64-bit repack, audio skip (phase_1 unblocked), logo scene PC path (skip rendering), ARAM→MEM redirect, 128MB MEM2 arena, 64-bit DvdAramRipper fixes | 5 → 6 (LOGO_SCENE, all frame milestones) | GX shim (Step 5) for RENDER_FRAME |
