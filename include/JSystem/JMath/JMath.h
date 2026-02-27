@@ -14,18 +14,24 @@ void JMAVECScaleAdd(__REGISTER const Vec* vec1, __REGISTER const Vec* vec2, __RE
 inline int JMAAbs(int value) {
 #ifdef __MWERKS__
     return __abs(value);
+#else
+    return value < 0 ? -value : value;
 #endif
 }
 
 inline f32 JMAAbs(f32 x) {
 #ifdef __MWERKS__
     return __fabsf(x);
+#else
+    return x < 0.0f ? -x : x;
 #endif
 }
 
 inline f32 JMAFastReciprocal(f32 value) {
 #ifdef __MWERKS__
     return __fres(value);
+#else
+    return 1.0f / value;
 #endif
 }
 
@@ -40,6 +46,8 @@ inline float __frsqrtes(__REGISTER double f) {
 
     // clang-format on
     return out;
+#else
+    return (float)(1.0 / sqrt(f));
 #endif
 }
 
@@ -54,6 +62,8 @@ inline f32 JMAFastSqrt(__REGISTER const f32 input) {
     } else {
         return input;
     }
+#else
+    return sqrtf(input);
 #endif
 }
 
@@ -87,6 +97,19 @@ inline f32 JMAHermiteInterpolation(__REGISTER f32 p1, __REGISTER f32 p2, __REGIS
     }
     // clang-format on
     return ff25;
+#else
+    /* Hermite interpolation: evaluate cubic hermite spline at p1.
+     * Parameters: p1=time, p2=startTime, p3=startValue, p4=startTangent,
+     *             p5=endTime, p6=endValue, p7=endTangent */
+    f32 t = (p1 - p2) / (p5 - p2);
+    f32 t2 = t * t;
+    f32 t3 = t2 * t;
+    f32 h1 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+    f32 h2 = t3 - 2.0f * t2 + t;
+    f32 h3 = -2.0f * t3 + 3.0f * t2;
+    f32 h4 = t3 - t2;
+    f32 dt = p5 - p2;
+    return h1 * p3 + h2 * (p4 * dt) + h3 * p6 + h4 * (p7 * dt);
 #endif
 }
 

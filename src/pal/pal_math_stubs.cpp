@@ -727,6 +727,15 @@ void MTXPop(MTXStack* sPtr, Mtx m) {
     PSMTXCopy(*sPtr->stackPtr, m);
 }
 
+void C_QUATRotAxisRad(Quaternion* r, const Vec* axis, f32 rad) {
+    f32 half = rad * 0.5f;
+    f32 s = sinf(half);
+    r->x = axis->x * s;
+    r->y = axis->y * s;
+    r->z = axis->z * s;
+    r->w = cosf(half);
+}
+
 } /* extern "C" */
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

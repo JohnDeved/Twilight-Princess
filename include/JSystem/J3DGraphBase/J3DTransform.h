@@ -2,6 +2,9 @@
 #define J3DTRANSFORM_H
 
 #include <dolphin/mtx.h>
+#ifndef __MWERKS__
+#include <string.h>
+#endif
 
 struct J3DTextureSRTInfo;
 
@@ -39,6 +42,13 @@ struct J3DTransformInfo {
             psq_st var_f31, J3DTransformInfo.mTranslate(var_r30), 0, 0
         }
         mTranslate.z = b.mTranslate.z;
+        return *this;
+    }
+#else
+    inline J3DTransformInfo& operator=(const J3DTransformInfo& b) {
+        mScale = b.mScale;
+        mRotation = b.mRotation;
+        mTranslate = b.mTranslate;
         return *this;
     }
 #endif
@@ -84,6 +94,8 @@ inline void J3DPSMtx33Copy(__REGISTER Mtx3P src, __REGISTER Mtx3P dst) {
         psq_st fr1, 0x18(dst), 0, 0
         stfs fr0, 0x20(dst)
     }
+#else
+    memcpy(dst, src, 9 * sizeof(f32));
 #endif
 }
 
@@ -109,6 +121,12 @@ inline void J3DPSMtx33CopyFrom34(__REGISTER MtxP src, __REGISTER Mtx3P dst) {
         psq_st x_y3, 24(dst), 0, 0
         stfs z3, 0x20(dst)
     }
+#else
+    f32* s = (f32*)src;
+    f32* d = (f32*)dst;
+    d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
+    d[3] = s[4]; d[4] = s[5]; d[5] = s[6];
+    d[6] = s[8]; d[7] = s[9]; d[8] = s[10];
 #endif
 }
 
@@ -136,6 +154,11 @@ inline void J3DPSMulMtxVec(__REGISTER MtxP mtx, __REGISTER Vec* vec, __REGISTER 
         ps_sum0 f6, f5, f6, f5
         psq_st f6, 8(dst), 1, 0
     }
+#else
+    f32 (*m)[4] = (f32(*)[4])mtx;
+    dst->x = m[0][0]*vec->x + m[0][1]*vec->y + m[0][2]*vec->z;
+    dst->y = m[1][0]*vec->x + m[1][1]*vec->y + m[1][2]*vec->z;
+    dst->z = m[2][0]*vec->x + m[2][1]*vec->y + m[2][2]*vec->z;
 #endif
 }
 
@@ -163,6 +186,11 @@ inline void J3DPSMulMtxVec(__REGISTER MtxP mtx, __REGISTER S16Vec* vec, __REGIST
         ps_sum0 f6, f5, f6, f5
         psq_st f6, 4(dst), 1, 7
     }
+#else
+    f32 (*m)[4] = (f32(*)[4])mtx;
+    dst->x = (s16)(m[0][0]*vec->x + m[0][1]*vec->y + m[0][2]*vec->z);
+    dst->y = (s16)(m[1][0]*vec->x + m[1][1]*vec->y + m[1][2]*vec->z);
+    dst->z = (s16)(m[2][0]*vec->x + m[2][1]*vec->y + m[2][2]*vec->z);
 #endif
 }
 
@@ -194,6 +222,11 @@ inline void J3DPSMulMtxVec(__REGISTER Mtx3P mtx, __REGISTER Vec* vec, __REGISTER
         ps_sum0 f6, f5, f6, f5
         psq_st f6, 8(dst), 1, 0
     }
+#else
+    f32* m = (f32*)mtx;
+    dst->x = m[0]*vec->x + m[1]*vec->y + m[2]*vec->z;
+    dst->y = m[3]*vec->x + m[4]*vec->y + m[5]*vec->z;
+    dst->z = m[6]*vec->x + m[7]*vec->y + m[8]*vec->z;
 #endif
 }
 
@@ -225,6 +258,11 @@ inline void J3DPSMulMtxVec(__REGISTER Mtx3P mtx, __REGISTER S16Vec* vec, __REGIS
         ps_sum0 f6, f5, f6, f5
         psq_st f6, 4(dst), 1, 7
     }
+#else
+    f32* m = (f32*)mtx;
+    dst->x = (s16)(m[0]*vec->x + m[1]*vec->y + m[2]*vec->z);
+    dst->y = (s16)(m[3]*vec->x + m[4]*vec->y + m[5]*vec->z);
+    dst->z = (s16)(m[6]*vec->x + m[7]*vec->y + m[8]*vec->z);
 #endif
 }
 
