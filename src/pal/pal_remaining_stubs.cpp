@@ -63,8 +63,9 @@ s32 OSCheckActiveThreads(void) { return 1; }
 u8 OSGetLanguage(void) { return 1; }
 
 /* MEM2 arena: On Wii, this is 64MB of external memory starting at 0x90000000.
- * On PC, we provide a 32MB malloc-backed buffer. */
-static u8 s_mem2_arena[32 * 1024 * 1024];
+ * On PC, we provide a 128MB malloc-backed buffer to account for 64-bit overhead
+ * and ARAM archives loaded into main RAM instead of dedicated audio memory. */
+static u8 s_mem2_arena[128 * 1024 * 1024];
 static u8* s_mem2_lo = s_mem2_arena;
 static u8* s_mem2_hi = s_mem2_arena + sizeof(s_mem2_arena);
 void* OSGetMEM2ArenaHi(void) { return s_mem2_hi; }

@@ -63,7 +63,13 @@ JKRArchive* JKRArchive::mount(s32 entryNum, JKRArchive::EMountMode mountMode, JK
         newArchive = new (heap, alignment) JKRMemArchive(entryNum, mountDirection);
         break;
     case JKRArchive::MOUNT_ARAM:
+#if PLATFORM_PC
+        /* ARAM archive uses 32-bit DMA APIs incompatible with 64-bit.
+         * Redirect to memory archive since PC has plenty of RAM. */
+        newArchive = new (heap, alignment) JKRMemArchive(entryNum, mountDirection);
+#else
         newArchive = new (heap, alignment) JKRAramArchive(entryNum, mountDirection);
+#endif
         break;
     case JKRArchive::MOUNT_DVD:
         newArchive = new (heap, alignment) JKRDvdArchive(entryNum, mountDirection);
