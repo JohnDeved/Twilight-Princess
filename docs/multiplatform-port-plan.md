@@ -1,12 +1,41 @@
-# Twilight Princess Multiplatform Port Plan (GCN-First, Time-to-Ship Optimized)
+# Twilight Princess Multiplatform Port Plan (Shield-Derived, Time-to-Ship Optimized)
+
+## Strategy: Leverage the Shield Port
+
+The Nvidia Shield version of Twilight Princess is already a non-Nintendo platform target that
+compiles from the **same source tree**. While the Shield build still targets PowerPC and runs
+under a translation layer on the Shield TV hardware, it has **already solved most of the
+platform-abstraction problems** we need for a native PC/NX port:
+
+| Problem | Shield's solution | What we reuse |
+|---|---|---|
+| Platform conditionals | `PLATFORM_SHIELD` in 63+ files, 220+ files use `PLATFORM_*` | Add `PLATFORM_PC` to the same `#if` chains — zero game logic edits |
+| Dual memory heaps | Shield shares `JKRHeap::sRootHeap2` (MEM2) with Wii | Keep dual-heap; map both to host RAM |
+| Simplified saves | `NANDSimpleSafeOpen/Close` instead of physical memory cards | Replace NAND calls with `pal_save` file I/O |
+| No physical media | Shield skips `CARDInit()` (`#if !PLATFORM_SHIELD`) | Same — skip card I/O, use `pal_fs` |
+| Fixed audio output | `JASDriver::setOutputMode(1)` (no hardware query) | Same pattern — set fixed output mode for host audio |
+| FIFO state bypass | `GXSaveCPUFifo()` disabled (`#if !PLATFORM_SHIELD`) | Same — our GX shim owns state, no FIFO save needed |
+| Math robustness | Shield adds `errno = EDOM` guards in `e_acos.c`, `e_asin.c`, `e_fmod.c` | Keep these fixes — they prevent crashes on x86 too |
+| Debug reporting | Shield disables some `JASReport` calls | Keep disabled for release builds |
+| Input model | Shield reuses `JUTGamePad` (GCN path, not WPAD/KPAD) | Same — map SDL3 gamepad to GCN `PadStatus` |
+| Widescreen / framebuffer | `#if PLATFORM_WII \|\| PLATFORM_SHIELD` blocks | Add `PLATFORM_PC` to these — get widescreen free |
+| Post-processing scales | `lingcod_getBloomScale()` / `lingcod_getDoFScale()` return 1.0f | Replace `lingcod` stubs with ImGui-controllable values |
+| Sampling buffer | `RECPD_SAMPLING_BUF_COUNT = 16` (vs GCN's 10) | Use Shield's larger buffer for PC too |
+
+**Bottom line**: Instead of porting from GCN and re-discovering every platform boundary,
+we start from the ShieldD (debug) build configuration. The ShieldD config compiles **4,028
+source files** — the full game — and its `PLATFORM_SHIELD` conditionals mark exactly where
+hardware assumptions live. Our port adds `PLATFORM_PC` alongside `PLATFORM_SHIELD` in most
+cases, then replaces the remaining PowerPC/GX hardware layer with native implementations.
 
 ## Scope
 
-- Canonical game behavior/content: **GameCube version**.
+- Port baseline: **ShieldD build configuration** (4,028 source files, 804 REL modules).
+- Canonical gameplay: **GCN behavior** (Shield already preserves GCN input model and content).
 - Target platforms: **Windows, Linux, macOS, NX Switch (homebrew)**.
-- Primary rendering backend for first ship: **OpenGL**.
-- Tooling direction: modern C++ build with **CMake** (replaces the current Ninja/configure.py decomp toolchain).
-- Development tooling: **ImGui** integrated from the start.
+- Primary rendering backend: **OpenGL**.
+- Build system: **CMake** (parallel to existing Ninja/configure.py decomp toolchain).
+- Development tooling: **ImGui** integrated from the start (replaces `lingcod` debug hooks).
 
 ## Codebase Snapshot (Measured)
 
@@ -20,10 +49,11 @@
 | `src/m_Do/` (machine layer) | 17 .cpp | **Primary hardware abstraction — key porting surface** |
 | `src/JSystem/` | ~311 .cpp | J3D rendering, JKernel, JAudio2, J2D, JParticle |
 | `src/dolphin/` | ~180 .cpp/.c | GameCube SDK (DVD, OS, GX, PAD, DSP, etc.) |
-| `src/revolution/` | ~192 .cpp/.c | Wii SDK (WPAD, KPAD, homebuttonLib, etc.) |
+| `src/revolution/` | ~192 .cpp/.c | Wii SDK — Shield compiles all of these too |
 | `src/Z2AudioLib/` | 23 .cpp | TP-specific audio (wraps JAudio2) |
 | `src/SSystem/` | 40 .cpp | Math, collision, component utilities |
-| GX headers | 21 in `include/dolphin/gx/`, 21 in `include/revolution/gx/` | Identical API surface for GCN and Wii |
+| `src/lingcod/` | 1 .c | Nvidia stub layer — replace with ImGui/PAL hooks |
+| GX headers | 21 in `include/dolphin/gx/`, 21 in `include/revolution/gx/` | Shield compiles these too — GX shim replaces them |
 
 **Total GX function call sites across `src/`**: ~2,500+ (dominated by `GXSet*`, `GXInit*`, `GXLoad*`, FIFO writes).
 
@@ -38,161 +68,178 @@
 
 ## Core Principles
 
-- **GCN-first semantics**: preserve GameCube gameplay feel, camera behavior, and content assumptions.
+- **Shield-derived, not from-scratch**: start from the ShieldD configuration as the closest
+  existing non-Nintendo target. Inherit its platform conditionals and behavioral choices.
+- **GCN-first semantics**: preserve GameCube gameplay feel and content (Shield already does this).
 - **One renderer first**: OpenGL everywhere for initial ship.
-- **Boundary-only porting**: convert at PAL and GX boundaries; avoid rewriting gameplay systems.
+- **Boundary-only porting**: replace `src/dolphin/`, `src/revolution/` SDK layers with PAL +
+  GX shim; keep everything above `src/m_Do/` untouched.
 - **Fail-soft, not fail-hard**: unknown GX paths render with safe defaults + log once.
-- **Playable-first**: prioritize title → field → combat → menu/save flow over perfect visual parity.
+- **Playable-first**: title → field → combat → menu/save before visual perfection.
 
 ## What We Intentionally Skip Early
 
-- Wii-specific systems (WPAD/KPAD in 45+ files, Wii speaker, `src/revolution/` SDK paths).
+- Wii-specific systems (WPAD/KPAD in 45+ files, Wii speaker — Shield already skips most of these).
 - Exact parity for heavy post-processing (DoF/bloom/motion blur) in first playable.
 - Mirror-heavy and movie paths in first pass (see measured heavy areas below).
-- Full async disc emulation (threaded DVD behavior via `mDoDvdThd_*`).
 - Full GX API upfront (~2,500 call sites; implement hot path first, long tail on demand).
 - Broad settings UI and advanced remapping in v1 (basic stable mapping first).
-- Shield-specific code paths (`src/lingcod/`, `PLATFORM_SHIELD` branches).
 
 ## Architecture
 
 ```
-Game Logic (src/d/, src/d/actor/)       ~994 files — DO NOT TOUCH unless blocking
+Game Logic (src/d/, src/d/actor/)       ~994 files — DO NOT TOUCH (same as Shield)
   → Framework (src/f_pc/, src/f_op/, src/f_ap/)   56 files — DO NOT TOUCH
-    → Machine Layer (src/m_Do/)          17 files — THIN ADAPTATION LAYER
-      → PAL (src/pal/)                   NEW — platform services + GX shim
-         → GX Shim (src/pal/gx/)        NEW — GX → OpenGL translation
-         → Platform (src/pal/platform/)  NEW — SDL3 / libnx backends
+    → Machine Layer (src/m_Do/)          17 files — THIN ADAPTATION (reuse Shield conditionals)
+      → PAL (src/pal/)                   NEW — replaces src/dolphin/ + src/revolution/
+         → GX Shim (src/pal/gx/)        NEW — replaces revolution/gx/ (GX → OpenGL)
+         → Platform (src/pal/platform/)  NEW — replaces dolphin/os,dvd,pad,dsp,vi + lingcod
 ```
 
-**Key insight — `src/m_Do/` is already the hardware abstraction layer.** Files like
-`m_Do_graphic.cpp`, `m_Do_controller_pad.cpp`, `m_Do_audio.cpp`, `m_Do_MemCard.cpp`,
-`m_Do_dvd_thread.cpp`, and `m_Do_machine.cpp` sit between gameplay and hardware.
-The PAL layer slots in directly beneath `m_Do/`, keeping changes above it minimal.
+**Key insight — the Shield port already marks the exact boundaries.** Every
+`#if PLATFORM_SHIELD` or `#if !PLATFORM_SHIELD` in the codebase is a signpost showing where
+hardware assumptions live. Our job is to add `PLATFORM_PC` to those same decision points and
+provide native implementations underneath.
 
-## Existing Conditional Compilation System (Major Time Saver)
+## Shield Conditional Audit (What We Inherit vs Replace)
 
-The codebase already has a mature version/platform conditional system in `include/global.h`:
+The 63+ files with `PLATFORM_SHIELD` conditionals fall into clear categories:
 
-```c
-#define PLATFORM_GCN    (VERSION >= VERSION_GCN_USA && VERSION <= VERSION_GCN_JPN)
-#define PLATFORM_WII    (VERSION >= VERSION_WII_USA_R0 && VERSION <= VERSION_WII_PAL_KIOSK)
-#define PLATFORM_SHIELD (VERSION >= VERSION_SHIELD && VERSION <= VERSION_SHIELD_DEBUG)
-```
+### Inherit directly (add `PLATFORM_PC` alongside `PLATFORM_SHIELD`)
 
-**~220+ files** already use `PLATFORM_*` conditionals. The `PLATFORM_SHIELD` path (63+ files)
-is a precedent for a non-Nintendo target:
-- `PLATFORM_WII || PLATFORM_SHIELD` blocks often share code, showing how a PC target can
-  piggyback on Wii paths where hardware semantics align (widescreen, framebuffer setup).
-- Shield-specific tweaks (sampling buffer sizes, save system via `lingcod`) demonstrate
-  the pattern for platform-specific overrides.
+| Pattern | Files | Action |
+|---|---|---|
+| `PLATFORM_WII \|\| PLATFORM_SHIELD` (widescreen, framebuffer) | `m_Do_graphic.cpp` + ~15 others | Change to `PLATFORM_WII \|\| PLATFORM_SHIELD \|\| PLATFORM_PC` |
+| Dual heap (`sRootHeap2`) | JKernel, m_Do_main.cpp | Inherit — PC has plenty of RAM |
+| `!PLATFORM_SHIELD` guards (skip `CARDInit`, `GXSaveCPUFifo`) | `m_Do_MemCard.cpp`, `JUTGraphFifo.h` | Same exclusions apply to PC |
+| Fixed audio output mode | `JAUInitializer.cpp` | Inherit `setOutputMode(1)` |
+| Larger sampling buffer (16 vs 10) | `m_Re_controller_pad.h` | Inherit — no downside on PC |
+| Math `errno` guards | `e_acos.c`, `e_asin.c`, `e_fmod.c` | Inherit — prevents x86 crashes |
+| Disabled debug reporting | `JAISeMgr.cpp` | Inherit for release, toggle for debug |
 
-**Action**: Add `PLATFORM_PC` and (later) `PLATFORM_NX_HB` macros. Many conditionals become
-`#if PLATFORM_GCN || PLATFORM_PC` or fall through to platform-agnostic defaults.
-This avoids mass-editing — new platform code is additive.
+### Replace with native implementations
+
+| Pattern | Files | Action |
+|---|---|---|
+| `lingcod_*` stubs (bloom/DoF scales, events) | `src/lingcod/LingcodPatch.c` | Replace with ImGui-controllable post-processing params |
+| `NANDSimpleSafeOpen/Close` | `m_Do_MemCard.cpp` | Replace with `pal_save` file I/O |
+| GX FIFO pipe (`0xCC008000`) | `include/dolphin/gx/GXVert.h` | Redirect writes to RAM buffer in GX shim |
+| PowerPC inline assembly | `J3DTransform.cpp` (Shield already disables) | Use standard `sqrtf`/math — Shield shows the way |
+| Revolution SDK (`src/revolution/`) | 192 files | Replace with PAL modules |
+| Dolphin SDK (`src/dolphin/`) | 180 files | Replace with PAL modules |
 
 ## Separation of Concerns
 
 | Layer | Directories | Rules |
 |---|---|---|
 | Game logic | `src/d/`, `src/d/actor/`, `src/f_*` | No platform headers, no OpenGL. Compile unchanged. |
-| Machine layer | `src/m_Do/` | Calls PAL interfaces. Thin edits to swap HW calls → PAL calls. |
-| GX shim | `src/pal/gx/` | Owns GX → OpenGL translation and render state. |
-| Platform services | `src/pal/platform/` | SDL3 / libnx backends for window, input, audio, fs, save. |
-| Debug UI | `src/pal/imgui/` | ImGui overlays; no gameplay ownership. |
+| Machine layer | `src/m_Do/` | Extend existing `PLATFORM_SHIELD` conditionals with `PLATFORM_PC`. |
+| GX shim | `src/pal/gx/` | Owns GX → OpenGL translation. Replaces `revolution/gx/` + `dolphin/gx/`. |
+| Platform services | `src/pal/platform/` | SDL3 / libnx backends. Replaces `dolphin/os,dvd,pad,dsp,vi` + `lingcod`. |
+| Debug UI | `src/pal/imgui/` | ImGui overlays; replaces `lingcod` debug hooks. |
 
 ## Step-by-Step Execution Plan
 
-### Step 1: Build Modernization
+### Step 1: Build Modernization (Shield-Derived)
 
-**Goal**: Compile the GCN-canonical C++ source with a modern host compiler.
+**Goal**: Compile the ShieldD source set with a modern host compiler.
 
-- Introduce root `CMakeLists.txt` targeting the host platform (not PowerPC cross-compile).
-- The current build (`configure.py` → Ninja → MWCC cross-compiler) stays for decomp validation;
-  the CMake build is a **parallel** target for the port.
-- Exclude `src/dolphin/`, `src/revolution/`, `src/PowerPC_EABI_Support/`, `src/TRK_MINNOW_DOLPHIN/`,
-  `src/NdevExi2A/`, `src/odemuexi2/`, `src/odenotstub/`, `src/lingcod/` from the port build
-  (these are SDK/hardware libraries replaced by PAL).
-- Convert MWCC constructs that block compilation:
-  - `#pragma pack` → `__attribute__((packed))` or already portable (check `include/types.h`).
-  - `__declspec(weak)` → `__attribute__((weak))` (already handled by `DECL_WEAK` macro in `types.h`).
-  - MWCC intrinsics in `global.h`: `__cntlzw` → `__builtin_clz` (direct equivalent);
-    cache-control intrinsics (`__dcbf`, `__dcbst`, `__icbi`) → no-ops on x86 (no coherence needed);
-    `__sync` → no-op or `__sync_synchronize()` (x86 is strongly ordered, rarely matters).
-- **Time saver**: `DECL_WEAK`, `ATTRIBUTE_ALIGN`, `NO_INLINE` macros in `types.h`/`global.h`
-  already abstract most compiler differences. Only MWCC intrinsics need new shims.
+- Use `config/ShieldD/splits.txt` (4,028 files) as the definitive source list — this is the
+  proven set of files that compile together for a non-GCN target.
+- Introduce root `CMakeLists.txt` targeting the host platform.
+- The current build (`configure.py` → Ninja → MWCC) stays untouched for decomp validation.
+- **Exclude from port build** (replaced by PAL):
+  - `src/dolphin/` (180 files) — replaced by PAL platform services
+  - `src/revolution/` (192 files) — replaced by PAL platform services
+  - `src/PowerPC_EABI_Support/`, `src/TRK_MINNOW_DOLPHIN/`, `src/NdevExi2A/`
+  - `src/odemuexi2/`, `src/odenotstub/`
+  - `src/lingcod/` (1 file) — replaced by ImGui/PAL hooks
+- **Include in port build** (compile with `PLATFORM_PC` defined):
+  - `src/d/`, `src/d/actor/` (~994 files) — unchanged
+  - `src/f_pc/`, `src/f_op/`, `src/f_ap/` (56 files) — unchanged
+  - `src/m_Do/` (17 files) — extend Shield conditionals
+  - `src/JSystem/` (~311 files) — extend Shield conditionals where present
+  - `src/Z2AudioLib/` (23 files), `src/SSystem/` (40 files) — unchanged
+- Define `VERSION_PC = 13` and add to `include/global.h`:
+  ```c
+  #define PLATFORM_PC (VERSION == VERSION_PC)
+  ```
+  This makes `PLATFORM_PC` a peer of `PLATFORM_SHIELD`, inheriting the same conditional
+  architecture.
+- Convert MWCC constructs (most already handled by existing macros):
+  - `__cntlzw` → `__builtin_clz`; `__dcbf`/`__dcbst`/`__icbi` → no-ops on x86;
+    `__sync` → no-op (x86 is strongly ordered).
+  - `DECL_WEAK`, `ATTRIBUTE_ALIGN`, `NO_INLINE` in `types.h`/`global.h` already portable.
+- **Time saver**: ShieldD's `splits.txt` is a battle-tested file list — no guesswork about
+  which files form a complete build. Shield's existing `#if !PLATFORM_SHIELD` exclusions
+  (e.g., `CARDInit`, `GXSaveCPUFifo`) carry over to `PLATFORM_PC` for free.
 
-### Step 2: Flatten Version Branching Toward GCN Behavior
+### Step 2: Extend Shield Conditionals to PC
 
-**Goal**: Resolve the ~220+ conditional-compilation sites to GCN-canonical behavior.
+**Goal**: Make all `PLATFORM_SHIELD` code paths available to `PLATFORM_PC`.
 
-- Define `VERSION = VERSION_GCN_USA` (or a new `VERSION_PC` that makes `PLATFORM_PC` true and
-  `PLATFORM_GCN`-like for gameplay defaults).
-- For `#if PLATFORM_WII`-only blocks: exclude (dead code for the port).
-- For `#if PLATFORM_GCN`-only blocks: keep as-is (already canonical).
-- For `#if PLATFORM_WII || PLATFORM_SHIELD` blocks: evaluate case-by-case; some (widescreen,
-  framebuffer management) may be useful under `PLATFORM_PC`.
-- For `REGION_*` blocks: default to `REGION_USA`; region selection is a post-ship feature.
-- **Time saver**: Don't mass-delete conditionals. Add `PLATFORM_PC` to relevant `#if` chains
-  and let the preprocessor do the work. Keeps the tree mergeable with upstream decomp.
+- Audit the 63+ files with `PLATFORM_SHIELD` conditionals:
+  - `#if PLATFORM_WII || PLATFORM_SHIELD` → `#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC`
+  - `#if !PLATFORM_SHIELD` → `#if !PLATFORM_SHIELD && !PLATFORM_PC`
+  - `#if PLATFORM_SHIELD`-only → evaluate: inherit or replace with PC-specific code
+- For `REGION_*` blocks: define `REGION_USA` for PC (same as GCN USA).
+- Shield's `REGION_CHN` code (Chinese text, lingcod integration) → skip for PC.
+- **Time saver**: This is mechanical — extend existing `#if` chains. No logic changes.
+  The Shield port already proved these code paths work on a non-Nintendo target.
+  Estimated ~63 files to touch, most are one-line `#if` chain extensions.
 
-### Step 3: PAL Bootstrap (Minimal Surface)
+### Step 3: PAL Bootstrap (Replace SDK Layers)
 
-**Goal**: Boot to a window with main loop and ImGui overlay — no rendering yet.
+**Goal**: Provide native implementations for the SDK functions that Shield ran via translation.
 
-Create `src/pal/` with this minimal surface:
+The Shield build still compiles `src/dolphin/` and `src/revolution/` because it runs them
+through a PowerPC translation layer. Our port replaces those 372 files with ~6 thin PAL modules:
 
-| PAL module | Wraps | PC backend | NX backend |
+| PAL module | Replaces | PC backend | NX backend |
 |---|---|---|---|
-| `pal_window` | Window + GL context | SDL3 | libnx + EGL |
-| `pal_os` | Timers, sleep, assertions | SDL3 / `<chrono>` | libnx |
-| `pal_fs` | File I/O, path resolution | `<filesystem>` | libnx romfs |
-| `pal_input` | Gamepad + keyboard | SDL3 gamepad | libnx HID |
-| `pal_audio` | PCM output stream | SDL3 audio | libnx audren |
-| `pal_save` | Save file read/write | `<fstream>` | libnx account/save |
+| `pal_window` | `dolphin/vi`, `revolution/vi` (video init) | SDL3 | libnx + EGL |
+| `pal_os` | `dolphin/os` (timers, threads, exceptions) | `<chrono>` + `<thread>` | libnx |
+| `pal_fs` | `dolphin/dvd` + NAND filesystem | `<filesystem>` | libnx romfs |
+| `pal_input` | `dolphin/pad` (Shield reuses GCN pad path) | SDL3 gamepad | libnx HID |
+| `pal_audio` | `dolphin/dsp` + `dolphin/ai` | SDL3 audio | libnx audren |
+| `pal_save` | `NANDSimpleSafe*` (Shield's save path) | `<fstream>` | libnx account/save |
 
-**Concrete m_Do touch points** (files that call into hardware and need PAL wiring):
+**m_Do touch points** — same files Shield already modifies:
 
-| m_Do file | Hardware dependency | PAL replacement |
+| m_Do file | Shield's current behavior | PC PAL replacement |
 |---|---|---|
-| `m_Do_main.cpp` | `JKRAram`, OS init, heap setup | `pal_os`, RAM-only heaps |
-| `m_Do_graphic.cpp` | GX init, framebuffer, video mode | `pal_window` + GX shim |
-| `m_Do_controller_pad.cpp` | `JUTGamePad` → PAD SDK | `pal_input` |
-| `m_Do_audio.cpp` | `JKRSolidHeap`, DVD thread for audio archives | `pal_audio` + `pal_fs` |
-| `m_Do_MemCard.cpp` | Memory card thread, mutex/condvar | `pal_save` |
-| `m_Do_dvd_thread.cpp` | DVD async command queue | `pal_fs` (sync read) |
-| `m_Do_machine.cpp` | Exception handler, video mode | `pal_os` |
-| `m_Do_DVDError.cpp` | DVD error overlay | Remove or stub |
+| `m_Do_main.cpp` | Uses `sRootHeap2` (dual heap, `PLATFORM_WII \|\| PLATFORM_SHIELD`) | Inherit dual heap → both backed by host RAM |
+| `m_Do_graphic.cpp` | 15+ Shield conditionals (widescreen, framebuffer, cursor) | Inherit widescreen path, wire to `pal_window` + GX shim |
+| `m_Do_controller_pad.cpp` | Uses GCN `JUTGamePad` path (not WPAD) | Wire `JUTGamePad` to `pal_input` (SDL3 gamepad) |
+| `m_Do_audio.cpp` | Loads `Z2CSRes.arc`, inits `Z2AudioCS` | Keep audio archive loading via `pal_fs` |
+| `m_Do_MemCard.cpp` | Skips `CARDInit`, uses `NANDSimpleSafe*` for saves | Replace NAND with `pal_save` file I/O |
+| `m_Do_dvd_thread.cpp` | DVD async commands (unchanged from GCN on Shield) | Make `create()` do sync read via `pal_fs`, mark done |
+| `m_Do_machine.cpp` | Exception handler, video mode | Replace with `pal_os` signal handler |
+| `m_Do_DVDError.cpp` | DVD error overlay | Stub (no disc errors on PC) |
 
-### Step 4: Replace DVD/Disc I/O With Direct File Access
+### Step 4: DVD/ARAM Simplification
 
-**Goal**: Eliminate hardware DVD threading without changing any caller.
+**Goal**: Collapse hardware I/O to direct memory operations.
 
-- `mDoDvdThd_command_c` and subclasses (`mDoDvdThd_mountArchive_c`,
-  `mDoDvdThd_mountXArchive_c`, `mDoDvdThd_toMainRam_c`) — keep the class interfaces.
-- Replace `create(...)` internals: read file from `pal_fs`, copy to heap, mark done immediately.
-- `sync()` returns true on first call (already done).
-- Callers in `src/d/`, `src/JSystem/JKernel/` continue to allocate commands and poll — no edits.
-- **Time saver**: This is a pure internal swap — zero callsite changes across 835+ actor files.
+**DVD** — Shield doesn't use physical media either, but still runs the DVD thread code through
+PowerPC translation. We simplify further:
+- `mDoDvdThd_command_c` subclasses: `create()` → sync read via `pal_fs`, mark done.
+- `sync()` → returns true immediately.
+- Zero changes to callers (835+ actor files untouched).
 
-### Step 5: ARAM-to-RAM Collapse
-
-**Goal**: Eliminate ARAM DMA without changing JKR/JAudio mount/load contracts.
-
-Affected files (from `include/JSystem/JKernel/`):
-- `JKRAram.h`, `JKRAramArchive.h`, `JKRAramHeap.h`, `JKRAramPiece.h`,
-  `JKRAramStream.h`, `JKRAramBlock.h`, `JKRDvdAramRipper.h`
-
-Action:
-- `JKRAram::aramToMainRam()` / `mainRamToAram()` → `memcpy` with matching signatures.
-- `JKRAramArchive` → backed by a `JKRMemArchive` internally.
+**ARAM** — Shield runs ARAM code through the translation layer too. We collapse it:
+- `JKRAram::aramToMainRam()` / `mainRamToAram()` → `memcpy`.
+- `JKRAramArchive` → backed by `JKRMemArchive` internally.
 - `JKRAramHeap` / `JKRAramBlock` → thin wrappers around host `malloc`.
-- Audio ARAM streams (`JASAramStream.h`, `JAUStreamAramMgr.h`) → RAM ring buffer.
-- **Time saver**: Keep every public method signature; only gut the DMA internals.
+- Audio ARAM streams → RAM ring buffer.
 
-### Step 6: GX Shim Bring-Up in Priority Tiers
+**Time saver**: The Shield port proves these subsystems work when ARAM is just memory —
+the translation layer was already treating ARAM addresses as regular RAM. We formalize that.
 
-**Scope**: ~2,500 GX call sites, 21 GX headers, ~50+ distinct GX functions.
+### Step 5: GX Shim (Replace Shield's Translated GX)
+
+**Scope**: The Shield build compiles all 20 `revolution/gx/*.c` files and runs them through
+PowerPC translation. We replace that entire layer with a native GX → OpenGL shim.
 
 #### Tier A — First Playable (title → field → combat)
 
@@ -207,107 +254,117 @@ Action:
 | Blend/Z | `GXSetBlendMode`, `GXSetZMode`, `GXSetAlphaCompare` | J3D pixel setup |
 | Display list | `GXCallDisplayList` | 10 files: `J3DShapeDraw`, `J3DPacket`, `d_a_player`, etc. |
 
+**Note**: Shield already disables `GXSaveCPUFifo()` — our shim doesn't need it either.
+Shield also disables PowerPC-specific `J3D_sqrtf()` assembly — we inherit standard `sqrtf()`.
+
 #### Tier B — Expand by Demand
 
-- Remaining `GXSet*` variants (lighting, fog, indirect textures, line/point width).
-- `GXDraw*` geometric primitives (`GXDrawCylinder`, `GXDrawSphere`, etc.).
-- `GXGet*` readback functions.
-- `GXPerf*` performance counters (stub or remove).
-- Rare TEV/texture filter modes encountered only in edge scenes.
+- Remaining `GXSet*` variants (lighting, fog, indirect textures).
+- `GXDraw*` geometric primitives, `GXGet*` readback, `GXPerf*` counters.
+- Rare TEV/texture filter modes.
 
 **Implementation strategy**:
-- Single `gx_state` struct tracks all GX state; flush to OpenGL at draw time.
-- Vertex data captured in RAM buffer during `GXBegin`/`GXEnd` or display list replay;
-  uploaded as GL VBO on flush.
+- `gx_state` struct captures all GX state; flush to OpenGL at draw time.
+- FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) → RAM vertex buffer, uploaded as GL VBO.
 - TEV stages → generated GLSL fragment shader (cache by TEV config hash).
-- **Time saver**: J3D is the dominant draw path (~311 JSystem files). Getting J3D materials
-  correct covers the vast majority of in-game rendering. Implement the TEV combiner for
-  J3D's common patterns first; exotic TEV setups can fall back to a solid-color shader.
+- **Time saver**: J3D is the dominant draw path. Getting J3D materials correct covers the
+  majority of in-game rendering. Focus TEV combiner on J3D's common patterns first.
 
-### Step 7: Visual Scope for First Playable
+### Step 6: Audio Bring-Up
 
-- Prioritize correctness in: title screen, Ordon Village, Faron Woods, first dungeon.
-- Defer exact parity in expensive edge paths (see heavy areas below).
-- Use ImGui feature toggles to disable problematic effects at runtime.
-
-### Step 8: Audio Bring-Up
+Shield's audio architecture tells us exactly what to do:
 
 **Phase A — Stub (unblock gameplay)**:
-- `pal_audio` returns silence; all `Z2AudioLib` (23 files) and `JAudio2` (92 files) calls succeed but produce no output.
-- Game loop runs at full speed because audio never blocks.
+- `pal_audio` returns silence. Shield already sets `JASDriver::setOutputMode(1)` (fixed mode) —
+  we inherit this and route the output to a silent buffer.
+- Game loop runs unblocked.
 
 **Phase B — Software playback**:
-- Replace DSP/ARAM-coupled `JAudio2` mixing with a software mixer writing PCM to `pal_audio`.
-- Keep `Z2AudioMgr`, `Z2SoundMgr`, `Z2SeqMgr`, `Z2SeMgr` wrappers unchanged —
-  they call into JAudio2, which calls into the new software backend.
-- ADPCM decode in software (DSPADPCM format is well-documented).
-- MIDI sequence playback via the existing `JASSeqParser` with software instrument bank.
-- **Time saver**: Phase A costs almost nothing and lets the entire gameplay loop ship without
-  audio blocking. Phase B can be incremental — add sound effects first, then music, then streaming.
+- Replace DSP/ARAM mixing in `JAudio2` with software mixer → `pal_audio` PCM output.
+- Keep `Z2AudioMgr`, `Z2SoundMgr`, `Z2SeqMgr`, `Z2SeMgr` unchanged.
+- Shield already loads `Z2Sound.baa`, `Z2SoundSeqs.arc`, `Z2CSRes.arc` — same archives, load via `pal_fs`.
+- ADPCM decode in software; MIDI via existing `JASSeqParser`.
+- **Time saver**: Phase A is ~2 days. Shield's fixed audio mode means no hardware-query complexity.
 
-### Step 9: Input and Save Stability
+### Step 7: Input and Save
 
-**Input** (touch point: `m_Do_controller_pad.cpp` → `JUTGamePad` → `PAD` SDK):
-- `pal_input` provides a `PadStatus`-compatible struct from SDL3 gamepad or libnx HID.
-- `mDoCPd_c::read()` calls `pal_input` instead of `PADRead()`.
-- Start with one GCN-style mapping (A/B/X/Y/Z/L/R/Start + analog stick + C-stick + D-pad).
-- Keyboard/mouse: post-ship (add as second `pal_input` backend).
+**Input** — Shield already solves this:
+- Shield uses the **GCN input path** (`JUTGamePad`, port 1), not WPAD/KPAD.
+- `m_Do_controller_pad.cpp` creates `JUTGamePad` for `PLATFORM_GCN || PLATFORM_SHIELD`.
+- Add `PLATFORM_PC`: wire `JUTGamePad` → `pal_input` → SDL3 gamepad.
+- GCN button mapping (A/B/X/Y/Z/L/R/Start + sticks + D-pad) maps naturally to modern gamepads.
 
-**Save** (touch point: `m_Do_MemCard.cpp`):
-- Replace memory card thread + mutex/condvar machinery with synchronous `pal_save` file I/O.
-- Keep `mDoMemCd_Ctrl_c` command interface (Restore/Store/Format) and 0xA94-byte quest-log format.
-- Platform-specific save directory via `pal_save` (`~/.local/share/` on Linux, `%APPDATA%` on Windows, etc.).
+**Save** — Shield already simplifies this:
+- Shield skips `CARDInit()` and all physical memory card operations.
+- Shield uses `NANDSimpleSafeOpen/Close` for file-based saves.
+- PC: replace NAND calls with `pal_save` (`<fstream>` to `~/.local/share/` or `%APPDATA%`).
+- Keep `mDoMemCd_Ctrl_c` command interface and 0xA94-byte quest-log format.
+- **Time saver**: Shield already has the "no physical media" code path. We replace the NAND
+  layer underneath, not the save logic above.
 
-### Step 10: NX Homebrew Bring-Up
+### Step 8: Visual Scope for First Playable
+
+- Prioritize: title screen, Ordon Village, Faron Woods, first dungeon.
+- Shield's `lingcod_getBloomScale()` / `lingcod_getDoFScale()` → ImGui sliders.
+- Use ImGui feature toggles to disable problematic effects at runtime.
+
+### Step 9: NX Homebrew Bring-Up
 
 - Same GX → OpenGL renderer (no changes).
 - Swap PAL backends: `pal_window` → libnx/EGL, `pal_input` → HID, `pal_audio` → audren,
   `pal_fs` → romfs, `pal_save` → libnx account/save.
-- Known Mesa/Nouveau driver quirks → local workarounds in `src/pal/gx/` (not renderer redesign).
-- **Time saver**: Because PAL is a thin interface, NX bring-up is primarily a backend swap,
-  not a new port. Budget ~1–2 weeks after PC is playable.
+- Add `PLATFORM_NX_HB` macro, inheriting the same Shield-derived conditionals as `PLATFORM_PC`.
+- **Time saver**: ~1–2 weeks after PC is playable. PAL interface is identical, only backend swaps.
 
-### Step 11: Polish for Shipment
+### Step 10: Polish for Shipment
 
-- Validate core progression: title → Ordon → Faron → Forest Temple → save/load cycle.
+- Validate: title → Ordon → Faron → Forest Temple → save/load cycle.
 - Fill GX long-tail only when blocking content (tracked via runtime stub-hit counters).
-- Package: PC → single executable + `data/` folder; NX → NRO + romfs.
-- Defer advanced visual parity and non-critical systems to post-ship.
+- Package: PC → executable + `data/`; NX → NRO + romfs.
 
 ## Critical Path and Dependencies
 
 ```
-Step 1 (CMake build compiles)
-  └─► Step 2 (GCN-canonical source compiles on host)
+Step 1 (CMake build from ShieldD file list)
+  └─► Step 2 (extend PLATFORM_SHIELD → PLATFORM_PC in 63+ files)
         ├─► Step 3 (PAL bootstrap — window + main loop)
-        │     ├─► Step 4 (DVD → pal_fs) ─────────────────────┐
-        │     ├─► Step 5 (ARAM → RAM) ───────────────────────┤
-        │     └─► Step 6 Tier A (GX shim — first draw) ─────┤
-        │           └─► Step 7 (first playable scene) ◄──────┘
-        │                 └─► Step 11 (polish + package)
-        ├─► Step 8A (audio stubs — can start with Step 3) ──► Step 8B (real audio)
-        ├─► Step 9 (input + save — can start with Step 3)
-        └─► Step 10 (NX bring-up — after PC playable)
+        │     ├─► Step 4 (DVD/ARAM simplification) ─────────────┐
+        │     └─► Step 5 Tier A (GX shim — first draw) ────────┤
+        │           └─► Step 8 (first playable scene) ◄─────────┘
+        │                 └─► Step 10 (polish + package)
+        ├─► Step 6A (audio stubs — can start with Step 3) ──► Step 6B (real audio)
+        ├─► Step 7 (input + save — can start with Step 3)
+        └─► Step 9 (NX bring-up — after PC playable)
 ```
 
-**Parallelizable work streams** (assign to separate contributors):
-1. **Build + conditionals** (Steps 1–2): one person, ~1–2 weeks.
-2. **PAL + DVD + ARAM** (Steps 3–5): one person, ~2–3 weeks.
-3. **GX shim** (Step 6): one person (ideally with GX/GL experience), ~3–5 weeks for Tier A.
-4. **Audio** (Step 8): one person, Phase A in ~2 days, Phase B ~2–4 weeks.
-5. **Input + Save** (Step 9): one person, ~1 week.
+**Parallelizable work streams**:
+1. **Build + conditionals** (Steps 1–2): one person, ~1 week.
+   *(Faster than before — ShieldD file list eliminates guesswork, conditional extension is mechanical.)*
+2. **PAL + DVD/ARAM** (Steps 3–4): one person, ~2 weeks.
+   *(Faster — Shield already proves these subsystems work without real hardware.)*
+3. **GX shim** (Step 5): one person (GX/GL experience), ~3–5 weeks for Tier A.
+   *(Same scope — Shield didn't help here since it ran GX through translation.)*
+4. **Audio** (Step 6): one person, Phase A in ~2 days, Phase B ~2–4 weeks.
+   *(Faster — Shield's fixed output mode and known archive list reduce exploration.)*
+5. **Input + Save** (Step 7): one person, ~3–5 days.
+   *(Faster — Shield's GCN pad path and NAND save path are the exact patterns we need.)*
 
-## High-Impact Time Savers (Verified Against Codebase)
+**Estimated total time to first playable (with parallel streams)**: ~5–7 weeks
+*(Down from ~7–9 weeks without Shield leverage — saves ~2 weeks of exploration and dead ends.)*
+
+## High-Impact Time Savers (Verified Against Shield Port)
 
 | Technique | Why it works | Measured impact |
 |---|---|---|
-| Extend `PLATFORM_*` conditionals instead of mass-editing | 220+ files already use the system; additive `PLATFORM_PC` avoids churn | Zero callsite edits in game logic |
-| Keep `mDoDvdThd_*` / JKR interfaces, replace internals | DVD/ARAM consumers never see the change | ~835 actor files untouched |
-| Implement J3D material path first in GX shim | J3D is the dominant draw path (311 JSystem files) | Covers majority of in-game rendering |
-| Stub audio (Phase A) before real playback | Game loop never blocks on audio | Playable build weeks earlier |
-| `m_Do/` is already the hardware boundary | Only 17 files sit between gameplay and hardware | PAL wiring is surgical, not systemic |
-| `types.h` / `global.h` already abstract compiler differences | `DECL_WEAK`, `ATTRIBUTE_ALIGN`, `NO_INLINE` macros exist | MWCC → GCC/Clang friction is minimal |
-| Use `PLATFORM_SHIELD` patterns as reference | 63+ files show how a non-Nintendo target was integrated | Copy-paste patterns for `PLATFORM_PC` |
+| Start from ShieldD config (4,028 files) | Battle-tested file list for a non-Nintendo target | No file-list guesswork; build works or fails immediately |
+| Extend `PLATFORM_SHIELD` conditionals | 63+ files already have the decision points marked | Mechanical `#if` extension — ~63 files, ~1 line each |
+| Inherit Shield's hardware exclusions | `!PLATFORM_SHIELD` guards skip CARDInit, GXSaveCPUFifo, etc. | Same exclusions apply to PC — zero new analysis needed |
+| Reuse Shield's GCN input path | Shield uses `JUTGamePad`, not WPAD/KPAD | Map SDL3 gamepad → GCN PadStatus; skip Wii input entirely |
+| Reuse Shield's save simplification | Shield uses `NANDSimpleSafe*` instead of memory cards | Replace one NAND layer instead of reimplementing card I/O |
+| Inherit Shield's dual-heap architecture | `sRootHeap2` already works on Shield | Both heaps map to host RAM — no heap redesign needed |
+| Replace `lingcod` stubs with ImGui | `lingcod` functions return constants (bloom=1.0, DoF=1.0) | ImGui sliders give runtime control for free |
+| Keep `mDoDvdThd_*` / JKR interfaces | DVD/ARAM consumers never see the change | ~835 actor files untouched |
+| Shield's math fixes carry over | `errno` guards in `e_acos/asin/fmod` prevent x86 NaN crashes | Prevents runtime crashes without new debugging |
 
 ## Known Heavy Areas (Measured)
 
@@ -327,15 +384,16 @@ Revisit after the core playable loop is stable.
 - Any unsupported GX function gets: `static bool warned = false; if (!warned) { log(...); warned = true; }` + safe fallback.
 - Keep gameplay logic (`src/d/`, `src/d/actor/`, `src/f_*`) untouched unless a blocker demands targeted edits.
 - Prefer additive shims over invasive rewrites.
-- Keep first ship focused on stable gameplay over perfect parity.
+- When in doubt, check what Shield does — it's the closest prior art.
 - Track stub-hit counts at runtime to prioritize Tier B GX work by actual frequency.
 
 ## Post-Ship Backlog (Intentionally Deferred)
 
-- Exact post-processing parity (bloom, DoF, motion blur).
+- Exact post-processing parity (bloom, DoF, motion blur — `lingcod` scale values are the starting point).
 - Full feature parity for all niche overlays and scenes.
 - Wider input remapping UX and keyboard/mouse support.
 - Additional graphics backends beyond OpenGL (Vulkan, Metal).
 - Deep visual/performance tuning beyond required playability.
 - Region selection (PAL/JPN) — default to USA for first ship.
 - Wii-specific content or control schemes.
+- Shield-specific features (`REGION_CHN`, `Z2AudioCS` Chinese sound resources).
