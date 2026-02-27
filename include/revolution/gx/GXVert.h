@@ -25,6 +25,10 @@ typedef union {
 
 #ifdef __MWERKS__
 volatile PPCWGPipe GXWGFifo AT_ADDRESS(GXFIFO_ADDR);
+#elif PLATFORM_PC || PLATFORM_NX_HB
+/* On PC, redirect GX FIFO writes to a host buffer instead of 0xCC008000 */
+extern volatile PPCWGPipe pal_gx_wgpipe;
+#define GXWGFifo pal_gx_wgpipe
 #else
 #define GXWGFifo (*(volatile PPCWGPipe *)GXFIFO_ADDR)
 #endif

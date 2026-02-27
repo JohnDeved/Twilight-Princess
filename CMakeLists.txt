@@ -113,6 +113,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-enum-compare
         -Wno-format
         -fpermissive
+        -fno-exceptions
     )
 endif()
 

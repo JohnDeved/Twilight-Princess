@@ -5,10 +5,15 @@
  */
 
 #include "global.h"
+#include <revolution/gx/GXVert.h>
 
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include <string.h>
+
+/* Host-side FIFO pipe that GXVert.h inline functions write to.
+ * All writes are safe no-ops — the data goes to a union in RAM. */
+volatile PPCWGPipe pal_gx_wgpipe;
 
 /* FIFO buffer -- 1 MB ring buffer for GX command capture */
 #define GX_FIFO_SIZE (1024 * 1024)
