@@ -133,10 +133,50 @@ OSThread* GXGetCurrentGXThread(void) { return NULL; }
 
 void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm,
                const f32* vp, f32* sx, f32* sy, f32* sz) {
-    (void)x; (void)y; (void)z; (void)mtx; (void)pm; (void)vp;
-    if (sx) *sx = 0.0f;
-    if (sy) *sy = 0.0f;
-    if (sz) *sz = 0.0f;
+    /* Transform by modelview matrix */
+    f32 vx = mtx[0][0]*x + mtx[0][1]*y + mtx[0][2]*z + mtx[0][3];
+    f32 vy = mtx[1][0]*x + mtx[1][1]*y + mtx[1][2]*z + mtx[1][3];
+    f32 vz = mtx[2][0]*x + mtx[2][1]*y + mtx[2][2]*z + mtx[2][3];
+
+    if (pm) {
+        /* pm[0] = type: 0=perspective, 1=ortho
+         * pm[1..6] = projection parameters */
+        f32 px, py, pz, pw;
+        if (pm[0] == 0.0f) {
+            /* Perspective */
+            px = pm[1]*vx + pm[2]*vz;
+            py = pm[3]*vy + pm[4]*vz;
+            pz = pm[5]*vz + pm[6];
+            pw = -vz;
+        } else {
+            /* Orthographic */
+            px = pm[1]*vx + pm[2];
+            py = pm[3]*vy + pm[4];
+            pz = pm[5]*vz + pm[6];
+            pw = 1.0f;
+        }
+
+        if (pw != 0.0f) {
+            px /= pw;
+            py /= pw;
+            pz /= pw;
+        }
+
+        if (vp) {
+            /* vp[0..5] = left, top, wd, ht, nearz, farz */
+            if (sx) *sx = vp[0] + vp[2] * (px + 1.0f) * 0.5f;
+            if (sy) *sy = vp[1] + vp[3] * (1.0f - py) * 0.5f;
+            if (sz) *sz = vp[4] + pz * (vp[5] - vp[4]);
+        } else {
+            if (sx) *sx = px;
+            if (sy) *sy = py;
+            if (sz) *sz = pz;
+        }
+    } else {
+        if (sx) *sx = vx;
+        if (sy) *sy = vy;
+        if (sz) *sz = vz;
+    }
 }
 void GXSetProjection(const f32 mtx[4][4], GXProjectionType type) { pal_gx_set_projection(mtx, type); }
 void GXSetProjectionv(const f32* ptr) { (void)ptr; /* TODO: parse GX projection format */ }
@@ -251,24 +291,58 @@ void GXInitTexObjBiasClamp(GXTexObj* obj, u8 bias_clamp) { (void)obj; (void)bias
 void GXInitTexObjEdgeLOD(GXTexObj* obj, u8 do_edge_lod) { (void)obj; (void)do_edge_lod; }
 void GXInitTexObjMaxAniso(GXTexObj* obj, GXAnisotropy max_aniso) { (void)obj; (void)max_aniso; }
 
-u16 GXGetTexObjWidth(const GXTexObj* obj) { (void)obj; return 0; }
-u16 GXGetTexObjHeight(const GXTexObj* obj) { (void)obj; return 0; }
-GXTexFmt GXGetTexObjFmt(const GXTexObj* obj) { (void)obj; return (GXTexFmt)0; }
-GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* obj) { (void)obj; return (GXTexWrapMode)0; }
-GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* obj) { (void)obj; return (GXTexWrapMode)0; }
-u8 GXGetTexObjMipMap(const GXTexObj* obj) { (void)obj; return 0; }
-void* GXGetTexObjData(const GXTexObj* obj) { (void)obj; return NULL; }
+u16 GXGetTexObjWidth(const GXTexObj* obj) {
+    if (!obj) return 0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return 0;
+    u16 w; memcpy(&w, data + 16, 2); return w;
+}
+u16 GXGetTexObjHeight(const GXTexObj* obj) {
+    if (!obj) return 0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return 0;
+    u16 h; memcpy(&h, data + 18, 2); return h;
+}
+GXTexFmt GXGetTexObjFmt(const GXTexObj* obj) {
+    if (!obj) return (GXTexFmt)0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return (GXTexFmt)0;
+    GXTexFmt fmt; memcpy(&fmt, data + 20, 4); return fmt;
+}
+GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* obj) {
+    if (!obj) return (GXTexWrapMode)0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return (GXTexWrapMode)0;
+    return (GXTexWrapMode)data[24];
+}
+GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* obj) {
+    if (!obj) return (GXTexWrapMode)0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return (GXTexWrapMode)0;
+    return (GXTexWrapMode)data[25];
+}
+u8 GXGetTexObjMipMap(const GXTexObj* obj) {
+    if (!obj) return 0;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return 0;
+    return data[26];
+}
+void* GXGetTexObjData(const GXTexObj* obj) {
+    if (!obj) return NULL;
+    const u8* data = (const u8*)obj;
+    if (data[0] != 'T' || data[1] != 'P') return NULL;
+    void* ptr; memcpy(&ptr, data + 8, sizeof(void*)); return ptr;
+}
 u32 GXGetTexObjTlut(const GXTexObj* obj) { (void)obj; return 0; }
 void GXGetTexObjAll(const GXTexObj* obj, void** image_ptr, u16* width, u16* height,
                     GXTexFmt* format, GXTexWrapMode* wrap_s, GXTexWrapMode* wrap_t, u8* mipmap) {
-    (void)obj;
-    if (image_ptr) *image_ptr = NULL;
-    if (width) *width = 0;
-    if (height) *height = 0;
-    if (format) *format = (GXTexFmt)0;
-    if (wrap_s) *wrap_s = (GXTexWrapMode)0;
-    if (wrap_t) *wrap_t = (GXTexWrapMode)0;
-    if (mipmap) *mipmap = 0;
+    if (image_ptr) *image_ptr = GXGetTexObjData(obj);
+    if (width) *width = GXGetTexObjWidth(obj);
+    if (height) *height = GXGetTexObjHeight(obj);
+    if (format) *format = GXGetTexObjFmt(obj);
+    if (wrap_s) *wrap_s = GXGetTexObjWrapS(obj);
+    if (wrap_t) *wrap_t = GXGetTexObjWrapT(obj);
+    if (mipmap) *mipmap = GXGetTexObjMipMap(obj);
 }
 
 /* ================================================================ */

@@ -17,8 +17,9 @@
 
 extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/gx/gx_state.h"
 
-/* Provided by pal_gx_stubs.cpp — set to 1 once bgfx is initialized */
+/* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
 extern int gx_shim_active;
 
 /* Default frame dimensions (GameCube EFB resolution) */
@@ -83,13 +84,44 @@ void pal_gx_bgfx_shutdown(void) {
 void pal_gx_begin_frame(void) {
     if (!s_bgfx_initialized)
         return;
+
+    /* Apply GX clear color from state machine */
+    GXColor cc = g_gx_state.clear_color;
+    uint32_t clear_rgba = ((uint32_t)cc.r << 24) | ((uint32_t)cc.g << 16) |
+                          ((uint32_t)cc.b << 8) | (uint32_t)cc.a;
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+                        clear_rgba, 1.0f, 0);
+
+    /* Apply GX viewport from state machine */
+    uint16_t vp_x = (uint16_t)g_gx_state.vp_left;
+    uint16_t vp_y = (uint16_t)g_gx_state.vp_top;
+    uint16_t vp_w = (uint16_t)g_gx_state.vp_wd;
+    uint16_t vp_h = (uint16_t)g_gx_state.vp_ht;
+    if (vp_w == 0) vp_w = (uint16_t)s_frame_width;
+    if (vp_h == 0) vp_h = (uint16_t)s_frame_height;
+    bgfx::setViewRect(0, vp_x, vp_y, vp_w, vp_h);
+
     /* Touch view 0 to ensure it's submitted even with no draw calls */
     bgfx::touch(0);
+
+    /* Reset draw statistics for this frame */
+    g_gx_state.draw_calls = 0;
+    g_gx_state.total_verts = 0;
 }
 
 void pal_gx_end_frame(void) {
     if (!s_bgfx_initialized)
         return;
+
+    static uint32_t s_frame_count = 0;
+    s_frame_count++;
+
+    /* Log draw statistics every 60 frames */
+    if (s_frame_count % 60 == 0) {
+        fprintf(stderr, "{\"gx_bgfx\":\"frame_stats\",\"frame\":%u,\"draw_calls\":%u,\"verts\":%u}\n",
+                s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
+    }
+
     bgfx::frame();
 }
 
