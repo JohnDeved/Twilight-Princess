@@ -15,19 +15,18 @@
 #include <cstdint>
 
 #include "dolphin/types.h"
+#include "revolution/os/OSThread.h"
 
 /* ---------------------------------------------------------------- */
 /* Forward declarations for SDK types used in signatures.           */
 /* We avoid pulling in full headers to prevent conflicts.           */
 /* ---------------------------------------------------------------- */
 
-struct OSThread;
-struct OSThreadQueue;
+/* OSThread, OSThreadQueue, OSContext are included from OSThread.h */
 struct OSMutex;
 struct OSCond;
 struct OSMessageQueue;
 struct OSAlarm;
-struct OSContext;
 struct OSStopwatch;
 
 struct DVDDiskID;
@@ -73,11 +72,14 @@ typedef void* OSMessage;
 
 extern "C" {
 
+/* Forward declaration */
+static void pal_init_main_thread(void);
+
 /* ================================================================ */
 /* OS Init / System                                                 */
 /* ================================================================ */
 
-void OSInit(void) {}
+void OSInit(void) { pal_init_main_thread(); }
 void OSRegisterVersion(const char* id) { (void)id; }
 /* Return GameCube/Wii-compatible memory sizes for SDK compatibility */
 u32 OSGetPhysicalMemSize(void) { return 24 * 1024 * 1024; }
@@ -131,14 +133,31 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
  * work is handled synchronously through message queue processing. */
 
 static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
-static OSThread* s_current_thread = (OSThread*)s_main_thread_storage;
+/* Fake stack for the main thread — JKRThread constructor reads stackBase/stackEnd */
+static u8 s_fake_stack[0x10000];
+static OSThread* s_current_thread = NULL;
+
+static void pal_init_main_thread(void) {
+    if (s_current_thread) return;
+    s_current_thread = (OSThread*)s_main_thread_storage;
+    memset(s_main_thread_storage, 0, sizeof(s_main_thread_storage));
+    /* Set stackBase and stackEnd so JKRThread constructor doesn't crash.
+     * stackBase is at offset 0x304, stackEnd at 0x308 in the OSThread struct. */
+    s_current_thread->stackBase = s_fake_stack;
+    s_current_thread->stackEnd = (u32*)(s_fake_stack + sizeof(s_fake_stack));
+    s_current_thread->state = 2; /* OS_THREAD_STATE_RUNNING */
+    s_current_thread->priority = 16;
+}
 
 /* Track the main game thread — the first one created from main() */
 static OSThread* s_game_thread = NULL;
 static void* (*s_game_thread_func)(void*) = NULL;
 static void* s_game_thread_param = NULL;
 
-OSThread* OSGetCurrentThread(void) { return s_current_thread; }
+OSThread* OSGetCurrentThread(void) {
+    if (!s_current_thread) pal_init_main_thread();
+    return s_current_thread;
+}
 
 int OSCreateThread(OSThread* thread, void* (*func)(void*), void* param,
                    void* stack, u32 stackSize, OSPriority priority, u16 attr) {
