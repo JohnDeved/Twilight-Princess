@@ -7,7 +7,7 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `6` (LOGO_SCENE — logo scene creates from real disc data, all frame milestones pass) |
+| **Highest CI Milestone** | `6` (LOGO_SCENE — logo scene creates from real disc data; frame milestones require RENDER_FRAME) |
 | **Current Step** | Step 3 mostly complete — game data auto-download, RARC endian swap, audio skip, logo scene skip |
 | **Last Updated** | 2026-02-27 |
 | **Blocking Issue** | Need GX shim (Step 5) for RENDER_FRAME milestone; logo scene skips rendering |
@@ -151,9 +151,9 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 | 7 | TITLE_SCENE | Title screen **create() completed** with assets loaded | Step 5: scene transition + assets |
 | 8 | PLAY_SCENE | Gameplay scene **create() completed** with assets loaded | Step 5: GX stubs by frequency |
 | 9 | STAGE_LOADED | Specific stage loaded | Step 5/7: rendering + input |
-| 10 | FRAMES_60 | 1s stable **after scene load** | Step 5: top stub hits |
-| 11 | FRAMES_300 | 5s stable **after scene load** | Step 6 Phase B and Step 8: polish |
-| 12 | FRAMES_1800 | 30s stable **after scene load** | Step 8: first playable achieved 🎉 |
+| 10 | FRAMES_60 | 1s stable **with real rendering** | Step 5: top stub hits |
+| 11 | FRAMES_300 | 5s stable **with real rendering** | Step 6 Phase B and Step 8: polish |
+| 12 | FRAMES_1800 | 30s stable **with real rendering** | Step 8: first playable achieved 🎉 |
 | 13 | DVD_READ_OK | First successful file read | Step 4: DVD path mapping / assets |
 | 14 | SCENE_CREATED | Any process profile **create() completed** | Step 3/4: profile list + dynamic link |
 | 15 | RENDER_FRAME | First frame with **real GX rendering** (gx_shim_active) | Step 5: GX shim working |
@@ -162,8 +162,8 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - Milestones 6-8 (LOGO_SCENE/TITLE_SCENE/PLAY_SCENE) fire only after the scene's
   `create()` method returns `cPhs_COMPLEATE_e` — meaning all resource loading phases
   completed and assets were actually loaded from disk.
-- Milestones 10-12 (FRAMES_60/300/1800) require LOGO_SCENE (6) to have been reached first.
-  Without actual scene loading, frame counting alone is not meaningful progress.
+- Milestones 10-12 (FRAMES_60/300/1800) require RENDER_FRAME (15) to have been reached
+  first. Frame counting without actual rendered pixels is not meaningful progress.
 - Milestone 15 (RENDER_FRAME) requires `gx_shim_active` to be set — meaning bgfx is
   initialized and real pixels are being drawn, not just GX stubs being called.
 

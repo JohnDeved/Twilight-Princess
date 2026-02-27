@@ -754,18 +754,18 @@ void main01(void) {
 #if PLATFORM_PC || PLATFORM_NX_HB
         if (frame == 1)
             pal_milestone_frame("FIRST_FRAME", MILESTONE_FIRST_FRAME, frame);
-        /* Frame-count milestones only fire once a scene has been created.
-         * Without this gate, FRAMES_60/300/1800 complete trivially in an empty
-         * game loop with no rendering, no scene loading, and no actual game logic.
+        /* Frame-count milestones only fire once a real rendered frame has been
+         * produced (RENDER_FRAME milestone).  Without this gate, FRAMES_60/300/1800
+         * complete trivially in an empty game loop with no actual rendering.
          * Uses >= so the milestone fires whenever the gate condition is met,
          * not just at the exact frame count. */
-        if (frame >= 60 && pal_milestone_was_reached(MILESTONE_LOGO_SCENE)
+        if (frame >= 60 && pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
             && !pal_milestone_was_reached(MILESTONE_FRAMES_60))
             pal_milestone_frame("FRAMES_60", MILESTONE_FRAMES_60, frame);
-        if (frame >= 300 && pal_milestone_was_reached(MILESTONE_LOGO_SCENE)
+        if (frame >= 300 && pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
             && !pal_milestone_was_reached(MILESTONE_FRAMES_300))
             pal_milestone_frame("FRAMES_300", MILESTONE_FRAMES_300, frame);
-        if (frame >= 1800 && pal_milestone_was_reached(MILESTONE_LOGO_SCENE)
+        if (frame >= 1800 && pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
             && !pal_milestone_was_reached(MILESTONE_FRAMES_1800))
             pal_milestone_frame("FRAMES_1800", MILESTONE_FRAMES_1800, frame);
         if (getenv("TP_TEST_FRAMES")) {
