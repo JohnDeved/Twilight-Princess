@@ -38,6 +38,25 @@
 extern "C" {
 
 /* ================================================================ */
+/* Rendering-critical GX stub IDs for per-frame tracking            */
+/* When these functions are called and still stubs, the frame        */
+/* cannot produce a valid verifiable image.                          */
+/* ================================================================ */
+
+enum {
+    GX_STUB_CALL_DISPLAY_LIST   = 0,
+    GX_STUB_LOAD_POS_MTX_INDX  = 1,
+    GX_STUB_LOAD_NRM_MTX_3X3   = 2,
+    GX_STUB_LOAD_NRM_MTX_INDX  = 3,
+    GX_STUB_INIT_TEX_OBJ_CI    = 4,
+    GX_STUB_SET_TEV_INDIRECT    = 5,
+    GX_STUB_SET_IND_TEX_MTX     = 6,
+    GX_STUB_SET_IND_TEX_ORDER   = 7,
+    GX_STUB_LOAD_TEX_MTX_INDX  = 8,
+    GX_STUB_SET_PROJECTION_V    = 9,
+};
+
+/* ================================================================ */
 /* GX Manage / Sync                                                 */
 /* ================================================================ */
 
@@ -179,15 +198,30 @@ void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm,
     }
 }
 void GXSetProjection(const f32 mtx[4][4], GXProjectionType type) { pal_gx_set_projection(mtx, type); }
-void GXSetProjectionv(const f32* ptr) { (void)ptr; /* TODO: parse GX projection format */ }
+void GXSetProjectionv(const f32* ptr) {
+    (void)ptr;
+    gx_stub_hit(GX_STUB_SET_PROJECTION_V, "GXSetProjectionv");
+}
 void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_pos_mtx_imm(mtx, id); }
-void GXLoadPosMtxIndx(u16 mtx_indx, u32 id) { (void)mtx_indx; (void)id; }
+void GXLoadPosMtxIndx(u16 mtx_indx, u32 id) {
+    (void)mtx_indx; (void)id;
+    gx_stub_hit(GX_STUB_LOAD_POS_MTX_INDX, "GXLoadPosMtxIndx");
+}
 void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_nrm_mtx_imm(mtx, id); }
-void GXLoadNrmMtxImm3x3(const f32 mtx[3][3], u32 id) { (void)mtx; (void)id; }
-void GXLoadNrmMtxIndx3x3(u16 mtx_indx, u32 id) { (void)mtx_indx; (void)id; }
+void GXLoadNrmMtxImm3x3(const f32 mtx[3][3], u32 id) {
+    (void)mtx; (void)id;
+    gx_stub_hit(GX_STUB_LOAD_NRM_MTX_3X3, "GXLoadNrmMtxImm3x3");
+}
+void GXLoadNrmMtxIndx3x3(u16 mtx_indx, u32 id) {
+    (void)mtx_indx; (void)id;
+    gx_stub_hit(GX_STUB_LOAD_NRM_MTX_INDX, "GXLoadNrmMtxIndx3x3");
+}
 void GXSetCurrentMtx(u32 id) { pal_gx_set_current_mtx(id); }
 void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, GXTexMtxType type) { pal_gx_load_tex_mtx_imm(mtx, id, type); }
-void GXLoadTexMtxIndx(u16 mtx_indx, u32 id, GXTexMtxType type) { (void)mtx_indx; (void)id; (void)type; }
+void GXLoadTexMtxIndx(u16 mtx_indx, u32 id, GXTexMtxType type) {
+    (void)mtx_indx; (void)id; (void)type;
+    gx_stub_hit(GX_STUB_LOAD_TEX_MTX_INDX, "GXLoadTexMtxIndx");
+}
 void GXSetViewportJitter(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz, u32 field) {
     (void)field;
     pal_gx_set_viewport(left, top, wd, ht, nearz, farz);
@@ -234,6 +268,7 @@ void GXInitTexObjCI(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                     u8 mipmap, u32 tlut_name) {
     if (obj) memset(obj, 0, sizeof(GXTexObj));
     (void)image_ptr; (void)width; (void)height; (void)format; (void)wrap_s; (void)wrap_t; (void)mipmap; (void)tlut_name;
+    gx_stub_hit(GX_STUB_INIT_TEX_OBJ_CI, "GXInitTexObjCI");
 }
 void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt,
                      f32 min_lod, f32 max_lod, f32 lod_bias, GXBool bias_clamp,
@@ -564,7 +599,10 @@ f32 GXGetYScaleFactor(u16 efbHeight, u16 xfbHeight) { (void)efbHeight; (void)xfb
 /* GX Display List                                                  */
 /* ================================================================ */
 
-void GXCallDisplayList(void* list, u32 nbytes) { (void)list; (void)nbytes; }
+void GXCallDisplayList(void* list, u32 nbytes) {
+    (void)list; (void)nbytes;
+    gx_stub_hit(GX_STUB_CALL_DISPLAY_LIST, "GXCallDisplayList");
+}
 
 /* ================================================================ */
 /* GX Indirect Texture (Bump)                                       */
@@ -576,15 +614,18 @@ void GXSetTevIndirect(GXTevStageID tev_stage, GXIndTexStageID ind_stage,
                       GXBool add_prev, GXBool utc_lod, GXIndTexAlphaSel alpha_sel) {
     (void)tev_stage; (void)ind_stage; (void)format; (void)bias_sel;
     (void)matrix_sel; (void)wrap_s; (void)wrap_t; (void)add_prev; (void)utc_lod; (void)alpha_sel;
+    gx_stub_hit(GX_STUB_SET_TEV_INDIRECT, "GXSetTevIndirect");
 }
 void GXSetIndTexMtx(GXIndTexMtxID mtx_id, const f32 offset[2][3], s8 scale_exp) {
     (void)mtx_id; (void)offset; (void)scale_exp;
+    gx_stub_hit(GX_STUB_SET_IND_TEX_MTX, "GXSetIndTexMtx");
 }
 void GXSetIndTexCoordScale(GXIndTexStageID ind_stage, GXIndTexScale scale_s, GXIndTexScale scale_t) {
     (void)ind_stage; (void)scale_s; (void)scale_t;
 }
 void GXSetIndTexOrder(GXIndTexStageID ind_stage, GXTexCoordID tex_coord, GXTexMapID tex_map) {
     (void)ind_stage; (void)tex_coord; (void)tex_map;
+    gx_stub_hit(GX_STUB_SET_IND_TEX_ORDER, "GXSetIndTexOrder");
 }
 void GXSetNumIndStages(u8 nIndStages) { (void)nIndStages; }
 void GXSetTevDirect(GXTevStageID tev_stage) { (void)tev_stage; }
