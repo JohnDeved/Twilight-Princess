@@ -291,46 +291,48 @@ void GXInitTexObjBiasClamp(GXTexObj* obj, u8 bias_clamp) { (void)obj; (void)bias
 void GXInitTexObjEdgeLOD(GXTexObj* obj, u8 do_edge_lod) { (void)obj; (void)do_edge_lod; }
 void GXInitTexObjMaxAniso(GXTexObj* obj, GXAnisotropy max_aniso) { (void)obj; (void)max_aniso; }
 
-u16 GXGetTexObjWidth(const GXTexObj* obj) {
-    if (!obj) return 0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return 0;
-    u16 w; memcpy(&w, data + 16, 2); return w;
-}
-u16 GXGetTexObjHeight(const GXTexObj* obj) {
-    if (!obj) return 0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return 0;
-    u16 h; memcpy(&h, data + 18, 2); return h;
-}
-GXTexFmt GXGetTexObjFmt(const GXTexObj* obj) {
-    if (!obj) return (GXTexFmt)0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return (GXTexFmt)0;
-    GXTexFmt fmt; memcpy(&fmt, data + 20, 4); return fmt;
-}
-GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* obj) {
-    if (!obj) return (GXTexWrapMode)0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return (GXTexWrapMode)0;
-    return (GXTexWrapMode)data[24];
-}
-GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* obj) {
-    if (!obj) return (GXTexWrapMode)0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return (GXTexWrapMode)0;
-    return (GXTexWrapMode)data[25];
-}
-u8 GXGetTexObjMipMap(const GXTexObj* obj) {
-    if (!obj) return 0;
-    const u8* data = (const u8*)obj;
-    if (data[0] != 'T' || data[1] != 'P') return 0;
-    return data[26];
-}
-void* GXGetTexObjData(const GXTexObj* obj) {
+/* Helper: validate that a GXTexObj was initialized by our PC port ('TP' magic).
+ * Returns the data pointer, or NULL if invalid. */
+static const u8* texobj_validate(const GXTexObj* obj) {
     if (!obj) return NULL;
     const u8* data = (const u8*)obj;
     if (data[0] != 'T' || data[1] != 'P') return NULL;
+    return data;
+}
+
+u16 GXGetTexObjWidth(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return 0;
+    u16 w; memcpy(&w, data + 16, 2); return w;
+}
+u16 GXGetTexObjHeight(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return 0;
+    u16 h; memcpy(&h, data + 18, 2); return h;
+}
+GXTexFmt GXGetTexObjFmt(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return (GXTexFmt)0;
+    GXTexFmt fmt; memcpy(&fmt, data + 20, 4); return fmt;
+}
+GXTexWrapMode GXGetTexObjWrapS(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return (GXTexWrapMode)0;
+    return (GXTexWrapMode)data[24];
+}
+GXTexWrapMode GXGetTexObjWrapT(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return (GXTexWrapMode)0;
+    return (GXTexWrapMode)data[25];
+}
+u8 GXGetTexObjMipMap(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return 0;
+    return data[26];
+}
+void* GXGetTexObjData(const GXTexObj* obj) {
+    const u8* data = texobj_validate(obj);
+    if (!data) return NULL;
     void* ptr; memcpy(&ptr, data + 8, sizeof(void*)); return ptr;
 }
 u32 GXGetTexObjTlut(const GXTexObj* obj) { (void)obj; return 0; }

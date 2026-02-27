@@ -245,9 +245,19 @@ void pal_gx_set_tev_swap_mode(GXTevStageID stage, GXTevSwapSel ras, GXTevSwapSel
 void pal_gx_init_tex_obj(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                          GXTexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, u8 mipmap) {
     if (!obj) return;
-    /* Store texture parameters in the GXTexObj's dummy space.
-     * We use a custom layout: ptr(8) + w(2) + h(2) + fmt(4) + ws(4) + wt(4) + mm(1) = 25 bytes
-     * GXTexObj is 32 bytes so this fits. */
+    /* Store texture parameters in the GXTexObj's 32-byte dummy space.
+     * Binary layout:
+     *   offset 0-1: magic marker 'T','P' (identifies PC-initialized texobj)
+     *   offset 2-7: reserved
+     *   offset 8-15: image_ptr (void*, 8 bytes on 64-bit)
+     *   offset 16-17: width (u16)
+     *   offset 18-19: height (u16)
+     *   offset 20-23: format (GXTexFmt, 4 bytes)
+     *   offset 24: wrap_s (u8)
+     *   offset 25: wrap_t (u8)
+     *   offset 26: mipmap (u8)
+     *   offset 27-31: reserved
+     */
     memset(obj, 0, sizeof(GXTexObj));
     /* Store directly in the struct's memory for retrieval later */
     u8* data = (u8*)obj;
@@ -313,7 +323,10 @@ void pal_gx_set_projection(const f32 mtx[4][4], GXProjectionType type) {
 }
 
 void pal_gx_load_pos_mtx_imm(const f32 mtx[3][4], u32 id) {
-    u32 slot = id / 3; /* GX matrix IDs are in increments of 3 */
+    /* GX matrix IDs are in multiples of 3 (0, 3, 6, 9, ...) to leave room
+     * for optional derivative matrices in the hardware XF register layout.
+     * Divide by 3 to get the storage slot index. */
+    u32 slot = id / 3;
     if (slot < GX_MAX_POS_MTX) {
         memcpy(g_gx_state.pos_mtx[slot], mtx, 3 * 4 * sizeof(f32));
     }
@@ -548,24 +561,25 @@ void pal_gx_get_scissor(u32* left, u32* top, u32* wd, u32* ht) {
 /* ================================================================ */
 
 static u32 comp_size(GXCompType type) {
+    /* Note: GXCompType numeric types overlap with color types
+     * (GX_U8=0 == GX_RGB565=0, GX_S8=1 == GX_RGB8=1, etc.)
+     * This function handles the numeric interpretation.
+     * Use color_comp_size() for color attribute types. */
     switch (type) {
-        case GX_U8:    /* case GX_S8: -- same value as GX_RGB8=1, handled below */
-            return 1;
-        case GX_S8:    /* GX_RGB8=1 */
-            return 1;
-        case GX_U16:   /* GX_RGBX8=2 */
-            return 2;
-        case GX_S16:   /* GX_RGBA4=3 */
-            return 2;
-        case GX_F32:   /* GX_RGBA6=4 */
-            return 4;
-        case GX_RGBA8: /* =5, unique */
-            return 4;
+        case GX_U8:  return 1; /* also GX_RGB565=0, but numeric path */
+        case GX_S8:  return 1; /* also GX_RGB8=1 */
+        case GX_U16: return 2; /* also GX_RGBX8=2 */
+        case GX_S16: return 2; /* also GX_RGBA4=3 */
+        case GX_F32: return 4; /* also GX_RGBA6=4 */
+        case GX_RGBA8: return 4; /* =5, unique to color */
         default: return 0;
     }
 }
 
-/* Color component type size -- separate because GXCompType values overlap */
+/* Color component type size - separate function because GXCompType enum
+ * values 0-4 are shared between numeric types (U8/S8/U16/S16/F32) and
+ * color types (RGB565/RGB8/RGBX8/RGBA4/RGBA6). The caller must know
+ * whether the attribute is a color (CLR0/CLR1) to dispatch correctly. */
 static u32 color_comp_size(GXCompType type) {
     switch (type) {
         case GX_RGB565: return 2;  /* =0 */

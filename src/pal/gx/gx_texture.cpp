@@ -76,7 +76,7 @@ static void decode_i4(const u8* src, u8* dst, u16 width, u16 height) {
             for (y = 0; y < 8; y++) {
                 for (x = 0; x < 8; x += 2) {
                     u8 val = src[si++];
-                    u8 i0 = (u8)((val >> 4) * 17); /* 0-15 -> 0-255 */
+                    u8 i0 = (u8)((val >> 4) * 17); /* 4-bit to 8-bit: 17 = 255/15 maps [0,15] to [0,255] */
                     u8 i1 = (u8)((val & 0xF) * 17);
                     if (bx + x < width && by + y < height)
                         set_pixel(dst, width, bx + x, by + y, i0, i0, i0, 255);
