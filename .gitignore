@@ -32,6 +32,7 @@ compile_commands.json
 
 # Miscellaneous
 /*.txt
+!CMakeLists.txt
 *.exe
 
 # MacOS
