@@ -200,7 +200,7 @@ Step 1 (CMake)  ──►  Step 2 (conditionals)
 | Work stream | LOC (new) | Estimate | Key acceleration |
 |---|---|---|---|
 | Build + conditionals (1–2) | ~350 | ~3–4 days | Static linking skips REL loader; 19 intrinsics trivial; mechanical `#if` extension |
-| PAL + DVD/ARAM (3–4) | ~1,450 | ~1.5 weeks | Shield's disc-less/NAND paths carry over; replaces 85K LOC SDK with 1.4K |
+| PAL + DVD/ARAM (3–4) | ~1,450 | ~1.5 weeks | Shield's disc-less/NAND paths carry over; replaces 150K LOC SDK with 1.4K |
 | GX shim Tier A (5) | ~5,000 | ~3–4 weeks | Macro redirect captures 2,500 sites; J3D covers ~800 actors; only 5 TEV presets in game code; bgfx transient VBs match GX |
 | Audio (6) | ~100–800 | A: ~1 day / B: ~2 weeks | Shield's fixed audio mode; stub-first unblocks gameplay |
 | Input + Save (7) | ~350 | ~2–3 days | Shield's GCN pad path + NAND save path |
