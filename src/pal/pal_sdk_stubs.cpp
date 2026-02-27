@@ -126,30 +126,30 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
 /* ================================================================ */
 
 /* Simple single-threaded thread emulation for PC port.
- * We store the thread function and call it when OSResumeThread is called.
- * OSSuspendThread on the "original" thread just returns (single-threaded). */
+ * We track which thread is the "main game thread" (main01) and call it
+ * directly. Other threads (DVD, audio) are not actually started — their
+ * work is handled synchronously through message queue processing. */
 
 static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
 static OSThread* s_current_thread = (OSThread*)s_main_thread_storage;
 
-/* Store pending thread function for OSResumeThread to call */
-typedef struct {
-    void* (*func)(void*);
-    void* param;
-    OSThread* thread;
-} PendingThread;
-
-static PendingThread s_pending_thread = { NULL, NULL, NULL };
+/* Track the main game thread — the first one created from main() */
+static OSThread* s_game_thread = NULL;
+static void* (*s_game_thread_func)(void*) = NULL;
+static void* s_game_thread_param = NULL;
 
 OSThread* OSGetCurrentThread(void) { return s_current_thread; }
 
 int OSCreateThread(OSThread* thread, void* (*func)(void*), void* param,
                    void* stack, u32 stackSize, OSPriority priority, u16 attr) {
     (void)stack; (void)stackSize; (void)priority; (void)attr;
-    /* Store the function to be called by OSResumeThread */
-    s_pending_thread.func = func;
-    s_pending_thread.param = param;
-    s_pending_thread.thread = thread;
+    /* Store the first thread as the main game thread */
+    if (s_game_thread == NULL) {
+        s_game_thread = thread;
+        s_game_thread_func = func;
+        s_game_thread_param = param;
+    }
+    /* Other threads (DVD, audio) are just tracked but not started */
     return 1;
 }
 
@@ -158,25 +158,23 @@ int OSJoinThread(OSThread* thread, void* val) { (void)thread; (void)val; return 
 void OSDetachThread(OSThread* thread) { (void)thread; }
 
 s32 OSSuspendThread(OSThread* thread) {
-    /* If suspending the original thread after launching main01,
-     * just return — we're already running main01 in the same thread */
     (void)thread;
     return 0;
 }
 
 s32 OSResumeThread(OSThread* thread) {
-    /* Call the pending thread function directly (single-threaded mode).
+    /* Only call the main game thread (main01) directly.
      * The game's main() creates main01 as a thread then suspends itself.
      * We just call main01() directly here — it never returns. */
-    if (s_pending_thread.func && s_pending_thread.thread == thread) {
-        void* (*func)(void*) = s_pending_thread.func;
-        void* param = s_pending_thread.param;
-        s_pending_thread.func = NULL;
-        s_pending_thread.thread = NULL;
+    if (thread == s_game_thread && s_game_thread_func) {
+        void* (*func)(void*) = s_game_thread_func;
+        void* param = s_game_thread_param;
+        s_game_thread_func = NULL; /* prevent re-entry */
         s_current_thread = thread;
         func(param);
         /* main01 has an infinite loop, so we only reach here if it exits */
     }
+    /* Other threads (DVD, audio) are skipped — single-threaded mode */
     return 0;
 }
 int OSSetThreadPriority(OSThread* thread, OSPriority priority) { (void)thread; (void)priority; return 1; }
@@ -214,17 +212,31 @@ void OSSignalCond(OSCond* cond) { (void)cond; }
 /* OS Message Queue                                                 */
 /* ================================================================ */
 
+/* Message queue — simple synchronous implementation for single-threaded mode.
+ * Stores one message at a time. OSSendMessage stores it, OSReceiveMessage gets it. */
 void OSInitMessageQueue(OSMessageQueue* mq, void* msgArray, s32 msgCount) {
-    (void)mq; (void)msgArray; (void)msgCount;
+    if (mq) memset(mq, 0, 32);
 }
 
+static void* s_mq_pending_msg = NULL;
+static int s_mq_has_msg = 0;
+
 int OSSendMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)msg; (void)flags;
+    (void)mq; (void)flags;
+    s_mq_pending_msg = msg;
+    s_mq_has_msg = 1;
     return 1;
 }
 
 int OSReceiveMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)msg; (void)flags;
+    (void)mq;
+    if (s_mq_has_msg) {
+        if (msg) *(void**)msg = s_mq_pending_msg;
+        s_mq_has_msg = 0;
+        return 1;
+    }
+    /* Non-blocking: return 0 (no message). Blocking: also return 0 since
+     * in single-threaded mode, blocking would deadlock. */
     return 0;
 }
 
@@ -489,22 +501,49 @@ void AISetDSPSampleRate(u32 rate) { (void)rate; }
 u32 AIGetDSPSampleRate(void) { return 32000; }
 
 /* ================================================================ */
-/* AR (Audio RAM)                                                   */
+/* AR (Audio RAM) — emulated with host malloc                       */
 /* ================================================================ */
 
-u32 ARInit(u32* stack_index_addr, u32 num_entries) { (void)stack_index_addr; (void)num_entries; return 0; }
+/* ARAM is 16 MB on GameCube. We emulate it with a flat host buffer.
+ * AR addresses are offsets into this buffer. */
+#define PAL_ARAM_SIZE (16 * 1024 * 1024)
+static u8* s_aram_mem = NULL;
+static u32 s_aram_base = 0;
+static u32 s_aram_top = 0;
+
+u32 ARInit(u32* stack_index_addr, u32 num_entries) {
+    (void)stack_index_addr; (void)num_entries;
+    if (!s_aram_mem) {
+        s_aram_mem = (u8*)malloc(PAL_ARAM_SIZE);
+        if (s_aram_mem) memset(s_aram_mem, 0, PAL_ARAM_SIZE);
+    }
+    s_aram_base = 0;
+    s_aram_top = 0;
+    return 0; /* base address */
+}
 void ARReset(void) {}
 BOOL ARCheckInit(void) { return TRUE; }
-u32 ARAlloc(u32 length) { (void)length; return 0; }
+u32 ARAlloc(u32 length) {
+    u32 addr = s_aram_top;
+    s_aram_top += (length + 31) & ~31; /* 32-byte align */
+    if (s_aram_top > PAL_ARAM_SIZE) s_aram_top = PAL_ARAM_SIZE;
+    return addr;
+}
 u32 ARFree(u32* length) { (void)length; return 0; }
 u32 ARGetBaseAddress(void) { return 0; }
-u32 ARGetSize(void) { return 0; }
-u32 ARGetInternalSize(void) { return 0; }
+u32 ARGetSize(void) { return PAL_ARAM_SIZE; }
+u32 ARGetInternalSize(void) { return PAL_ARAM_SIZE; }
 void ARSetSize(void) {}
 void ARClear(u32 flag) { (void)flag; }
 u32 ARGetDMAStatus(void) { return 0; }
 void ARStartDMA(u32 type, u32 mainmem_addr, u32 aram_addr, u32 length) {
-    (void)type; (void)mainmem_addr; (void)aram_addr; (void)length;
+    /* type 0 = ARAM→main, type 1 = main→ARAM */
+    if (!s_aram_mem || aram_addr + length > PAL_ARAM_SIZE) return;
+    if (type == 0) {
+        memcpy((void*)(uintptr_t)mainmem_addr, s_aram_mem + aram_addr, length);
+    } else {
+        memcpy(s_aram_mem + aram_addr, (void*)(uintptr_t)mainmem_addr, length);
+    }
 }
 ARQCallback ARRegisterDMACallback(ARQCallback callback) { (void)callback; return NULL; }
 
