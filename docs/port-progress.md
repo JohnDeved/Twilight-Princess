@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `5` (FIRST_FRAME — game loop runs, profiles loaded, scene create pending) |
-| **Current Step** | Step 3 complete — profile list loaded (35/792), game loop stable 2000+ frames |
+| **Highest CI Milestone** | `6` (LOGO_SCENE — logo scene creates from real disc data, all frame milestones pass) |
+| **Current Step** | Step 3 mostly complete — game data auto-download, RARC endian swap, audio skip, logo scene skip |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | Scene create stuck in phase_1 (audio init); needs audio stub fix + game assets for DVD reads |
+| **Blocking Issue** | Need GX shim (Step 5) for RENDER_FRAME milestone; logo scene skips rendering |
 
 ## Step Checklist
 
@@ -78,6 +78,15 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] **Milestone gating**: FRAMES_60/300/1800 require LOGO_SCENE to fire first (prevents trivial completion)
 - [x] **Scene milestones**: fpcBs_Create tracks LOGO_SCENE/TITLE_SCENE/PLAY_SCENE creation
 - [x] **DVD_READ_OK milestone**: tracks first successful file I/O from host filesystem
+- [x] **Game data auto-download**: `tools/setup_game_data.py` downloads ROM via ROMS_TOKEN + nodtool extract
+- [x] **RARC endian swap**: byte-swap + 64-bit file entry repack (20→24 byte stride) in all archive types
+- [x] **Audio skip**: Phase A silence stubs — skip J-Audio BAA parsing on PC (mDoAud_Create)
+- [x] **ResTIMG endian swap**: texture header fields byte-swapped in JUTTexture::storeTIMG
+- [x] **ARAM→MEM redirect**: MOUNT_ARAM redirected to MOUNT_MEM on PC (64-bit DMA incompatible)
+- [x] **Logo scene PC path**: Skip logoInitGC/dvdDataLoad, skip audio calls, auto-scene-transition
+- [x] **128MB MEM2 arena**: Increased from 32MB for ARAM→MEM overhead
+- [x] **LOGO_SCENE milestone (6)**: Logo scene creates from real disc data
+- [x] **FRAMES_60/300/1800 milestones**: 2000+ frames stable with real game data
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
@@ -165,6 +174,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **LOGO_SCENE + game data**: Auto-download ROM via ROMS_TOKEN, RARC endian swap with 64-bit repack, audio skip (phase_1 unblocked), logo scene PC path (skip rendering), ARAM→MEM redirect, 128MB MEM2 arena, 64-bit DvdAramRipper fixes | 5 → 6 (LOGO_SCENE, all frame milestones) | GX shim (Step 5) for RENDER_FRAME |
 | 2026-02-27 | **Honest milestones**: Scene milestones moved from fpcBs_Create (allocation) to fpcBs_SubCreate (after create() completes with assets loaded). RENDER_FRAME gated on gx_shim_active. LOGO_SCENE no longer fires without real assets. CI workflow broadened to cover all src/include changes. | 12 → 5 (honest) | Fix audio init stubs so scene create proceeds; provide game assets |
 | 2026-02-27 | **Profile list + heap fix**: Created pal_profile_list.cpp (35 available profiles), fixed JKRExpHeap 64-bit pointer truncation (u32 start → uintptr_t), fixed JKRHeap::getMaxAllocatableSize. LOGO_SCENE creates successfully, 2000 frames stable. Updated CI workflow paths. | 5 → 12 (FRAMES_1800 with LOGO_SCENE) | Game assets for real scene loading, GX shim |
 | 2026-02-27 | **Fixed milestone system**: moved state to .cpp (was static-per-TU), scene tracking before NULL return, frame checks use >= with gate, added pal_milestone.cpp | 5 (honest) | Get profiles loading, game assets, GX shim |
@@ -196,8 +206,11 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_remaining_stubs.cpp` — JStudio, JSU streams, JOR, J3D, misc SDK
 - `src/pal/pal_crash.cpp` — Crash signal handler
 - `src/pal/pal_milestone.cpp` — Boot milestone state (shared across translation units)
+- `src/pal/pal_endian.cpp` — RARC archive byte-swap + 64-bit file entry repack
+- `include/pal/pal_endian.h` — Byte-swap inline functions (pal_swap16/32)
 - `src/pal/gx/gx_stub_tracker.cpp` — GX stub tracker implementation
 - `src/pal/gx/gx_fifo.cpp` — GX FIFO RAM buffer infrastructure
+- `tools/setup_game_data.py` — Game data auto-download script (ROM + nodtool extract)
 - `.github/workflows/port-test.yml` — CI workflow for port testing
 - `tools/parse_milestones.py` — CI milestone parser
 - `assets/` — Placeholder asset headers for compilation
@@ -218,11 +231,19 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/m_Do/m_Do_graphic.cpp` — Render bypass on PC (skip mDoGph_Painter without GX shim)
 - `src/m_Do/m_Do_ext.cpp` — Font resource null guard for missing archives
 - `src/m_Do/m_Do_dvd_thread.cpp` — Synchronous DVD command execution on PC
+- `src/m_Do/m_Do_audio.cpp` — Skip audio init on PC (Phase A silence stubs)
+- `src/d/d_s_logo.cpp` — Logo scene PC path (skip rendering, audio, auto-transition)
 - `src/c/c_dylink.cpp` — Skip DynamicLink module loading on PC
 - `src/f_pc/f_pc_profile.cpp` — NULL-safe profile lookup
 - `src/f_pc/f_pc_base.cpp` — NULL profile guard in process creation
 - `src/DynamicLink.cpp` — Guard empty ModuleProlog/Epilog from conflicting on PC
 - `src/JSystem/JFramework/JFWDisplay.cpp` — Skip retrace-based wait on PC
+- `src/JSystem/JKernel/JKRMemArchive.cpp` — RARC endian swap after loading
+- `src/JSystem/JKernel/JKRDvdArchive.cpp` — RARC endian swap + 64-bit file entry repack
+- `src/JSystem/JKernel/JKRAramArchive.cpp` — RARC endian swap + 64-bit file entry repack
+- `src/JSystem/JKernel/JKRArchivePub.cpp` — ARAM→MEM redirect on PC
+- `src/JSystem/JKernel/JKRDvdAramRipper.cpp` — 64-bit pointer alignment fixes
+- `src/JSystem/JUtility/JUTTexture.cpp` — ResTIMG endian swap in storeTIMG
 - 77 files — Extended `PLATFORM_SHIELD` conditionals to include `PLATFORM_PC`
 
 ## How to Use This File
