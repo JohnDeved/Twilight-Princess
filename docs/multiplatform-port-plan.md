@@ -21,12 +21,72 @@ platform-abstraction problems** we need for a native PC/NX port:
 | Widescreen / framebuffer | `#if PLATFORM_WII \|\| PLATFORM_SHIELD` blocks | Add `PLATFORM_PC` to these — get widescreen free |
 | Post-processing scales | `lingcod_getBloomScale()` / `lingcod_getDoFScale()` return 1.0f | Replace `lingcod` stubs with ImGui-controllable values |
 | Sampling buffer | `RECPD_SAMPLING_BUF_COUNT = 16` (vs GCN's 10) | Use Shield's larger buffer for PC too |
+| Dynamic linking disabled | 12 `#if !PLATFORM_SHIELD` blocks in `c_dylink.cpp` | Skip REL dynamic linker — statically link everything |
+| Audio categories | Shield/Wii share extra SE categories 10–11 | Inherit expanded audio routing (Z2AudioMgr) |
+| Actor management | Shield-specific frame processor path (`f_pc_manager.cpp`) | Inherit optimized process scheduling |
 
 **Bottom line**: Instead of porting from GCN and re-discovering every platform boundary,
 we start from the ShieldD (debug) build configuration. The ShieldD config compiles **4,028
 source files** — the full game — and its `PLATFORM_SHIELD` conditionals mark exactly where
 hardware assumptions live. Our port adds `PLATFORM_PC` alongside `PLATFORM_SHIELD` in most
 cases, then replaces the remaining PowerPC/GX hardware layer with native implementations.
+
+## Shield's GX Graphics Path — What We Can and Cannot Reuse
+
+The Shield port's approach to GX graphics has important implications for our porting strategy.
+
+### How Shield handles GX (the translation layer)
+
+Shield compiles **all 20 `revolution/gx/*.c` files** unchanged and runs the resulting PowerPC
+GX code through NVIDIA's binary translation layer on the Tegra hardware. This means:
+
+- The game writes GX commands to `0xCC008000` (the hardware FIFO address) via `GXWGFifo`
+  volatile writes — Shield's translation layer intercepts these memory-mapped I/O writes.
+- `GXInit()` calls `EnableWriteGatherPipe()` which sets up the PPC Write Gather Buffer register
+  (`PPCMtwpar(0xCC008000)`, HID2 bit 30) — translated to Tegra equivalents at runtime.
+- Frame submission uses `GXDrawDone()` → `GXSetDrawDone()` → PE register interrupt — again
+  intercepted by the translation layer.
+- NVIDIA adds a thin runtime hook layer (**NVGX**) for texture naming and render group management:
+  `NVGXNameTex`, `NVGXNameTexCI`, `NVGXDestroyTex`, `NVGXCreateGroup`, `NVGXCreateSubGroup`,
+  `NVGXReleaseGroup`. These are **runtime-linked symbols** (in `config/Shield/symbols.txt`)
+  that map to the proprietary Tegra GPU driver — not available to us.
+
+### What this means for us
+
+We **cannot** reuse Shield's GX translation layer directly — it's NVIDIA's proprietary binary
+translator. However, Shield's architecture gives us a **precise blueprint** for where to
+intercept GX calls:
+
+| Shield intercept point | What Shield does | What we do instead |
+|---|---|---|
+| `GXWGFifo` at `0xCC008000` | Binary translation intercepts volatile writes | Redirect `GX_WRITE_*` macros to RAM command buffer |
+| `GXInit()` / `EnableWriteGatherPipe()` | Translation layer hooks PPC register setup | Initialize OpenGL context + GX state tracker |
+| `GXDrawDone()` / `GXCopyDisp()` | Translation layer intercepts PE register writes | Flush command buffer → OpenGL draw calls |
+| `GXSaveCPUFifo()` | **Disabled** (`#if !PLATFORM_SHIELD`) | Same — our shim owns FIFO state, no save needed |
+| `NVGXNameTex` / `NVGXDestroyTex` | Maps GX textures to Tegra GPU handles | Map `GXTexObj` to OpenGL texture objects |
+| `NVGXCreateGroup` / `NVGXReleaseGroup` | Groups draw calls for GPU scheduling | Not needed — OpenGL handles draw ordering |
+| `J3D_sqrtf()` PPC assembly | **Disabled** (`#if !PLATFORM_SHIELD`) | Same — use standard `sqrtf()` |
+
+### The GX API contract is our shim surface
+
+The key insight is that **GX already has a clean API boundary**. The public GX functions
+(`GXInit`, `GXSetViewport`, `GXBegin`, `GXLoadTexObj`, etc.) and the `GXTexObj` / `GXTlutObj`
+opaque structs (defined as `u32 dummy[8]` — intentionally hiding implementation) form a
+well-defined contract. Our GX shim provides the same function signatures backed by OpenGL:
+
+```
+Game/J3D code                    Shield (translation layer)       PC port (native shim)
+─────────────                    ────────────────────────         ─────────────────────
+GXInitTexObj(&obj, img, ...)  →  PPC binary → Tegra GPU driver   →  glGenTextures + glTexImage2D
+GXBegin(GX_TRIANGLES, ...)    →  PPC binary → Tegra FIFO         →  begin RAM vertex buffer
+GXPosition3f32(x, y, z)      →  PPC binary → Tegra FIFO write   →  write to RAM vertex buffer
+GXEnd()                       →  PPC binary → Tegra FIFO flush   →  glBufferData + glDrawArrays
+GXSetTevOp(stage, mode)       →  PPC binary → Tegra TEV          →  generate GLSL fragment shader
+```
+
+This is exactly the approach used by Dolphin Emulator's GPU backend and other GX → GL
+projects. Shield proves the GX API surface is stable enough for a non-GCN GPU to render
+correctly — our shim just does the translation in C++ instead of binary translation.
 
 ## Scope
 
@@ -93,6 +153,8 @@ Game Logic (src/d/, src/d/actor/)       ~994 files — DO NOT TOUCH (same as Shi
     → Machine Layer (src/m_Do/)          17 files — THIN ADAPTATION (reuse Shield conditionals)
       → PAL (src/pal/)                   NEW — replaces src/dolphin/ + src/revolution/
          → GX Shim (src/pal/gx/)        NEW — replaces revolution/gx/ (GX → OpenGL)
+         │                                Uses GX_WRITE_* macro redirect (same intercept
+         │                                point as Shield's binary translation layer)
          → Platform (src/pal/platform/)  NEW — replaces dolphin/os,dvd,pad,dsp,vi + lingcod
 ```
 
@@ -236,26 +298,62 @@ PowerPC translation. We simplify further:
 **Time saver**: The Shield port proves these subsystems work when ARAM is just memory —
 the translation layer was already treating ARAM addresses as regular RAM. We formalize that.
 
-### Step 5: GX Shim (Replace Shield's Translated GX)
+### Step 5: GX Shim (Replace Shield's Translated GX With Native OpenGL)
 
 **Scope**: The Shield build compiles all 20 `revolution/gx/*.c` files and runs them through
-PowerPC translation. We replace that entire layer with a native GX → OpenGL shim.
+NVIDIA's proprietary PowerPC binary translation layer. We replace that entire layer with a
+native C++ GX → OpenGL shim. See "Shield's GX Graphics Path" above for the full analysis of
+Shield's intercept points and how our shim maps to each one.
+
+**Key Shield insight**: The GX API surface is a clean, well-defined contract. `GXTexObj` and
+other state objects use opaque structs (`u32 dummy[8]`), which means we can redefine internals
+to hold OpenGL handles without any game code knowing. Shield's NVGX texture naming functions
+(`NVGXNameTex`, `NVGXDestroyTex`) prove this approach works — they map GX texture objects to
+a different GPU's handle space at runtime.
+
+**GX FIFO replacement strategy** (informed by Shield's translation model):
+
+The hardware FIFO at `0xCC008000` is accessed via `GX_WRITE_*` macros in
+`include/revolution/private/GXRegs.h`:
+```c
+#define GX_WRITE_U8(ub)    GXWGFifo.u8 = (u8)(ub)
+#define GX_WRITE_U16(us)   GXWGFifo.u16 = (u16)(us)
+#define GX_WRITE_U32(ui)   GXWGFifo.u32 = (u32)(ui)
+#define GX_WRITE_F32(f)    GXWGFifo.f32 = (f32)(f)
+```
+
+For `PLATFORM_PC`, redirect these to a RAM command buffer:
+```c
+#if PLATFORM_PC
+  #define GX_WRITE_U8(ub)    gx_fifo_write_u8(ub)
+  #define GX_WRITE_U16(us)   gx_fifo_write_u16(us)
+  #define GX_WRITE_U32(ui)   gx_fifo_write_u32(ui)
+  #define GX_WRITE_F32(f)    gx_fifo_write_f32(f)
+#endif
+```
+
+This is the **single most impactful substitution** in the port — it redirects ~2,500 GX call
+sites through our shim without touching any game code. Shield's translation layer does the
+equivalent interception in hardware; we do it in software at the macro level.
 
 #### Tier A — First Playable (title → field → combat)
 
-| GX area | Key functions | Primary consumers |
-|---|---|---|
-| State init | `GXInit`, `GXSetViewport`, `GXSetScissor` | `m_Do_graphic.cpp` |
-| Vertex format | `GXSetVtxDesc`, `GXSetVtxAttrFmt`, `GXClearVtxDesc` | J3D material setup |
-| Matrix | `GXLoadPosMtxImm`, `GXLoadNrmMtxImm`, `GXSetCurrentMtx` | J3D draw, actors |
-| Draw | `GXBegin`, `GXEnd`, FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) | J3D shape draw, 2D UI |
-| Texture | `GXInitTexObj`, `GXLoadTexObj`, `GXInitTlutObj`, `GXLoadTlut` | J3D, particle, UI |
-| TEV | `GXSetTevOp`, `GXSetTevOrder`, `GXSetNumTevStages`, `GXSetTevColor` | 41+ files — dominant material path |
-| Blend/Z | `GXSetBlendMode`, `GXSetZMode`, `GXSetAlphaCompare` | J3D pixel setup |
-| Display list | `GXCallDisplayList` | 10 files: `J3DShapeDraw`, `J3DPacket`, `d_a_player`, etc. |
+| GX area | Key functions | Primary consumers | Shield behavior |
+|---|---|---|---|
+| State init | `GXInit`, `GXSetViewport`, `GXSetScissor` | `m_Do_graphic.cpp` | Translation layer initializes Tegra GPU |
+| Vertex format | `GXSetVtxDesc`, `GXSetVtxAttrFmt`, `GXClearVtxDesc` | J3D material setup | Translated to Tegra vertex state |
+| Matrix | `GXLoadPosMtxImm`, `GXLoadNrmMtxImm`, `GXSetCurrentMtx` | J3D draw, actors | Translated to Tegra matrix registers |
+| Draw | `GXBegin`, `GXEnd`, FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) | J3D shape draw, 2D UI | FIFO writes intercepted by translation layer |
+| Texture | `GXInitTexObj`, `GXLoadTexObj`, `GXInitTlutObj`, `GXLoadTlut` | J3D, particle, UI | Mapped via `NVGXNameTex` to Tegra handles |
+| TEV | `GXSetTevOp`, `GXSetTevOrder`, `GXSetNumTevStages`, `GXSetTevColor` | 41+ files — dominant material path | Translated to Tegra shader pipeline |
+| Blend/Z | `GXSetBlendMode`, `GXSetZMode`, `GXSetAlphaCompare` | J3D pixel setup | Translated to Tegra blend state |
+| Display list | `GXCallDisplayList` | 10 files: `J3DShapeDraw`, `J3DPacket`, `d_a_player`, etc. | Replayed through translation layer |
 
-**Note**: Shield already disables `GXSaveCPUFifo()` — our shim doesn't need it either.
-Shield also disables PowerPC-specific `J3D_sqrtf()` assembly — we inherit standard `sqrtf()`.
+**Shield confirms**:
+- `GXSaveCPUFifo()` disabled — our shim owns state, no hardware FIFO save needed.
+- `J3D_sqrtf()` PPC assembly disabled — standard `sqrtf()` works correctly.
+- `NVGXNameTex`/`NVGXDestroyTex` exist — proves GX texture objects can be mapped to any GPU.
+- `GXDrawDone()` triggers PE interrupt 0x13 — we trigger `glFinish()` + swap instead.
 
 #### Tier B — Expand by Demand
 
@@ -265,6 +363,8 @@ Shield also disables PowerPC-specific `J3D_sqrtf()` assembly — we inherit stan
 
 **Implementation strategy**:
 - `gx_state` struct captures all GX state; flush to OpenGL at draw time.
+- Redefine `GXTexObj` internals to hold `GLuint` texture handle (opaque `u32 dummy[8]` allows
+  this — same approach as Shield's `NVGXNameTex` mapping to Tegra handles).
 - FIFO writes (`GXPosition*`, `GXColor*`, `GXTexCoord*`) → RAM vertex buffer, uploaded as GL VBO.
 - TEV stages → generated GLSL fragment shader (cache by TEV config hash).
 - **Time saver**: J3D is the dominant draw path. Getting J3D materials correct covers the
@@ -339,19 +439,21 @@ Step 1 (CMake build from ShieldD file list)
 ```
 
 **Parallelizable work streams**:
-1. **Build + conditionals** (Steps 1–2): one person, ~1 week.
-   *(Faster than before — ShieldD file list eliminates guesswork, conditional extension is mechanical.)*
-2. **PAL + DVD/ARAM** (Steps 3–4): one person, ~2 weeks.
-   *(Faster — Shield already proves these subsystems work without real hardware.)*
-3. **GX shim** (Step 5): one person (GX/GL experience), ~3–5 weeks for Tier A.
-   *(Same scope — Shield didn't help here since it ran GX through translation.)*
-4. **Audio** (Step 6): one person, Phase A in ~2 days, Phase B ~2–4 weeks.
-   *(Faster — Shield's fixed output mode and known archive list reduce exploration.)*
-5. **Input + Save** (Step 7): one person, ~3–5 days.
+1. **Build + conditionals** (Steps 1–2): one person, ~3–4 days.
+   *(Shield's static linking eliminates REL loader; conditional extension is mechanical.)*
+2. **PAL + DVD/ARAM** (Steps 3–4): one person, ~1.5 weeks.
+   *(Shield's NAND error handling and disc-less code path carry over directly.)*
+3. **GX shim** (Step 5): one person (GX/GL experience), ~3–4 weeks for Tier A.
+   *(Faster — `GX_WRITE_*` macro redirect captures 2,500 call sites; `GXTexObj` opacity trick
+   avoids texture plumbing; Shield's NVGX proves the GX API surface supports GPU handle mapping.)*
+4. **Audio** (Step 6): one person, Phase A in ~1 day, Phase B ~2–4 weeks.
+   *(Faster — Shield's audio routing is pre-mapped; fixed output mode; no hardware queries.)*
+5. **Input + Save** (Step 7): one person, ~2–3 days.
    *(Faster — Shield's GCN pad path and NAND save path are the exact patterns we need.)*
 
-**Estimated total time to first playable (with parallel streams)**: ~5–7 weeks
-*(Down from ~7–9 weeks without Shield leverage — saves ~2 weeks of exploration and dead ends.)*
+**Estimated total time to first playable (with parallel streams)**: ~4–6 weeks
+*(Down from ~5–7 weeks in previous revision, ~7–9 weeks without Shield leverage.
+Shield's GX abstraction insights save ~1 additional week on the GX shim alone.)*
 
 ## High-Impact Time Savers (Verified Against Shield Port)
 
@@ -360,12 +462,93 @@ Step 1 (CMake build from ShieldD file list)
 | Start from ShieldD config (4,028 files) | Battle-tested file list for a non-Nintendo target | No file-list guesswork; build works or fails immediately |
 | Extend `PLATFORM_SHIELD` conditionals | 63+ files already have the decision points marked | Mechanical `#if` extension — ~63 files, ~1 line each |
 | Inherit Shield's hardware exclusions | `!PLATFORM_SHIELD` guards skip CARDInit, GXSaveCPUFifo, etc. | Same exclusions apply to PC — zero new analysis needed |
+| Redirect `GX_WRITE_*` macros | 4 macros in `GXRegs.h` control all FIFO writes | Captures ~2,500 GX call sites with 4 `#define` changes |
+| Redefine `GXTexObj` internals | Opaque `u32 dummy[8]` struct hides implementation | Store `GLuint` handle inside — same trick as Shield's `NVGXNameTex` |
 | Reuse Shield's GCN input path | Shield uses `JUTGamePad`, not WPAD/KPAD | Map SDL3 gamepad → GCN PadStatus; skip Wii input entirely |
 | Reuse Shield's save simplification | Shield uses `NANDSimpleSafe*` instead of memory cards | Replace one NAND layer instead of reimplementing card I/O |
 | Inherit Shield's dual-heap architecture | `sRootHeap2` already works on Shield | Both heaps map to host RAM — no heap redesign needed |
+| Skip REL dynamic linking | 12 `!PLATFORM_SHIELD` blocks disable `c_dylink` on Shield | Statically link all code — eliminates REL loader entirely |
 | Replace `lingcod` stubs with ImGui | `lingcod` functions return constants (bloom=1.0, DoF=1.0) | ImGui sliders give runtime control for free |
 | Keep `mDoDvdThd_*` / JKR interfaces | DVD/ARAM consumers never see the change | ~835 actor files untouched |
 | Shield's math fixes carry over | `errno` guards in `e_acos/asin/fmod` prevent x86 NaN crashes | Prevents runtime crashes without new debugging |
+
+## Additional Shield-Derived Time Savings (Deep Research)
+
+Beyond the primary conditional patterns, the Shield port reveals additional acceleration
+opportunities found during deep codebase analysis:
+
+### 1. Static Linking Eliminates REL Loader (~1 week saved)
+
+Shield disables the dynamic linker (`c_dylink.cpp` has **12 `#if !PLATFORM_SHIELD` blocks**).
+On GCN/Wii, actor code lives in REL modules (804 `.rel` files) loaded dynamically by
+`c_dylink`. Shield statically links everything — the PC port inherits this.
+
+**Impact**: Eliminates the need to implement or emulate REL loading, relocation, and symbol
+resolution. The CMake build compiles all 4,028 source files into a single executable.
+
+### 2. Audio System Pre-Configured (~2 days saved)
+
+Shield's audio path (`Z2AudioLib/`, 19 `PLATFORM_SHIELD` references) reveals:
+- Extra sound effect categories 10–11 already enabled (`Z2AudioMgr.cpp`)
+- Scene wave loading path optimized for non-disc I/O (`Z2SceneMgr.cpp`)
+- SE manager callbacks simplified (`JAISeMgr.cpp` — `#if !PLATFORM_SHIELD` disables reporting)
+- Sequence player skips hardware-specific features (`Z2SeqMgr.cpp`)
+
+**Impact**: The audio stub (Phase A) and full implementation (Phase B) can reuse Shield's
+simplified audio routing. No need to discover which audio paths depend on hardware — Shield
+already marks them.
+
+### 3. Frame Processor Optimized Path (~1 day saved)
+
+`f_pc_manager.cpp` has `#elif PLATFORM_SHIELD && !DEBUG` — Shield uses a streamlined frame
+processor that skips debug overhead. We inherit this for release builds and add ImGui hooks
+for debug builds separately.
+
+### 4. Actor Management Shortcut (~1 day saved)
+
+`f_op_actor_mng.cpp` has Shield-specific actor management. Combined with static linking
+(no REL loading), actor creation becomes a direct function call instead of dynamic symbol
+lookup → load → relocate → call.
+
+### 5. Struct Padding Already Portable
+
+Shield-specific struct padding in `m_Re_controller_pad.h`, `d_vibration.h`, and other headers
+means the data layout is already tested on a non-GCN memory model. PC inherits these padded
+structs with no alignment surprises.
+
+### 6. NAND Error Handling Already Simplified
+
+Shield's save path already handles NAND error states (`NAND_STATE_*` in `m_Do_MemCard.cpp`)
+for a non-card-based target. The PC port replaces `NANDSimpleSafe*` with file I/O but keeps
+the same error state machine — no redesign needed.
+
+### 7. Texture Object Opacity Enables GPU Handle Injection
+
+The `GXTexObj` struct is intentionally opaque (`typedef struct { u32 dummy[8]; } GXTexObj`)
+with internal fields (`__GXTexObjInt`) hidden from public API. Shield's `NVGXNameTex` /
+`NVGXDestroyTex` functions exploit this opacity to map GX textures to Tegra GPU handles.
+We do the same: redefine `__GXTexObjInt` internals to include a `GLuint` texture ID, keeping
+the 32-byte public struct size but storing OpenGL handles inside.
+
+### 8. Display List Replay Already Works Through Translation
+
+Shield replays `GXCallDisplayList` through its translation layer — proving display lists
+(used in 10+ files including `J3DShapeDraw`, `J3DPacket`, `d_a_player`) contain standard
+GX commands that can be intercepted and re-executed. Our shim records display lists as
+command buffers and replays them through the OpenGL backend.
+
+### Summary: Revised Time Estimate With All Shield Optimizations
+
+| Work stream | Previous estimate | With Shield savings | Key savings source |
+|---|---|---|---|
+| Build + conditionals | ~1 week | ~3–4 days | Static linking eliminates REL loader |
+| PAL + DVD/ARAM | ~2 weeks | ~1.5 weeks | Shield's NAND error handling carries over |
+| GX shim Tier A | ~3–5 weeks | ~3–4 weeks | `GX_WRITE_*` macro redirect + `GXTexObj` opacity trick |
+| Audio | Phase A: ~2 days | Phase A: ~1 day | Audio routing pre-mapped by Shield conditionals |
+| Input + Save | ~3–5 days | ~2–3 days | GCN pad path + NAND save path are exact patterns |
+
+**Revised total estimate**: ~4–6 weeks to first playable (down from ~5–7 weeks in previous
+revision, ~7–9 weeks in original plan).
 
 ## Known Heavy Areas (Measured)
 
