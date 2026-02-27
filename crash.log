@@ -1,5 +1,0 @@
-original arenaLo = 0x55ba61a7cac0 arenaHi = 0x55ba69a7cac0
-original arenaLo = 0x55ba5da7ca98 arenaHi = 0x55ba61a7ca80
-{"gx_bgfx":"init","renderer":"Noop","headless":true}
-{"gx_bgfx":"ready","width":640,"height":480}
-<LogoUs.arc> dRes_control_c::setRes: res info set error !!
