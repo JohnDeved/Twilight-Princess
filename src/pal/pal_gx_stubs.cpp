@@ -228,32 +228,26 @@ void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_pos_mtx_imm(mtx,
 void GXLoadPosMtxIndx(u16 mtx_indx, u32 id) {
     /* On real hardware, this loads a matrix from the XF register array.
      * On PC, game code also calls GXLoadPosMtxImm for each matrix,
-     * so we just set the current matrix ID. The matrix data is already
-     * stored from the GXLoadPosMtxImm calls. */
+     * so the matrix data is already stored. This is a no-op acknowledgment. */
     (void)mtx_indx;
-    u32 slot = id / 3;
-    if (slot < GX_MAX_POS_MTX) {
-        /* Matrix already loaded via GXLoadPosMtxImm — just acknowledge */
-    }
+    (void)id;
 }
 void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_nrm_mtx_imm(mtx, id); }
 void GXLoadNrmMtxImm3x3(const f32 mtx[3][3], u32 id) {
     /* Convert 3x3 matrix to 3x4 by padding with zero translation column */
     f32 mtx34[3][4];
     if (!mtx) return;
-    mtx34[0][0] = mtx[0][0]; mtx34[0][1] = mtx[0][1]; mtx34[0][2] = mtx[0][2]; mtx34[0][3] = 0.0f;
-    mtx34[1][0] = mtx[1][0]; mtx34[1][1] = mtx[1][1]; mtx34[1][2] = mtx[1][2]; mtx34[1][3] = 0.0f;
-    mtx34[2][0] = mtx[2][0]; mtx34[2][1] = mtx[2][1]; mtx34[2][2] = mtx[2][2]; mtx34[2][3] = 0.0f;
+    for (int r = 0; r < 3; r++) {
+        memcpy(mtx34[r], mtx[r], 3 * sizeof(f32));
+        mtx34[r][3] = 0.0f;
+    }
     pal_gx_load_nrm_mtx_imm(mtx34, id);
 }
 void GXLoadNrmMtxIndx3x3(u16 mtx_indx, u32 id) {
     /* On real hardware, loads from XF register array.
      * On PC, normal matrices are already stored via GXLoadNrmMtxImm. */
     (void)mtx_indx;
-    u32 slot = id / 3;
-    if (slot < GX_MAX_POS_MTX) {
-        /* Matrix already loaded via GXLoadNrmMtxImm — just acknowledge */
-    }
+    (void)id;
 }
 void GXSetCurrentMtx(u32 id) { pal_gx_set_current_mtx(id); }
 void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, GXTexMtxType type) { pal_gx_load_tex_mtx_imm(mtx, id, type); }

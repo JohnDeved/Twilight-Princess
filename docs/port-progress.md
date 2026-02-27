@@ -7,7 +7,7 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `6` (LOGO_SCENE — all rendering-critical stubs implemented, RENDER_FRAME now possible with stub-free frames) |
+| **Highest CI Milestone** | `6` (LOGO_SCENE — all rendering-critical stubs implemented; RENDER_FRAME [15] now unblocked pending game data) |
 | **Current Step** | Step 5 complete — All GX stubs implemented, TEV shader pipeline, display list replay |
 | **Last Updated** | 2026-02-27 |
 | **Blocking Issue** | Need game data (ROMS_TOKEN) to verify RENDER_FRAME with real disc assets |
