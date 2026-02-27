@@ -9,7 +9,7 @@ platform-abstraction problems** we need for a native PC/NX port:
 
 | Problem | Shield's solution | What we reuse |
 |---|---|---|
-| Platform conditionals | `PLATFORM_SHIELD` in 63+ files, 220+ files use `PLATFORM_*` | Add `PLATFORM_PC` to the same `#if` chains — zero game logic edits |
+| Platform conditionals | `PLATFORM_SHIELD` in 63+ files, 220+ files use `PLATFORM_*` | Add `PLATFORM_PC` to the same `#if` chains — game logic unchanged, only preprocessor directives updated |
 | Dual memory heaps | Shield shares `JKRHeap::sRootHeap2` (MEM2) with Wii | Keep dual-heap; map both to host RAM |
 | Simplified saves | `NANDSimpleSafeOpen/Close` instead of physical memory cards | Replace NAND calls with `pal_save` file I/O |
 | No physical media | Shield skips `CARDInit()` (`#if !PLATFORM_SHIELD`) | Same — skip card I/O, use `pal_fs` |
@@ -313,7 +313,8 @@ Shield's audio architecture tells us exactly what to do:
 - Same GX → OpenGL renderer (no changes).
 - Swap PAL backends: `pal_window` → libnx/EGL, `pal_input` → HID, `pal_audio` → audren,
   `pal_fs` → romfs, `pal_save` → libnx account/save.
-- Add `PLATFORM_NX_HB` macro, inheriting the same Shield-derived conditionals as `PLATFORM_PC`.
+- Define `VERSION_NX_HB = 14` and `#define PLATFORM_NX_HB (VERSION == VERSION_NX_HB)` in `global.h`,
+  inheriting the same Shield-derived conditionals as `PLATFORM_PC`.
 - **Time saver**: ~1–2 weeks after PC is playable. PAL interface is identical, only backend swaps.
 
 ### Step 10: Polish for Shipment
