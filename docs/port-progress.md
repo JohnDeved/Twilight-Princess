@@ -7,30 +7,47 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `-1` (not yet building) |
-| **Current Step** | Step 1 — Not started |
+| **Highest CI Milestone** | `0` (binary links, not yet tested at runtime) |
+| **Current Step** | Step 2 ✅ complete — Step 3 next |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | No port code exists yet — start at Step 1 |
+| **Blocking Issue** | None — ready for Step 3 (PAL bootstrap / SDL3+bgfx integration) |
 
 ## Step Checklist
 
 Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan) and the
 [Agent Port Workflow](agent-port-workflow.md). Mark items `[x]` when complete.
 
-### Step 1 — CMake Build System (~250 LOC)
-- [ ] Create root `CMakeLists.txt` with sources from `config/ShieldD/splits.txt`
-- [ ] Exclude `src/dolphin/`, `src/revolution/`, `src/lingcod/`, PPC assembly
-- [ ] Add `VERSION_PC = 13` and `PLATFORM_PC` to `include/global.h`
-- [ ] Create `include/pal/pal_intrinsics.h` (MWCC → GCC/Clang, cache no-ops)
-- [ ] Create `include/pal/pal_milestone.h` (boot milestone logging)
-- [ ] Verify: `cmake -B build && cmake --build build` produces compiler errors (expected — missing PAL stubs)
+### Step 1 — CMake Build System (~250 LOC) ✅
+- [x] Create root `CMakeLists.txt` with sources from `config/Shield/splits.txt`
+- [x] Exclude `src/dolphin/`, `src/revolution/`, `src/lingcod/`, PPC assembly
+- [x] Add `VERSION_PC = 13` and `PLATFORM_PC` to `include/global.h`
+- [x] Create `include/pal/pal_intrinsics.h` (MWCC → GCC/Clang, cache no-ops)
+- [x] Create `include/pal/pal_milestone.h` (boot milestone logging)
+- [x] Create `include/pal/pal_platform.h` (std lib, fabsf, isnan, stricmp compat)
+- [x] Create `include/pal/gx/gx_stub_tracker.h` (GX stub hit tracking)
+- [x] Add `GX_WRITE_*` macro redirect for `PLATFORM_PC` in `GXRegs.h`
+- [x] Fix `.gitignore` to allow `CMakeLists.txt` (was blocked by `/*.txt`)
+- [x] Fix `AT_ADDRESS()` globals in `OSExec.h` for GCC (extern instead of definition)
+- [x] Verify: All 533 source files compile and link into `tp-pc` binary
 
-### Step 2 — Extend Shield Conditionals (~100 LOC changes)
-- [ ] `PLATFORM_WII || PLATFORM_SHIELD` → add `|| PLATFORM_PC` (~85 sites across ~42 files)
-- [ ] `!PLATFORM_SHIELD` → `!PLATFORM_SHIELD && !PLATFORM_PC`
-- [ ] Verify: rebuild shows fewer errors after conditional extension
+### Step 2 — Extend Shield Conditionals (~206 LOC changes) ✅
+- [x] `PLATFORM_WII || PLATFORM_SHIELD` → add `|| PLATFORM_PC` (~85 sites across ~42 files)
+- [x] `!PLATFORM_SHIELD` → `!PLATFORM_SHIELD && !PLATFORM_PC` where needed
+- [x] Add milestone instrumentation in `m_Do_main.cpp`
+- [x] Verify: all 533 sources compile cleanly with conditionals extended
 
-### Step 3 — PAL Bootstrap (~1,250 LOC)
+### SDK Stub Library (Full Link) ✅
+- [x] `src/pal/pal_os_stubs.cpp` — OS functions (OSReport, cache, time, interrupts)
+- [x] `src/pal/pal_gx_stubs.cpp` — 120 GX/GD graphics function stubs
+- [x] `src/pal/pal_sdk_stubs.cpp` — 157 OS/hardware stubs (DVD, VI, PAD, AI, AR, DSP, etc.)
+- [x] `src/pal/pal_math_stubs.cpp` — Real PSMTX/PSVEC/C_MTX math (not empty stubs)
+- [x] `src/pal/pal_game_stubs.cpp` — Game-specific stubs (debug views, GF wrappers)
+- [x] `src/pal/pal_remaining_stubs.cpp` — JStudio, JSU streams, JOR, J3D, misc
+- [x] `src/pal/pal_crash.cpp` — Crash signal handler
+- [x] `src/pal/gx/gx_stub_tracker.cpp` / `gx_fifo.cpp` — GX shim infrastructure
+- [x] Verify: 0 undefined references — binary links successfully
+
+### Step 3 — PAL Bootstrap (~1,250 LOC) ⬜ NEXT
 - [ ] `pal_os.cpp` — timers, threads, memory (~200 LOC)
 - [ ] `pal_fs.cpp` — file I/O replacing DVD/NAND (~300 LOC)
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
@@ -107,6 +124,11 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | Updated port-progress.md to reflect completed Steps 1+2, SDK stubs, full link | -1 → 0 | Step 3: PAL bootstrap (SDL3+bgfx) |
+| 2026-02-27 | Achieved full link: fixed duplicate symbols, extern OSExec globals, 0 undefined refs | -1 → 0 | Update progress tracker |
+| 2026-02-27 | Created 6 SDK stub files (GX, OS, math, game, remaining), fixed C++ linkage issues | -1 → -1 | Fix last linker errors |
+| 2026-02-27 | Recovered lost CMakeLists.txt (gitignore fix), all 533 files compile + link | -1 → 0 | Create SDK stubs for linking |
+| 2026-02-27 | Steps 1+2: CMake, global.h, PAL headers, GX redirect, Shield conditionals, milestones | N/A → -1 | Compile + link |
 | 2026-02-27 | Created progress tracking system | N/A | Start Step 1: CMake build system |
 
 ## Files Created/Modified by the Port
@@ -114,10 +136,32 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 > Agents: Update this list as you create or modify files for the port.
 
 ### New files (port code)
-_None yet — start with Step 1_
+- `CMakeLists.txt` — Root CMake build system (parses Shield/splits.txt, 533 sources)
+- `include/pal/pal_platform.h` — Compatibility header (std lib, fabsf, isnan, stricmp)
+- `include/pal/pal_intrinsics.h` — MWCC → GCC/Clang intrinsic equivalents
+- `include/pal/pal_milestone.h` — Boot milestone logging (12 milestones)
+- `include/pal/gx/gx_stub_tracker.h` — GX stub hit coverage tracker
+- `src/pal/pal_os_stubs.cpp` — OS function stubs (OSReport, cache, time, interrupts)
+- `src/pal/pal_gx_stubs.cpp` — 120 GX/GD graphics function stubs
+- `src/pal/pal_sdk_stubs.cpp` — 157 OS/hardware SDK stubs (DVD, VI, PAD, AI, AR, DSP, etc.)
+- `src/pal/pal_math_stubs.cpp` — Real PSMTX/PSVEC/C_MTX math implementations
+- `src/pal/pal_game_stubs.cpp` — Game-specific stubs (debug views, GF wrappers)
+- `src/pal/pal_remaining_stubs.cpp` — JStudio, JSU streams, JOR, J3D, misc SDK
+- `src/pal/pal_crash.cpp` — Crash signal handler
+- `src/pal/gx/gx_stub_tracker.cpp` — GX stub tracker implementation
+- `src/pal/gx/gx_fifo.cpp` — GX FIFO RAM buffer infrastructure
+- `.github/workflows/port-test.yml` — CI workflow for port testing
+- `tools/parse_milestones.py` — CI milestone parser
+- `assets/` — Placeholder asset headers for compilation
 
 ### Modified files (conditional extensions)
-_None yet — start with Step 2_
+- `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
+- `include/revolution/private/GXRegs.h` — GX_WRITE_* redirect for PLATFORM_PC
+- `include/revolution/os/OSExec.h` — AT_ADDRESS extern fix for GCC
+- `.gitignore` — Allow CMakeLists.txt (!CMakeLists.txt exception)
+- `.github/copilot-instructions.md` — Added "Commit Early and Often" rule
+- `src/m_Do/m_Do_main.cpp` — Milestone instrumentation
+- 77 files — Extended `PLATFORM_SHIELD` conditionals to include `PLATFORM_PC`
 
 ## How to Use This File
 
