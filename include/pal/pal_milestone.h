@@ -29,7 +29,7 @@ enum {
     MILESTONE_DVD_READ_OK   = 13,
     MILESTONE_SCENE_CREATED = 14,
     MILESTONE_RENDER_FRAME  = 15,
-    MILESTONE_COUNT         = 16,
+    MILESTONE_COUNT         = 16, /* must equal highest milestone ID + 1 */
     MILESTONE_TEST_COMPLETE = 99,
     MILESTONE_CRASH         = -1
 };

@@ -19,7 +19,7 @@ void pal_milestone_init(void) {
     struct timespec ts;
     int i;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    g_boot_time_ms = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    g_boot_time_ms = (unsigned long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     for (i = 0; i < MILESTONE_COUNT; i++) g_milestones_reached[i] = 0;
 }
 
@@ -32,7 +32,7 @@ void pal_milestone(const char* name, int id, const char* detail) {
     struct timespec ts;
     unsigned long now;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    now = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    now = (unsigned long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     if (id >= 0 && id < MILESTONE_COUNT) g_milestones_reached[id] = 1;
     fprintf(stdout, "{\"milestone\":\"%s\",\"id\":%d,\"time_ms\":%lu,\"detail\":\"%s\"}\n",
             name, id, now - g_boot_time_ms, detail ? detail : "");
@@ -43,7 +43,7 @@ void pal_milestone_frame(const char* name, int id, unsigned frame) {
     struct timespec ts;
     unsigned long now;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    now = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    now = (unsigned long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     if (id >= 0 && id < MILESTONE_COUNT) g_milestones_reached[id] = 1;
     fprintf(stdout, "{\"milestone\":\"%s\",\"id\":%d,\"time_ms\":%lu,\"frame\":%u}\n",
             name, id, now - g_boot_time_ms, frame);
