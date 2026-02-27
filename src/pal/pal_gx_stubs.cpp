@@ -33,6 +33,7 @@
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_bgfx.h"
+#include "pal/gx/gx_state.h"
 
 extern "C" {
 
@@ -46,6 +47,9 @@ static GXFifoObj s_gx_fifo;
 GXFifoObj* GXInit(void* base, u32 size) {
     (void)base; (void)size;
     memset(&s_gx_fifo, 0, sizeof(s_gx_fifo));
+
+    /* Initialize GX state machine */
+    pal_gx_state_init();
 
     /* Initialize bgfx rendering backend */
     pal_gx_bgfx_init();
@@ -134,23 +138,24 @@ void GXProject(f32 x, f32 y, f32 z, const f32 mtx[3][4], const f32* pm,
     if (sy) *sy = 0.0f;
     if (sz) *sz = 0.0f;
 }
-void GXSetProjection(const f32 mtx[4][4], GXProjectionType type) { (void)mtx; (void)type; }
-void GXSetProjectionv(const f32* ptr) { (void)ptr; }
-void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id) { (void)mtx; (void)id; }
+void GXSetProjection(const f32 mtx[4][4], GXProjectionType type) { pal_gx_set_projection(mtx, type); }
+void GXSetProjectionv(const f32* ptr) { (void)ptr; /* TODO: parse GX projection format */ }
+void GXLoadPosMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_pos_mtx_imm(mtx, id); }
 void GXLoadPosMtxIndx(u16 mtx_indx, u32 id) { (void)mtx_indx; (void)id; }
-void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id) { (void)mtx; (void)id; }
+void GXLoadNrmMtxImm(const f32 mtx[3][4], u32 id) { pal_gx_load_nrm_mtx_imm(mtx, id); }
 void GXLoadNrmMtxImm3x3(const f32 mtx[3][3], u32 id) { (void)mtx; (void)id; }
 void GXLoadNrmMtxIndx3x3(u16 mtx_indx, u32 id) { (void)mtx_indx; (void)id; }
-void GXSetCurrentMtx(u32 id) { (void)id; }
-void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, GXTexMtxType type) { (void)mtx; (void)id; (void)type; }
+void GXSetCurrentMtx(u32 id) { pal_gx_set_current_mtx(id); }
+void GXLoadTexMtxImm(const f32 mtx[][4], u32 id, GXTexMtxType type) { pal_gx_load_tex_mtx_imm(mtx, id, type); }
 void GXLoadTexMtxIndx(u16 mtx_indx, u32 id, GXTexMtxType type) { (void)mtx_indx; (void)id; (void)type; }
 void GXSetViewportJitter(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz, u32 field) {
-    (void)left; (void)top; (void)wd; (void)ht; (void)nearz; (void)farz; (void)field;
+    (void)field;
+    pal_gx_set_viewport(left, top, wd, ht, nearz, farz);
 }
 void GXSetViewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz) {
-    (void)left; (void)top; (void)wd; (void)ht; (void)nearz; (void)farz;
+    pal_gx_set_viewport(left, top, wd, ht, nearz, farz);
 }
-void GXSetScissor(u32 left, u32 top, u32 wd, u32 ht) { (void)left; (void)top; (void)wd; (void)ht; }
+void GXSetScissor(u32 left, u32 top, u32 wd, u32 ht) { pal_gx_set_scissor(left, top, wd, ht); }
 void GXSetScissorBoxOffset(s32 x_off, s32 y_off) { (void)x_off; (void)y_off; }
 void GXSetClipMode(GXClipMode mode) { (void)mode; }
 void GXSetZScaleOffset(f32 scale, f32 offset) { (void)scale; (void)offset; }
@@ -159,14 +164,9 @@ void GXSetZScaleOffset(f32 scale, f32 offset) { (void)scale; (void)offset; }
 /* GX Get functions                                                 */
 /* ================================================================ */
 
-void GXGetViewportv(f32* vp) { if (vp) memset(vp, 0, 6 * sizeof(f32)); }
-void GXGetProjectionv(f32* ptr) { if (ptr) memset(ptr, 0, 7 * sizeof(f32)); }
-void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht) {
-    if (left) *left = 0;
-    if (top) *top = 0;
-    if (wd) *wd = 640;
-    if (ht) *ht = 480;
-}
+void GXGetViewportv(f32* vp) { pal_gx_get_viewport_v(vp); }
+void GXGetProjectionv(f32* ptr) { pal_gx_get_projection_v(ptr); }
+void GXGetScissor(u32* left, u32* top, u32* wd, u32* ht) { pal_gx_get_scissor(left, top, wd, ht); }
 void GXGetVtxDesc(GXAttr attr, GXAttrType* type) { (void)attr; if (type) *type = (GXAttrType)0; }
 void GXGetVtxDescv(GXVtxDescList* vcd) { (void)vcd; }
 void GXGetVtxAttrFmt(GXVtxFmt fmt, GXAttr attr, GXCompCnt* cnt, GXCompType* type, u8* frac) {
@@ -187,8 +187,7 @@ u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, u8 mipmap, u8 max_lod)
 }
 void GXInitTexObj(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                   GXTexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, u8 mipmap) {
-    if (obj) memset(obj, 0, sizeof(GXTexObj));
-    (void)image_ptr; (void)width; (void)height; (void)format; (void)wrap_s; (void)wrap_t; (void)mipmap;
+    pal_gx_init_tex_obj(obj, image_ptr, width, height, format, wrap_s, wrap_t, mipmap);
 }
 void GXInitTexObjCI(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                     GXCITexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t,
@@ -208,7 +207,7 @@ void GXInitTexObjTlut(GXTexObj* obj, u32 tlut_name) { (void)obj; (void)tlut_name
 void GXInitTexObjUserData(GXTexObj* obj, void* user_data) { (void)obj; (void)user_data; }
 void* GXGetTexObjUserData(const GXTexObj* obj) { (void)obj; return NULL; }
 void GXLoadTexObjPreLoaded(GXTexObj* obj, GXTexRegion* region, GXTexMapID id) { (void)obj; (void)region; (void)id; }
-void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) { (void)obj; (void)id; }
+void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) { pal_gx_load_tex_obj(obj, id); }
 void GXInitTlutObj(GXTlutObj* tlut_obj, void* lut, GXTlutFmt fmt, u16 n_entries) {
     if (tlut_obj) memset(tlut_obj, 0, sizeof(GXTlutObj));
     (void)lut; (void)fmt; (void)n_entries;
@@ -276,30 +275,64 @@ void GXGetTexObjAll(const GXTexObj* obj, void** image_ptr, u16* width, u16* heig
 /* GX TEV                                                           */
 /* ================================================================ */
 
-void GXSetTevOp(GXTevStageID id, GXTevMode mode) { (void)id; (void)mode; }
+void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
+    /* GXSetTevOp is a convenience that configures color+alpha inputs+ops based on mode */
+    switch (mode) {
+        case GX_MODULATE:
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            break;
+        case GX_DECAL:
+            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_TEXC, GX_CC_TEXA, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            break;
+        case GX_BLEND:
+            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_ONE, GX_CC_TEXC, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            break;
+        case GX_REPLACE:
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA);
+            break;
+        case GX_PASSCLR:
+        default:
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            break;
+    }
+    pal_gx_set_tev_color_op(id, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    pal_gx_set_tev_alpha_op(id, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+}
 void GXSetTevColorIn(GXTevStageID stage, GXTevColorArg a, GXTevColorArg b,
                      GXTevColorArg c, GXTevColorArg d) {
-    (void)stage; (void)a; (void)b; (void)c; (void)d;
+    pal_gx_set_tev_color_in(stage, a, b, c, d);
 }
 void GXSetTevAlphaIn(GXTevStageID stage, GXTevAlphaArg a, GXTevAlphaArg b,
                      GXTevAlphaArg c, GXTevAlphaArg d) {
-    (void)stage; (void)a; (void)b; (void)c; (void)d;
+    pal_gx_set_tev_alpha_in(stage, a, b, c, d);
 }
 void GXSetTevColorOp(GXTevStageID stage, GXTevOp op, GXTevBias bias,
                      GXTevScale scale, GXBool clamp, GXTevRegID out_reg) {
-    (void)stage; (void)op; (void)bias; (void)scale; (void)clamp; (void)out_reg;
+    pal_gx_set_tev_color_op(stage, op, bias, scale, clamp, out_reg);
 }
 void GXSetTevAlphaOp(GXTevStageID stage, GXTevOp op, GXTevBias bias,
                      GXTevScale scale, GXBool clamp, GXTevRegID out_reg) {
-    (void)stage; (void)op; (void)bias; (void)scale; (void)clamp; (void)out_reg;
+    pal_gx_set_tev_alpha_op(stage, op, bias, scale, clamp, out_reg);
 }
-void GXSetTevColor(GXTevRegID id, GXColor color) { (void)id; (void)color; }
-void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) { (void)id; (void)color; }
-void GXSetTevKColor(GXTevKColorID id, GXColor color) { (void)id; (void)color; }
-void GXSetTevKColorSel(GXTevStageID stage, GXTevKColorSel sel) { (void)stage; (void)sel; }
-void GXSetTevKAlphaSel(GXTevStageID stage, GXTevKAlphaSel sel) { (void)stage; (void)sel; }
+void GXSetTevColor(GXTevRegID id, GXColor color) { pal_gx_set_tev_color(id, color); }
+void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
+    GXColor c;
+    c.r = (u8)(color.r < 0 ? 0 : (color.r > 255 ? 255 : color.r));
+    c.g = (u8)(color.g < 0 ? 0 : (color.g > 255 ? 255 : color.g));
+    c.b = (u8)(color.b < 0 ? 0 : (color.b > 255 ? 255 : color.b));
+    c.a = (u8)(color.a < 0 ? 0 : (color.a > 255 ? 255 : color.a));
+    pal_gx_set_tev_color(id, c);
+}
+void GXSetTevKColor(GXTevKColorID id, GXColor color) { pal_gx_set_tev_k_color(id, color); }
+void GXSetTevKColorSel(GXTevStageID stage, GXTevKColorSel sel) { pal_gx_set_tev_k_color_sel(stage, sel); }
+void GXSetTevKAlphaSel(GXTevStageID stage, GXTevKAlphaSel sel) { pal_gx_set_tev_k_alpha_sel(stage, sel); }
 void GXSetTevSwapMode(GXTevStageID stage, GXTevSwapSel ras_sel, GXTevSwapSel tex_sel) {
-    (void)stage; (void)ras_sel; (void)tex_sel;
+    pal_gx_set_tev_swap_mode(stage, ras_sel, tex_sel);
 }
 void GXSetTevSwapModeTable(GXTevSwapSel table, GXTevColorChan red, GXTevColorChan green,
                            GXTevColorChan blue, GXTevColorChan alpha) {
@@ -307,20 +340,20 @@ void GXSetTevSwapModeTable(GXTevSwapSel table, GXTevColorChan red, GXTevColorCha
 }
 void GXSetTevClampMode(void) {}
 void GXSetAlphaCompare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, u8 ref1) {
-    (void)comp0; (void)ref0; (void)op; (void)comp1; (void)ref1;
+    pal_gx_set_alpha_compare(comp0, ref0, op, comp1, ref1);
 }
 void GXSetZTexture(GXZTexOp op, GXTexFmt fmt, u32 bias) { (void)op; (void)fmt; (void)bias; }
 void GXSetTevOrder(GXTevStageID stage, GXTexCoordID coord, GXTexMapID map, GXChannelID color) {
-    (void)stage; (void)coord; (void)map; (void)color;
+    pal_gx_set_tev_order(stage, coord, map, color);
 }
-void GXSetNumTevStages(u8 nStages) { (void)nStages; }
+void GXSetNumTevStages(u8 nStages) { pal_gx_set_num_tev_stages(nStages); }
 
 /* ================================================================ */
 /* GX Pixel / Blend / Fog                                           */
 /* ================================================================ */
 
 void GXSetFog(GXFogType type, f32 startz, f32 endz, f32 nearz, f32 farz, GXColor color) {
-    (void)type; (void)startz; (void)endz; (void)nearz; (void)farz; (void)color;
+    pal_gx_set_fog(type, startz, endz, nearz, farz, color);
 }
 void GXInitFogAdjTable(GXFogAdjTable* table, u16 width, const f32 projmtx[4][4]) {
     if (table) memset(table, 0, sizeof(GXFogAdjTable));
@@ -331,12 +364,12 @@ void GXSetFogRangeAdj(GXBool enable, u16 center, const GXFogAdjTable* table) {
 }
 void GXSetFogColor(GXColor color) { (void)color; }
 void GXSetBlendMode(GXBlendMode type, GXBlendFactor src_factor, GXBlendFactor dst_factor, GXLogicOp op) {
-    (void)type; (void)src_factor; (void)dst_factor; (void)op;
+    pal_gx_set_blend_mode(type, src_factor, dst_factor, op);
 }
-void GXSetColorUpdate(GXBool update_enable) { (void)update_enable; }
-void GXSetAlphaUpdate(GXBool update_enable) { (void)update_enable; }
+void GXSetColorUpdate(GXBool update_enable) { pal_gx_set_color_update(update_enable); }
+void GXSetAlphaUpdate(GXBool update_enable) { pal_gx_set_alpha_update(update_enable); }
 void GXSetZMode(GXBool compare_enable, GXCompare func, GXBool update_enable) {
-    (void)compare_enable; (void)func; (void)update_enable;
+    pal_gx_set_z_mode(compare_enable, func, update_enable);
 }
 void GXSetZCompLoc(GXBool before_tex) { (void)before_tex; }
 void GXSetPixelFmt(GXPixelFmt pix_fmt, GXZFmt16 z_fmt) { (void)pix_fmt; (void)z_fmt; }
@@ -369,12 +402,12 @@ void GXInitSpecularDirHA(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz, f32 hx, f32
 void GXInitLightColor(GXLightObj* lt_obj, GXColor color) { (void)lt_obj; (void)color; }
 void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) { (void)lt_obj; (void)light; }
 void GXLoadLightObjIndx(u32 lt_obj_indx, GXLightID light) { (void)lt_obj_indx; (void)light; }
-void GXSetChanAmbColor(GXChannelID chan, GXColor amb_color) { (void)chan; (void)amb_color; }
-void GXSetChanMatColor(GXChannelID chan, GXColor mat_color) { (void)chan; (void)mat_color; }
-void GXSetNumChans(u8 nChans) { (void)nChans; }
+void GXSetChanAmbColor(GXChannelID chan, GXColor amb_color) { pal_gx_set_chan_amb_color(chan, amb_color); }
+void GXSetChanMatColor(GXChannelID chan, GXColor mat_color) { pal_gx_set_chan_mat_color(chan, mat_color); }
+void GXSetNumChans(u8 nChans) { pal_gx_set_num_chans(nChans); }
 void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, GXColorSrc mat_src,
                    u32 light_mask, GXDiffuseFn diff_fn, GXAttnFn attn_fn) {
-    (void)chan; (void)enable; (void)amb_src; (void)mat_src; (void)light_mask; (void)diff_fn; (void)attn_fn;
+    pal_gx_set_chan_ctrl(chan, enable, amb_src, mat_src, light_mask, diff_fn, attn_fn);
 }
 
 /* ================================================================ */
@@ -382,27 +415,27 @@ void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, GXColorS
 /* ================================================================ */
 
 void __GXCalculateVLim(void) {}
-void GXSetVtxDesc(GXAttr attr, GXAttrType type) { (void)attr; (void)type; }
-void GXSetVtxDescv(const GXVtxDescList* attrPtr) { (void)attrPtr; }
-void GXClearVtxDesc(void) {}
+void GXSetVtxDesc(GXAttr attr, GXAttrType type) { pal_gx_set_vtx_desc(attr, type); }
+void GXSetVtxDescv(const GXVtxDescList* attrPtr) { pal_gx_set_vtx_desc_v(attrPtr); }
+void GXClearVtxDesc(void) { pal_gx_clear_vtx_desc(); }
 void GXSetVtxAttrFmt(GXVtxFmt vtxfmt, GXAttr attr, GXCompCnt cnt, GXCompType type, u8 frac) {
-    (void)vtxfmt; (void)attr; (void)cnt; (void)type; (void)frac;
+    pal_gx_set_vtx_attr_fmt(vtxfmt, attr, cnt, type, frac);
 }
-void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) { (void)vtxfmt; (void)list; }
-void GXSetArray(GXAttr attr, void* base_ptr, u8 stride) { (void)attr; (void)base_ptr; (void)stride; }
+void GXSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list) { pal_gx_set_vtx_attr_fmt_v(vtxfmt, list); }
+void GXSetArray(GXAttr attr, void* base_ptr, u8 stride) { pal_gx_set_array(attr, base_ptr, stride); }
 void GXInvalidateVtxCache(void) {}
 void GXSetTexCoordGen2(GXTexCoordID dst_coord, GXTexGenType func, GXTexGenSrc src_param,
                        u32 mtx, GXBool normalize, u32 pt_texmtx) {
-    (void)dst_coord; (void)func; (void)src_param; (void)mtx; (void)normalize; (void)pt_texmtx;
+    pal_gx_set_tex_coord_gen(dst_coord, func, src_param, mtx, normalize, pt_texmtx);
 }
-void GXSetNumTexGens(u8 nTexGens) { (void)nTexGens; }
-void GXBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts) { (void)type; (void)vtxfmt; (void)nverts; }
+void GXSetNumTexGens(u8 nTexGens) { pal_gx_set_num_tex_gens(nTexGens); }
+void GXBegin(GXPrimitive type, GXVtxFmt vtxfmt, u16 nverts) { pal_gx_begin(type, vtxfmt, nverts); }
 void GXSetLineWidth(u8 width, GXTexOffset texOffsets) { (void)width; (void)texOffsets; }
 void GXSetPointSize(u8 pointSize, GXTexOffset texOffsets) { (void)pointSize; (void)texOffsets; }
 void GXEnableTexOffsets(GXTexCoordID coord, u8 line_enable, u8 point_enable) {
     (void)coord; (void)line_enable; (void)point_enable;
 }
-void GXSetCullMode(GXCullMode mode) { (void)mode; }
+void GXSetCullMode(GXCullMode mode) { pal_gx_set_cull_mode(mode); }
 void __GXSetVAT(void) {}
 
 /* ================================================================ */
@@ -420,7 +453,7 @@ void GXSetTexCopyDst(u16 wd, u16 ht, GXTexFmt fmt, GXBool mipmap) { (void)wd; (v
 void GXSetDispCopyFrame2Field(GXCopyMode mode) { (void)mode; }
 void GXSetCopyClamp(GXFBClamp clamp) { (void)clamp; }
 u32 GXSetDispCopyYScale(f32 vscale) { (void)vscale; return 0; }
-void GXSetCopyClear(GXColor clear_clr, u32 clear_z) { (void)clear_clr; (void)clear_z; }
+void GXSetCopyClear(GXColor clear_clr, u32 clear_z) { pal_gx_set_copy_clear(clear_clr, clear_z); }
 void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const u8 vfilter[7]) {
     (void)aa; (void)sample_pattern; (void)vf; (void)vfilter;
 }

@@ -86,6 +86,7 @@ set(PAL_SOURCES
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
     src/pal/gx/gx_bgfx.cpp
+    src/pal/gx/gx_state.cpp
 )
 
 # --- REL modules that are dynamically loaded on console but statically linked on PC ---
