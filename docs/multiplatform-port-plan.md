@@ -219,6 +219,7 @@ Step 1 (CMake)  ──►  Step 2 (conditionals)
 - Track stub-hit counts to prioritize Tier B by frequency
 - CI-driven: every commit triggers headless boot test — see [AI Agent Testing Plan](ai-agent-testing-plan.md)
 - Agent workflow: step-by-step implementation guide — see [Agent Port Workflow](agent-port-workflow.md)
+- Progress tracking: track what's done and what's next — see [Port Progress](port-progress.md)
 
 ## Deferred
 
