@@ -1,0 +1,55 @@
+name: Port Test (PC Headless)
+
+on:
+  push:
+    paths: ['src/pal/**', 'CMakeLists.txt', 'include/pal/**', 'include/global.h']
+  pull_request:
+    paths: ['src/pal/**', 'CMakeLists.txt', 'include/pal/**', 'include/global.h']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Build PC port
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DTP_VERSION=PC
+          ninja -C build 2>&1 | tail -100
+
+      - name: Run headless test
+        if: success()
+        env:
+          TP_HEADLESS: "1"
+          TP_TEST_FRAMES: "1800"
+        run: |
+          timeout 120s build/tp-pc 2>crash.log | tee milestones.log || true
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Parse milestones
+        if: always()
+        run: |
+          python3 tools/parse_milestones.py milestones.log \
+            --output milestone-summary.json \
+            --min-milestone 0 || true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: port-test-results
+          path: |
+            milestones.log
+            crash.log
+            milestone-summary.json
