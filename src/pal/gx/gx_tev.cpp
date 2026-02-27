@@ -39,9 +39,10 @@ extern "C" {
 /* Embedded shader data                                             */
 /* ================================================================ */
 
-/* Include compiled shader binaries.
- * These are generated at build time by shaderc from .sc source files. */
-#include "gx_tev_shaders.h"
+/* Include pre-compiled shader binaries.
+ * These are checked-in and generated from .sc source files using bgfx shaderc.
+ * No build-time shader compilation needed (BGFX_BUILD_TOOLS=OFF). */
+#include "pal/gx/gx_tev_shaders_precompiled.h"
 
 /* Shader binary selection based on renderer type */
 struct ShaderBinEntry {
