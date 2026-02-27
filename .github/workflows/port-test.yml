@@ -57,7 +57,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DTP_VERSION=PC
-          ninja -C build
+          ninja -C build tp-pc
 
       - name: Run headless test
         if: success()
