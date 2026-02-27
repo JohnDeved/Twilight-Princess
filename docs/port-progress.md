@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `0` (binary links, not yet tested at runtime) |
-| **Current Step** | Step 2 ✅ complete — Step 3 next |
+| **Highest CI Milestone** | `0` (binary links, runtime stubs functional but not yet tested) |
+| **Current Step** | Step 3 in progress — runtime stubs functional, need asset loading |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | None — ready for Step 3 (PAL bootstrap / SDL3+bgfx integration) |
+| **Blocking Issue** | No game assets available for DVD loading — headless test needed |
 
 ## Step Checklist
 
@@ -47,13 +47,23 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] `src/pal/gx/gx_stub_tracker.cpp` / `gx_fifo.cpp` — GX shim infrastructure
 - [x] Verify: 0 undefined references — binary links successfully
 
-### Step 3 — PAL Bootstrap (~1,250 LOC) ⬜ NEXT
-- [ ] `pal_os.cpp` — timers, threads, memory (~200 LOC)
-- [ ] `pal_fs.cpp` — file I/O replacing DVD/NAND (~300 LOC)
+### Step 3 — PAL Bootstrap (~1,250 LOC) ⬜ IN PROGRESS
+- [x] Fix OSAllocFromArenaLo/Hi — use uintptr_t for 64-bit pointer safety
+- [x] OSCreateThread/OSResumeThread — single-threaded dispatch (call main01 directly)
+- [x] Fix SCCheckStatus → SC_STATUS_OK (was returning BUSY, caused infinite loop)
+- [x] DVDDiskID — set proper game ID fields for retail version detection
+- [x] ARAM emulation — 16MB malloc-backed buffer with ARAlloc/ARStartDMA
+- [x] Message queue — synchronous implementation for single-threaded mode
+- [x] OSThread struct — init stackBase/stackEnd/state for JKRThread compatibility
+- [x] DVD thread — execute commands synchronously on PC (#if PLATFORM_PC in m_Do_dvd_thread.cpp)
+- [x] Fake MEM1 — OSPhysicalToCached/OSCachedToPhysical redirect to valid host memory
+- [x] VIGetRetraceCount — time-based simulation (~60 Hz) for frame counting
+- [x] waitForTick — skip retrace-based vsync wait on PC (prevents deadlock)
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
 - [ ] `pal_save.cpp` — fstream save/load (~150 LOC)
+- [ ] `pal_fs.cpp` — file I/O replacing DVD/NAND for host filesystem access (~300 LOC)
 - [ ] Verify: `TP_HEADLESS=1 TP_TEST_FRAMES=10 ./build/tp-pc` → milestones 0–4
 
 ### Step 4 — DVD/ARAM Simplification (~200 LOC)
@@ -124,6 +134,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | Step 3: Made OS stubs functional — 64-bit arena, threads, SCCheckStatus, DVDDiskID, ARAM emu, MEM1 fake, waitForTick skip, DVD sync exec | 0 → 0 (runtime ready) | Test headless boot, add pal_fs for assets |
 | 2026-02-27 | Updated port-progress.md to reflect completed Steps 1+2, SDK stubs, full link | -1 → 0 | Step 3: PAL bootstrap (SDL3+bgfx) |
 | 2026-02-27 | Achieved full link: fixed duplicate symbols, extern OSExec globals, 0 undefined refs | -1 → 0 | Update progress tracker |
 | 2026-02-27 | Created 6 SDK stub files (GX, OS, math, game, remaining), fixed C++ linkage issues | -1 → -1 | Fix last linker errors |
@@ -158,9 +169,12 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
 - `include/revolution/private/GXRegs.h` — GX_WRITE_* redirect for PLATFORM_PC
 - `include/revolution/os/OSExec.h` — AT_ADDRESS extern fix for GCC
+- `include/pal/pal_platform.h` — OS_BASE_CACHED/OSPhysicalToCached override for PC
 - `.gitignore` — Allow CMakeLists.txt (!CMakeLists.txt exception)
 - `.github/copilot-instructions.md` — Added "Commit Early and Often" rule
 - `src/m_Do/m_Do_main.cpp` — Milestone instrumentation
+- `src/m_Do/m_Do_dvd_thread.cpp` — Synchronous DVD command execution on PC
+- `src/JSystem/JFramework/JFWDisplay.cpp` — Skip retrace-based wait on PC
 - 77 files — Extended `PLATFORM_SHIELD` conditionals to include `PLATFORM_PC`
 
 ## How to Use This File
