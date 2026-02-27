@@ -35,7 +35,7 @@ set(EXCLUDE_PREFIXES
 
 foreach(LINE IN LISTS SPLITS_LINES)
     # Match lines like "path/to/file.cpp:" or "path/to/file.c:"
-    if(LINE MATCHES "^([A-Za-z0-9_/]+\\.(cpp|c)):$")
+    if(LINE MATCHES "^([A-Za-z0-9_/\\.-]+\\.(cpp|c)):$")
         set(SRC_PATH "${CMAKE_MATCH_1}")
         set(EXCLUDED FALSE)
         foreach(PREFIX IN LISTS EXCLUDE_PREFIXES)
@@ -63,6 +63,7 @@ set(PAL_SOURCES
     src/pal/pal_sdk_stubs.cpp
     src/pal/pal_math_stubs.cpp
     src/pal/pal_game_stubs.cpp
+    src/pal/pal_remaining_stubs.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
 )
