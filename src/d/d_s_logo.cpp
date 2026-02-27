@@ -107,8 +107,11 @@ void dScnLogo_c::checkProgSelect() {
 int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
 #if PLATFORM_PC
-    /* No GX rendering and no textures loaded — skip all logo draw commands.
-     * Auto-transition to next scene once the timer expires. */
+    /* On PC, render the Nintendo logo via J2D → GX → bgfx pipeline.
+     * Skip warning/progressive/dolby states — just show the Nintendo logo. */
+    if (mNintendoLogo) {
+        dComIfGd_set2DOpa(mNintendoLogo);
+    }
     if (mTimer == 0) {
         mExecCommand = EXEC_SCENE_CHANGE;
     }
@@ -615,9 +618,7 @@ int dScnLogo_c::create() {
     #endif
 
     mpHeap = mDoExt_setCurrentHeap(field_0x1d4);
-#if !PLATFORM_PC
     logoInitGC();
-#endif
     mpHeap->becomeCurrentHeap();
 
 #if !PLATFORM_PC

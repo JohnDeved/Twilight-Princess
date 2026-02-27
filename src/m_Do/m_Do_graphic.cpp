@@ -1524,11 +1524,24 @@ static void drawItem3D() {
 
 int mDoGph_Painter() {
 #if PLATFORM_PC
-    /* On PC, use bgfx for rendering. Currently just clears the frame.
-     * Full GX→bgfx translation is Step 5b+. */
+    /* On PC, use bgfx for rendering. Set up 2D orthographic projection
+     * and flush draw lists populated by scene draw() functions. */
     if (JFWDisplay::getManager() != NULL) {
         pal_gx_begin_frame();
         mDoGph_gInf_c::beginRender();
+
+        /* Initialize GX draw state for J2D rendering */
+        j3dSys.drawInit();
+        GXSetDither(GX_ENABLE);
+
+        /* Set up 2D orthographic projection matching the frame buffer */
+        J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
+        ortho.setPort();
+
+        /* Flush 2D draw lists (logo, menus, etc.) */
+        dComIfGd_draw2DOpa();
+        dComIfGd_draw2DXlu();
+
         mDoGph_gInf_c::endRender();
     }
     return 1;
