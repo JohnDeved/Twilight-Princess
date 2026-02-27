@@ -32,7 +32,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(bgfx)
 
-# --- SDL3 for windowing only (disable unused subsystems for faster builds) ---
+# --- SDL3 for windowing and input (disable unused subsystems for faster builds) ---
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
