@@ -12,6 +12,7 @@
 
 unsigned int gx_stub_hits[GX_STUB_MAX];
 const char* gx_stub_names[GX_STUB_MAX];
+int gx_shim_active = 0;
 
 void gx_stub_report(void) {
     int i;

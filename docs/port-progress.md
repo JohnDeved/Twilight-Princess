@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `5` (FIRST_FRAME — game loop runs, but no scenes loaded) |
-| **Current Step** | Step 3 mostly complete — game loop runs, needs scene loading + GX shim |
+| **Highest CI Milestone** | `5` (FIRST_FRAME — game loop runs, profiles loaded, scene create pending) |
+| **Current Step** | Step 3 complete — profile list loaded (35/792), game loop stable 2000+ frames |
 | **Last Updated** | 2026-02-27 |
-| **Blocking Issue** | Game assets needed for scene loading; GX shim needed for rendering |
+| **Blocking Issue** | Scene create stuck in phase_1 (audio init); needs audio stub fix + game assets for DVD reads |
 
 ## Step Checklist
 
@@ -138,20 +138,25 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 | 3 | PAD_INIT | Input ready | Step 3: framework init |
 | 4 | FRAMEWORK_INIT | Process manager ready | Step 4: DVD/archive loading |
 | 5 | FIRST_FRAME | Game loop running | Step 4/5: DVD loading + profiles |
-| 6 | LOGO_SCENE | Logo scene **created** | Step 5: GX shim for rendering |
-| 7 | TITLE_SCENE | Title screen **created** | Step 5: scene transition + assets |
-| 8 | PLAY_SCENE | Gameplay scene **created** | Step 5: GX stubs by frequency |
+| 6 | LOGO_SCENE | Logo scene **create() completed** with assets loaded | Step 5: GX shim for rendering |
+| 7 | TITLE_SCENE | Title screen **create() completed** with assets loaded | Step 5: scene transition + assets |
+| 8 | PLAY_SCENE | Gameplay scene **create() completed** with assets loaded | Step 5: GX stubs by frequency |
 | 9 | STAGE_LOADED | Specific stage loaded | Step 5/7: rendering + input |
 | 10 | FRAMES_60 | 1s stable **after scene load** | Step 5: top stub hits |
 | 11 | FRAMES_300 | 5s stable **after scene load** | Step 6 Phase B and Step 8: polish |
 | 12 | FRAMES_1800 | 30s stable **after scene load** | Step 8: first playable achieved 🎉 |
 | 13 | DVD_READ_OK | First successful file read | Step 4: DVD path mapping / assets |
-| 14 | SCENE_CREATED | Any process profile created | Step 3/4: profile list + dynamic link |
-| 15 | RENDER_FRAME | First frame with GX draws | Step 5: GX shim working |
+| 14 | SCENE_CREATED | Any process profile **create() completed** | Step 3/4: profile list + dynamic link |
+| 15 | RENDER_FRAME | First frame with **real GX rendering** (gx_shim_active) | Step 5: GX shim working |
 
-**Important**: Milestones 10-12 (FRAMES_60/300/1800) now **require** LOGO_SCENE (6) to
-have been reached first. Without actual scene loading, the game loop spins with no real
-work — frame counting alone is not meaningful progress.
+**Important**: 
+- Milestones 6-8 (LOGO_SCENE/TITLE_SCENE/PLAY_SCENE) fire only after the scene's
+  `create()` method returns `cPhs_COMPLEATE_e` — meaning all resource loading phases
+  completed and assets were actually loaded from disk.
+- Milestones 10-12 (FRAMES_60/300/1800) require LOGO_SCENE (6) to have been reached first.
+  Without actual scene loading, frame counting alone is not meaningful progress.
+- Milestone 15 (RENDER_FRAME) requires `gx_shim_active` to be set — meaning bgfx is
+  initialized and real pixels are being drawn, not just GX stubs being called.
 
 ## Session Log
 
@@ -160,6 +165,8 @@ work — frame counting alone is not meaningful progress.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **Honest milestones**: Scene milestones moved from fpcBs_Create (allocation) to fpcBs_SubCreate (after create() completes with assets loaded). RENDER_FRAME gated on gx_shim_active. LOGO_SCENE no longer fires without real assets. CI workflow broadened to cover all src/include changes. | 12 → 5 (honest) | Fix audio init stubs so scene create proceeds; provide game assets |
+| 2026-02-27 | **Profile list + heap fix**: Created pal_profile_list.cpp (35 available profiles), fixed JKRExpHeap 64-bit pointer truncation (u32 start → uintptr_t), fixed JKRHeap::getMaxAllocatableSize. LOGO_SCENE creates successfully, 2000 frames stable. Updated CI workflow paths. | 5 → 12 (FRAMES_1800 with LOGO_SCENE) | Game assets for real scene loading, GX shim |
 | 2026-02-27 | **Fixed milestone system**: moved state to .cpp (was static-per-TU), scene tracking before NULL return, frame checks use >= with gate, added pal_milestone.cpp | 5 (honest) | Get profiles loading, game assets, GX shim |
 | 2026-02-27 | **Extended milestones**: FRAMES_60/300/1800 gated on LOGO_SCENE; scene creation tracking in fpcBs_Create; DVD_READ_OK, SCENE_CREATED, RENDER_FRAME milestones added | 12 → 5 (honest) | Get profiles loading (REL/profile list), game assets, GX shim |
 | 2026-02-27 | **ALL 12 MILESTONES!** Render bypass, profile system NULL safety, MWERKS inline fallbacks, GXWGFifo redirect, -fno-exceptions, 64MB arena + heap headroom, C_QUATRotAxisRad, font null guard | 0 → 12 (FRAMES_1800) | GX shim (Step 5), SDL3 windowing, game asset loading |

@@ -122,7 +122,6 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
 
     pprofile = (process_profile_definition*)fpcPf_Get(i_profname);
 #if PLATFORM_PC
-    pal_milestone_check_scene(i_profname);
     if (pprofile == NULL) return NULL;
 #endif
     size = pprofile->process_size + pprofile->unk_size;
@@ -159,6 +158,11 @@ int fpcBs_SubCreate(base_process_class* i_proc) {
     case cPhs_COMPLEATE_e:
         fpcBs_DeleteAppend(i_proc);
         i_proc->state.create_phase = cPhs_NEXT_e;
+#if PLATFORM_PC
+        /* Scene milestone fires only after create() completes successfully —
+         * meaning all resource phases finished and assets were actually loaded. */
+        pal_milestone_check_scene(i_proc->profname);
+#endif
         return cPhs_NEXT_e;
     case cPhs_INIT_e:
     case cPhs_LOADING_e:

@@ -16,6 +16,10 @@ extern "C" {
 extern unsigned int gx_stub_hits[GX_STUB_MAX];
 extern const char* gx_stub_names[GX_STUB_MAX];
 
+/* Set to 1 when the GX shim has a real rendering backend (bgfx).
+ * GXCopyDisp checks this before firing RENDER_FRAME milestone. */
+extern int gx_shim_active;
+
 static inline void gx_stub_hit(int id, const char* name) {
     if (id >= 0 && id < GX_STUB_MAX) {
         if (gx_stub_hits[id]++ == 0) {

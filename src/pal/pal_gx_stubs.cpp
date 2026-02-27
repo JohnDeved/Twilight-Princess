@@ -30,6 +30,8 @@
 #include "revolution/gx/GXPerf.h"
 #include "revolution/gx/GXCpu2Efb.h"
 #include "revolution/gd/GDBase.h"
+#include "pal/pal_milestone.h"
+#include "pal/gx/gx_stub_tracker.h"
 
 extern "C" {
 
@@ -418,7 +420,15 @@ void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const
     (void)aa; (void)sample_pattern; (void)vf; (void)vfilter;
 }
 void GXSetDispCopyGamma(GXGamma gamma) { (void)gamma; }
-void GXCopyDisp(void* dest, GXBool clear) { (void)dest; (void)clear; }
+void GXCopyDisp(void* dest, GXBool clear) {
+    (void)dest; (void)clear;
+    /* When the GX shim is active (bgfx initialized), this presents
+     * the rendered frame. Fire RENDER_FRAME milestone on first real
+     * frame — proving actual pixels were drawn, not just stubs called. */
+    if (gx_shim_active && !pal_milestone_was_reached(MILESTONE_RENDER_FRAME)) {
+        pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME, "first real rendered frame via GXCopyDisp");
+    }
+}
 void GXCopyTex(void* dest, GXBool clear) { (void)dest; (void)clear; }
 void GXClearBoundingBox(void) {}
 void GXReadBoundingBox(u16* left, u16* top, u16* right, u16* bottom) {

@@ -2,14 +2,24 @@ name: Port Test (PC Headless)
 
 on:
   push:
-    paths: ['src/pal/**', 'CMakeLists.txt', 'include/pal/**', 'include/global.h']
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/port-test.yml'
+      - 'tools/parse_milestones.py'
   pull_request:
-    paths: ['src/pal/**', 'CMakeLists.txt', 'include/pal/**', 'include/global.h']
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/port-test.yml'
+      - 'tools/parse_milestones.py'
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +41,7 @@ jobs:
         if: success()
         env:
           TP_HEADLESS: "1"
-          TP_TEST_FRAMES: "1800"
+          TP_TEST_FRAMES: "2000"
         run: |
           timeout 120s build/tp-pc 2>crash.log | tee milestones.log || true
           EXIT_CODE=$?
@@ -42,7 +52,7 @@ jobs:
         run: |
           python3 tools/parse_milestones.py milestones.log \
             --output milestone-summary.json \
-            --min-milestone 0 || true
+            --min-milestone 5 || true
 
       - name: Upload test artifacts
         if: always()
