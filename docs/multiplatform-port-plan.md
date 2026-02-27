@@ -322,7 +322,8 @@ The hardware FIFO at `0xCC008000` is accessed via `GX_WRITE_*` macros in
 #define GX_WRITE_F32(f)    GXWGFifo.f32 = (f32)(f)
 ```
 
-For `PLATFORM_PC`, redirect these to a RAM command buffer:
+For `PLATFORM_PC`, redirect these to a RAM command buffer (original macros remain active
+for GCN/Wii/Shield builds):
 ```c
 #if PLATFORM_PC
   #define GX_WRITE_U8(ub)    gx_fifo_write_u8(ub)
@@ -452,8 +453,8 @@ Step 1 (CMake build from ShieldD file list)
    *(Faster — Shield's GCN pad path and NAND save path are the exact patterns we need.)*
 
 **Estimated total time to first playable (with parallel streams)**: ~4–6 weeks
-*(Down from ~5–7 weeks in previous revision, ~7–9 weeks without Shield leverage.
-Shield's GX abstraction insights save ~1 additional week on the GX shim alone.)*
+*(Down from ~7–9 weeks without Shield leverage. Key savings: GX macro redirect eliminates
+per-callsite work, static linking skips REL loader, Shield conditionals are mechanical.)*
 
 ## High-Impact Time Savers (Verified Against Shield Port)
 
@@ -547,8 +548,7 @@ command buffers and replays them through the OpenGL backend.
 | Audio | Phase A: ~2 days | Phase A: ~1 day | Audio routing pre-mapped by Shield conditionals |
 | Input + Save | ~3–5 days | ~2–3 days | GCN pad path + NAND save path are exact patterns |
 
-**Revised total estimate**: ~4–6 weeks to first playable (down from ~5–7 weeks in previous
-revision, ~7–9 weeks in original plan).
+**Revised total estimate**: ~4–6 weeks to first playable (down from ~7–9 weeks in original plan).
 
 ## Known Heavy Areas (Measured)
 
