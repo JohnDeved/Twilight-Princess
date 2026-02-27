@@ -30,47 +30,47 @@ from tools.project import (
 # Game versions
 DEFAULT_VERSION = 0
 VERSIONS = [
-    "GZ2E01",    # GCN USA
-    "GZ2P01",    # GCN PAL
-    "GZ2J01",    # GCN JPN
-    "RZDE01_00", # Wii USA Rev 0
-    "RZDE01_02", # Wii USA Rev 2
-    "RZDP01",    # Wii PAL
-    "RZDJ01",    # Wii JPN
-    "RZDK01",    # Wii KOR
-    "DZDE01",    # Wii USA Kiosk Demo
-    "DZDP01",    # Wii PAL Kiosk Demo
-    "Shield",    # Shield
-    "ShieldP",   # Shield Production
-    "ShieldD",   # Shield Debug
+    "GZ2E01",  # GCN USA
+    "GZ2P01",  # GCN PAL
+    "GZ2J01",  # GCN JPN
+    "RZDE01_00",  # Wii USA Rev 0
+    "RZDE01_02",  # Wii USA Rev 2
+    "RZDP01",  # Wii PAL
+    "RZDJ01",  # Wii JPN
+    "RZDK01",  # Wii KOR
+    "DZDE01",  # Wii USA Kiosk Demo
+    "DZDP01",  # Wii PAL Kiosk Demo
+    "Shield",  # Shield
+    "ShieldP",  # Shield Production
+    "ShieldD",  # Shield Debug
 ]
 
 # Versions to disable until properly configured
 DISABLED_VERSIONS = [
     7,  # Wii KOR
     9,  # Wii PAL Kiosk Demo
-    11, # Shield Production
+    11,  # Shield Production
 ]
 
 GCN_VERSIONS = [
-    "GZ2E01", # GCN USA
-    "GZ2P01", # GCN PAL
-    "GZ2J01", # GCN JPN
+    "GZ2E01",  # GCN USA
+    "GZ2P01",  # GCN PAL
+    "GZ2J01",  # GCN JPN
 ]
 
 WII_VERSIONS = [
-    "RZDE01_00", # Wii USA Rev 0
-    "RZDE01_02", # Wii USA Rev 2
-    "RZDP01",    # Wii PAL
-    "RZDJ01",    # Wii JPN
-    "RZDK01",    # Wii KOR
-    "DZDE01",    # Wii USA Kiosk Demo
-    "DZDP01",    # Wii PAL Kiosk Demo
+    "RZDE01_00",  # Wii USA Rev 0
+    "RZDE01_02",  # Wii USA Rev 2
+    "RZDP01",  # Wii PAL
+    "RZDJ01",  # Wii JPN
+    "RZDK01",  # Wii KOR
+    "DZDE01",  # Wii USA Kiosk Demo
+    "DZDP01",  # Wii PAL Kiosk Demo
 ]
 SHIELD_VERSIONS = [
-    "Shield",    # Shield
-    "ShieldP",   # Shield Production
-    "ShieldD",   # Shield Debug
+    "Shield",  # Shield
+    "ShieldP",  # Shield Production
+    "ShieldD",  # Shield Debug
 ]
 
 parser = argparse.ArgumentParser()
@@ -178,6 +178,12 @@ parser.add_argument(
     action="store_false",
     help="disable progress calculation",
 )
+parser.add_argument(
+    "--no-check",
+    dest="check",
+    action="store_false",
+    help="disable SHA1 hash check (for modded builds)",
+)
 args = parser.parse_args()
 
 config = ProjectConfig()
@@ -216,7 +222,10 @@ config.wibo_tag = "1.0.0"
 
 # Project
 config.config_path = Path("config") / config.version / "config.yml"
-config.check_sha_path = Path("config") / config.version / "build.sha1"
+if args.check:
+    config.check_sha_path = Path("config") / config.version / "build.sha1"
+else:
+    config.check_sha_path = None
 config.asflags = [
     "-mgekko",
     "--strip-local-absolute",
@@ -240,7 +249,7 @@ config.reconfig_deps = []
 
 # Optional numeric ID for decomp.me preset
 # Can be overridden in libraries or objects
-config.scratch_preset_id = 69 # Twilight Princess (DOL)
+config.scratch_preset_id = 69  # Twilight Princess (DOL)
 
 # Globs to exclude from context files
 # *.mch excludes precompiled header output (which cannot be parsed)
@@ -289,16 +298,16 @@ else:
     cflags_base.extend(["-multibyte"])
 
 USE_REVOLUTION_SDK_VERSIONS = [
-    "RZDE01_00", # Wii USA Rev 0
-    "RZDE01_02", # Wii USA Rev 2
-    "RZDP01",    # Wii PAL
-    "RZDJ01",    # Wii JPN
-    "RZDK01",    # Wii KOR
-    "DZDE01",    # Wii USA Kiosk Demo
-    "DZDP01",    # Wii PAL Kiosk Demo
-    "Shield",    # Shield
-    "ShieldP",   # Shield Production
-    "ShieldD",   # Shield Debug
+    "RZDE01_00",  # Wii USA Rev 0
+    "RZDE01_02",  # Wii USA Rev 2
+    "RZDP01",  # Wii PAL
+    "RZDJ01",  # Wii JPN
+    "RZDK01",  # Wii KOR
+    "DZDE01",  # Wii USA Kiosk Demo
+    "DZDP01",  # Wii PAL Kiosk Demo
+    "Shield",  # Shield
+    "ShieldP",  # Shield Production
+    "ShieldD",  # Shield Debug
 ]
 
 if config.version in USE_REVOLUTION_SDK_VERSIONS:
@@ -397,7 +406,9 @@ if config.version != "ShieldD":
 
 
 if config.version == "ShieldD":
-    cflags_framework.extend(["-O0,p", "-inline off", "-RTTI on", "-DDEBUG=1", "-DWIDESCREEN_SUPPORT=1"])
+    cflags_framework.extend(
+        ["-O0,p", "-inline off", "-RTTI on", "-DDEBUG=1", "-DWIDESCREEN_SUPPORT=1"]
+    )
 elif config.version in WII_VERSIONS or config.version in SHIELD_VERSIONS:
     cflags_framework.extend(["-ipa file", "-RTTI on", "-DWIDESCREEN_SUPPORT=1"])
 
@@ -412,14 +423,14 @@ if config.version != "ShieldD":
         # TODO: whats the correct inlining flag? deferred looks better in some places, others not. something else wrong?
         cflags_framework.extend(["-inline noauto", "-O4,p", "-sym on"])
     else:
-        cflags_framework.extend(["-inline noauto", "-O3,s", "-sym on", "-str reuse,pool,readonly"])
+        cflags_framework.extend(
+            ["-inline noauto", "-O3,s", "-sym on", "-str reuse,pool,readonly"]
+        )
 
 if config.version in ["RZDE01_00", "RZDE01_02", "RZDP01", "RZDJ01", "DZDE01"]:
     cflags_framework.extend(["-DSDK_SEP2006"])
 
-cflags_jsystem = [
-    *cflags_framework
-]
+cflags_jsystem = [*cflags_framework]
 
 if config.version in ["RZDE01_00", "RZDE01_02", "RZDP01", "RZDJ01", "DZDE01"]:
     cflags_jsystem.extend(["-RTTI off"])
@@ -440,6 +451,7 @@ cflags_dolzel_rel = [
     *cflags_rel,
 ]
 
+
 def MWVersion(cfg_version: str | None) -> str:
     match cfg_version:
         case "GZ2E01" | "GZ2P01" | "GZ2J01":
@@ -454,6 +466,7 @@ def MWVersion(cfg_version: str | None) -> str:
             return "Wii/1.0"
         case _:
             return "GC/2.7"
+
 
 # Wii versions specifically need linker GC/3.0a5
 if config.version in WII_VERSIONS:
@@ -472,7 +485,10 @@ def DolphinLib(lib_name: str, objects: List[Object]) -> Dict[str, Any]:
         "objects": objects,
     }
 
-def RevolutionLib(lib_name: str, objects: List[Object], extra_cflags=[]) -> Dict[str, Any]:
+
+def RevolutionLib(
+    lib_name: str, objects: List[Object], extra_cflags=[]
+) -> Dict[str, Any]:
     if config.version == "ShieldD":
         return {
             "lib": lib_name,
@@ -493,7 +509,12 @@ def RevolutionLib(lib_name: str, objects: List[Object], extra_cflags=[]) -> Dict
         return {
             "lib": lib_name,
             "mw_version": "GC/3.0a3",
-            "cflags": [*cflags_revolution_retail, "-DSDK_SEP2006", "-DNW4HBM_DEBUG", *extra_cflags],
+            "cflags": [
+                *cflags_revolution_retail,
+                "-DSDK_SEP2006",
+                "-DNW4HBM_DEBUG",
+                *extra_cflags,
+            ],
             "progress_category": "sdk",
             "objects": objects,
         }
@@ -506,6 +527,7 @@ def RevolutionLib(lib_name: str, objects: List[Object], extra_cflags=[]) -> Dict
             "objects": objects,
         }
 
+
 # Helper function for REL script objects
 def Rel(lib_name: str, objects: List[Object]) -> Dict[str, Any]:
     return {
@@ -516,13 +538,28 @@ def Rel(lib_name: str, objects: List[Object]) -> Dict[str, Any]:
         "objects": objects,
     }
 
+
 # Helper function for actor RELs
-def ActorRel(status: bool, rel_name: str, extra_cflags: List[str]=[]) -> Dict[str, Any]:
-    return Rel(rel_name, [Object(status, f"d/actor/{rel_name}.cpp", extra_cflags=extra_cflags, scratch_preset_id=70)])
+def ActorRel(
+    status: bool, rel_name: str, extra_cflags: List[str] = []
+) -> Dict[str, Any]:
+    return Rel(
+        rel_name,
+        [
+            Object(
+                status,
+                f"d/actor/{rel_name}.cpp",
+                extra_cflags=extra_cflags,
+                scratch_preset_id=70,
+            )
+        ],
+    )
 
 
 # Helper function for JSystem libraries
-def JSystemLib(lib_name: str, objects: List[Object], progress_category: str="third_party") -> Dict[str, Any]:
+def JSystemLib(
+    lib_name: str, objects: List[Object], progress_category: str = "third_party"
+) -> Dict[str, Any]:
     return {
         "lib": lib_name,
         "mw_version": MWVersion(config.version),
@@ -532,15 +569,17 @@ def JSystemLib(lib_name: str, objects: List[Object], progress_category: str="thi
     }
 
 
-Matching = True                   # Object matches and should be linked
-NonMatching = False               # Object does not match and should not be linked
-Equivalent = config.non_matching  # Object should be linked when configured with --non-matching
+Matching = True  # Object matches and should be linked
+NonMatching = False  # Object does not match and should not be linked
+Equivalent = (
+    config.non_matching
+)  # Object should be linked when configured with --non-matching
 
 
 ALL_GCN = ["GZ2E01", "GZ2P01", "GZ2J01"]
-ALL_WII = ["RZDE01_00", "RZDE01_02", "RZDP01", "RZDJ01"] # , "RZDK01"]
+ALL_WII = ["RZDE01_00", "RZDE01_02", "RZDP01", "RZDJ01"]  # , "RZDK01"]
 ALL_DEMO = ["DZDE01", "DZDP01"]
-ALL_SHIELD = ["Shield", "ShieldD"] # , "ShieldP"]
+ALL_SHIELD = ["Shield", "ShieldD"]  # , "ShieldP"]
 ALL = ALL_GCN + ALL_WII + ALL_SHIELD
 
 
@@ -623,7 +662,6 @@ config.libs = [
         "objects": [
             # f_ap
             Object(MatchingFor(ALL_GCN), "f_ap/f_ap_game.cpp"),
-
             # f_op
             Object(MatchingFor(ALL_GCN, "Shield"), "f_op/f_op_actor.cpp"),
             Object(Matching, "f_op/f_op_actor_iter.cpp"),
@@ -633,8 +671,12 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "f_op/f_op_actor_mng.cpp"),
             Object(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "f_op/f_op_camera_mng.cpp"),
             Object(Matching, "f_op/f_op_overlap.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "f_op/f_op_overlap_mng.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_WII, "ShieldD"), "f_op/f_op_overlap_req.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_WII, "Shield"), "f_op/f_op_overlap_mng.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN, ALL_WII, "ShieldD"), "f_op/f_op_overlap_req.cpp"
+            ),
             Object(Matching, "f_op/f_op_scene.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "f_op/f_op_scene_iter.cpp"),
             Object(Matching, "f_op/f_op_scene_mng.cpp"),
@@ -648,7 +690,6 @@ config.libs = [
             Object(Matching, "f_op/f_op_draw_iter.cpp"),
             Object(Matching, "f_op/f_op_draw_tag.cpp"),
             Object(Matching, "f_op/f_op_scene_pause.cpp"),
-
             # f_pc
             Object(MatchingFor(ALL_GCN, ALL_WII), "f_pc/f_pc_base.cpp"),
             Object(Matching, "f_pc/f_pc_create_iter.cpp"),
@@ -697,7 +738,9 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_com_inf_game.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_com_static.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_com_inf_actor.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "d/d_bomb.cpp"), # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN, "Shield"), "d/d_bomb.cpp"
+            ),  # debug weak func order
             Object(MatchingFor(ALL_GCN), "d/d_lib.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_save.cpp"),
             Object(MatchingFor(ALL_GCN, ALL_SHIELD), "d/d_save_init.cpp"),
@@ -708,7 +751,9 @@ config.libs = [
             Object(MatchingFor(ALL_GCN, "Shield"), "d/d_a_shop_item_static.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_a_horse_static.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_demo.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "d/d_door_param2.cpp"), # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN, "Shield"), "d/d_door_param2.cpp"
+            ),  # debug weak func order
             Object(MatchingFor(ALL_GCN), "d/d_resorce.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_map_path.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_map_path_fmap.cpp"),
@@ -716,10 +761,10 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_event.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_event_data.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_event_manager.cpp"),
-            Object(MatchingFor(ALL_GCN), "d/d_event_lib.cpp"), # debug weak func order
-            Object(Equivalent, "d/d_event_debug.cpp"), # RTTI
+            Object(MatchingFor(ALL_GCN), "d/d_event_lib.cpp"),  # debug weak func order
+            Object(Equivalent, "d/d_event_debug.cpp"),  # RTTI
             Object(MatchingFor(ALL_GCN), "d/d_simple_model.cpp"),
-            Object(Equivalent, "d/d_particle.cpp"), # weak func order
+            Object(Equivalent, "d/d_particle.cpp"),  # weak func order
             Object(MatchingFor(ALL_GCN, "Shield"), "d/d_particle_name.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_particle_copoly.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_path.cpp"),
@@ -740,8 +785,12 @@ config.libs = [
             Object(MatchingFor(ALL_WII), "d/d_bg_s_capt_poly.cpp"),
             Object(MatchingFor(ALL_GCN, "Shield"), "d/d_bg_s_chk.cpp"),
             Object(MatchingFor("ShieldD"), "d/d_bg_s_func.cpp"),
-            Object(MatchingFor(ALL_GCN), "d/d_bg_s_gnd_chk.cpp"), # debug weak func order
-            Object(MatchingFor(ALL_GCN), "d/d_bg_s_grp_pass_chk.cpp"), # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN), "d/d_bg_s_gnd_chk.cpp"
+            ),  # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN), "d/d_bg_s_grp_pass_chk.cpp"
+            ),  # debug weak func order
             Object(MatchingFor(ALL_GCN), "d/d_bg_s_lin_chk.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_bg_s_movebg_actor.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "d/d_bg_s_sph_chk.cpp"),
@@ -755,7 +804,9 @@ config.libs = [
             Object(NonMatching, "d/d_bg_w_hf.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_bg_w_kcol.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_bg_w_sv.cpp"),
-            Object(Equivalent, "d/d_cc_d.cpp"), # weak func order (cCcD_ShapeAttr::GetCoCP)
+            Object(
+                Equivalent, "d/d_cc_d.cpp"
+            ),  # weak func order (cCcD_ShapeAttr::GetCoCP)
             Object(MatchingFor(ALL_GCN), "d/d_cc_mass_s.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_cc_s.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_cc_uty.cpp"),
@@ -770,10 +821,12 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_model.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_eye_hl.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_error_msg.cpp"),
-            Object(Equivalent, "d/d_debug_viewer.cpp"), # debug weak func order
+            Object(Equivalent, "d/d_debug_viewer.cpp"),  # debug weak func order
             Object(NonMatching, "d/d_debug_pad.cpp"),
             Object(NonMatching, "d/d_debug_camera.cpp"),
-            Object(Equivalent, "d/actor/d_a_alink.cpp"), # weak func order, vtable order
+            Object(
+                Equivalent, "d/actor/d_a_alink.cpp"
+            ),  # weak func order, vtable order
             Object(MatchingFor(ALL_GCN), "d/actor/d_a_itembase.cpp"),
             Object(MatchingFor(ALL_GCN), "d/actor/d_a_no_chg_room.cpp"),
             Object(MatchingFor(ALL_GCN), "d/actor/d_a_npc.cpp"),
@@ -783,7 +836,7 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_insect.cpp"),
             Object(MatchingFor(ALL_GCN), "d/actor/d_a_obj_ss_base.cpp"),
             Object(MatchingFor(ALL_GCN), "d/actor/d_a_player.cpp"),
-            Object(Equivalent, "d/d_camera.cpp"), # weak func order
+            Object(Equivalent, "d/d_camera.cpp"),  # weak func order
             Object(MatchingFor(ALL_GCN), "d/d_envse.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_file_select.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_file_sel_warning.cpp"),
@@ -802,7 +855,9 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_ky_thunder.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_kantera_icon_meter.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_menu_calibration.cpp"),
-            Object(NonMatching, "d/d_menu_collect.cpp"), # weak func order (dMenu_Collect2D_c::draw())
+            Object(
+                NonMatching, "d/d_menu_collect.cpp"
+            ),  # weak func order (dMenu_Collect2D_c::draw())
             Object(MatchingFor(ALL_GCN), "d/d_menu_dmap.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_menu_dmap_map.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_menu_map_common.cpp"),
@@ -819,7 +874,9 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_menu_save.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_menu_skill.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_menu_window_HIO.cpp"),
-            Object(Equivalent, "d/d_menu_window.cpp"), # weak func order (dDlst_MENU_CAPTURE_c::draw)
+            Object(
+                Equivalent, "d/d_menu_window.cpp"
+            ),  # weak func order (dDlst_MENU_CAPTURE_c::draw)
             Object(MatchingFor(ALL_GCN), "d/d_meter_HIO.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_meter_button.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_meter_haihai.cpp"),
@@ -831,7 +888,7 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "d/d_meter2.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_msg_out_font.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_msg_class.cpp"),
-            Object(Equivalent, "d/d_msg_object.cpp"), # weak func order
+            Object(Equivalent, "d/d_msg_object.cpp"),  # weak func order
             Object(MatchingFor(ALL_GCN), "d/d_msg_unit.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_msg_scrn_3select.cpp"),
             Object(MatchingFor(ALL_GCN), "d/d_msg_scrn_arrow.cpp"),
@@ -900,40 +957,72 @@ config.libs = [
         "objects": [
             Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_malloc.cpp"),
             Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_API.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_API_controller_pad.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_API_graphic.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD),
+                "SSystem/SComponent/c_API_controller_pad.cpp",
+            ),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_API_graphic.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_cc_d.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_cc_s.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_counter.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_counter.cpp"
+            ),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_list.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_list_iter.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_list_iter.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_node.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_node_iter.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_node_iter.cpp"
+            ),
             Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_tree.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_tree_iter.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_tree_iter.cpp"
+            ),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_phase.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_request.cpp"),
             Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_tag.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_tag_iter.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD), "SSystem/SComponent/c_tag_iter.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_xyz.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_sxyz.cpp"),
-            Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_math.cpp"), # debug weak literal order
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_bg_s_chk.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "SSystem/SComponent/c_math.cpp"
+            ),  # debug weak literal order
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_bg_s_chk.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_bg_s_gnd_chk.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_bg_s_lin_chk.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_bg_s_shdw_draw.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"),
+                "SSystem/SComponent/c_bg_s_shdw_draw.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_bg_s_poly_info.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_bg_w.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_m2d.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_aab.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "SSystem/SComponent/c_m3d_g_cir.cpp", extra_cflags=['-pragma "nosyminline on"']), # PCH fixes need for nosyminline - maybe SSystem has one?
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "SSystem/SComponent/c_m3d_g_cir.cpp",
+                extra_cflags=['-pragma "nosyminline on"'],
+            ),  # PCH fixes need for nosyminline - maybe SSystem has one?
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_cps.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_cyl.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_m3d_g_lin.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_m3d_g_pla.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_m3d_g_lin.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "SSystem/SComponent/c_m3d_g_pla.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_sph.cpp"),
-            Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_tri.cpp"), # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN), "SSystem/SComponent/c_m3d_g_tri.cpp"
+            ),  # debug weak func order
             Object(MatchingFor("ShieldD"), "SSystem/SComponent/c_m3d_g_vtx.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_lib.cpp"),
             Object(MatchingFor(ALL_GCN), "SSystem/SComponent/c_angle.cpp"),
@@ -983,7 +1072,9 @@ config.libs = [
         "JStage",
         [
             Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JStage/JSGActor.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JStage/JSGAmbientLight.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JStage/JSGAmbientLight.cpp"
+            ),
             Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JStage/JSGCamera.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JStage/JSGFog.cpp"),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JStage/JSGLight.cpp"),
@@ -995,18 +1086,34 @@ config.libs = [
         "JStudio",
         [
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/ctb.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "JSystem/JStudio/JStudio/ctb-data.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD), "JSystem/JStudio/JStudio/ctb-data.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/functionvalue.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/fvb.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JStudio/JStudio/fvb-data.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JStudio/JStudio/fvb-data-parse.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"), "JSystem/JStudio/JStudio/fvb-data.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "JSystem/JStudio/JStudio/fvb-data-parse.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/jstudio-control.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JStudio/JStudio/jstudio-data.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "JSystem/JStudio/JStudio/jstudio-data.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/jstudio-math.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/jstudio-object.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "JSystem/JStudio/JStudio/object-id.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD),
+                "JSystem/JStudio/JStudio/object-id.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/stb.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JStudio/JStudio/stb-data-parse.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "JSystem/JStudio/JStudio/stb-data-parse.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio/stb-data.cpp"),
         ],
     ),
@@ -1015,32 +1122,53 @@ config.libs = [
         [
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/control.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-actor.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-ambientlight.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-camera.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-fog.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-light.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-actor.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JStudio/JStudio_JStage/object-ambientlight.cpp",
+            ),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-camera.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-fog.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JStage/object-light.cpp"
+            ),
         ],
     ),
     JSystemLib(
         "JStudio_JAudio2",
         [
             Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JAudio2/control.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JAudio2/object-sound.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JAudio2/object-sound.cpp"
+            ),
         ],
     ),
     JSystemLib(
         "JStudio_JParticle",
         [
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JParticle/control.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JParticle/object-particle.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/JStudio/JStudio_JParticle/control.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JStudio/JStudio_JParticle/object-particle.cpp",
+            ),
         ],
     ),
     JSystemLib(
         "JStudioCameraEditor",
         [
             Object(NonMatching, "JSystem/JStudio/JStudioCameraEditor/control.cpp"),
-            Object(NonMatching, "JSystem/JStudio/JStudioCameraEditor/controlset-csb-valueset.cpp"),
+            Object(
+                NonMatching,
+                "JSystem/JStudio/JStudioCameraEditor/controlset-csb-valueset.cpp",
+            ),
             Object(NonMatching, "JSystem/JStudio/JStudioCameraEditor/csb.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioCameraEditor/csb-data.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioCameraEditor/sequence.cpp"),
@@ -1058,13 +1186,20 @@ config.libs = [
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/anchor.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/console.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/controlset.cpp"),
-            Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/controlset-anchor.cpp"),
-            Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/controlset-preview.cpp"),
+            Object(
+                NonMatching, "JSystem/JStudio/JStudioToolLibrary/controlset-anchor.cpp"
+            ),
+            Object(
+                NonMatching, "JSystem/JStudio/JStudioToolLibrary/controlset-preview.cpp"
+            ),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/interface.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/scroll.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/visual.cpp"),
             Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/xml.cpp"),
-            Object(NonMatching, "JSystem/JStudio/JStudioToolLibrary/jstudio-controlset-transform.cpp"),
+            Object(
+                NonMatching,
+                "JSystem/JStudio/JStudioToolLibrary/jstudio-controlset-transform.cpp",
+            ),
         ],
     ),
     JSystemLib(
@@ -1081,7 +1216,7 @@ config.libs = [
             Object(NonMatching, "JSystem/JAudio2/JASWaveFile.cpp"),
             Object(NonMatching, "JSystem/JAudio2/JASWaveFileWav.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASCmdStack.cpp"),
-            Object(Equivalent, "JSystem/JAudio2/JASTrack.cpp"), # weak func order
+            Object(Equivalent, "JSystem/JAudio2/JASTrack.cpp"),  # weak func order
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASTrackPort.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASRegisterParam.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASSeqCtrl.cpp"),
@@ -1106,14 +1241,34 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASAiCtrl.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASAudioThread.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASAudioReseter.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JAudio2/JASDSPChannel.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JAudio2/JASDSPChannel.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASDSPInterface.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JASDriverIF.cpp"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "JSystem/JAudio2/JASSoundParams.cpp"), # debug weak func order
-            Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/dspproc.cpp", extra_cflags=["-O4", "-func_align 32"]),
-            Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/dsptask.cpp", extra_cflags=["-O4", "-func_align 32"]),
-            Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/osdsp.cpp", extra_cflags=["-O4", "-func_align 32", "-str nopool"]),
-            Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/osdsp_task.cpp", extra_cflags=["-O4", "-func_align 32"]),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"), "JSystem/JAudio2/JASSoundParams.cpp"
+            ),  # debug weak func order
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JAudio2/dspproc.cpp",
+                extra_cflags=["-O4", "-func_align 32"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JAudio2/dsptask.cpp",
+                extra_cflags=["-O4", "-func_align 32"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JAudio2/osdsp.cpp",
+                extra_cflags=["-O4", "-func_align 32", "-str nopool"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/JAudio2/osdsp_task.cpp",
+                extra_cflags=["-O4", "-func_align 32"],
+            ),
             Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JAudio2/JAIAudible.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAIAudience.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISe.cpp"),
@@ -1122,7 +1277,9 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISeqDataMgr.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISeqMgr.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISound.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JAudio2/JAISoundChild.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "JSystem/JAudio2/JAISoundChild.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISoundHandles.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISoundInfo.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JAudio2/JAISoundParams.cpp"),
@@ -1261,11 +1418,16 @@ config.libs = [
         "objects": [
             Object(Matching, "Z2AudioCS/SpkSpeakerCtrl.cpp"),
             Object(Equivalent, "Z2AudioCS/SpkSystem.cpp"),
-            Object(MatchingFor(ALL_WII, ALL_DEMO, "Shield"), "Z2AudioCS/SpkMixingBuffer.cpp"),
+            Object(
+                MatchingFor(ALL_WII, ALL_DEMO, "Shield"),
+                "Z2AudioCS/SpkMixingBuffer.cpp",
+            ),
             Object(Matching, "Z2AudioCS/SpkWave.cpp"),
             Object(Matching, "Z2AudioCS/SpkTable.cpp"),
             Object(MatchingFor(ALL_WII, ALL_DEMO, "Shield"), "Z2AudioCS/SpkData.cpp"),
-            Object(Equivalent, "Z2AudioCS/SpkSound.cpp"), # weak func order (JSUList ctor)
+            Object(
+                Equivalent, "Z2AudioCS/SpkSound.cpp"
+            ),  # weak func order (JSUList ctor)
             Object(Equivalent, "Z2AudioCS/Z2AudioCS.cpp"),
         ],
     },
@@ -1362,7 +1524,10 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "JSystem/JUtility/JUTProcBar.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JUtility/JUTConsole.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/JUtility/JUTDirectFile.cpp"),
-            Object(MatchingFor(ALL_GCN, ALL_SHIELD), "JSystem/JUtility/JUTFontData_Ascfont_fix12.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, ALL_SHIELD),
+                "JSystem/JUtility/JUTFontData_Ascfont_fix12.cpp",
+            ),
             Object(NonMatching, "JSystem/JUtility/JUTFontData_Ascfont_fix16.cpp"),
         ],
     ),
@@ -1400,10 +1565,14 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DTexture.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DPacket.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DShapeMtx.cpp"),
-            Object(MatchingFor(ALL_GCN, "ShieldD"), "JSystem/J3DGraphBase/J3DShapeDraw.cpp"),
+            Object(
+                MatchingFor(ALL_GCN, "ShieldD"), "JSystem/J3DGraphBase/J3DShapeDraw.cpp"
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DShape.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DMaterial.cpp"),
-            Object(Equivalent, "JSystem/J3DGraphBase/J3DMatBlock.cpp"), # weak func order (J3DTevBlock)
+            Object(
+                Equivalent, "JSystem/J3DGraphBase/J3DMatBlock.cpp"
+            ),  # weak func order (J3DTevBlock)
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DTevs.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DDrawBuffer.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphBase/J3DStruct.cpp"),
@@ -1422,19 +1591,29 @@ config.libs = [
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphAnimator/J3DSkinDeform.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphAnimator/J3DCluster.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphAnimator/J3DJoint.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphAnimator/J3DMaterialAttach.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/J3DGraphAnimator/J3DMaterialAttach.cpp"
+            ),
         ],
     ),
     JSystemLib(
         "J3DGraphLoader",
         [
-            Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DMaterialFactory.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DMaterialFactory_v21.cpp"),
+            Object(
+                MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DMaterialFactory.cpp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/J3DGraphLoader/J3DMaterialFactory_v21.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DClusterLoader.cpp"),
             Object(NonMatching, "JSystem/J3DGraphLoader/J3DBinaryFormat.cpp"),
             Object(NonMatching, "JSystem/J3DGraphLoader/J3DSaverUtility.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DModelLoader.cpp"),
-            Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DModelLoaderCalcSize.cpp"),
+            Object(
+                MatchingFor(ALL_GCN),
+                "JSystem/J3DGraphLoader/J3DModelLoaderCalcSize.cpp",
+            ),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DJointFactory.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DShapeFactory.cpp"),
             Object(MatchingFor(ALL_GCN), "JSystem/J3DGraphLoader/J3DAnmLoader.cpp"),
@@ -1454,15 +1633,37 @@ config.libs = [
         [
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHIComm.cpp"),
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHICommonMem.cpp"),
-            Object(Equivalent, "JSystem/JHostIO/JORServer.cpp"), # debug weak func order
-            Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JOREntry.cpp", extra_cflags=["-sym off"]), # debug weak func order
-            Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JORFile.cpp", extra_cflags=["-sym off"]),
+            Object(
+                Equivalent, "JSystem/JHostIO/JORServer.cpp"
+            ),  # debug weak func order
+            Object(
+                MatchingFor("ShieldD"),
+                "JSystem/JHostIO/JOREntry.cpp",
+                extra_cflags=["-sym off"],
+            ),  # debug weak func order
+            Object(
+                MatchingFor("ShieldD"),
+                "JSystem/JHostIO/JORFile.cpp",
+                extra_cflags=["-sym off"],
+            ),
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JORMessageBox.cpp"),
-            Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JORHostInfo.cpp", extra_cflags=["-sym off"]), # debug weak func order
+            Object(
+                MatchingFor("ShieldD"),
+                "JSystem/JHostIO/JORHostInfo.cpp",
+                extra_cflags=["-sym off"],
+            ),  # debug weak func order
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JORShellExecute.cpp"),
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHIMemBuf.cpp"),
-            Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHIhioASync.cpp", extra_cflags=["-sym off"]),
-            Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHIMccBuf.cpp", extra_cflags=["-sym off"]),
+            Object(
+                MatchingFor("ShieldD"),
+                "JSystem/JHostIO/JHIhioASync.cpp",
+                extra_cflags=["-sym off"],
+            ),
+            Object(
+                MatchingFor("ShieldD"),
+                "JSystem/JHostIO/JHIMccBuf.cpp",
+                extra_cflags=["-sym off"],
+            ),
             Object(MatchingFor("ShieldD"), "JSystem/JHostIO/JHIRMcc.cpp"),
         ],
     ),
@@ -1615,7 +1816,9 @@ config.libs = [
             Object(Matching, "dolphin/gx/GXTev.c"),
             Object(Matching, "dolphin/gx/GXPixel.c"),
             Object(Matching, "dolphin/gx/GXDisplayList.c"),
-            Object(Matching, "dolphin/gx/GXTransform.c", extra_cflags=["-fp_contract off"]),
+            Object(
+                Matching, "dolphin/gx/GXTransform.c", extra_cflags=["-fp_contract off"]
+            ),
             Object(Matching, "dolphin/gx/GXPerf.c"),
         ],
     ),
@@ -1656,7 +1859,9 @@ config.libs = [
             Object(MatchingFor("ShieldD"), "revolution/os/OSAlarm.c"),
             Object(MatchingFor("ShieldD", "RZDE01_00"), "revolution/os/OSAlloc.c"),
             Object(MatchingFor("ShieldD", "RZDE01_00"), "revolution/os/OSArena.c"),
-            Object(MatchingFor("ShieldD", "RZDE01_00"), "revolution/os/OSAudioSystem.c"),
+            Object(
+                MatchingFor("ShieldD", "RZDE01_00"), "revolution/os/OSAudioSystem.c"
+            ),
             Object(MatchingFor("ShieldD", "RZDE01_00"), "revolution/os/OSCache.c"),
             Object(MatchingFor("ShieldD"), "revolution/os/OSContext.c"),
             Object(NonMatching, "revolution/os/OSError.c"),
@@ -1723,13 +1928,19 @@ config.libs = [
     RevolutionLib(
         "gx",
         [
-            Object(NonMatching, "revolution/gx/GXInit.c", extra_cflags=["-opt nopeephole"]),
+            Object(
+                NonMatching, "revolution/gx/GXInit.c", extra_cflags=["-opt nopeephole"]
+            ),
             Object(NonMatching, "revolution/gx/GXFifo.c"),
             Object(NonMatching, "revolution/gx/GXAttr.c"),
             Object(NonMatching, "revolution/gx/GXMisc.c"),
             Object(NonMatching, "revolution/gx/GXGeometry.c"),
             Object(NonMatching, "revolution/gx/GXFrameBuf.c"),
-            Object(NonMatching, "revolution/gx/GXLight.c", extra_cflags=["-fp_contract off"]),
+            Object(
+                NonMatching,
+                "revolution/gx/GXLight.c",
+                extra_cflags=["-fp_contract off"],
+            ),
             Object(NonMatching, "revolution/gx/GXTexture.c"),
             Object(NonMatching, "revolution/gx/GXBump.c"),
             Object(NonMatching, "revolution/gx/GXTev.c"),
@@ -1737,7 +1948,11 @@ config.libs = [
             Object(NonMatching, "revolution/gx/GXDraw.c"),
             Object(NonMatching, "revolution/gx/GXDisplayList.c"),
             Object(NonMatching, "revolution/gx/GXVert.c"),
-            Object(NonMatching, "revolution/gx/GXTransform.c", extra_cflags=["-fp_contract off"]),
+            Object(
+                NonMatching,
+                "revolution/gx/GXTransform.c",
+                extra_cflags=["-fp_contract off"],
+            ),
             Object(NonMatching, "revolution/gx/GXVerify.c"),
             Object(NonMatching, "revolution/gx/GXVerifXF.c"),
             Object(NonMatching, "revolution/gx/GXVerifRAS.c"),
@@ -1748,14 +1963,34 @@ config.libs = [
     RevolutionLib(
         "dvd",
         [
-            Object(NonMatching, "revolution/dvd/dvdfs.c", extra_cflags=["-char signed"]),
+            Object(
+                NonMatching, "revolution/dvd/dvdfs.c", extra_cflags=["-char signed"]
+            ),
             Object(NonMatching, "revolution/dvd/dvd.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvdqueue.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvderror.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvdidutils.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvdFatal.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvdDeviceError.c", extra_cflags=["-char signed"]),
-            Object(NonMatching, "revolution/dvd/dvd_broadway.c", extra_cflags=["-char signed"]),
+            Object(
+                NonMatching, "revolution/dvd/dvdqueue.c", extra_cflags=["-char signed"]
+            ),
+            Object(
+                NonMatching, "revolution/dvd/dvderror.c", extra_cflags=["-char signed"]
+            ),
+            Object(
+                NonMatching,
+                "revolution/dvd/dvdidutils.c",
+                extra_cflags=["-char signed"],
+            ),
+            Object(
+                NonMatching, "revolution/dvd/dvdFatal.c", extra_cflags=["-char signed"]
+            ),
+            Object(
+                NonMatching,
+                "revolution/dvd/dvdDeviceError.c",
+                extra_cflags=["-char signed"],
+            ),
+            Object(
+                NonMatching,
+                "revolution/dvd/dvd_broadway.c",
+                extra_cflags=["-char signed"],
+            ),
         ],
     ),
     RevolutionLib(
@@ -1807,7 +2042,9 @@ config.libs = [
             Object(NonMatching, "revolution/card/CARDCheck.c"),
             Object(NonMatching, "revolution/card/CARDMount.c"),
             Object(NonMatching, "revolution/card/CARDFormat.c"),
-            Object(NonMatching, "revolution/card/CARDOpen.c", extra_cflags=["-char signed"]),
+            Object(
+                NonMatching, "revolution/card/CARDOpen.c", extra_cflags=["-char signed"]
+            ),
             Object(NonMatching, "revolution/card/CARDCreate.c"),
             Object(NonMatching, "revolution/card/CARDRead.c"),
             Object(NonMatching, "revolution/card/CARDWrite.c"),
@@ -1862,7 +2099,9 @@ config.libs = [
         "ipc",
         [
             Object(Matching, "revolution/ipc/ipcMain.c"),
-            Object(MatchingFor(ALL_WII, ALL_DEMO, "Shield"), "revolution/ipc/ipcclt.c"), # strnlen issue in ShieldD
+            Object(
+                MatchingFor(ALL_WII, ALL_DEMO, "Shield"), "revolution/ipc/ipcclt.c"
+            ),  # strnlen issue in ShieldD
             Object(Matching, "revolution/ipc/memory.c"),
             Object(Matching, "revolution/ipc/ipcProfile.c"),
         ],
@@ -1876,7 +2115,9 @@ config.libs = [
     RevolutionLib(
         "pad",
         [
-            Object(MatchingFor("ShieldD"), "revolution/pad/Padclamp.c"), # sqrtf issue on retail versions
+            Object(
+                MatchingFor("ShieldD"), "revolution/pad/Padclamp.c"
+            ),  # sqrtf issue on retail versions
             Object(Matching, "revolution/pad/Pad.c"),
         ],
     ),
@@ -1887,7 +2128,7 @@ config.libs = [
             Object(NonMatching, "revolution/wpad/WPADEncrypt.c"),
             Object(NonMatching, "revolution/wpad/WPADHIDParser.c"),
             Object(NonMatching, "revolution/wpad/WPADMem.c"),
-        ]
+        ],
     ),
     RevolutionLib(
         "wud",
@@ -1902,7 +2143,7 @@ config.libs = [
         [
             Object(NonMatching, "revolution/kpad/KPAD.c"),
         ],
-        extra_cflags=["-O4,s"]
+        extra_cflags=["-O4,s"],
     ),
     RevolutionLib(
         "euart",
@@ -1934,11 +2175,20 @@ config.libs = [
         [
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_assert.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_console.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_DbgPrintBase.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_directPrint.cpp"),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_DbgPrintBase.cpp"
+            ),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_directPrint.cpp"
+            ),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/db/db_mapFile.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_animation.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_arcResourceAccessor.cpp"),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_animation.cpp"
+            ),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/lyt/lyt_arcResourceAccessor.cpp",
+            ),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_bounding.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_common.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_drawInfo.cpp"),
@@ -1947,25 +2197,52 @@ config.libs = [
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_material.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_pane.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_picture.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_resourceAccessor.cpp"),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/lyt/lyt_resourceAccessor.cpp",
+            ),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_textBox.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/lyt/lyt_window.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/math/math_triangular.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundArchivePlayer.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundHandle.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundPlayer.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundStartable.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_binaryFileFormat.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_CharStrmReader.cpp"),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/math/math_triangular.cpp"
+            ),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/snd/snd_SoundArchivePlayer.cpp",
+            ),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundHandle.cpp"
+            ),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/snd/snd_SoundPlayer.cpp"
+            ),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/snd/snd_SoundStartable.cpp",
+            ),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/ut/ut_binaryFileFormat.cpp",
+            ),
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_CharStrmReader.cpp"
+            ),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_CharWriter.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_Font.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_LinkList.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_list.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_ResFont.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_ResFontBase.cpp"),
-            Object(NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_TagProcessorBase.cpp"),
-            Object(MatchingFor("RZDE01_02", "RZDP01", "RZDJ01"), "revolution/homebuttonLib/nw4hbm/ut/ut_TextWriterBase.cpp"), # RZDE01_00 func order
-
+            Object(
+                NonMatching, "revolution/homebuttonLib/nw4hbm/ut/ut_ResFontBase.cpp"
+            ),
+            Object(
+                NonMatching,
+                "revolution/homebuttonLib/nw4hbm/ut/ut_TagProcessorBase.cpp",
+            ),
+            Object(
+                MatchingFor("RZDE01_02", "RZDP01", "RZDJ01"),
+                "revolution/homebuttonLib/nw4hbm/ut/ut_TextWriterBase.cpp",
+            ),  # RZDE01_00 func order
             Object(NonMatching, "revolution/homebuttonLib/HBMBase.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/HBMAnmController.cpp"),
             Object(NonMatching, "revolution/homebuttonLib/HBMFrameController.cpp"),
@@ -1982,15 +2259,37 @@ config.libs = [
         "host": False,
         "objects": [
             Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/__mem.c"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "PowerPC_EABI_Support/Runtime/Src/__va_arg.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/global_destructor_chain.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/CPlusLibPPC.cp"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/NMWException.cp", extra_cflags=["-Cpp_exceptions on"]),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "PowerPC_EABI_Support/Runtime/Src/__va_arg.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/Runtime/Src/global_destructor_chain.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/CPlusLibPPC.cp"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/Runtime/Src/NMWException.cp",
+                extra_cflags=["-Cpp_exceptions on"],
+            ),
             Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/ptmf.c"),
             Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/runtime.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/__init_cpp_exceptions.cpp"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/Gecko_ExceptionPPC.cp"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/Runtime/Src/GCN_mem_alloc.c", extra_cflags=["-str reuse,nopool,readonly"]),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/Runtime/Src/__init_cpp_exceptions.cpp",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/Runtime/Src/Gecko_ExceptionPPC.cp",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/Runtime/Src/GCN_mem_alloc.c",
+                extra_cflags=["-str reuse,nopool,readonly"],
+            ),
         ],
     },
     {
@@ -2000,78 +2299,291 @@ config.libs = [
         "progress_category": "sdk",
         "host": False,
         "objects": [
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/abort_exit.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/alloc.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/errno.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/ansi_files.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Src/ansi_fp.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Src/math_sun.c"),
-            Object(MatchingFor(ALL_GCN, "Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/arith.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/buffer_io.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/char_io.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/critical_regions.gamecube.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/ctype.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/locale.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/direct_io.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/file_io.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/FILE_POS.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mbstring.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mem.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mem_funcs.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/math_api.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/misc_io.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/printf.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/scanf.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/float.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/signal.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/string.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/strtold.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wcstoul.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wctype.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wmem.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wprintf.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wscanf.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/strtoul.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wstring.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wchar_io.c"),
-            Object(MatchingFor("Shield"), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/secure_error.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/math_double.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/uart_console_io_gcn.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_acos.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_asin.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_atan2.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_exp.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_fmod.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_log.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_log10.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_pow.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_rem_pio2.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_cos.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_rem_pio2.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_sin.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_tan.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_atan.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_ceil.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_copysign.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_cos.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_floor.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_frexp.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_ldexp.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_modf.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_sin.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_tan.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_acos.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_asin.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_atan2.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_exp.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_fmod.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_log10.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_pow.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_sqrt.c"),
-            Object(NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/abort_exit_ppc_eabi.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/math_ppc.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_sqrt.c"),
-            Object(MatchingFor(ALL_GCN), "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/extras.c"),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/abort_exit.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/alloc.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/errno.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/ansi_files.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Src/ansi_fp.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Src/math_sun.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN, "Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/arith.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/buffer_io.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/char_io.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/critical_regions.gamecube.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/ctype.c",
+            ),
+            Object(
+                NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/locale.c"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/direct_io.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/file_io.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/FILE_POS.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mbstring.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mem.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/mem_funcs.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/math_api.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/misc_io.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/printf.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/scanf.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/float.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/signal.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/string.c",
+            ),
+            Object(
+                NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/strtold.c"
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wcstoul.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wctype.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wmem.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wprintf.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wscanf.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/strtoul.c",
+            ),
+            Object(
+                NonMatching, "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wstring.c"
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/wchar_io.c",
+            ),
+            Object(
+                MatchingFor("Shield"),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/secure_error.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/math_double.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/uart_console_io_gcn.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_acos.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_asin.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_atan2.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_exp.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_fmod.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_log.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_log10.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_pow.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_rem_pio2.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_cos.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_rem_pio2.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_sin.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/k_tan.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_atan.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_ceil.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_copysign.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_cos.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_floor.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_frexp.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_ldexp.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_modf.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_sin.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/s_tan.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_acos.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_asin.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_atan2.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_exp.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_fmod.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_log10.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_pow.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/e_sqrt.c",
+            ),
+            Object(
+                NonMatching,
+                "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/abort_exit_ppc_eabi.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/PPC_EABI/Src/math_ppc.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common_Embedded/Math/Double_precision/w_sqrt.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "PowerPC_EABI_Support/MSL/MSL_C/MSL_Common/Src/extras.c",
+            ),
         ],
     },
     {
@@ -2082,40 +2594,139 @@ config.libs = [
         "host": False,
         "objects": [
             # debugger
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mainloop.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/nubevent.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/nubinit.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msg.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msgbuf.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/serpoll.c", extra_cflags=["-sdata 8"]),
-            Object(NonMatching, "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/string_TRK.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/usr_put.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/dispatch.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msghndlr.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/support.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mutex_TRK.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/notify.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/flush_cache.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mem_TRK.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/targimpl.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Export/targsupp.s"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/mpc_7xx_603e.c"),
-            Object(MatchingFor(ALL_GCN, ALL_WII, ALL_DEMO), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/exception.s"), # Shield has different symbol name for TRKInterruptHandler
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/dolphin_trk.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/main_TRK.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/dolphin_trk_glue.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/targcont.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/target_options.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Export/mslsupp.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/UDP_Stubs.c"),
-
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mainloop.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/nubevent.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/nubinit.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msg.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msgbuf.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/serpoll.c",
+                extra_cflags=["-sdata 8"],
+            ),
+            Object(
+                NonMatching,
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/string_TRK.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/usr_put.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/dispatch.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/msghndlr.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/support.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mutex_TRK.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/notify.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/flush_cache.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/mem_TRK.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/targimpl.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Export/targsupp.s",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/mpc_7xx_603e.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN, ALL_WII, ALL_DEMO),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Processor/ppc/Generic/exception.s",
+            ),  # Shield has different symbol name for TRKInterruptHandler
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/dolphin_trk.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Portable/main_TRK.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/dolphin_trk_glue.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/targcont.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/target_options.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Export/mslsupp.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/debugger/embedded/MetroTRK/Os/dolphin/UDP_Stubs.c",
+            ),
             # gamedev
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/cc/exi2/GCN/EXI2_DDH_GCN/main.c", extra_cflags=["-sdata 8"]),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/common/CircleBuffer.c"),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/cc/exi2/GCN/EXI2_GDEV_GCN/main.c", extra_cflags=["-sdata 8"]),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/common/MWTrace.c"),
-            Object(NonMatching, "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/gc/cc_gdev.c", extra_cflags=["-sdata 8"]),
-            Object(MatchingFor(ALL_GCN), "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/gc/MWCriticalSection_gc.c"),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/cc/exi2/GCN/EXI2_DDH_GCN/main.c",
+                extra_cflags=["-sdata 8"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/common/CircleBuffer.c",
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/cc/exi2/GCN/EXI2_GDEV_GCN/main.c",
+                extra_cflags=["-sdata 8"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/common/MWTrace.c",
+            ),
+            Object(
+                NonMatching,
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/gc/cc_gdev.c",
+                extra_cflags=["-sdata 8"],
+            ),
+            Object(
+                MatchingFor(ALL_GCN),
+                "TRK_MINNOW_DOLPHIN/gamedev/cust_connection/utils/gc/MWCriticalSection_gc.c",
+            ),
         ],
     },
     {
@@ -2170,7 +2781,6 @@ config.libs = [
             Object(MatchingFor("Shield"), "lingcod/LingcodPatch.c"),
         ],
     },
-
     # Begin RELs
     {
         "lib": "REL",
@@ -2187,7 +2797,10 @@ config.libs = [
             ),
         ],
     },
-    Rel("f_pc_profile_lst", [Object(MatchingFor(ALL_GCN, ALL_SHIELD), "f_pc/f_pc_profile_lst.cpp")]),
+    Rel(
+        "f_pc_profile_lst",
+        [Object(MatchingFor(ALL_GCN, ALL_SHIELD), "f_pc/f_pc_profile_lst.cpp")],
+    ),
     ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_andsw"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_bg"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_bg_obj"),
@@ -2214,19 +2827,23 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_set_bgobj"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_swhit0"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_tag_allmato"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_camera"), # debug extra weak fns
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_chkpoint"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_event"), # TODO: this is part of Rframework in ShieldD
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evt"), # debug extra weak fns
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evtarea"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evtmsg"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_howl"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_camera"),  # debug extra weak fns
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_chkpoint"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN), "d_a_tag_event"
+    ),  # TODO: this is part of Rframework in ShieldD
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evt"),  # debug extra weak fns
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evtarea"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_evtmsg"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_howl"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_tag_kmsg"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lantern"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mist"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_msg"), # TODO: this is part of Rframework in ShieldD
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_push"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_telop"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lantern"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mist"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN), "d_a_tag_msg"
+    ),  # TODO: this is part of Rframework in ShieldD
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_push"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_telop"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_tbox"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_tbox2"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_vrbox"),
@@ -2236,9 +2853,9 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_crod"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_demo00"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_disappear"),
-    ActorRel(Equivalent, "d_a_mg_rod"), # weak func order
+    ActorRel(Equivalent, "d_a_mg_rod"),  # weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_midna"),
-    ActorRel(Equivalent, "d_a_nbomb"), # weak func order
+    ActorRel(Equivalent, "d_a_nbomb"),  # weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_life_container"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_yousei"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_spinner"),
@@ -2307,19 +2924,21 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_shop_item"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_sq"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_swc00"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_CstaSw"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ajnot"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_attack_item"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_gstart"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hinit"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hjump"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hstop"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_lv2prchk"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_magne"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mhint"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mstop"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_spring"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_statue_evt"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_CstaSw"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ajnot"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_attack_item"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_gstart"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hinit"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hjump"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_hstop"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, "Shield"), "d_a_tag_lv2prchk"
+    ),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_magne"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mhint"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mstop"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_spring"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_statue_evt"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_ykgr"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_L7demo_dr"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_L7low_dr"),
@@ -2351,7 +2970,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_coach_fire"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_cow"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_cstatue"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_do"), # Z2SoundObjSimple dtor
+    ActorRel(MatchingFor(ALL_GCN), "d_a_do"),  # Z2SoundObjSimple dtor
     ActorRel(MatchingFor(ALL_GCN), "d_a_door_boss"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_door_bossL5"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_door_mbossL1"),
@@ -2448,8 +3067,8 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_e_zs"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_formation_mng"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_guard_mng"),
-    ActorRel(Equivalent, "d_a_horse"), # weak func order (J3DMtxCalcNoAnm)
-    ActorRel(Equivalent, "d_a_hozelda"), # weak func order (J3DMtxCalcNoAnm)
+    ActorRel(Equivalent, "d_a_horse"),  # weak func order (J3DMtxCalcNoAnm)
+    ActorRel(Equivalent, "d_a_hozelda"),  # weak func order (J3DMtxCalcNoAnm)
     ActorRel(MatchingFor(ALL_GCN), "d_a_izumi_gate"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_kago"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_kytag01"),
@@ -2470,12 +3089,12 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_myna"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_ni"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_aru"),
-    ActorRel(Equivalent, "d_a_npc_ash"), # weak func order (sinShort)
-    ActorRel(Equivalent, "d_a_npc_ashB"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_ash"),  # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_ashB"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_bans"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_blue_ns"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_bou"),
-    ActorRel(Equivalent, "d_a_npc_bouS"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_bouS"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_cdn3"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_chat"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_chin"),
@@ -2505,9 +3124,9 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_hanjo"),
     ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_npc_henna0"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_hoz"),
-    ActorRel(Equivalent, "d_a_npc_impal"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_impal"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_inko"),
-    ActorRel(Equivalent, "d_a_npc_ins"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_ins"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_jagar"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_kasi_hana"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_kasi_kyu"),
@@ -2537,7 +3156,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_pouya"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_prayer"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_raca"),
-    ActorRel(Equivalent, "d_a_npc_rafrel"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_rafrel"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_saru"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_seib"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_seic"),
@@ -2545,7 +3164,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_seira"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_seira2"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_seirei"),
-    ActorRel(Equivalent, "d_a_npc_shad"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_shad"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_shaman"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_shoe"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_shop0"),
@@ -2554,17 +3173,17 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_soldierA"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_soldierB"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_sq"),
-    ActorRel(Equivalent, "d_a_npc_the"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_the"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_theB"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_tk"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_tkc"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_tkj2"),
-    ActorRel(Equivalent, "d_a_npc_tks"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_tks"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_toby"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_tr"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_uri"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_worm"),
-    ActorRel(Equivalent, "d_a_npc_wrestler"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_npc_wrestler"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_yamid"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_yamis"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_npc_yamit"),
@@ -2601,11 +3220,13 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_bombf"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_boumato"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_brg"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_bsGate"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_bsGate"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_bubblePilar"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_catdoor"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_cb"),
-    ActorRel(Equivalent, "d_a_obj_cblock"), # weird weak data issue - needs a ...data pool, but no functions use it
+    ActorRel(
+        Equivalent, "d_a_obj_cblock"
+    ),  # weird weak data issue - needs a ...data pool, but no functions use it
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_cdoor"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_chandelier"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_chest"),
@@ -2703,11 +3324,11 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lp"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv1Candle00"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv1Candle01"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Candle"),    # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Water"),     # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Water2"),    # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3WaterB"),    # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3saka00"),    # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Candle"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Water"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3Water2"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3WaterB"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3saka00"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv3waterEff"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv4CandleDemoTag"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_lv4CandleTag"),
@@ -2834,7 +3455,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_swpush2"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_swspinner"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_swturn"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_syRock"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_syRock"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_szbridge"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_taFence"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_table"),
@@ -2846,7 +3467,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_thashi"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_thdoor"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_timeFire"),
-    ActorRel(Equivalent, "d_a_obj_tks"), # weak func order (sinShort)
+    ActorRel(Equivalent, "d_a_obj_tks"),  # weak func order (sinShort)
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_tmoon"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_toaru_maki"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_toby"),
@@ -2867,7 +3488,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_warp_obrg"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_waterGate"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_waterPillar"),  # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_waterfall"),    # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_obj_waterfall"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_wchain"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_wdStick"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_web0"),
@@ -2889,7 +3510,7 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_zra_freeze"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_obj_zra_rock"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_passer_mng"),
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_arena"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_arena"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_peru"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_ppolamp"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_skip_2D"),
@@ -2897,49 +3518,63 @@ config.libs = [
     ActorRel(MatchingFor(ALL_GCN), "d_a_swBall"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_swLBall"),
     ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_swTime"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv6Gate"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv7Gate"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv8Gate"), # debug .data + weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_TWgate"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lv6CstaSw"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_assistance"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_bottle_item"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_chgrestart"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_csw"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_escape"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_firewall"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_gra"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_guard"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_instruction"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_kago_fall"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_lightball"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lv5soup"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mmsg"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mwait"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_myna2"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_myna_light"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_pachi"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_poFire"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv6Gate"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv7Gate"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_Lv8Gate"),  # debug .data + weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_TWgate"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lv6CstaSw"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_assistance"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_bottle_item"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_chgrestart"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_csw"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_escape"
+    ),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_firewall"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_gra"
+    ),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tag_guard"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_instruction"
+    ),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, "Shield"), "d_a_tag_kago_fall"
+    ),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, "Shield"), "d_a_tag_lightball"
+    ),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_lv5soup"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mmsg"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_mwait"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_myna2"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_myna_light"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_pachi"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_poFire"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_tag_qs"),
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ret_room"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_river_back"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_rmbit_sw"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_schedule"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_setBall"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_setrestart"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_shop_camera"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_shop_item"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_smk_emt"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_spinner"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_sppath"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ss_drink"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_stream"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_theB_hint"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_wara_howl"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_watchge"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_waterfall"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_wljump"), # debug weak func order
-    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_yami"), # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ret_room"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_river_back"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_rmbit_sw"),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_schedule"
+    ),  # debug weak func order
+    ActorRel(
+        MatchingFor(ALL_GCN, ALL_WII, "Shield"), "d_a_tag_setBall"
+    ),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_setrestart"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_shop_camera"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_shop_item"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_smk_emt"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_spinner"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_sppath"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_ss_drink"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_stream"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_theB_hint"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_wara_howl"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_watchge"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_waterfall"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_wljump"),  # debug weak func order
+    ActorRel(MatchingFor(ALL_GCN), "d_a_tag_yami"),  # debug weak func order
     ActorRel(MatchingFor(ALL_GCN), "d_a_talk"),
     ActorRel(MatchingFor(ALL_GCN, "Shield"), "d_a_tboxSw"),
     ActorRel(MatchingFor(ALL_GCN), "d_a_title"),
@@ -2954,12 +3589,47 @@ config.custom_build_rules = [
         "command": "$python tools/converters/matDL_dis.py $in $out --symbol $symbol --scope $scope",
         "description": "CONVERT $symbol",
     },
+    {
+        "name": "build_iso",
+        "command": f"./build_iso.sh --version {config.version} --no-build",
+        "description": "ISO",
+    },
+    {
+        "name": "build_rvz",
+        "command": "if [ ! -f build/tools/nodtool ]; then $python tools/download_tool.py nodtool build/tools/nodtool --tag v2.0.0-alpha.4; fi && build/tools/nodtool convert $in $out",
+        "description": "RVZ",
+    },
 ]
 config.custom_build_steps = {}
 
 # Grab the specific GameID so we can format our strings properly
 version = VERSIONS[version_num]
 out_dir = config.build_dir / version
+
+config.custom_ninja_targets = [
+    {
+        "outputs": out_dir / f"TheLegendOfZeldaTwilightPrincess_{version}.iso",
+        "rule": "build_iso",
+        "inputs": "$link_outputs",
+        "implicit": [Path("build_iso.sh"), Path("tools/rarc_pack.py")],
+    },
+    {
+        "outputs": "iso",
+        "rule": "phony",
+        "inputs": [out_dir / f"TheLegendOfZeldaTwilightPrincess_{version}.iso"],
+    },
+    {
+        "outputs": out_dir / f"TheLegendOfZeldaTwilightPrincess_{version}.rvz",
+        "rule": "build_rvz",
+        "inputs": [out_dir / f"TheLegendOfZeldaTwilightPrincess_{version}.iso"],
+        "implicit": [Path("tools/download_tool.py")],
+    },
+    {
+        "outputs": "rvz",
+        "rule": "phony",
+        "inputs": [out_dir / f"TheLegendOfZeldaTwilightPrincess_{version}.rvz"],
+    },
+]
 
 
 # This generates the build steps needed for preprocessing
@@ -2980,7 +3650,7 @@ def emit_build_rule(asset: Dict[str, Any]) -> None:
                     "outputs": out_dir / "include" / asset["header"],
                     "variables": {
                         "symbol": asset["symbol"],
-                        "scope": custom_data.get("scope", "local")
+                        "scope": custom_data.get("scope", "local"),
                     },
                     "implicit": Path("tools/converters/matDL_dis.py"),
                 }
@@ -3000,6 +3670,7 @@ if config_path.exists():
         for asset in module.get("extract", []):
             emit_build_rule(asset)
 
+
 # Optional callback to adjust link order. This can be used to add, remove, or reorder objects.
 # This is called once per module, with the module ID and the current link order.
 #
@@ -3012,6 +3683,7 @@ def link_order_callback(module_id: int, objects: List[str]) -> List[str]:
     if module_id == 0:  # DOL
         return objects + ["dummy.c"]
     return objects
+
 
 # Uncomment to enable the link order callback.
 # config.link_order_callback = link_order_callback

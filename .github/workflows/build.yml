@@ -1,70 +1,150 @@
-name: Build
+name: Build ISO/RVZ
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      debug_incremental:
+        description: "Run ninja with -d explain"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: build-rvz-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    container: ghcr.io/zeldaret/tp-build:main
-
+  package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
-        version: [GZ2E01, GZ2P01, GZ2J01, RZDE01_00, RZDE01_02, RZDP01, RZDJ01, DZDE01, Shield, ShieldD]
+        version: [GZ2E01, GZ2P01]
 
     steps:
-    # Checkout the repository
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        submodules: recursive
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
 
-    # Set Git config
-    - name: Git config
-      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    # Normalize file mod times
-    - name: Restore timestamps
-      run: |
-        uv run https://raw.githubusercontent.com/MestreLion/git-tools/refs/tags/v2022.12/git-restore-mtime \
-            --merge --commit-time
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ninja-build gh libegl1
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyisotools==2.4.7
 
-    # Copy the original files to the workspace
-    - name: Prepare
-      run: cp -a /orig .
+      - name: Cache source disc image
+        uses: actions/cache@v4
+        with:
+          path: orig/${{ matrix.version }}/${{ matrix.version }}.rvz
+          key: rom-${{ matrix.version }}-v3
 
-    # Restore cached files
-    - name: Cache build
-      uses: actions/cache@v4
-      with:
-        path: |
-          build
-          .ninja_deps
-          .ninja_log
-        key: ${{ runner.os }}-${{ matrix.version }}-${{ github.sha }}
-        restore-keys: ${{ runner.os }}-${{ matrix.version }}-
+      - name: Cache toolchains and tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/tools
+            build/compilers
+            build/binutils
+          key: toolchain-${{ runner.os }}-v2
+          restore-keys: |
+            toolchain-${{ runner.os }}-v1
+            toolchain-${{ runner.os }}-
 
-    # Build the project
-    - name: Build
-      run: |
-        python configure.py --map --version ${{ matrix.version }} \
-            --binutils /binutils --compilers /compilers
-        ninja all_source progress build/${{ matrix.version }}/report.json
+      - name: Cache build outputs
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/${{ matrix.version }}
+            !build/${{ matrix.version }}/*.iso
+            !build/${{ matrix.version }}/*.rvz
+            !build/${{ matrix.version }}/RELS_work
+            !build/${{ matrix.version }}/RELS_work/**
+            build.ninja
+            objdiff.json
+            .ninja_deps
+            .ninja_log
+          key: build-${{ runner.os }}-${{ matrix.version }}-${{ github.sha }}-${{ hashFiles('configure.py', 'build_iso.sh', 'tools/project.py', 'tools/rarc_pack.py', 'tools/normalize_cache_mtime.py', '.github/workflows/build.yml') }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ matrix.version }}-
 
-    # Upload map files
-    - name: Upload map
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.version }}_maps
-        path: build/${{ matrix.version }}/**/*.MAP
+      - name: Ensure source image is available
+        env:
+          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
+        run: |
+          if [ -f "orig/${{ matrix.version }}/game.iso" ] || compgen -G "orig/${{ matrix.version }}/*.rvz" >/dev/null || compgen -G "orig/${{ matrix.version }}/*.iso" >/dev/null || compgen -G "orig/${{ matrix.version }}/*.gcm" >/dev/null; then
+            echo "Source image already present"
+          else
+            if [ -z "${ROMS_TOKEN:-}" ]; then
+              echo "ERROR: ROMS_TOKEN is not configured; cannot access source release."
+              echo "Add repo secret ROMS_TOKEN (PAT with release read access)."
+              exit 1
+            fi
+            export GH_TOKEN="$ROMS_TOKEN"
+            mkdir -p orig/${{ matrix.version }}
+            gh release view roms --repo ${{ github.repository }} >/dev/null
+            gh release download roms \
+              --repo ${{ github.repository }} \
+              --pattern "${{ matrix.version }}.rvz" \
+              --dir orig/${{ matrix.version }}
+          fi
 
-    # Upload progress report
-    - name: Upload report
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.version }}_report
-        path: build/${{ matrix.version }}/report.json
+      - name: Restore source mtimes for incremental ninja
+        run: python3 tools/restore_mtime.py
+
+      - name: Normalize cache mtimes for toolchain inputs
+        run: python3 tools/normalize_cache_mtime.py --version ${{ matrix.version }}
+
+      - name: Build RVZ artifact
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.debug_incremental) }}
+        run: |
+          if [ "${{ steps.cache-build.outputs.cache-hit }}" = "true" ] && [ -f build.ninja ]; then
+            echo "Exact cache hit: skipping compile graph"
+            ./build_iso.sh --version ${{ matrix.version }} --setup --no-build
+            ISO_PATH="build/${{ matrix.version }}/TheLegendOfZeldaTwilightPrincess_${{ matrix.version }}.iso"
+            RVZ_PATH="build/${{ matrix.version }}/TheLegendOfZeldaTwilightPrincess_${{ matrix.version }}.rvz"
+            if [ ! -f "$RVZ_PATH" ] || [ "$ISO_PATH" -nt "$RVZ_PATH" ]; then
+              mkdir -p build/tools
+              if [ ! -f build/tools/nodtool ]; then
+                python3 tools/download_tool.py nodtool build/tools/nodtool --tag v2.0.0-alpha.4
+              fi
+              build/tools/nodtool convert "$ISO_PATH" "$RVZ_PATH"
+            else
+              echo "RVZ already up to date"
+            fi
+          else
+            python3 configure.py --version ${{ matrix.version }} --no-check
+            ./build_iso.sh --version ${{ matrix.version }} --setup
+            ninja rvz
+          fi
+
+      - name: Build RVZ artifact (debug explain)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_incremental }}
+        run: |
+          if [ "${{ steps.cache-build.outputs.cache-hit }}" != "true" ] || [ ! -f build.ninja ]; then
+            python3 configure.py --version ${{ matrix.version }} --no-check
+          else
+            echo "Using cached build.ninja/config artifacts"
+          fi
+          ./build_iso.sh --version ${{ matrix.version }} --setup
+          ninja -d explain rvz
+
+      - name: Upload RVZ artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheLegendOfZeldaTwilightPrincess_${{ matrix.version }}
+          path: build/${{ matrix.version }}/TheLegendOfZeldaTwilightPrincess_${{ matrix.version }}.rvz
+          if-no-files-found: error
+          compression-level: 0
