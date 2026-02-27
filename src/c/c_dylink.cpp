@@ -947,10 +947,12 @@ static int cDyl_InitCallback(void* param_0) {
     JUT_ASSERT(335, !cDyl_Initialized);
 
 #if PLATFORM_PC
-    /* On PC, the profile list is not loaded from RELS.arc.
-     * g_fpcPf_ProfileList_p stays NULL — fpcPf_Get handles this case.
-     * Scene/actor creation requests will be safely ignored. */
+    /* On PC, profiles are statically linked — populate the profile list
+     * from pal_profile_list.cpp and create the initial scene. */
+    extern void pal_profile_list_init(void);
+    pal_profile_list_init();
     cDyl_Initialized = true;
+    fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
     return 1;
 #else
     #if PLATFORM_GCN
