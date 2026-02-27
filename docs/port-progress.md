@@ -59,6 +59,13 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] Fake MEM1 — OSPhysicalToCached/OSCachedToPhysical redirect to valid host memory
 - [x] VIGetRetraceCount — time-based simulation (~60 Hz) for frame counting
 - [x] waitForTick — skip retrace-based vsync wait on PC (prevents deadlock)
+- [x] **u32/s32 fix** — changed from `unsigned long`/`signed long` to `unsigned int`/`signed int` for 64-bit
+- [x] **OS_BASE_CACHED** — redirect at definition site in dolphin/os.h + revolution/os.h (not pal_platform.h)
+- [x] **OSPhysicalToCached** — use uintptr_t instead of u32 to prevent 64-bit address truncation
+- [x] **__OSBusClock** — populate pal_fake_mem1[0xF8] via constructor(101) before static init
+- [x] **Skip Wii arena reduction** — guard 0x1800000 MEM1 subtraction with #if !PLATFORM_PC
+- [x] **Skip font init** — embedded font is big-endian PPC data, crashes on little-endian PC
+- [x] **DVDReadAsyncPrio/DVDSetAutoInvalidation** — fix return types to match SDK headers
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
