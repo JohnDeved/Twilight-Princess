@@ -78,6 +78,19 @@
 #endif
 
 #ifndef __MWERKS__
+#if PLATFORM_PC || PLATFORM_NX_HB
+/* Provide actual implementations for GCC/Clang on PC/NX */
+static inline int __cntlzw(unsigned int x) { return x ? __builtin_clz(x) : 32; }
+static inline int __rlwimi(int a, int b, int c, int d, int e) {
+    (void)c; (void)d; (void)e;
+    return (a & ~b) | b;
+}
+static inline void __dcbf(void* a, int b) { (void)a; (void)b; }
+static inline void __dcbz(void* a, int b) { (void)a; (void)b; }
+static inline void __sync() {}
+static inline int __abs(int x) { return x < 0 ? -x : x; }
+static inline void* __memcpy(void* d, const void* s, int n) { return memcpy(d, s, (size_t)n); }
+#else
 // Silence clangd errors about MWCC PPC intrinsics by declaring them here.
 extern int __cntlzw(unsigned int);
 extern int __rlwimi(int, int, int, int, int);
@@ -86,6 +99,7 @@ extern void __dcbz(void*, int);
 extern void __sync();
 extern int __abs(int);
 void* __memcpy(void*, const void*, int);
+#endif
 #endif
 
 #define FAST_DIV(x, n) (x >> (n / 2))

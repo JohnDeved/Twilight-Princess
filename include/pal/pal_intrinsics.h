@@ -26,12 +26,6 @@
 #endif
 #define __sync()     ((void)0)
 
-/* Cache coherency -- no-ops on x86/ARM (134 calls) */
-#define DCStoreRange(addr, len)       ((void)0)
-#define DCFlushRange(addr, len)       ((void)0)
-#define DCStoreRangeNoSync(addr, len) ((void)0)
-#define ICInvalidateRange(addr, len)  ((void)0)
-
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */
 
 #endif /* PAL_INTRINSICS_H */

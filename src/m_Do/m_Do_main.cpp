@@ -906,7 +906,11 @@ static u8 mainThreadStack[32768];
 
 OSThread mainThread;
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+int main(int argc, const char* argv[]) {
+#else
 void main(int argc, const char* argv[]) {
+#endif
 #if PLATFORM_PC || PLATFORM_NX_HB
     pal_milestone_init();
     pal_milestone("BOOT_START", MILESTONE_BOOT_START, "main entry");
