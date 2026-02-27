@@ -19,6 +19,7 @@ it already solved most platform-abstraction problems.
 
 | File | Purpose |
 |---|---|
+| `docs/port-progress.md` | **Read first** — tracks what's done, what's next, session log |
 | `include/global.h` | Platform macros: `PLATFORM_GCN`, `PLATFORM_WII`, `PLATFORM_SHIELD`, `PLATFORM_PC` |
 | `include/revolution/private/GXRegs.h` | `GX_WRITE_*` macros — redirect for PC port |
 | `src/m_Do/m_Do_main.cpp` | Main entry + game loop (`main01()`) |
@@ -54,17 +55,20 @@ it already solved most platform-abstraction problems.
 
 ## When Working on the Port
 
-1. **Check `docs/multiplatform-port-plan.md`** for the current execution plan and step details.
-2. **Check `docs/ai-agent-testing-plan.md`** for the CI testing infrastructure.
-3. **Check `docs/agent-port-workflow.md`** for the step-by-step implementation guide.
-4. **Use the milestone system**: After changes, verify that the highest boot milestone
+1. **Read `docs/port-progress.md` first** — check current status, step checklist, and session log.
+2. **Check `docs/multiplatform-port-plan.md`** for the current execution plan and step details.
+3. **Check `docs/ai-agent-testing-plan.md`** for the CI testing infrastructure.
+4. **Check `docs/agent-port-workflow.md`** for the step-by-step implementation guide.
+5. **Use the milestone system**: After changes, verify that the highest boot milestone
    hasn't regressed. Milestones are logged as JSON to stdout.
-5. **GX stubs**: When adding a GX function stub, use the stub tracker so CI reports hit counts:
+6. **GX stubs**: When adding a GX function stub, use the stub tracker so CI reports hit counts:
    ```c
    void GXSetFog(...) { gx_stub_hit(GX_STUB_SET_FOG, "GXSetFog"); }
    ```
-6. **Test headless**: Always ensure `TP_HEADLESS=1` mode works (bgfx Noop backend, no GPU).
-7. **Prioritize by frequency**: Implement the most-called GX stubs first (check `milestone-summary.json`).
+7. **Test headless**: Always ensure `TP_HEADLESS=1` mode works (bgfx Noop backend, no GPU).
+8. **Prioritize by frequency**: Implement the most-called GX stubs first (check `milestone-summary.json`).
+9. **Update `docs/port-progress.md` before ending your session** — mark completed items,
+   update the current status, and add a session log entry so the next agent knows where to continue.
 
 ## Version Numbers
 
