@@ -13,6 +13,7 @@
 #include <bgfx/platform.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 
 extern "C" {
@@ -139,6 +140,12 @@ void pal_gx_end_frame(void) {
     static uint32_t s_frame_count = 0;
     s_frame_count++;
 
+    /* In windowed mode, request a screenshot after the logo has rendered */
+    if (!pal_window_is_headless() && s_frame_count == 30) {
+        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "/tmp/logo_render.tga");
+        fprintf(stderr, "{\"gx_bgfx\":\"screenshot_requested\",\"frame\":%u}\n", s_frame_count);
+    }
+
     /* Log draw statistics every 60 frames */
     if (s_frame_count % 60 == 0) {
         fprintf(stderr, "{\"gx_bgfx\":\"frame_stats\",\"frame\":%u,\"draw_calls\":%u,\"verts\":%u}\n",
@@ -146,6 +153,11 @@ void pal_gx_end_frame(void) {
     }
 
     bgfx::frame();
+
+    /* In windowed mode, add a small delay to let the frame display */
+    if (!pal_window_is_headless()) {
+        usleep(16000); /* ~60 fps */
+    }
 }
 
 int pal_gx_bgfx_is_active(void) {

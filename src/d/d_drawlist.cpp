@@ -865,10 +865,6 @@ dDlst_2D_c::dDlst_2D_c(ResTIMG* i_timg, s16 i_posX, s16 i_posY, s16 i_sizeX, s16
 }
 
 void dDlst_2D_c::draw() {
-#if PLATFORM_PC
-    OSReport("[DRAWLIST] dDlst_2D_c::draw pos=(%d,%d) size=(%d,%d) alpha=%d\n",
-             mPosX, mPosY, mSizeX, mSizeY, mAlpha);
-#endif
     mpPicture.setAlpha(mAlpha);
     mpPicture.draw(mPosX, mPosY, mSizeX, mSizeY, false, false, false);
 }
@@ -1821,9 +1817,6 @@ void dDlst_list_c::drawXluListItem3d() {
 
 int dDlst_list_c::set(dDlst_base_c**& p_start, dDlst_base_c**& p_end, dDlst_base_c* p_newDlst) {
     if (p_start >= p_end) {
-#if PLATFORM_PC
-        OSReport("[DRAWLIST] set: FULL (start=%p end=%p)\n", p_start, p_end);
-#endif
         return 0;
     }
     *p_start = p_newDlst;
@@ -1832,12 +1825,6 @@ int dDlst_list_c::set(dDlst_base_c**& p_start, dDlst_base_c**& p_end, dDlst_base
 }
 
 void dDlst_list_c::draw(dDlst_base_c** p_start, dDlst_base_c** p_end) {
-#if PLATFORM_PC
-    int count = (int)(p_end - p_start);
-    if (count > 0) {
-        OSReport("[DRAWLIST] draw: %d items\n", count);
-    }
-#endif
     for (; p_start < p_end; p_start++) {
         dDlst_base_c* dlst = *p_start;
         dlst->draw();
