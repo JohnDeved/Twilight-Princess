@@ -47,7 +47,7 @@ inline float __frsqrtes(__REGISTER double f) {
     // clang-format on
     return out;
 #else
-    return (float)(1.0 / sqrt(f));
+    return (float)(1.0f / sqrtf((float)f));
 #endif
 }
 

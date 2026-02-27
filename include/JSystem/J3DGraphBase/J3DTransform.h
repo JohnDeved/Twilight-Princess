@@ -122,6 +122,7 @@ inline void J3DPSMtx33CopyFrom34(__REGISTER MtxP src, __REGISTER Mtx3P dst) {
         stfs z3, 0x20(dst)
     }
 #else
+    /* Extract 3x3 rotation submatrix from 3x4 transform matrix (skip translation column) */
     f32* s = (f32*)src;
     f32* d = (f32*)dst;
     d[0] = s[0]; d[1] = s[1]; d[2] = s[2];
