@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <time.h>
 
+#include "pal/pal_milestone.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
 
@@ -552,6 +553,9 @@ s32 DVDReadPrio(DVDFileInfo* fileInfo, void* addr, s32 length, s32 offset, s32 p
     FILE* fp = s_dvd_files[handle];
     if (fseek(fp, offset, SEEK_SET) != 0) return -1;
     size_t bytesRead = fread(addr, 1, (size_t)length, fp);
+    if (bytesRead > 0 && !pal_milestone_was_reached(MILESTONE_DVD_READ_OK)) {
+        pal_milestone("DVD_READ_OK", MILESTONE_DVD_READ_OK, s_dvd_open_paths[handle]);
+    }
     return (s32)bytesRead;
 }
 

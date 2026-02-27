@@ -7,8 +7,8 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `12` (FRAMES_1800 — binary runs 1800 frames without crashing) |
-| **Current Step** | Step 3 mostly complete — game loop runs, needs SDL3+bgfx integration |
+| **Highest CI Milestone** | `5` (FIRST_FRAME — game loop runs, but no scenes loaded) |
+| **Current Step** | Step 3 mostly complete — game loop runs, needs scene loading + GX shim |
 | **Last Updated** | 2026-02-27 |
 | **Blocking Issue** | Game assets needed for scene loading; GX shim needed for rendering |
 
@@ -74,7 +74,10 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] **Render bypass** — skip mDoGph_Painter on PC (crashes without GX shim + game assets)
 - [x] **-fno-exceptions** — disable C++ exceptions (game uses MWCC exception model, not DWARF)
 - [x] **Font resource null guard** — mDoExt_initFontCommon returns safely when archives missing
-- [x] **Verify**: binary reaches all 12 milestones including FRAMES_1800 (1800 frames, no crash)
+- [x] **Verify**: binary reaches milestones 0-5 (BOOT_START through FIRST_FRAME, game loop runs)
+- [x] **Milestone gating**: FRAMES_60/300/1800 require LOGO_SCENE to fire first (prevents trivial completion)
+- [x] **Scene milestones**: fpcBs_Create tracks LOGO_SCENE/TITLE_SCENE/PLAY_SCENE creation
+- [x] **DVD_READ_OK milestone**: tracks first successful file I/O from host filesystem
 - [ ] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
 - [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
 - [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
@@ -129,19 +132,26 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 | # | Milestone | Means | If stuck here, work on |
 |---|---|---|---|
 | -1 | (no output) | Build errors | Step 1: CMake + compile fixes |
-| 0 | BOOT_START | Binary launches | Step 3: `mDoMch_Create` / heap init |
+| 0 | BOOT_START | Binary launched | Step 3: `mDoMch_Create` / heap init |
 | 1 | HEAP_INIT | Heaps working | Step 3: `mDoGph_Create` / GFX init |
 | 2 | GFX_INIT | bgfx ready | Step 3: input init / PAL bootstrap |
 | 3 | PAD_INIT | Input ready | Step 3: framework init |
 | 4 | FRAMEWORK_INIT | Process manager ready | Step 4: DVD/archive loading |
-| 5 | FIRST_FRAME | Game loop running | Step 5: GX shim (scene can't render) |
-| 6 | LOGO_SCENE | Logo scene loaded | Step 5: scene transition / assets |
-| 7 | TITLE_SCENE | Title screen reached | Step 5: stage loading |
-| 8 | PLAY_SCENE | Gameplay scene loaded | Step 5: GX stubs by frequency |
+| 5 | FIRST_FRAME | Game loop running | Step 4/5: DVD loading + profiles |
+| 6 | LOGO_SCENE | Logo scene **created** | Step 5: GX shim for rendering |
+| 7 | TITLE_SCENE | Title screen **created** | Step 5: scene transition + assets |
+| 8 | PLAY_SCENE | Gameplay scene **created** | Step 5: GX stubs by frequency |
 | 9 | STAGE_LOADED | Specific stage loaded | Step 5/7: rendering + input |
-| 10 | FRAMES_60 | 1 second stable | Step 5: top stub hits |
-| 11 | FRAMES_300 | 5 seconds stable | Step 6 Phase B and Step 8: polish |
-| 12 | FRAMES_1800 | 30 seconds stable | Step 8: first playable achieved 🎉 |
+| 10 | FRAMES_60 | 1s stable **after scene load** | Step 5: top stub hits |
+| 11 | FRAMES_300 | 5s stable **after scene load** | Step 6 Phase B and Step 8: polish |
+| 12 | FRAMES_1800 | 30s stable **after scene load** | Step 8: first playable achieved 🎉 |
+| 13 | DVD_READ_OK | First successful file read | Step 4: DVD path mapping / assets |
+| 14 | SCENE_CREATED | Any process profile created | Step 3/4: profile list + dynamic link |
+| 15 | RENDER_FRAME | First frame with GX draws | Step 5: GX shim working |
+
+**Important**: Milestones 10-12 (FRAMES_60/300/1800) now **require** LOGO_SCENE (6) to
+have been reached first. Without actual scene loading, the game loop spins with no real
+work — frame counting alone is not meaningful progress.
 
 ## Session Log
 
@@ -150,6 +160,8 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-27 | **Fixed milestone system**: moved state to .cpp (was static-per-TU), scene tracking before NULL return, frame checks use >= with gate, added pal_milestone.cpp | 5 (honest) | Get profiles loading, game assets, GX shim |
+| 2026-02-27 | **Extended milestones**: FRAMES_60/300/1800 gated on LOGO_SCENE; scene creation tracking in fpcBs_Create; DVD_READ_OK, SCENE_CREATED, RENDER_FRAME milestones added | 12 → 5 (honest) | Get profiles loading (REL/profile list), game assets, GX shim |
 | 2026-02-27 | **ALL 12 MILESTONES!** Render bypass, profile system NULL safety, MWERKS inline fallbacks, GXWGFifo redirect, -fno-exceptions, 64MB arena + heap headroom, C_QUATRotAxisRad, font null guard | 0 → 12 (FRAMES_1800) | GX shim (Step 5), SDL3 windowing, game asset loading |
 | 2026-02-27 | Step 3: Made OS stubs functional — 64-bit arena, threads, SCCheckStatus, DVDDiskID, ARAM emu, MEM1 fake, waitForTick skip, DVD sync exec | 0 → 0 (runtime ready) | Test headless boot, add pal_fs for assets |
 | 2026-02-27 | Updated port-progress.md to reflect completed Steps 1+2, SDK stubs, full link | -1 → 0 | Step 3: PAL bootstrap (SDL3+bgfx) |
@@ -176,6 +188,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_game_stubs.cpp` — Game-specific stubs (debug views, GF wrappers)
 - `src/pal/pal_remaining_stubs.cpp` — JStudio, JSU streams, JOR, J3D, misc SDK
 - `src/pal/pal_crash.cpp` — Crash signal handler
+- `src/pal/pal_milestone.cpp` — Boot milestone state (shared across translation units)
 - `src/pal/gx/gx_stub_tracker.cpp` — GX stub tracker implementation
 - `src/pal/gx/gx_fifo.cpp` — GX FIFO RAM buffer infrastructure
 - `.github/workflows/port-test.yml` — CI workflow for port testing

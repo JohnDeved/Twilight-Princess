@@ -26,37 +26,23 @@ enum {
     MILESTONE_FRAMES_60     = 10,
     MILESTONE_FRAMES_300    = 11,
     MILESTONE_FRAMES_1800   = 12,
+    MILESTONE_DVD_READ_OK   = 13,
+    MILESTONE_SCENE_CREATED = 14,
+    MILESTONE_RENDER_FRAME  = 15,
+    MILESTONE_COUNT         = 16,
     MILESTONE_TEST_COMPLETE = 99,
     MILESTONE_CRASH         = -1
 };
 
-static unsigned long s_boot_time_ms;
+/* Defined in pal_milestone.cpp — shared across all translation units */
+extern int g_milestones_reached[MILESTONE_COUNT];
+extern unsigned long g_boot_time_ms;
 
-static inline void pal_milestone_init(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    s_boot_time_ms = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-}
-
-static inline void pal_milestone(const char* name, int id, const char* detail) {
-    struct timespec ts;
-    unsigned long now;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    now = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-    fprintf(stdout, "{\"milestone\":\"%s\",\"id\":%d,\"time_ms\":%lu,\"detail\":\"%s\"}\n",
-            name, id, now - s_boot_time_ms, detail ? detail : "");
-    fflush(stdout);
-}
-
-static inline void pal_milestone_frame(const char* name, int id, unsigned frame) {
-    struct timespec ts;
-    unsigned long now;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    now = (unsigned long)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-    fprintf(stdout, "{\"milestone\":\"%s\",\"id\":%d,\"time_ms\":%lu,\"frame\":%u}\n",
-            name, id, now - s_boot_time_ms, frame);
-    fflush(stdout);
-}
+void pal_milestone_init(void);
+int  pal_milestone_was_reached(int id);
+void pal_milestone(const char* name, int id, const char* detail);
+void pal_milestone_frame(const char* name, int id, unsigned frame);
+void pal_milestone_check_scene(int profname);
 
 #ifdef __cplusplus
 }

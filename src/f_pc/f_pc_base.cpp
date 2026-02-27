@@ -14,6 +14,9 @@
 #include "f_pc/f_pc_profile.h"
 #include "f_pc/f_pc_debug_sv.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
+#if PLATFORM_PC || PLATFORM_NX_HB
+#include "pal/pal_milestone.h"
+#endif
 
 BOOL fpcBs_Is_JustOfType(int i_typeA, int i_typeB) {
     if (i_typeB == i_typeA) {
@@ -119,6 +122,7 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
 
     pprofile = (process_profile_definition*)fpcPf_Get(i_profname);
 #if PLATFORM_PC
+    pal_milestone_check_scene(i_profname);
     if (pprofile == NULL) return NULL;
 #endif
     size = pprofile->process_size + pprofile->unk_size;
