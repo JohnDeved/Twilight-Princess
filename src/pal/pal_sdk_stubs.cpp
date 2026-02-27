@@ -97,18 +97,18 @@ void  OSSetArenaHi(void* newHi) { s_arena_hi = (u8*)newHi; }
 void  OSSetArenaLo(void* newLo) { s_arena_lo = (u8*)newLo; }
 
 void* OSAllocFromArenaLo(u32 size, u32 align) {
-    u32 p = (u32)(uintptr_t)s_arena_lo;
-    if (align > 0) p = (p + align - 1) & ~(align - 1);
-    void* ret = (void*)(uintptr_t)p;
-    s_arena_lo = (u8*)(uintptr_t)(p + size);
+    uintptr_t p = (uintptr_t)s_arena_lo;
+    if (align > 0) p = (p + align - 1) & ~((uintptr_t)align - 1);
+    void* ret = (void*)p;
+    s_arena_lo = (u8*)(p + size);
     return ret;
 }
 
 void* OSAllocFromArenaHi(u32 size, u32 align) {
-    u32 p = (u32)(uintptr_t)s_arena_hi;
+    uintptr_t p = (uintptr_t)s_arena_hi;
     p -= size;
-    if (align > 0) p = p & ~(align - 1);
-    s_arena_hi = (u8*)(uintptr_t)p;
+    if (align > 0) p = p & ~((uintptr_t)align - 1);
+    s_arena_hi = (u8*)p;
     return s_arena_hi;
 }
 
@@ -125,23 +125,60 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
 /* OS Thread                                                        */
 /* ================================================================ */
 
+/* Simple single-threaded thread emulation for PC port.
+ * We store the thread function and call it when OSResumeThread is called.
+ * OSSuspendThread on the "original" thread just returns (single-threaded). */
+
 static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
 static OSThread* s_current_thread = (OSThread*)s_main_thread_storage;
+
+/* Store pending thread function for OSResumeThread to call */
+typedef struct {
+    void* (*func)(void*);
+    void* param;
+    OSThread* thread;
+} PendingThread;
+
+static PendingThread s_pending_thread = { NULL, NULL, NULL };
 
 OSThread* OSGetCurrentThread(void) { return s_current_thread; }
 
 int OSCreateThread(OSThread* thread, void* (*func)(void*), void* param,
                    void* stack, u32 stackSize, OSPriority priority, u16 attr) {
-    (void)thread; (void)func; (void)param; (void)stack; (void)stackSize;
-    (void)priority; (void)attr;
+    (void)stack; (void)stackSize; (void)priority; (void)attr;
+    /* Store the function to be called by OSResumeThread */
+    s_pending_thread.func = func;
+    s_pending_thread.param = param;
+    s_pending_thread.thread = thread;
     return 1;
 }
 
 void OSExitThread(void* val) { (void)val; }
 int OSJoinThread(OSThread* thread, void* val) { (void)thread; (void)val; return 0; }
 void OSDetachThread(OSThread* thread) { (void)thread; }
-s32 OSSuspendThread(OSThread* thread) { (void)thread; return 0; }
-s32 OSResumeThread(OSThread* thread) { (void)thread; return 0; }
+
+s32 OSSuspendThread(OSThread* thread) {
+    /* If suspending the original thread after launching main01,
+     * just return — we're already running main01 in the same thread */
+    (void)thread;
+    return 0;
+}
+
+s32 OSResumeThread(OSThread* thread) {
+    /* Call the pending thread function directly (single-threaded mode).
+     * The game's main() creates main01 as a thread then suspends itself.
+     * We just call main01() directly here — it never returns. */
+    if (s_pending_thread.func && s_pending_thread.thread == thread) {
+        void* (*func)(void*) = s_pending_thread.func;
+        void* param = s_pending_thread.param;
+        s_pending_thread.func = NULL;
+        s_pending_thread.thread = NULL;
+        s_current_thread = thread;
+        func(param);
+        /* main01 has an infinite loop, so we only reach here if it exits */
+    }
+    return 0;
+}
 int OSSetThreadPriority(OSThread* thread, OSPriority priority) { (void)thread; (void)priority; return 1; }
 s32 OSGetThreadPriority(OSThread* thread) { (void)thread; return 16; }
 void OSCancelThread(OSThread* thread) { (void)thread; }
@@ -313,10 +350,23 @@ void OSDumpStopwatch(OSStopwatch* sw) { (void)sw; }
 /* ================================================================ */
 
 static u8 s_dvd_disk_id_storage[32];
+static int s_dvd_disk_id_init = 0;
 
 void DVDInit(void) {}
 
 DVDDiskID* DVDGetCurrentDiskID(void) {
+    if (!s_dvd_disk_id_init) {
+        s_dvd_disk_id_init = 1;
+        /* Set up a plausible disk ID for Twilight Princess USA */
+        s_dvd_disk_id_storage[0] = 'R'; /* gameName */
+        s_dvd_disk_id_storage[1] = 'Z';
+        s_dvd_disk_id_storage[2] = 'D';
+        s_dvd_disk_id_storage[3] = 'E';
+        s_dvd_disk_id_storage[4] = '0'; /* company */
+        s_dvd_disk_id_storage[5] = '1';
+        s_dvd_disk_id_storage[6] = 0;   /* diskNumber */
+        s_dvd_disk_id_storage[7] = 0;   /* gameVersion: 0 = retail */
+    }
     return (DVDDiskID*)s_dvd_disk_id_storage;
 }
 
@@ -552,7 +602,7 @@ s32 NANDWriteAsync(NANDFileInfo* info, void* buf, u32 length,
 /* ================================================================ */
 
 void SCInit(void) {}
-u32 SCCheckStatus(void) { return 1; /* SC_STATUS_READY */ }
+u32 SCCheckStatus(void) { return 0; /* SC_STATUS_OK */ }
 u8 SCGetLanguage(void) { return 0; /* SC_LANG_JAPANESE */ }
 u8 SCGetAspectRatio(void) { return 0; }
 u8 SCGetSoundMode(void) { return 0; }
