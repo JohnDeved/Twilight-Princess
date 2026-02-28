@@ -8,6 +8,9 @@
 #include "JSystem/J3DGraphAnimator/J3DAnimation.h"
 #include "JSystem/JSupport/JSupport.h"
 #include <dolphin/os.h>
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
 
 J3DAnmBase* J3DAnmLoaderDataBase::load(const void* i_data, J3DAnmLoaderDataBaseFlag flag) {
     const JUTDataFileHeader* header = (const JUTDataFileHeader*)i_data;
@@ -15,6 +18,9 @@ J3DAnmBase* J3DAnmLoaderDataBase::load(const void* i_data, J3DAnmLoaderDataBaseF
     if (!i_data) {
         return NULL;
     }
+#if PLATFORM_PC
+    pal_j3d_swap_anim(const_cast<void*>(i_data), 0x800000);
+#endif
     if (header->mMagic == 'J3D1') {
         switch (header->mType) {
         case 'bck1': {

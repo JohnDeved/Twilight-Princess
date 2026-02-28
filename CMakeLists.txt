@@ -121,6 +121,7 @@ message(STATUS "PC port: ${NUM_GAME_SOURCES} game source files from splits.txt")
 set(PAL_SOURCES
     src/pal/pal_crash.cpp
     src/pal/pal_endian.cpp
+    src/pal/pal_j3d_swap.cpp
     src/pal/pal_milestone.cpp
     src/pal/pal_os_stubs.cpp
     src/pal/pal_gx_stubs.cpp
