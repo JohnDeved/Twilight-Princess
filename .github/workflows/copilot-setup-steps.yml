@@ -19,6 +19,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev
+
       - name: Cache ccache
         uses: actions/cache@v4
         with:
@@ -34,6 +40,13 @@ jobs:
           key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
             deps-${{ runner.os }}-
+
+      - name: Configure ccache (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ccache --set-config=max_size=500M
+          ccache --set-config=compression=true
+          ccache -z
 
       - name: Verify environment
         run: |
