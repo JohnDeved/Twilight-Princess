@@ -159,7 +159,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const path = require('path');
 
             // Load milestone summary
             let summary = {};
@@ -185,84 +184,97 @@ jobs:
               // no verification data
             }
 
-            // Upload PNG screenshots to the branch for embedding in the comment
+            // Upload frame PNGs to a release for embedding in the comment
             const pngDir = 'verify_png';
+            const path = require('path');
             const imageUrls = {};
-            const repoUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}`;
+            let capturedPngs = [];
+
             if (fs.existsSync(pngDir)) {
-              const pngs = fs.readdirSync(pngDir).filter(f => f.endsWith('.png')).sort();
-              for (const png of pngs) {
-                const filePath = path.join(pngDir, png);
-                const content = fs.readFileSync(filePath);
-                const base64 = content.toString('base64');
-                const repoPath = `.ci-screenshots/${png}`;
+              capturedPngs = fs.readdirSync(pngDir).filter(f => f.endsWith('.png')).sort();
+            }
+            const hasVideo = fs.existsSync('verify_output/render_progress.mp4');
 
+            if (capturedPngs.length > 0 || hasVideo) {
+              // Find or create a prerelease for CI render assets
+              const tag = 'ci-renders';
+              let release;
+              try {
+                const existing = await github.rest.repos.getReleaseByTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag: tag,
+                });
+                release = existing.data;
+              } catch (e) {
                 try {
-                  // Check if file already exists
-                  let sha;
-                  try {
-                    const existing = await github.rest.repos.getContent({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      path: repoPath,
-                      ref: context.payload.pull_request.head.ref,
-                    });
-                    sha = existing.data.sha;
-                  } catch (e) {
-                    // File doesn't exist yet
-                  }
-
-                  await github.rest.repos.createOrUpdateFileContents({
+                  const created = await github.rest.repos.createRelease({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    path: repoPath,
-                    message: `ci: update render screenshot ${png}`,
-                    content: base64,
-                    branch: context.payload.pull_request.head.ref,
-                    ...(sha ? { sha } : {}),
+                    tag_name: tag,
+                    name: 'CI Render Screenshots',
+                    body: 'Automatically updated by port-test CI. Contains render frame captures.',
+                    prerelease: true,
                   });
-                  imageUrls[png] = `${repoUrl}/${context.payload.pull_request.head.ref}/${repoPath}`;
-                } catch (e) {
-                  console.log(`Failed to upload ${png}: ${e.message}`);
+                  release = created.data;
+                } catch (e2) {
+                  console.log(`Could not create release: ${e2.message}`);
                 }
               }
-            }
 
-            // Upload video if it exists
-            let videoUrl = null;
-            const videoPath = 'verify_output/render_progress.mp4';
-            if (fs.existsSync(videoPath)) {
-              const content = fs.readFileSync(videoPath);
-              if (content.length < 25 * 1024 * 1024) { // GitHub file size limit ~25MB
-                const base64 = content.toString('base64');
-                const repoPath = '.ci-screenshots/render_progress.mp4';
-                try {
-                  let sha;
+              if (release) {
+                // Delete old assets
+                for (const asset of release.assets || []) {
                   try {
-                    const existing = await github.rest.repos.getContent({
+                    await github.rest.repos.deleteReleaseAsset({
                       owner: context.repo.owner,
                       repo: context.repo.repo,
-                      path: repoPath,
-                      ref: context.payload.pull_request.head.ref,
+                      asset_id: asset.id,
                     });
-                    sha = existing.data.sha;
                   } catch (e) {}
+                }
 
-                  await github.rest.repos.createOrUpdateFileContents({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    path: repoPath,
-                    message: `ci: update render progress video`,
-                    content: base64,
-                    branch: context.payload.pull_request.head.ref,
-                    ...(sha ? { sha } : {}),
-                  });
-                  videoUrl = `${repoUrl}/${context.payload.pull_request.head.ref}/${repoPath}`;
-                } catch (e) {
-                  console.log(`Failed to upload video: ${e.message}`);
+                // Upload PNGs
+                for (const png of capturedPngs) {
+                  const filePath = path.join(pngDir, png);
+                  const data = fs.readFileSync(filePath);
+                  try {
+                    const uploaded = await github.rest.repos.uploadReleaseAsset({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      release_id: release.id,
+                      name: png,
+                      data: data,
+                      headers: { 'content-type': 'image/png' },
+                    });
+                    imageUrls[png] = uploaded.data.browser_download_url;
+                  } catch (e) {
+                    console.log(`Failed to upload ${png}: ${e.message}`);
+                  }
+                }
+
+                // Upload video
+                if (hasVideo) {
+                  const videoData = fs.readFileSync('verify_output/render_progress.mp4');
+                  try {
+                    const uploaded = await github.rest.repos.uploadReleaseAsset({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      release_id: release.id,
+                      name: 'render_progress.mp4',
+                      data: videoData,
+                      headers: { 'content-type': 'video/mp4' },
+                    });
+                    imageUrls['video'] = uploaded.data.browser_download_url;
+                  } catch (e) {
+                    console.log(`Failed to upload video: ${e.message}`);
+                  }
                 }
               }
             }
+
+            // Artifacts URL for this run
+            const artifactsUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 
             // Status emoji
             const statusEmoji = {
@@ -359,38 +371,72 @@ jobs:
               }
             }
 
-            // Render screenshots
-            const sortedPngs = Object.keys(imageUrls).sort();
+            // Render screenshots — embed uploaded images
+            const renderCheck = verify.checks?.rendering;
+            const fbAnalyses = renderCheck?.details?.captured_frames;
+            const frameHashes = renderCheck?.details?.frame_hashes;
+            const sortedPngs = Object.keys(imageUrls).filter(k => k !== 'video').sort();
+
             if (sortedPngs.length > 0) {
               body += `\n### 📸 Render Screenshots\n`;
-              // Show key frames inline (first, middle, last)
+              // Show key frames inline (first, middle, last — up to 6)
               const keyFrames = sortedPngs.length <= 6
                 ? sortedPngs
-                : [sortedPngs[0], ...sortedPngs.filter((_,i) => i > 0 && i < sortedPngs.length - 1).filter((_,i,a) => i % Math.ceil(a.length / 4) === 0), sortedPngs[sortedPngs.length - 1]];
+                : [sortedPngs[0], sortedPngs[Math.floor(sortedPngs.length / 3)], sortedPngs[Math.floor(2 * sortedPngs.length / 3)], sortedPngs[sortedPngs.length - 1]];
               for (const png of keyFrames) {
                 const frameNum = png.replace('frame_', '').replace('.png', '');
                 body += `\n**Frame ${frameNum}**\n\n`;
                 body += `![Frame ${frameNum}](${imageUrls[png]})\n`;
               }
-              // Collapsible section with all frames
+              // Collapsible section with all frames if many
               if (sortedPngs.length > 6) {
                 body += `\n<details><summary>All ${sortedPngs.length} captured frames</summary>\n\n`;
                 for (const png of sortedPngs) {
-                  const frameNum = png.replace('frame_', '').replace('.png', '');
-                  body += `**Frame ${frameNum}** · `;
-                  body += `![Frame ${frameNum}](${imageUrls[png]})\n\n`;
+                  if (!keyFrames.includes(png)) {
+                    const frameNum = png.replace('frame_', '').replace('.png', '');
+                    body += `**Frame ${frameNum}** · ![Frame ${frameNum}](${imageUrls[png]})\n\n`;
+                  }
                 }
                 body += `</details>\n`;
               }
+            } else if (fbAnalyses && fbAnalyses.length > 0) {
+              // Fallback: show text-only frame analysis if no images uploaded
+              body += `\n### 📸 Captured Frames\n`;
+              body += `| Frame | Non-Black | Avg Color | Hash |\n|---|---|---|---|\n`;
+              for (const fa of fbAnalyses) {
+                const frameNum = fa.file?.replace('frame_', '').replace('.bmp', '') || '?';
+                const nb = fa.pct_nonblack ?? 0;
+                const ac = fa.avg_color || [0,0,0];
+                const hash = frameHashes?.[frameNum] || '—';
+                body += `| ${frameNum} | ${nb}% | \`${ac.join(',')}\` | \`${hash}\` |\n`;
+              }
             }
 
-            // Render progress video
-            if (videoUrl) {
+            // Video link
+            if (imageUrls['video']) {
               body += `\n### 🎬 Render Progress Video\n`;
-              body += `[▶️ Download render_progress.mp4](${videoUrl})\n\n`;
-              body += `> Video shows all captured frames in sequence at 4fps.\n`;
-              body += `> Download the MP4 from CI artifacts or click above.\n`;
+              body += `[▶️ Download render_progress.mp4](${imageUrls['video']})\n`;
             }
+
+            // Golden image comparisons
+            const goldenComps = renderCheck?.details?.golden_comparisons;
+            if (goldenComps && goldenComps.length > 0) {
+              const hasAnyGolden = goldenComps.some(c => c.has_golden);
+              if (hasAnyGolden) {
+                body += `\n### 🖼️ Golden Image Comparison\n`;
+                body += `| Frame | RMSE | % Different | Status |\n|---|---|---|---|\n`;
+                for (const cmp of goldenComps) {
+                  if (cmp.has_golden) {
+                    const status = cmp.identical ? '✅ Identical' : (cmp.rmse <= 5.0 ? '✅ Within tolerance' : '❌ REGRESSION');
+                    body += `| ${cmp.frame} | ${cmp.rmse ?? 0} | ${cmp.pct_different ?? 0}% | ${status} |\n`;
+                  }
+                }
+              }
+            }
+
+            // Artifacts download link
+            body += `\n### 📦 Artifacts\n`;
+            body += `[Download full test results](${artifactsUrl})\n`;
 
             body += `\n---\n`;
             body += `<sub>🤖 Generated by port-test CI · `;

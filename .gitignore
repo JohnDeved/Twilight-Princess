@@ -47,7 +47,6 @@ crash.log
 milestones.log
 
 # CI-generated outputs
-.ci-screenshots/
 verify_output/
 verify_png/
 verify-report.json
