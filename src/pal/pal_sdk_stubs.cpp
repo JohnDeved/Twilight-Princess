@@ -250,9 +250,8 @@ void OSDetachThread(OSThread* thread) {
 s32 OSSuspendThread(OSThread* thread) {
     if (!thread) return -1;
     thread->suspend++;
-    if (thread->state == OS_THREAD_STATE_RUNNING || thread->state == OS_THREAD_STATE_READY) {
-        thread->state = OS_THREAD_STATE_READY; /* suspended but not waiting */
-    }
+    /* State is preserved — a suspended thread stays in its current state
+     * (READY, RUNNING, or WAITING). Only the suspend count changes. */
     return 0;
 }
 

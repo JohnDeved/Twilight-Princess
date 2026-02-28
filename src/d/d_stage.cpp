@@ -70,6 +70,42 @@ static void pal_swap_camera_entries(stage_camera2_data_class* entries, int count
         e->field_0x16 = pal_swap16(e->field_0x16);
     }
 }
+
+static void pal_swap_arrow_entries(stage_arrow_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_arrow_data_class* e = &entries[i];
+        u32* pos = (u32*)&e->posX;
+        pos[0] = pal_swap32(pos[0]); /* posX */
+        pos[1] = pal_swap32(pos[1]); /* posY */
+        pos[2] = pal_swap32(pos[2]); /* posZ */
+        u16* ang = (u16*)&e->angleX;
+        ang[0] = pal_swap16(ang[0]); /* angleX */
+        ang[1] = pal_swap16(ang[1]); /* angleY */
+        ang[2] = pal_swap16(ang[2]); /* angleZ */
+        e->field_0x12 = (s16)pal_swap16((u16)e->field_0x12);
+    }
+}
+
+/* Track decoded stage data allocations for cleanup in dStage_Delete.
+ * Each call to dStage_dt_c_decode on PC allocates native-layout buffers
+ * that must persist for the stage lifetime. */
+#define STAGE_ALLOC_MAX 128
+static void* s_stage_allocs[STAGE_ALLOC_MAX];
+static int s_stage_alloc_count = 0;
+
+static void dStage_pc_track_alloc(void* ptr) {
+    if (s_stage_alloc_count < STAGE_ALLOC_MAX) {
+        s_stage_allocs[s_stage_alloc_count++] = ptr;
+    }
+}
+
+void dStage_pc_free_allocs(void) {
+    for (int i = 0; i < s_stage_alloc_count; i++) {
+        free(s_stage_allocs[i]);
+        s_stage_allocs[i] = NULL;
+    }
+    s_stage_alloc_count = 0;
+}
 #endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
@@ -2269,6 +2305,9 @@ static void dStage_dt_c_decode(void* i_data, dStage_dt_c* i_stage, FuncTable* fu
                             memset(rbuf + 8, 0, 4);                   /* padding */
                             memcpy(rbuf + 12, &entries, sizeof(void*)); /* entries ptr */
 
+                            /* Track allocation for cleanup in dStage_Delete */
+                            dStage_pc_track_alloc(rbuf);
+
                             /* Endian-swap chunk entry data based on tag */
                             u32 tag = node1->m_tag;
                             if (tag == *(u32*)"ACTR" || tag == *(u32*)"PLYR" ||
@@ -2281,12 +2320,11 @@ static void dStage_dt_c_decode(void* i_data, dStage_dt_c* i_stage, FuncTable* fu
                                 pal_swap_scls_entries((stage_scls_info_class*)entries, entryNum);
                             } else if (tag == *(u32*)"CAMR" || tag == *(u32*)"RCAM") {
                                 pal_swap_camera_entries((stage_camera2_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"AROB" || tag == *(u32*)"RARO") {
+                                pal_swap_arrow_entries((stage_arrow_data_class*)entries, entryNum);
                             }
 
                             funcTbl[i].function(i_stage, rbuf, entryNum, i_data);
-                            /* rbuf is intentionally not freed — the handler stores a pointer
-                             * into it via setXxx() and it must persist for the stage lifetime.
-                             * It will be reclaimed when the process exits or stage is unloaded. */
                         }
 #else
                         funcTbl[i].function(i_stage, node1, node1->m_entryNum, i_data);
@@ -2906,6 +2944,11 @@ void dStage_Create() {
 
 void dStage_Delete() {
     OS_REPORT("dStage_Delete\n");
+
+#if PLATFORM_PC
+    /* Free native container struct allocations from dStage_dt_c_decode */
+    dStage_pc_free_allocs();
+#endif
 
     char* demoArcName = dStage_roomControl_c::getDemoArcName();
     if (*demoArcName != NULL) {
