@@ -305,6 +305,19 @@ static int JKRDecompressFromDVD(JKRDvdFile* dvdFile, void* dst, u32 fileSize, u3
     u8 *data = firstSrcData();
     if (data != NULL) {
         result = decompSZS_subroutine(data, (u8 *)dst);
+#if PLATFORM_PC
+        /* Debug: check decompress result */
+        {
+            u8* dstBytes = (u8*)dst;
+            int nonzero = 0;
+            u32 checkLen = (inMaxDest < 256) ? inMaxDest : 256;
+            for (u32 i = 0; i < checkLen; i++) {
+                if (dstBytes[i] != 0) nonzero++;
+            }
+            fprintf(stderr, "{\"szs_decomp\":{\"result\":%d,\"dst_nonzero_256\":%d,\"maxDest\":%u,\"ts\":%u}}\n",
+                    result, nonzero, inMaxDest, *tsPtr);
+        }
+#endif
     } else {
         result = -1;
     }
@@ -329,7 +342,12 @@ int decompSZS_subroutine(u8* src, u8* dest) {
     }
 
     SYaz0Header* header = (SYaz0Header*)src;
-    endPtr = dest + (header->length - fileOffset);
+#if PLATFORM_PC || PLATFORM_NX_HB
+    u32 headerLength = READU32_BE(src, 4);
+#else
+    u32 headerLength = header->length;
+#endif
+    endPtr = dest + (headerLength - fileOffset);
     if (endPtr > dest + maxDest) {
         endPtr = dest + maxDest;
     }

@@ -30,13 +30,13 @@ void JUTTexture::storeTIMG(ResTIMG const* param_0, u8 param_1) {
             timg->height        = pal_swap16(timg->height);
             timg->numColors     = pal_swap16(timg->numColors);
             timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
-            timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
-            timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
+            timg->paletteOffset = pal_swap32(timg->paletteOffset);
+            timg->imageOffset   = pal_swap32(timg->imageOffset);
             timg->unknown = TIMG_SWAP_MARKER;
         }
 #endif
         mTexInfo = param_0;
-        mTexData = (void*)((intptr_t)mTexInfo + mTexInfo->imageOffset);
+        mTexData = (void*)((uintptr_t)mTexInfo + mTexInfo->imageOffset);
 
         if (mTexInfo->imageOffset == 0) {
             mTexData = (void*)((intptr_t)mTexInfo + 0x20);
@@ -102,8 +102,8 @@ void JUTTexture::storeTIMG(ResTIMG const* param_0, JUTPalette* param_1, GXTlut p
             timg->height        = pal_swap16(timg->height);
             timg->numColors     = pal_swap16(timg->numColors);
             timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
-            timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
-            timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
+            timg->paletteOffset = pal_swap32(timg->paletteOffset);
+            timg->imageOffset   = pal_swap32(timg->imageOffset);
             timg->unknown = TIMG_SWAP_MARKER;
         }
     }

@@ -329,7 +329,12 @@ static int decompSZS_subroutine(u8* src, u32 dest) {
     }
 
     SYaz0Header* header = (SYaz0Header*)src;
-    endAddr = dest + (header->length - fileOffset);
+#if PLATFORM_PC || PLATFORM_NX_HB
+    u32 headerLength = READU32_BE(src, 4);
+#else
+    u32 headerLength = header->length;
+#endif
+    endAddr = dest + (headerLength - fileOffset);
     if (endAddr > dest + maxDest) {
         endAddr = dest + maxDest;
     }
