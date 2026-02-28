@@ -40,7 +40,7 @@ public:
     /* 0x6C */ bool mIsOpen;
     /* 0x6D */ u8 field_0x6d[3];
 #if PLATFORM_PC
-    void* mRepackedFiles; /* Repacked file entries for 64-bit (separately allocated) */
+    void* mRepackedFiles; /* Repacked file entries for PC (disc entries are 20 bytes, native may differ) */
 #endif
 };
 
