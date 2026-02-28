@@ -6,6 +6,19 @@
 ## Quick Reference
 
 ```bash
+# One-command self-test (build + run + parse + verify — same checks as CI)
+tools/self-test.sh
+
+# Quick smoke test (skip build, 100 frames)
+tools/self-test.sh --quick
+
+# Skip build, custom frame count
+tools/self-test.sh --skip-build --frames 300
+```
+
+### Manual steps (if needed)
+
+```bash
 # Build the PC port
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTP_VERSION=PC
 ninja -C build tp-pc
@@ -179,27 +192,14 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 ### Making Changes
 
 1. Make minimal, focused changes
-2. Build and test locally:
+2. Run the self-test:
    ```bash
-   ninja -C build tp-pc
-   TP_HEADLESS=1 TP_TEST_FRAMES=300 TP_VERIFY=1 TP_VERIFY_DIR=/tmp/verify \
-       ./build/tp-pc 2>&1 | tee /tmp/test.log
-   python3 tools/parse_milestones.py /tmp/test.log --output /tmp/summary.json
+   tools/self-test.sh --quick          # fast smoke test after small changes
+   tools/self-test.sh --skip-build     # full test with existing binary
+   tools/self-test.sh                  # full rebuild + test
    ```
-3. Check that the milestone hasn't regressed:
-   ```bash
-   python3 tools/check_milestone_regression.py /tmp/summary.json \
-       --baseline milestone-baseline.json
-   ```
-4. Verify rendering hasn't regressed:
-   ```bash
-   python3 tools/verify_port.py /tmp/test.log \
-       --verify-dir /tmp/verify \
-       --golden-dir tests/golden \
-       --render-baseline tests/render-baseline.json \
-       --check-rendering
-   ```
-5. Commit and push — CI will run automatically
+3. If the self-test passes, commit and push — CI will run the same checks automatically
+4. If it fails, read the output to see which step failed and fix the issue
 
 ### Interpreting CI Results
 
@@ -367,6 +367,7 @@ Captured frame BMPs are uploaded as CI artifacts for visual inspection.
 milestone-baseline.json              ← Current best milestone (regression baseline)
 tests/render-baseline.json           ← Rendering metrics baseline (draw calls, hashes)
 tests/golden/                        ← Golden reference frame BMPs for image comparison
+tools/self-test.sh                   ← One-command local test (build+run+parse+verify)
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
 tools/check_milestone_regression.py  ← Compare against baseline, detect regressions
 tools/verify_port.py                 ← Subsystem verification (rendering/input/audio)

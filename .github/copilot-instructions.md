@@ -63,11 +63,11 @@ it already solved most platform-abstraction problems.
    and top unimplemented stubs.
 5. **Use the milestone system**: After changes, verify that the milestone count
    hasn't regressed. Milestones are logged as JSON to stdout.
-6. **Always check for regressions** before pushing:
+6. **Always self-test before pushing** — one command runs the full CI pipeline locally:
    ```bash
-   TP_HEADLESS=1 TP_TEST_FRAMES=100 ./build/tp-pc 2>&1 | tee /tmp/test.log
-   python3 tools/parse_milestones.py /tmp/test.log --output /tmp/summary.json
-   python3 tools/check_milestone_regression.py /tmp/summary.json --baseline milestone-baseline.json
+   tools/self-test.sh --quick          # fast: skip build, 100 frames
+   tools/self-test.sh --skip-build     # full: skip build, 2000 frames
+   tools/self-test.sh                  # full: rebuild + 2000 frames
    ```
 7. **GX stubs**: When adding a GX function stub, use the stub tracker so CI reports hit counts:
    ```c
