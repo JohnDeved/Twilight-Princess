@@ -313,9 +313,16 @@ static void mDoExt_modelDiff(J3DModel* i_model) {
 }
 
 void mDoExt_modelUpdate(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) return;
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) return;
+    if (model_data->getMaterialNodePointer(0) == NULL) return;
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
@@ -331,9 +338,16 @@ void mDoExt_modelUpdate(J3DModel* i_model) {
 }
 
 void mDoExt_modelUpdateDL(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) return;
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) return;
+    if (model_data->getMaterialNodePointer(0) == NULL) return;
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
@@ -350,9 +364,16 @@ void mDoExt_modelUpdateDL(J3DModel* i_model) {
 }
 
 void mDoExt_modelEntryDL(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) return;
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) return;
+    if (model_data->getMaterialNodePointer(0) == NULL) return;
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
