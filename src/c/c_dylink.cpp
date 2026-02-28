@@ -845,7 +845,7 @@ int cCc_Init() {
     JKRSetCurrentHeap(prevHeap);
 
     #if DEBUG
-    FixedMemoryCheck* check = FixedMemoryCheck::easyCreate(DMC, sizeof(DMC));
+    FixedMemoryCheck* check = FixedMemoryCheck::easyCreate(DMC, (u32)sizeof(DMC));
     #endif
 
     DMC_initialized = true;

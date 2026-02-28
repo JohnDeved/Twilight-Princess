@@ -37,7 +37,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     &g_profile_OVERLAP2,
     &g_profile_ROOM_SCENE,
     &g_profile_KANKYO,
-    NULL, /* g_profile_ALLDIE — REL module, not available */
+    &g_profile_ALLDIE,
     &g_profile_ENVSE,
     NULL, /* g_profile_Obj_Swpush — REL module, not available */
     NULL, /* g_profile_Obj_Swpush2 — REL module, not available */
@@ -747,8 +747,8 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Tag_Mist — REL module, not available */
     NULL, /* g_profile_DMIDNA — REL module, not available */
     &g_profile_KY_THUNDER,
-    NULL, /* g_profile_VRBOX — REL module, not available */
-    NULL, /* g_profile_VRBOX2 — REL module, not available */
+    &g_profile_VRBOX,
+    &g_profile_VRBOX2,
     NULL, /* g_profile_BG — REL module, not available */
     NULL, /* g_profile_SET_BG_OBJ — REL module, not available */
     NULL, /* g_profile_BG_OBJ — REL module, not available */

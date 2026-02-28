@@ -159,6 +159,9 @@ set(REL_SOURCES
     src/d/actor/d_a_kytag01.cpp
     src/d/actor/d_a_tag_event.cpp
     src/d/actor/d_a_tag_msg.cpp
+    src/d/actor/d_a_vrbox.cpp
+    src/d/actor/d_a_vrbox2.cpp
+    src/d/actor/d_a_alldie.cpp
 )
 
 # --- Include directories ---
