@@ -559,9 +559,15 @@ static int phase_2(dScnPly_c* i_this) {
 }
 
 static int phase_3(dScnPly_c* i_this) {
-    if ((i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) || mDoAud_check1stDynamicWave()) {
+    if (i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) {
         return cPhs_INIT_e;
     }
+
+#if !PLATFORM_PC
+    if (mDoAud_check1stDynamicWave()) {
+        return cPhs_INIT_e;
+    }
+#endif
 
     if (!i_this->field_0x1d0 == NULL && !i_this->field_0x1d0->sync()) {
         return cPhs_INIT_e;
