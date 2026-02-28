@@ -43,8 +43,7 @@ int pal_verify_active(void);
  * Report per-frame rendering metrics as JSON.
  * Called at end of each frame (from pal_gx_end_frame).
  *
- * Emits: draw_calls, total_verts, stub_count, unique_textures,
- *        unique_shaders, clear_color, viewport dimensions.
+ * Emits: draw_calls, total_verts, stub_count, valid, fb_hash, fb_has_draws.
  *
  * Also captures the software framebuffer at configurable intervals
  * (set by TP_VERIFY_CAPTURE_FRAMES env var, e.g. "30,60,120,300").

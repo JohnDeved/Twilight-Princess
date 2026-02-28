@@ -171,13 +171,10 @@ this baseline:
 
 ### Updating the Baseline
 
-When your changes improve the milestone, the baseline should be updated. You can do this
-manually by editing `milestone-baseline.json`, or the CI can do it automatically with:
-
-```bash
-python3 tools/check_milestone_regression.py milestone-summary.json \
-    --baseline milestone-baseline.json --update-on-improvement
-```
+When your changes improve the milestone, update the baseline manually by editing
+`milestone-baseline.json` to reflect the new milestone count and milestones reached.
+Then commit the updated baseline alongside your code changes so the improvement is
+tracked in the PR diff.
 
 ## Agent Development Workflow
 
@@ -278,8 +275,9 @@ Captured frame BMPs are compared against golden reference images in `tests/golde
 - **Pixel diff percentage**: How many pixels changed beyond a threshold
 - **Threshold**: RMSE > 5.0 = regression
 
-When no golden reference exists for a frame, CI auto-saves the current frame
-(if non-black) as the new golden reference.
+When no golden reference exists for a frame, the captured frame is reported as
+"no golden reference" in the comparison results. To create golden references,
+run `tools/verify_port.py --update-golden` locally and commit the resulting BMPs.
 
 #### Layer 5: Render Baseline Thresholds
 `tests/render-baseline.json` stores minimum expected values per frame:

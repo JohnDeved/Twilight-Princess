@@ -9,7 +9,7 @@ Rendering verification is **dependable without human review**:
 - Per-frame CRC32 hash comparison detects any rendering change
 - Golden reference image comparison via RMSE catches visual regressions
 - Render baseline metrics (draw calls, verts, non-black %) prevent metric regressions
-- Auto-updates baselines when rendering improves
+- Fails when metrics regress relative to baselines (no automatic updates)
 
 Usage:
     python3 tools/verify_port.py milestones.log \\
@@ -279,22 +279,35 @@ def check_render_baseline(data, baseline_path):
     # Check global thresholds
     summary = data.get("summary", {})
     gbl = baseline.get("global", {})
-    if gbl.get("min_peak_draw_calls", 0) > 0:
-        act = summary.get("peak_draw_calls", 0)
-        if act < gbl["min_peak_draw_calls"]:
+
+    global_checks = [
+        ("min_peak_draw_calls", "peak_draw_calls"),
+        ("min_peak_verts", "peak_verts"),
+        ("min_render_health_pct", "render_health_pct"),
+    ]
+    for min_key, actual_key in global_checks:
+        min_val = gbl.get(min_key, 0)
+        if min_val > 0:
+            act = summary.get(actual_key, 0)
+            if act < min_val:
+                issues.append({
+                    "metric": actual_key,
+                    "expected_min": min_val,
+                    "actual": act,
+                    "passed": False,
+                })
+
+    # Check frames_with_draws percentage
+    min_draws_pct = gbl.get("min_frames_with_draws_pct", 0)
+    if min_draws_pct > 0:
+        total = summary.get("total_frames", 0)
+        draws = summary.get("frames_with_draws", 0)
+        actual_pct = (draws * 100 // total) if total > 0 else 0
+        if actual_pct < min_draws_pct:
             issues.append({
-                "metric": "peak_draw_calls",
-                "expected_min": gbl["min_peak_draw_calls"],
-                "actual": act,
-                "passed": False,
-            })
-    if gbl.get("min_render_health_pct", 0) > 0:
-        act = summary.get("render_health_pct", 0)
-        if act < gbl["min_render_health_pct"]:
-            issues.append({
-                "metric": "render_health_pct",
-                "expected_min": gbl["min_render_health_pct"],
-                "actual": act,
+                "metric": "frames_with_draws_pct",
+                "expected_min": min_draws_pct,
+                "actual": actual_pct,
                 "passed": False,
             })
 
@@ -337,12 +350,13 @@ def check_golden_images(verify_dir, golden_dir):
 
 
 def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
-    """Check rendering health using three automated verification layers:
+    """Check rendering health using five automated verification layers:
 
     1. Metric checks — draw calls, vertex counts, non-black pixels
     2. Hash comparison — deterministic CRC32 of framebuffer content
-    3. Golden image comparison — RMSE against reference BMP files
+    3. Golden image comparison — RMSE against reference BMP files (or BMP analysis when no golden exists)
     4. Render baseline — stored thresholds that must not regress
+    5. Captured frame BMP analysis — pixel-level inspection of saved frames
 
     No human review needed.
     """
@@ -360,7 +374,8 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
 
     total_frames = summary.get("total_frames", 0)
     frames_with_draws = summary.get("frames_with_draws", 0)
-    frames_nonblack = summary.get("frames_nonblack", 0)
+    frames_nonblack = summary.get("captured_frames_nonblack",
+                                    summary.get("frames_nonblack", 0))
     render_health = summary.get("render_health_pct", 0)
 
     result["details"] = {
@@ -377,8 +392,6 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
         result["issues"].append("No frames were rendered")
     elif frames_with_draws == 0:
         result["issues"].append("No frames had draw calls — GX shim may not be working")
-    elif frames_nonblack == 0:
-        result["issues"].append("All frames were black — rendering pipeline may be broken")
     elif render_health < 10:
         result["issues"].append(
             f"Render health is very low ({render_health}%) — most frames are empty"

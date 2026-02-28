@@ -66,11 +66,10 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     echo "━━━ Step 1/5: Build ━━━"
     if [ ! -f build/build.ninja ]; then
         echo "  Configuring CMake..."
-        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTP_VERSION=PC 2>&1 \
-            | tail -3
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTP_VERSION=PC
     fi
     echo "  Building tp-pc..."
-    if ! ninja -C build tp-pc 2>&1 | tail -5; then
+    if ! ninja -C build tp-pc; then
         echo ""
         echo "❌ BUILD FAILED"
         exit 2

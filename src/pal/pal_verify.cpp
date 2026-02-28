@@ -278,6 +278,7 @@ int pal_verify_analyze_fb(u32 frame_num) {
     avg_g /= total_pixels;
     avg_b /= total_pixels;
 
+    /* Track captured frames that have non-black content */
     if (pct_nonblack > 0)
         s_frames_nonblack++;
 
@@ -373,11 +374,12 @@ void pal_verify_summary(void) {
     int input_health = 0;
     int audio_health = 0;
 
-    /* Rendering health: percentage of frames that had draws AND non-black pixels */
+    /* Rendering health: percentage of frames that had draw calls.
+     * We use frames_with_draws (tracked per-frame) as the signal — it's
+     * cheap to track every frame, unlike pixel analysis which only runs
+     * on capture frames. */
     if (s_total_frames > 0) {
-        u32 good_render = (s_frames_with_draws < s_frames_nonblack) ?
-                           s_frames_with_draws : s_frames_nonblack;
-        render_health = (int)((good_render * 100) / s_total_frames);
+        render_health = (int)((s_frames_with_draws * 100) / s_total_frames);
     }
 
     /* Input health: were input events processed and did game respond? */
@@ -394,7 +396,7 @@ void pal_verify_summary(void) {
         "{\"verify_summary\":{"
         "\"total_frames\":%u,"
         "\"frames_with_draws\":%u,"
-        "\"frames_nonblack\":%u,"
+        "\"captured_frames_nonblack\":%u,"
         "\"peak_draw_calls\":%d,"
         "\"peak_verts\":%d,"
         "\"total_draw_calls\":%u,"

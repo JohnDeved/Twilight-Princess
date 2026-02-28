@@ -31,7 +31,8 @@
     "min_peak_draw_calls": 1,
     "min_peak_verts": 1,
     "min_frames_with_draws_pct": 0,
-    "min_render_health_pct": 0
+    "min_render_health_pct": 0,
+    "_note": "All global fields are enforced by verify_port.py. Raise thresholds as rendering improves, never lower."
   },
   "_anti_cheat_note": "Do not lower these thresholds. Global min_peak values ensure the rendering pipeline is functional. Per-frame thresholds should be raised as rendering improves, never lowered. Changes to this file should be reviewed carefully."
 }
