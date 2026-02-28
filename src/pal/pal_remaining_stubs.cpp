@@ -193,7 +193,7 @@ s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
 }
 s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
     (void)chan; (void)fileNo; (void)stat;
-    return -1;
+    return -1; /* CARD_RESULT_NOCARD */
 }
 
 /* --- Matrix extras (extern "C" in revolution/mtx.h) --- */
