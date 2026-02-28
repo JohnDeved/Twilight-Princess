@@ -117,24 +117,27 @@ int dScnLogo_c::draw() {
          * Without this, the destructor accesses command pointers that haven't
          * finished loading, causing SIGSEGV. */
         if (!dComIfG_syncAllObjectRes()) {
-            if (mpField0Command->sync() && mpAlAnmCommand->sync() &&
-                mpFmapResCommand->sync() && mpDmapResCommand->sync() &&
-                mpCollectResCommand->sync() && mpItemIconCommand->sync() &&
-                mpRingResCommand->sync() && mpPlayerNameCommand->sync() &&
-                mpItemInfResCommand->sync() && mpButtonCommand->sync() &&
-                mpCardIconCommand->sync() && mpBmgResCommand->sync() &&
-                mpMsgComCommand->sync() && mpMsgResCommand[0]->sync() &&
-                mpMsgResCommand[1]->sync() && mpMsgResCommand[2]->sync() &&
-                mpMsgResCommand[3]->sync() && mpMsgResCommand[4]->sync() &&
-                mpMsgResCommand[5]->sync() && mpMsgResCommand[6]->sync() &&
-                mpFontResCommand->sync() && mpMain2DCommand->sync() &&
-                mpRubyResCommand->sync() && mParticleCommand->sync() &&
-                mItemTableCommand->sync() && mEnemyItemCommand->sync())
+            /* NULL-safe sync: treat NULL command as already synced */
+            #define CMD_SYNC(p) ((p) == NULL || (p)->sync())
+            if (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
+                CMD_SYNC(mpFmapResCommand) && CMD_SYNC(mpDmapResCommand) &&
+                CMD_SYNC(mpCollectResCommand) && CMD_SYNC(mpItemIconCommand) &&
+                CMD_SYNC(mpRingResCommand) && CMD_SYNC(mpPlayerNameCommand) &&
+                CMD_SYNC(mpItemInfResCommand) && CMD_SYNC(mpButtonCommand) &&
+                CMD_SYNC(mpCardIconCommand) && CMD_SYNC(mpBmgResCommand) &&
+                CMD_SYNC(mpMsgComCommand) && CMD_SYNC(mpMsgResCommand[0]) &&
+                CMD_SYNC(mpMsgResCommand[1]) && CMD_SYNC(mpMsgResCommand[2]) &&
+                CMD_SYNC(mpMsgResCommand[3]) && CMD_SYNC(mpMsgResCommand[4]) &&
+                CMD_SYNC(mpMsgResCommand[5]) && CMD_SYNC(mpMsgResCommand[6]) &&
+                CMD_SYNC(mpFontResCommand) && CMD_SYNC(mpMain2DCommand) &&
+                CMD_SYNC(mpRubyResCommand) && CMD_SYNC(mParticleCommand) &&
+                CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand))
             {
                 mDoRst::setLogoScnFlag(0);
                 mDoRst::setProgChgFlag(0);
                 nextSceneChange();
             }
+            #undef CMD_SYNC
         }
         return 1;
     }
@@ -478,6 +481,57 @@ dScnLogo_c::~dScnLogo_c() {
     field_0x1d0->destroy();
     JKRFree(dummyGameAlloc);
 
+#if PLATFORM_PC
+    /* NULL-guard all command pointers — create() can return NULL if the file
+     * doesn't exist on PC (e.g. missing archives or heap exhaustion). */
+    #define CMD_SET_ARCHIVE(setter, cmd) do { if (cmd) setter((cmd)->getArchive()); } while(0)
+    if (mParticleCommand) dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
+    CMD_SET_ARCHIVE(dComIfGp_setFieldMapArchive2, mpField0Command);
+    CMD_SET_ARCHIVE(dComIfGp_setAnmArchive, mpAlAnmCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setFmapResArchive, mpFmapResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setDmapResArchive, mpDmapResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setCollectResArchive, mpCollectResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setItemIconArchive, mpItemIconCommand);
+    dComIfGp_setAllMapArchive(NULL);
+    CMD_SET_ARCHIVE(dComIfGp_setRingResArchive, mpRingResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setNameResArchive, mpPlayerNameCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setDemoMsgArchive, mpItemInfResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setMeterButtonArchive, mpButtonCommand);
+    dComIfGp_setErrorResArchive(NULL);
+    CMD_SET_ARCHIVE(dComIfGp_setCardIconResArchive, mpCardIconCommand);
+    if (mpBmgResCommand) dComIfGp_setMsgDtArchive(0, mpBmgResCommand->getArchive());
+    CMD_SET_ARCHIVE(dComIfGp_setMsgCommonArchive, mpMsgComCommand);
+    for (int i = 0; i < 7; i++) {
+        if (mpMsgResCommand[i]) dComIfGp_setMsgArchive(i, mpMsgResCommand[i]->getArchive());
+    }
+    if (mpFontResCommand) dComIfGp_setFontArchive(mpFontResCommand->getArchive());
+    if (mpRubyResCommand) dComIfGp_setRubyArchive(mpRubyResCommand->getArchive());
+    CMD_SET_ARCHIVE(dComIfGp_setMain2DArchive, mpMain2DCommand);
+    #undef CMD_SET_ARCHIVE
+
+    #define CMD_DESTROY(cmd) do { if (cmd) (cmd)->destroy(); } while(0)
+    CMD_DESTROY(mpField0Command);
+    CMD_DESTROY(mpAlAnmCommand);
+    CMD_DESTROY(mpFmapResCommand);
+    CMD_DESTROY(mpDmapResCommand);
+    CMD_DESTROY(mpCollectResCommand);
+    CMD_DESTROY(mpItemIconCommand);
+    CMD_DESTROY(mpRingResCommand);
+    CMD_DESTROY(mpPlayerNameCommand);
+    CMD_DESTROY(mpItemInfResCommand);
+    CMD_DESTROY(mpButtonCommand);
+    CMD_DESTROY(mpCardIconCommand);
+    CMD_DESTROY(mpBmgResCommand);
+    CMD_DESTROY(mpMsgComCommand);
+    for (int i = 0; i < 7; i++) {
+        CMD_DESTROY(mpMsgResCommand[i]);
+    }
+    CMD_DESTROY(mpFontResCommand);
+    CMD_DESTROY(mpMain2DCommand);
+    CMD_DESTROY(mpRubyResCommand);
+    CMD_DESTROY(mParticleCommand);
+    #undef CMD_DESTROY
+#else
     dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
     dComIfGp_setFieldMapArchive2(mpField0Command->getArchive());
     dComIfGp_setAnmArchive(mpAlAnmCommand->getArchive());
@@ -521,6 +575,7 @@ dScnLogo_c::~dScnLogo_c() {
     mpMain2DCommand->destroy();
     mpRubyResCommand->destroy();
     mParticleCommand->destroy();
+#endif
 
 #if !PLATFORM_PC
     JKRAramHeap* aram_heap = JKRAram::getAramHeap();
@@ -541,11 +596,22 @@ dScnLogo_c::~dScnLogo_c() {
 #endif
 #endif
 
+#if PLATFORM_PC
+    if (mItemTableCommand) {
+        dComIfGp_setItemTable(mItemTableCommand->getMemAddress());
+        mItemTableCommand->destroy();
+    }
+    if (mEnemyItemCommand) {
+        dEnemyItem_c::setItemData((u8*)mEnemyItemCommand->getMemAddress());
+        mEnemyItemCommand->destroy();
+    }
+#else
     dComIfGp_setItemTable(mItemTableCommand->getMemAddress());
     mItemTableCommand->destroy();
 
     dEnemyItem_c::setItemData((u8*)mEnemyItemCommand->getMemAddress());
     mEnemyItemCommand->destroy();
+#endif
 
 #if PLATFORM_PC
     /* Always.arc may fail to load on PC due to heap pressure;
