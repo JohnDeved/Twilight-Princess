@@ -24,6 +24,17 @@
 #include "m_Do/m_Do_mtx.h"
 #include <cstdio>
 #if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+static volatile sig_atomic_t s_mdl_crash = 0;
+static sigjmp_buf s_mdl_jmpbuf;
+static void mdl_sigsegv_handler(int sig) {
+    (void)sig;
+    s_mdl_crash = 1;
+    siglongjmp(s_mdl_jmpbuf, 1);
+}
+#endif
+#if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #endif
 
@@ -3745,6 +3756,25 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
 #if DEBUG
             model->getBaseTRMtx()[0][0] = MAXFLOAT;
 #endif
+#if PLATFORM_PC
+            /* On PC, J3D model data may have corrupt materials from incomplete endian swap.
+             * Wrap entire model creation with signal handler to catch crashes. */
+            struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+            memset(&sa_new, 0, sizeof(sa_new));
+            sa_new.sa_handler = mdl_sigsegv_handler;
+            sigemptyset(&sa_new.sa_mask);
+            sa_new.sa_flags = 0;
+            sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+            sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+            s_mdl_crash = 0;
+
+            if (sigsetjmp(s_mdl_jmpbuf, 1) != 0) {
+                sigaction(SIGSEGV, &sa_old_segv, NULL);
+                sigaction(SIGABRT, &sa_old_abrt, NULL);
+                fprintf(stderr, "{\"j3d_model_crash\":\"signal in mDoExt_J3DModel__create\"}\n");
+                return NULL;
+            }
+#endif
             bool hasSharedDlistObj =
                 i_modelData->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
             // Update the modelFlag if the model data passed in has a shared dlist object
@@ -3764,12 +3794,24 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
                 if (i_modelFlag == J3DMdlFlag_DifferedDLBuffer &&
                     model->newDifferedDisplayList(i_differedDlistFlag) != kJ3DError_Success)
                 {
+#if PLATFORM_PC
+                    sigaction(SIGSEGV, &sa_old_segv, NULL);
+                    sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
                     return NULL;
                 }
 
                 model->lock();
+#if PLATFORM_PC
+                sigaction(SIGSEGV, &sa_old_segv, NULL);
+                sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
                 return model;
             }
+#if PLATFORM_PC
+            sigaction(SIGSEGV, &sa_old_segv, NULL);
+            sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
         }
     }
 

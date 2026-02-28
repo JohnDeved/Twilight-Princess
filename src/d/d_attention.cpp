@@ -175,9 +175,15 @@ dAttention_c::dAttention_c(fopAc_ac_c* i_player, u32 i_padNo) {
     JUT_ASSERT(0x198, heap != NULL);
 
     J3DModelData* modelDataR = (J3DModelData*)dComIfG_getObjectRes("Always", 0x25);
+#if PLATFORM_PC
+    if (modelDataR == NULL) goto skip_attention_models;
+#endif
     JUT_ASSERT(0x1BB, modelDataR);
 
     J3DModelData* modelDataY = (J3DModelData*)dComIfG_getObjectRes("Always", 0x26);
+#if PLATFORM_PC
+    if (modelDataY == NULL) goto skip_attention_models;
+#endif
     JUT_ASSERT(0x1BF, modelDataY);
 
     for (int i = 0; i < 2; i++) {
@@ -240,6 +246,9 @@ dAttention_c::dAttention_c(fopAc_ac_c* i_player, u32 i_padNo) {
         draw[i].field_0x175 = 0;
     }
 
+#if PLATFORM_PC
+skip_attention_models:
+#endif
     mDoExt_restoreCurrentHeap();
     if ((int)mDoExt_adjustSolidHeap(heap) >= 0) {
         DCStoreRangeNoSync(heap->getStartAddr(), heap->getHeapSize());

@@ -36,6 +36,10 @@ bool JKRArchive::isSameName(JKRArchive::CArcName& name, u32 nameOffset, u16 name
     u16 hash = name.getHash();
     if (hash != nameHash)
         return false;
+#if PLATFORM_PC
+    if (mStringTable == NULL) return false;
+    if (nameOffset >= mArcInfoBlock->string_table_length) return false;
+#endif
     return strcmp(mStringTable + nameOffset, name.getString()) == 0;
 }
 
