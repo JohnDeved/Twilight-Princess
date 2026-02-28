@@ -560,6 +560,62 @@ static float read_gx_component(const uint8_t* src, GXCompType type, uint8_t frac
  * Walks through each attribute, converting integer components to float
  * with frac-bit scaling applied.
  */
+/**
+ * Resolve a vertex attribute's data source.
+ * For DIRECT mode, data comes from the raw vertex buffer (src + si).
+ * For INDEX8/INDEX16, data comes from the indexed array (base + idx * stride).
+ * Returns pointer to attribute data and advances si past the index/data in src.
+ */
+static const uint8_t* resolve_attr_data(int attr, const uint8_t* src, uint32_t* si) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    GXAttrType type = desc[attr].type;
+
+    if (type == GX_INDEX8) {
+        uint8_t idx = src[*si]; (*si) += 1;
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
+        if (arr->base_ptr && arr->stride > 0)
+            return (const uint8_t*)arr->base_ptr + (uint32_t)idx * arr->stride;
+        return NULL;
+    }
+    if (type == GX_INDEX16) {
+        uint16_t idx; memcpy(&idx, src + *si, 2); (*si) += 2;
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
+        if (arr->base_ptr && arr->stride > 0)
+            return (const uint8_t*)arr->base_ptr + (uint32_t)idx * arr->stride;
+        return NULL;
+    }
+    /* GX_DIRECT — data is inline in the vertex buffer */
+    return src + *si;
+}
+
+/**
+ * Get the byte size consumed in the raw vertex buffer for a given attribute.
+ * For INDEX8 → 1, INDEX16 → 2, DIRECT → component bytes.
+ */
+static uint32_t raw_attr_size(int attr) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+    GXAttrType type = desc[attr].type;
+
+    if (type == GX_INDEX8) return 1;
+    if (type == GX_INDEX16) return 2;
+
+    /* GX_DIRECT */
+    if (attr == GX_VA_POS) {
+        int n = (afmt[attr].cnt == GX_POS_XY) ? 2 : 3;
+        return n * gx_comp_size(afmt[attr].comp_type);
+    }
+    if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
+        return 3 * gx_comp_size(afmt[attr].comp_type);
+    }
+    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) return 4;
+    if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
+        int n = (afmt[attr].cnt == GX_TEX_S) ? 1 : 2;
+        return n * gx_comp_size(afmt[attr].comp_type);
+    }
+    return 0;
+}
+
 static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
@@ -572,49 +628,94 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
 
     /* Position → Float */
     if (desc[GX_VA_POS].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_POS, src, &si);
         GXCompType pt = afmt[GX_VA_POS].comp_type;
         uint8_t frac = afmt[GX_VA_POS].frac;
         int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
         uint32_t csz = gx_comp_size(pt);
-        for (int c = 0; c < ncomps; c++) {
-            float v = read_gx_component(src + si, pt, frac);
-            memcpy(dst + di, &v, 4);
-            si += csz; di += 4;
+        if (desc[GX_VA_POS].type == GX_DIRECT) {
+            /* For direct mode, advance si past the actual data */
+            si += ncomps * csz;
+        }
+        if (data) {
+            for (int c = 0; c < ncomps; c++) {
+                float v = read_gx_component(data + c * csz, pt, frac);
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        } else {
+            for (int c = 0; c < ncomps; c++) {
+                float v = 0.0f;
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
         }
     }
 
     /* Normal → Float */
     if (desc[GX_VA_NRM].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_NRM, src, &si);
         GXCompType nt = afmt[GX_VA_NRM].comp_type;
         uint8_t frac = afmt[GX_VA_NRM].frac;
         uint32_t csz = gx_comp_size(nt);
-        for (int c = 0; c < 3; c++) {
-            float v = read_gx_component(src + si, nt, frac);
-            memcpy(dst + di, &v, 4);
-            si += csz; di += 4;
+        if (desc[GX_VA_NRM].type == GX_DIRECT) {
+            si += 3 * csz;
+        }
+        if (data) {
+            for (int c = 0; c < 3; c++) {
+                float v = read_gx_component(data + c * csz, nt, frac);
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        } else {
+            for (int c = 0; c < 3; c++) {
+                float v = 0.0f;
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
         }
     }
 
-    /* Color0 — copy 4 bytes as-is */
+    /* Color0 */
     if (desc[GX_VA_CLR0].type != GX_NONE) {
-        memcpy(dst + di, src + si, 4); si += 4; di += 4;
+        const uint8_t* data = resolve_attr_data(GX_VA_CLR0, src, &si);
+        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += 4;
+        if (data) { memcpy(dst + di, data, 4); }
+        else { memset(dst + di, 0xFF, 4); }
+        di += 4;
     }
-    /* Color1 — copy 4 bytes as-is */
+    /* Color1 */
     if (desc[GX_VA_CLR1].type != GX_NONE) {
-        memcpy(dst + di, src + si, 4); si += 4; di += 4;
+        const uint8_t* data = resolve_attr_data(GX_VA_CLR1, src, &si);
+        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += 4;
+        if (data) { memcpy(dst + di, data, 4); }
+        else { memset(dst + di, 0xFF, 4); }
+        di += 4;
     }
 
     /* Texture coordinates → Float */
     for (int i = 0; i < 8; i++) {
         if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            const uint8_t* data = resolve_attr_data(GX_VA_TEX0 + i, src, &si);
             GXCompType tt = afmt[GX_VA_TEX0 + i].comp_type;
             uint8_t frac = afmt[GX_VA_TEX0 + i].frac;
             int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
             uint32_t csz = gx_comp_size(tt);
-            for (int c = 0; c < ncomps; c++) {
-                float v = read_gx_component(src + si, tt, frac);
-                memcpy(dst + di, &v, 4);
-                si += csz; di += 4;
+            if (desc[GX_VA_TEX0 + i].type == GX_DIRECT) {
+                si += ncomps * csz;
+            }
+            if (data) {
+                for (int c = 0; c < ncomps; c++) {
+                    float v = read_gx_component(data + c * csz, tt, frac);
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            } else {
+                for (int c = 0; c < ncomps; c++) {
+                    float v = 0.0f;
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
             }
         }
     }
