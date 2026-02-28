@@ -55,6 +55,18 @@ void pal_capture_clear_fb(void);
 /* Returns 1 if bgfx has delivered frame data since last clear */
 int pal_capture_has_data(void);
 
+/* Get total number of frames captured */
+uint32_t pal_capture_get_frame_count(void);
+
+/* Close the raw video file (call at shutdown) */
+void pal_capture_shutdown(void);
+
+/**
+ * Direct OpenGL readback (fallback for when bgfx capture doesn't work).
+ * Calls glReadPixels to read the actual framebuffer after bgfx::frame().
+ */
+void pal_capture_readback_gl(uint32_t width, uint32_t height);
+
 /* CRC32 hash of capture buffer — deterministic for regression detection */
 uint32_t pal_capture_hash_fb(void);
 

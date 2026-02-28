@@ -38,6 +38,7 @@ static int s_initialized = 0;
 static uint32_t s_frame_width = GX_DEFAULT_WIDTH;
 static uint32_t s_frame_height = GX_DEFAULT_HEIGHT;
 static int s_using_noop = 0;
+static int s_fb_capture_enabled = 0;
 
 /**
  * bgfx callback — captures every rendered frame via BGFX_RESET_CAPTURE.
@@ -67,8 +68,14 @@ public:
     bool cacheRead(uint64_t, void*, uint32_t) override { return false; }
     void cacheWrite(uint64_t, const void*, uint32_t) override {}
 
-    void screenShot(const char*, uint32_t, uint32_t, uint32_t,
-                    const void*, uint32_t, bool) override {}
+    void screenShot(const char* _filePath, uint32_t _width, uint32_t _height,
+                    uint32_t _pitch, const void* _data, uint32_t _size,
+                    bool _yflip) override {
+        (void)_filePath;
+        /* Forward screenshot data to capture buffer */
+        pal_capture_begin(_width, _height, _pitch, _yflip ? 1 : 0);
+        pal_capture_frame(_data, _size);
+    }
 
     void captureBegin(uint32_t _width, uint32_t _height, uint32_t _pitch,
                       bgfx::TextureFormat::Enum, bool _yflip) override {
@@ -123,9 +130,8 @@ int pal_render_init(void) {
 
     init.resolution.width = s_frame_width;
     init.resolution.height = s_frame_height;
-    /* Enable CAPTURE so bgfx calls captureFrame() every frame.
-     * Only enable VSYNC for windowed mode (useless on Xvfb/Noop). */
-    init.resolution.reset = BGFX_RESET_CAPTURE;
+    /* VSYNC only for windowed mode (useless on Xvfb/Noop). */
+    init.resolution.reset = 0;
     if (!headless)
         init.resolution.reset |= BGFX_RESET_VSYNC;
 
@@ -159,13 +165,22 @@ int pal_render_init(void) {
     pal_capture_init();
     pal_verify_init();
 
+    /* Enable per-frame screenshot capture if TP_VERIFY or TP_SCREENSHOT is set */
+    {
+        const char* verify = getenv("TP_VERIFY");
+        const char* ss = getenv("TP_SCREENSHOT");
+        if ((verify && verify[0] == '1') || (ss && ss[0] != '\0'))
+            s_fb_capture_enabled = !s_using_noop;
+    }
+
     fprintf(stderr, "{\"render\":\"ready\",\"width\":%u,\"height\":%u,"
-            "\"capture\":%d}\n", s_frame_width, s_frame_height, !s_using_noop);
+            "\"capture\":%d}\n", s_frame_width, s_frame_height, s_fb_capture_enabled);
     return 1;
 }
 
 void pal_render_shutdown(void) {
     if (s_initialized) {
+        pal_capture_shutdown();
         pal_tev_shutdown();
         bgfx::shutdown();
         s_initialized = 0;
@@ -198,6 +213,10 @@ void pal_render_begin_frame(void) {
 
     bgfx::touch(0);
 
+    /* Enable bgfx debug text overlay for frame diagnostics */
+    bgfx::setDebug(BGFX_DEBUG_TEXT);
+    bgfx::dbgTextClear();
+
     g_gx_state.draw_calls = 0;
     g_gx_state.total_verts = 0;
 }
@@ -208,6 +227,11 @@ void pal_render_end_frame(void) {
 
     static uint32_t s_frame_count = 0;
     s_frame_count++;
+
+    /* Debug text overlay — verifies bgfx is rendering */
+    bgfx::dbgTextPrintf(2, 2, 0x0f,
+        "TP-PC Frame %u  DC:%u  V:%u",
+        s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
 
     if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
         && gx_stub_frame_is_valid()) {
@@ -224,8 +248,16 @@ void pal_render_end_frame(void) {
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
                      gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
-    /* Submit frame — triggers rendering + captureFrame() callback */
+    /* Submit frame — triggers rendering */
     bgfx::frame();
+
+    /* Request screenshot for next frame's readback.
+     * bgfx::requestScreenShot works more reliably than BGFX_RESET_CAPTURE
+     * on Mesa software renderers. The screenShot callback receives the
+     * rendered pixels and forwards them to gx_capture. */
+    if (s_fb_capture_enabled) {
+        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "frame");
+    }
 
     /* Save screenshot at frame 30 (logo should be visible) */
     if (s_frame_count == 30 && pal_capture_screenshot_active()) {

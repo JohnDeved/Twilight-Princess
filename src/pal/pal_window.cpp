@@ -64,10 +64,13 @@ int pal_window_init(u32 width, u32 height, const char* title) {
         return 0;
     }
 
+    /* In headless mode with a display (Xvfb), create a normal window so
+     * OpenGL can render to it.  On Xvfb the window is invisible to the user.
+     * Without a display, the window was never created (handled above). */
     s_window = SDL_CreateWindow(
         title ? title : "Twilight Princess",
         (int)width, (int)height,
-        s_headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE
+        s_headless ? 0 : SDL_WINDOW_RESIZABLE
     );
 
     if (!s_window) {

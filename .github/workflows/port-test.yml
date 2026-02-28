@@ -117,13 +117,31 @@ jobs:
           # Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
           export GALLIUM_DRIVER=softpipe
           export LIBGL_ALWAYS_SOFTWARE=1
+          # Enable per-frame capture — every frame saved as BMP + raw video
+          export TP_VERIFY=1
+          export TP_SCREENSHOT=logo_render.bmp
           timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           kill $XVFB_PID 2>/dev/null || true
-          if [ -f logo_render.bmp ]; then
-            echo "Screenshot captured: $(ls -la logo_render.bmp)"
+          # Convert raw frames to MP4 using ffmpeg
+          if [ -f verify_output/raw_frames.bin ]; then
+            FRAME_COUNT=$(stat -c%s verify_output/raw_frames.bin 2>/dev/null || echo 0)
+            EXPECTED_FRAME_SIZE=$((640 * 480 * 4))
+            if [ "$FRAME_COUNT" -gt 0 ] && [ "$EXPECTED_FRAME_SIZE" -gt 0 ]; then
+              NUM_FRAMES=$((FRAME_COUNT / EXPECTED_FRAME_SIZE))
+              echo "Raw video: $NUM_FRAMES frames captured"
+              ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
+                -framerate 30 -i verify_output/raw_frames.bin \
+                -c:v libx264 -pix_fmt yuv420p -crf 18 \
+                verify_output/render_progress.mp4 2>/dev/null && \
+                echo "MP4 created: $(ls -la verify_output/render_progress.mp4)" || \
+                echo "ffmpeg conversion failed"
+              # Clean up large raw file
+              rm -f verify_output/raw_frames.bin
+            fi
           fi
+          echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
 
       - name: Parse milestones
         if: always()
@@ -188,10 +206,15 @@ jobs:
       - name: Convert screenshots and generate video
         if: always()
         run: |
+          # convert_frames.py converts BMP→PNG for embedding
           python3 tools/convert_frames.py verify_output \
             --png-dir verify_png \
-            --video verify_output/render_progress.mp4 \
             --fps 4 || true
+          # If MP4 already generated from raw frames, just report
+          if [ -f verify_output/render_progress.mp4 ]; then
+            echo "✅ MP4 already generated from raw frame capture"
+            ls -la verify_output/render_progress.mp4
+          fi
 
       - name: Post PR comment with results
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
