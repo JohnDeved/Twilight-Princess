@@ -154,6 +154,75 @@ void pal_swap_yaz0_header(void* data) {
     words[1] = pal_swap32(words[1]);
 }
 
+void pal_swap_bmg(void* data, u32 dataSize) {
+    if (!data || dataSize < 0x20) return;
+
+    u8* base = (u8*)data;
+    /* Check magic: "MESGbmg1" */
+    if (base[0] != 'M' || base[1] != 'E' || base[2] != 'S' || base[3] != 'G') return;
+
+    /* bmg_header_t: magic[8] at 0x00, size(u32) at 0x08, n_sections(u32) at 0x0C, encoding(u8) at 0x10 */
+    u32* pSize = (u32*)(base + 0x08);
+    u32* pSections = (u32*)(base + 0x0C);
+
+    /* Detect if already swapped: n_sections should be small (1-10) */
+    u32 rawSections = *pSections;
+    if (rawSections > 0 && rawSections < 100) return; /* Already native byte order */
+
+    *pSize = pal_swap32(*pSize);
+    *pSections = pal_swap32(*pSections);
+    u32 nSections = *pSections;
+
+    /* Walk sections starting after the 0x20-byte header */
+    u32 offset = 0x20;
+    for (u32 s = 0; s < nSections && offset + 8 <= dataSize; s++) {
+        u32* secMagic = (u32*)(base + offset);
+        u32* secSize  = (u32*)(base + offset + 4);
+
+        u32 magic = pal_swap32(*secMagic);
+        u32 size  = pal_swap32(*secSize);
+        *secMagic = magic;
+        *secSize  = size;
+
+        /* INF1 section: swap entry metadata */
+        if (magic == 0x494E4631 /* 'INF1' */) {
+            if (offset + 0x10 <= dataSize) {
+                u16* entryNum  = (u16*)(base + offset + 0x08);
+                u16* entrySize = (u16*)(base + offset + 0x0A);
+                *entryNum  = pal_swap16(*entryNum);
+                *entrySize = pal_swap16(*entrySize);
+
+                u16 nEntries = *entryNum;
+                u16 eSize    = *entrySize;
+                if (eSize == 0) eSize = 0x14; /* default entry size */
+
+                /* Swap each entry's u32/u16 fields */
+                u32 entryBase = offset + 0x10; /* entries start after INF1 header */
+                for (u16 i = 0; i < nEntries && entryBase + eSize <= dataSize; i++) {
+                    u8* e = base + entryBase;
+                    /* string_offset (u32 at +0x00) */
+                    *(u32*)(e + 0x00) = pal_swap32(*(u32*)(e + 0x00));
+                    /* message_id (u16 at +0x04) */
+                    *(u16*)(e + 0x04) = pal_swap16(*(u16*)(e + 0x04));
+                    /* event_label_id (u16 at +0x06) */
+                    *(u16*)(e + 0x06) = pal_swap16(*(u16*)(e + 0x06));
+                    /* u8 fields at +0x08..+0x11 don't need swapping */
+                    /* unk_0x12 (u16 at +0x12) */
+                    if (eSize >= 0x14) {
+                        *(u16*)(e + 0x12) = pal_swap16(*(u16*)(e + 0x12));
+                    }
+                    entryBase += eSize;
+                }
+            }
+        }
+        /* DAT1/STR1 sections: only header swap needed, string data is raw bytes */
+
+        /* Advance to next section */
+        if (size < 8) break; /* invalid section size */
+        offset += size;
+    }
+}
+
 } /* extern "C" */
 
 #endif /* PLATFORM_PC */

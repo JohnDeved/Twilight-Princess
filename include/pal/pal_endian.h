@@ -56,6 +56,13 @@ void* pal_swap_rarc_get_repacked_files(void);
  */
 void pal_swap_yaz0_header(void* data);
 
+/**
+ * Swap a BMG message file in-place (header, INF1 entries, DAT1 header).
+ * Detects if already swapped by checking n_sections field.
+ * Safe to call multiple times — no-ops after first swap.
+ */
+void pal_swap_bmg(void* data, u32 dataSize);
+
 #ifdef __cplusplus
 }
 #endif

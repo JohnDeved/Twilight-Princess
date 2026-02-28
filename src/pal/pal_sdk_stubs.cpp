@@ -171,10 +171,11 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
 /* OS Thread                                                        */
 /* ================================================================ */
 
-/* Simple single-threaded thread emulation for PC port.
- * We track which thread is the "main game thread" (main01) and call it
- * directly. Other threads (DVD, audio) are not actually started — their
- * work is handled synchronously through message queue processing. */
+/* Bounded-correct thread emulation for PC port.
+ * - Tracks thread state (READY/RUNNING/SUSPENDED/MORIBUND) accurately
+ * - Stores priority, suspend count, and attributes per thread
+ * - Main game thread (main01) is dispatched directly in single-threaded mode
+ * - Other threads (DVD, audio) are tracked but not started as real threads */
 
 static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
 /* Fake stack for the main thread — JKRThread constructor reads stackBase/stackEnd */
@@ -189,8 +190,10 @@ static void pal_init_main_thread(void) {
      * stackBase is at offset 0x304, stackEnd at 0x308 in the OSThread struct. */
     s_current_thread->stackBase = s_fake_stack;
     s_current_thread->stackEnd = (u32*)(s_fake_stack + sizeof(s_fake_stack));
-    s_current_thread->state = 2; /* OS_THREAD_STATE_RUNNING */
+    s_current_thread->state = OS_THREAD_STATE_RUNNING;
     s_current_thread->priority = 16;
+    s_current_thread->base = 16;
+    s_current_thread->suspend = 0;
 }
 
 /* Track the main game thread — the first one created from main() */
@@ -205,51 +208,124 @@ OSThread* OSGetCurrentThread(void) {
 
 int OSCreateThread(OSThread* thread, void* (*func)(void*), void* param,
                    void* stack, u32 stackSize, OSPriority priority, u16 attr) {
-    (void)stack; (void)stackSize; (void)priority; (void)attr;
+    if (!thread) return 0;
+    memset(thread, 0, sizeof(OSThread));
+    thread->state = OS_THREAD_STATE_READY;
+    thread->priority = priority;
+    thread->base = priority;
+    thread->attr = attr;
+    thread->suspend = 1; /* created in suspended state per Dolphin SDK */
+    thread->stackBase = (u8*)stack;
+    thread->stackEnd = stack ? (u32*)((u8*)stack + stackSize) : NULL;
+
     /* Store the first thread as the main game thread */
     if (s_game_thread == NULL) {
         s_game_thread = thread;
         s_game_thread_func = func;
         s_game_thread_param = param;
     }
-    /* Other threads (DVD, audio) are just tracked but not started */
     return 1;
 }
 
-void OSExitThread(void* val) { (void)val; }
-int OSJoinThread(OSThread* thread, void* val) { (void)thread; (void)val; return 0; }
-void OSDetachThread(OSThread* thread) { (void)thread; }
+void OSExitThread(void* val) {
+    OSThread* cur = OSGetCurrentThread();
+    if (cur) {
+        cur->val = val;
+        cur->state = OS_THREAD_STATE_MORIBUND;
+    }
+}
+
+int OSJoinThread(OSThread* thread, void* val) {
+    (void)val;
+    if (!thread) return 0;
+    /* In single-threaded mode, if thread is moribund, it's done */
+    return (thread->state == OS_THREAD_STATE_MORIBUND) ? 1 : 0;
+}
+
+void OSDetachThread(OSThread* thread) {
+    if (thread) thread->attr |= OS_THREAD_ATTR_DETACH;
+}
 
 s32 OSSuspendThread(OSThread* thread) {
-    (void)thread;
+    if (!thread) return -1;
+    thread->suspend++;
+    if (thread->state == OS_THREAD_STATE_RUNNING || thread->state == OS_THREAD_STATE_READY) {
+        thread->state = OS_THREAD_STATE_READY; /* suspended but not waiting */
+    }
     return 0;
 }
 
 s32 OSResumeThread(OSThread* thread) {
-    /* Only call the main game thread (main01) directly.
+    if (!thread) return -1;
+    if (thread->suspend > 0) thread->suspend--;
+
+    /* Only dispatch the main game thread (main01) directly.
      * The game's main() creates main01 as a thread then suspends itself.
-     * We just call main01() directly here — it never returns. */
-    if (thread == s_game_thread && s_game_thread_func) {
+     * We call main01() directly — it never returns. */
+    if (thread == s_game_thread && s_game_thread_func && thread->suspend == 0) {
         void* (*func)(void*) = s_game_thread_func;
         void* param = s_game_thread_param;
         s_game_thread_func = NULL; /* prevent re-entry */
+        thread->state = OS_THREAD_STATE_RUNNING;
         s_current_thread = thread;
         func(param);
         /* main01 has an infinite loop, so we only reach here if it exits */
+        thread->state = OS_THREAD_STATE_MORIBUND;
     }
-    /* Other threads (DVD, audio) are skipped — single-threaded mode */
+    /* Other threads (DVD, audio) are tracked but not dispatched */
     return 0;
 }
-int OSSetThreadPriority(OSThread* thread, OSPriority priority) { (void)thread; (void)priority; return 1; }
-s32 OSGetThreadPriority(OSThread* thread) { (void)thread; return 16; }
-void OSCancelThread(OSThread* thread) { (void)thread; }
+
+int OSSetThreadPriority(OSThread* thread, OSPriority priority) {
+    if (!thread) return 0;
+    thread->priority = priority;
+    return 1;
+}
+
+s32 OSGetThreadPriority(OSThread* thread) {
+    if (!thread) return 16;
+    return thread->priority;
+}
+
+void OSCancelThread(OSThread* thread) {
+    if (thread) thread->state = OS_THREAD_STATE_MORIBUND;
+}
+
 void OSClearStack(u8 val) { (void)val; }
-BOOL OSIsThreadSuspended(OSThread* thread) { (void)thread; return FALSE; }
-BOOL OSIsThreadTerminated(OSThread* thread) { (void)thread; return FALSE; }
+
+BOOL OSIsThreadSuspended(OSThread* thread) {
+    if (!thread) return FALSE;
+    return (thread->suspend > 0) ? TRUE : FALSE;
+}
+
+BOOL OSIsThreadTerminated(OSThread* thread) {
+    if (!thread) return TRUE;
+    return (thread->state == OS_THREAD_STATE_MORIBUND) ? TRUE : FALSE;
+}
+
 void OSYieldThread(void) {}
-void OSInitThreadQueue(OSThreadQueue* queue) { if (queue) memset(queue, 0, 8); }
-void OSSleepThread(OSThreadQueue* queue) { (void)queue; }
-void OSWakeupThread(OSThreadQueue* queue) { (void)queue; }
+
+void OSInitThreadQueue(OSThreadQueue* queue) {
+    if (queue) {
+        queue->head = NULL;
+        queue->tail = NULL;
+    }
+}
+
+void OSSleepThread(OSThreadQueue* queue) {
+    /* In single-threaded mode, sleeping would deadlock. Mark thread as waiting. */
+    OSThread* cur = OSGetCurrentThread();
+    if (cur) {
+        cur->state = OS_THREAD_STATE_WAITING;
+        cur->queue = queue;
+    }
+}
+
+void OSWakeupThread(OSThreadQueue* queue) {
+    (void)queue;
+    /* In single-threaded mode, wake is immediate — nothing to do */
+}
+
 s32 OSEnableScheduler(void) { return 0; }
 s32 OSDisableScheduler(void) { return 0; }
 OSThread* OSSetIdleFunction(OSIdleFunction idleFunction, void* param, void* stack, u32 stackSize) {

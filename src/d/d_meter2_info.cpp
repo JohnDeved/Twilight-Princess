@@ -11,6 +11,9 @@
 #include "d/d_meter_map.h"
 #include "d/d_msg_class.h"
 #include "d/d_msg_object.h"
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 
 enum ITEMICON_RES_FILE_ID {
     ITEMICON_BTI_ARI_MESU_00=0x3,
@@ -350,11 +353,6 @@ void dMeter2Info_c::decMsgKeyWaitTimer() {
 void dMeter2Info_c::getString(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_msgEntry) {
     strcpy(o_string, "");
 
-#if PLATFORM_PC
-    /* BMG message data is big-endian; not yet endian-converted on PC */
-    return;
-#endif
-
     u8* msgRes;
     if (mMsgResource == NULL) {
         msgRes = (u8*)JKRGetTypeResource('ROOT', "zel_00.bmg", dComIfGp_getMsgDtArchive(0));
@@ -364,6 +362,15 @@ void dMeter2Info_c::getString(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_
     } else {
         msgRes = (u8*)mMsgResource;
     }
+
+#if PLATFORM_PC
+    /* Endian-swap BMG data on first access */
+    {
+        u32 bmgSize = *(u32*)(msgRes + 0x08);
+        if (bmgSize > 0x01000000) bmgSize = pal_swap32(bmgSize); /* still big-endian */
+        pal_swap_bmg(msgRes, bmgSize);
+    }
+#endif
 
     JMSMesgInfo_c* bmg_inf = (JMSMesgInfo_c*)(msgRes + sizeof(bmg_header_t));
     u8* bmg_data = (u8*)bmg_inf + bmg_inf->header.size + sizeof(bmg_section_t);  // pointer to start of message data
@@ -393,11 +400,6 @@ void dMeter2Info_c::getString(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_
 void dMeter2Info_c::getStringKana(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_msgEntry) {
     strcpy(o_string, "");
 
-#if PLATFORM_PC
-    /* BMG message data is big-endian; not yet endian-converted on PC */
-    return;
-#endif
-
     u8* msgRes;
     if (mMsgResource == NULL) {
         msgRes = (u8*)JKRGetTypeResource('ROOT', "zel_00.bmg", dComIfGp_getMsgDtArchive(0));
@@ -407,6 +409,15 @@ void dMeter2Info_c::getStringKana(u32 i_stringID, char* o_string, JMSMesgEntry_c
     } else {
         msgRes = (u8*)mMsgResource;
     }
+
+#if PLATFORM_PC
+    /* Endian-swap BMG data on first access */
+    {
+        u32 bmgSize = *(u32*)(msgRes + 0x08);
+        if (bmgSize > 0x01000000) bmgSize = pal_swap32(bmgSize);
+        pal_swap_bmg(msgRes, bmgSize);
+    }
+#endif
 
     JMSMesgInfo_c* bmg_inf = (JMSMesgInfo_c*)(msgRes + sizeof(bmg_header_t));
     u8* bmg_data = (u8*)bmg_inf + bmg_inf->header.size;
@@ -476,6 +487,15 @@ void dMeter2Info_c::getStringKanji(u32 i_stringID, char* o_string, JMSMesgEntry_
     } else {
         msgRes = (u8*)mMsgResource;
     }
+
+#if PLATFORM_PC
+    /* Endian-swap BMG data on first access */
+    {
+        u32 bmgSize = *(u32*)(msgRes + 0x08);
+        if (bmgSize > 0x01000000) bmgSize = pal_swap32(bmgSize);
+        pal_swap_bmg(msgRes, bmgSize);
+    }
+#endif
 
     JMSMesgInfo_c* bmg_inf = (JMSMesgInfo_c*)(msgRes + sizeof(bmg_header_t));
     u8* bmg_data = (u8*)bmg_inf + bmg_inf->header.size;
