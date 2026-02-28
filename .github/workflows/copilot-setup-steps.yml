@@ -11,13 +11,44 @@ on:
 
 jobs:
   copilot-setup-steps:
-    runs-on: ${{ fromJSON(vars.COPILOT_SETUP_RUNS_ON_JSON || '"ubuntu-latest"') }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev
+
+      - name: Cache ccache
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Cache FetchContent deps
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build/_deps
+          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Configure ccache (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ccache --set-config=max_size=500M
+          ccache --set-config=compression=true
+          ccache -z
 
       - name: Verify environment
         run: |
