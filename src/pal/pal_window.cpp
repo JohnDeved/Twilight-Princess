@@ -28,6 +28,7 @@ extern "C" {
 static SDL_Window* s_window = NULL;
 static int s_headless = 0;
 static int s_initialized = 0;
+static int s_sdl_initialized = 0;
 static int s_quit_requested = 0;
 
 int pal_window_init(u32 width, u32 height, const char* title) {
@@ -63,6 +64,7 @@ int pal_window_init(u32 width, u32 height, const char* title) {
                 SDL_GetError());
         return 0;
     }
+    s_sdl_initialized = 1;
 
     /* In headless mode with a display (Xvfb), create a normal window so
      * OpenGL can render to it.  On Xvfb the window is invisible to the user.
@@ -163,8 +165,9 @@ void pal_window_shutdown(void) {
         SDL_DestroyWindow(s_window);
         s_window = NULL;
     }
-    if (s_initialized && !s_headless) {
+    if (s_sdl_initialized) {
         SDL_Quit();
+        s_sdl_initialized = 0;
     }
     s_initialized = 0;
 }

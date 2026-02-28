@@ -19,6 +19,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #include "pal/pal_save.h"
 

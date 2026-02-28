@@ -125,16 +125,18 @@ export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,300,600,1200,1800"
 
 # Start Xvfb for software OpenGL rendering (no GPU needed)
 XVFB_PID=""
-if ! pgrep -x Xvfb > /dev/null 2>&1; then
+if ! xdpyinfo -display :99 >/dev/null 2>&1; then
     Xvfb :99 -screen 0 640x480x24 &
     XVFB_PID=$!
     # Wait for Xvfb to be ready
-    for i in 1 2 3 4 5; do
+    for i in 1 2 3 4 5 6 7 8 9 10; do
         xdpyinfo -display :99 >/dev/null 2>&1 && break
         sleep 1
     done
+    export DISPLAY=:99
+else
+    export DISPLAY=:99
 fi
-export DISPLAY="${DISPLAY:-:99}"
 
 # Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
 export GALLIUM_DRIVER="${GALLIUM_DRIVER:-softpipe}"

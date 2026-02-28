@@ -608,18 +608,10 @@ void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const
 void GXSetDispCopyGamma(GXGamma gamma) { (void)gamma; }
 void GXCopyDisp(void* dest, GXBool clear) {
     (void)dest; (void)clear;
-    /* When the GX shim is active (bgfx initialized), this presents
-     * the rendered frame. Fire RENDER_FRAME milestone only when the frame
-     * is valid — no GX stubs were hit and real draw calls were submitted,
-     * ensuring a valid verifiable image was produced. */
-    if (gx_shim_active) {
-        pal_render_end_frame();
-        if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
-            && gx_stub_frame_is_valid()) {
-            pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME,
-                          "first stub-free frame with valid draw calls");
-        }
-    }
+    /* Frame submission happens in mDoGph_Painter via pal_render_end_frame().
+     * GXCopyDisp is called from JFWDisplay::exchangeXfb_double during
+     * beginRender (before draw calls), so submitting here would create
+     * duplicate bgfx frames or submit before any draws. */
 }
 void GXCopyTex(void* dest, GXBool clear) { (void)dest; (void)clear; }
 void GXClearBoundingBox(void) {}

@@ -2941,39 +2941,58 @@ inline void dComIfGp_setMain2DArchive(JKRArchive* arc) {
 }
 
 inline JKRExpHeap* dComIfGp_particle_getResHeap() {
-    return g_dComIfG_gameInfo.play.getParticle()->getResHeap();
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        return g_dComIfG_gameInfo.play.getParticle()->getResHeap();
+    }
+    return NULL;
 }
 
 inline void dComIfGp_particle_levelExecute(u32 param_0) {
-    g_dComIfG_gameInfo.play.getParticle()->levelExecute(param_0);
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->levelExecute(param_0);
+    }
 }
 
 inline void dComIfGp_particle_createCommon(const void* data) {
-    g_dComIfG_gameInfo.play.getParticle()->createCommon(data);
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->createCommon(data);
+    }
 }
 
 inline void dComIfGp_particle_readScene(u8 particle_no, mDoDvdThd_toMainRam_c** param_1) {
-    g_dComIfG_gameInfo.play.getParticle()->readScene(particle_no, param_1);
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->readScene(particle_no, param_1);
+    }
 }
 
 inline void dComIfGp_particle_createScene(const void* param_0) {
-    g_dComIfG_gameInfo.play.getParticle()->createScene(param_0);
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->createScene(param_0);
+    }
 }
 
 inline void dComIfGp_particle_removeScene(bool param_0) {
-    g_dComIfG_gameInfo.play.getParticle()->removeScene(param_0);
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->removeScene(param_0);
+    }
 }
 
 inline void dComIfGp_particle_cleanup() {
-    g_dComIfG_gameInfo.play.getParticle()->cleanup();
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->cleanup();
+    }
 }
 
 inline void dComIfGp_particle_calc3D() {
-    g_dComIfG_gameInfo.play.getParticle()->calc3D();
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->calc3D();
+    }
 }
 
 inline void dComIfGp_particle_calc2D() {
-    g_dComIfG_gameInfo.play.getParticle()->calc2D();
+    if (g_dComIfG_gameInfo.play.getParticle() != NULL) {
+        g_dComIfG_gameInfo.play.getParticle()->calc2D();
+    }
 }
 
 inline void dComIfGp_particle_calcMenu() {

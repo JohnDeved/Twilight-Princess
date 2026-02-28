@@ -279,14 +279,15 @@ void pal_render_end_frame(void) {
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
 
-    pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
-                     gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
-
     /* Submit frame — triggers rendering and capture.
      * With BGFX_RESET_CAPTURE enabled (set in pal_render_init via
      * init.resolution.reset), bgfx calls captureFrame() on s_callback
      * (registered via init.callback) for every frame automatically. */
     bgfx::frame();
+
+    /* Verify after bgfx::frame() so capture buffer is up-to-date */
+    pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+                     gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
     /* Save screenshot at frame 30 (logo should be visible) */
     if (s_frame_count == 30 && pal_capture_screenshot_active()) {

@@ -39,6 +39,9 @@ public:
     /* 0x68 */ u8* mArchiveData;
     /* 0x6C */ bool mIsOpen;
     /* 0x6D */ u8 field_0x6d[3];
+#if PLATFORM_PC
+    void* mRepackedFiles; /* Repacked file entries for 64-bit (separately allocated) */
+#endif
 };
 
 #endif /* JKRMEMARCHIVE_H */
