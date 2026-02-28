@@ -147,13 +147,13 @@ def validate_integrity(milestones, frame_validation):
     if 12 in reached_ids:  # FRAMES_1800
         first_frame_ms = seen_ids.get(5, {}).get("time_ms", 0)
         frames_1800_ms = seen_ids.get(12, {}).get("time_ms", 0)
-        # 1800 frames at 60fps = 30000ms minimum
+        # Integrity rule: 1800 frames reached in under 15s is implausible
         if frames_1800_ms > 0 and first_frame_ms > 0:
             gap = frames_1800_ms - first_frame_ms
             if gap < 15000:  # Less than 15s for 1800 frames is suspicious
                 issues.append(
                     f"FRAMES_1800 reached only {gap}ms after FIRST_FRAME "
-                    f"(expected >=30000ms for 1800 frames)"
+                    f"(expected >=15000ms for 1800 frames)"
                 )
                 invalid_ids.add(12)
 

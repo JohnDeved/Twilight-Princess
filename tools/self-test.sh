@@ -25,7 +25,15 @@ set -euo pipefail
 SKIP_BUILD=0
 FRAMES=2000
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="/tmp/tp-self-test"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tp-self-test.XXXXXX")"
+
+# Clean up temp dir on exit
+cleanup_tmp() {
+    if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf -- "$TMP_DIR"
+    fi
+}
+trap cleanup_tmp EXIT
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do

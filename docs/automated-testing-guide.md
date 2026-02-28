@@ -168,7 +168,7 @@ The file `milestone-baseline.json` stores the milestone count ever achieved:
 After each CI run, `tools/check_milestone_regression.py` compares the current run against
 this baseline:
 
-- **Improved**: Current > baseline → 🎉 (update baseline automatically)
+- **Improved**: Current > baseline → 🎉 (you must update the baseline manually; CI does **not** auto-update it, see below)
 - **Same**: Current == baseline → ✅ (no change needed)
 - **Regressed**: Current < baseline → 🚨 (investigate and fix before merging)
 

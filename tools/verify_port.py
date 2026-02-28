@@ -184,6 +184,10 @@ def compare_images(path_a, path_b):
     if w_a != w_b or h_a != h_b:
         return {"error": f"dimension mismatch: {w_a}x{h_a} vs {w_b}x{h_b}"}
 
+    expected_size = w_a * h_a * 3
+    if len(px_a) != expected_size or len(px_b) != expected_size:
+        return {"error": f"pixel data size mismatch: {len(px_a)} vs {len(px_b)} (expected {expected_size})"}
+
     if px_a == px_b:
         return {"rmse": 0.0, "pct_different": 0.0, "max_diff": 0, "identical": True}
 
@@ -267,7 +271,15 @@ def check_render_baseline(data, baseline_path):
         expected_hash = expected.get("expected_fb_hash")
         if expected_hash:
             actual_hash = actual.get("fb_hash")
-            if actual_hash and actual_hash != expected_hash:
+            if not actual_hash:
+                issues.append({
+                    "frame": frame_str,
+                    "metric": "fb_hash",
+                    "expected": expected_hash,
+                    "actual": "(missing)",
+                    "passed": False,
+                })
+            elif actual_hash != expected_hash:
                 issues.append({
                     "frame": frame_str,
                     "metric": "fb_hash",
@@ -413,16 +425,16 @@ TEV_SHADER_NAMES = {
     4: "DECAL",      # texture with alpha blend
 }
 
-# GX primitive type names — mapped to sequential bit positions 0-7
-# C-side mapping: bit = (prim_type - 0x80) >> 3
+# GX primitive type names — mapped to sequential bit positions 0-6.
+# These bit indices must match the C-side switch in gx_tev.cpp:pal_tev_flush_draw().
 GX_PRIM_NAMES = {
-    0: "QUADS",      # GX_QUADS    = 0x80 → bit 0
-    1: "TRIANGLES",  # GX_TRIANGLES = 0x90 → bit 1
-    2: "TRISTRIP",   # GX_TRISTRIP  = 0x98 → bit 2
-    3: "TRIFAN",     # GX_TRIFAN    = 0xA0 → bit 3
-    4: "LINES",      # GX_LINES     = 0xA8 → bit 4
-    5: "LINESTRIP",  # GX_LINESTRIP = 0xB0 → bit 5
-    6: "POINTS",     # GX_POINTS    = 0xB8 → bit 6
+    0: "QUADS",      # GX_QUADS         = 0x80
+    1: "TRIANGLES",  # GX_TRIANGLES     = 0x90
+    2: "TRISTRIP",   # GX_TRIANGLESTRIP = 0x98
+    3: "TRIFAN",     # GX_TRIANGLEFAN   = 0xA0
+    4: "LINES",      # GX_LINES         = 0xA8
+    5: "LINESTRIP",  # GX_LINESTRIP     = 0xB0
+    6: "POINTS",     # GX_POINTS        = 0xB8
 }
 
 
@@ -696,13 +708,28 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
         if golden_results:
             result["details"]["golden_comparisons"] = golden_results
 
-            # Flag regressions: RMSE > 5.0 against a golden reference
+            # Flag regressions and comparison errors against golden references.
             for cmp in golden_results:
+                # Treat comparison errors as rendering issues so CI flags them.
+                error_msg = cmp.get("error")
+                if error_msg:
+                    frame = cmp.get("frame", "?")
+                    result["issues"].append(
+                        f"Golden image comparison error for frame {frame}: {error_msg}"
+                    )
+                    continue
+
                 if cmp.get("has_golden") and not cmp.get("identical", False):
-                    rmse = cmp.get("rmse", 0)
-                    if rmse > 5.0:
+                    rmse = cmp.get("rmse")
+                    frame = cmp.get("frame", "?")
+                    if rmse is None:
                         result["issues"].append(
-                            f"Golden image regression: {cmp['frame']} "
+                            f"Golden image regression: {frame} "
+                            "(comparison failed, RMSE unavailable)"
+                        )
+                    elif rmse > 5.0:
+                        result["issues"].append(
+                            f"Golden image regression: {frame} "
                             f"RMSE={rmse:.1f} (threshold: 5.0)"
                         )
 
@@ -862,7 +889,11 @@ def main():
     if not args.check_rendering and not args.check_input and not args.check_audio:
         args.check_rendering = True
 
-    data = parse_log(args.logfile)
+    try:
+        data = parse_log(args.logfile)
+    except OSError as e:
+        print(f"Input error while reading log file '{args.logfile}': {e}", file=sys.stderr)
+        sys.exit(2)
 
     report = {
         "checks": {},

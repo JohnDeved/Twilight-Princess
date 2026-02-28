@@ -74,7 +74,7 @@ def main():
         "integrity_valid": integrity_valid,
         "integrity_issues": integrity_issues,
         "disqualified_milestones": disqualified,
-        "pass": status in ("same", "improved"),
+        "pass": status in ("same", "improved") and integrity_valid and not summary.get("crash"),
     }
 
     # Print human-readable report

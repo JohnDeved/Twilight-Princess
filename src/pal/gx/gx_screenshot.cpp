@@ -350,21 +350,30 @@ uint32_t pal_screenshot_hash_fb(void) {
     if (!s_fb || !s_fb_allocated)
         return 0;
 
-    /* CRC32 of the framebuffer — deterministic for identical pixel content.
-     * Uses the standard CRC32 polynomial (0xEDB88320, reflected). */
+    /* Table-based CRC32 using the standard polynomial (0xEDB88320, reflected).
+     * Much faster than per-bit loop — processes one byte per table lookup. */
+    static uint32_t crc_table[256];
+    static int table_init = 0;
+    if (!table_init) {
+        uint32_t n, k;
+        for (n = 0; n < 256; n++) {
+            uint32_t c = n;
+            for (k = 0; k < 8; k++) {
+                if (c & 1)
+                    c = (c >> 1) ^ 0xEDB88320;
+                else
+                    c >>= 1;
+            }
+            crc_table[n] = c;
+        }
+        table_init = 1;
+    }
+
     uint32_t crc = 0xFFFFFFFF;
     uint32_t total = (uint32_t)(FB_W * FB_H * 4);
     uint32_t i;
     for (i = 0; i < total; i++) {
-        uint8_t byte = s_fb[i];
-        int j;
-        crc ^= byte;
-        for (j = 0; j < 8; j++) {
-            if (crc & 1)
-                crc = (crc >> 1) ^ 0xEDB88320;
-            else
-                crc >>= 1;
-        }
+        crc = crc_table[(crc ^ s_fb[i]) & 0xFF] ^ (crc >> 8);
     }
     return crc ^ 0xFFFFFFFF;
 }

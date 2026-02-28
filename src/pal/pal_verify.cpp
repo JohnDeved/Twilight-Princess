@@ -167,18 +167,16 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     s_all_prim_mask |= gx_frame_prim_mask;
 
     /* Track frame-to-frame hash changes for progression detection.
-     * Skip first frame (s_total_frames==1) since s_prev_fb_hash is uninitialized. */
-    {
-        uint32_t fb_hash = pal_screenshot_hash_fb();
-        if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)
-            s_hash_changes++;
-        s_prev_fb_hash = fb_hash;
-    }
+     * Skip first frame (s_total_frames==1) since s_prev_fb_hash is uninitialized.
+     * Compute hash once and reuse for both progression and logging. */
+    uint32_t fb_hash = pal_screenshot_hash_fb();
+    if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)
+        s_hash_changes++;
+    s_prev_fb_hash = fb_hash;
 
     /* Emit detailed frame report every 60 frames, or on capture frames */
     if (frame_num % 60 == 0 || should_capture(frame_num) || frame_num <= 5) {
         /* Include framebuffer hash for deterministic rendering comparison */
-        uint32_t fb_hash = pal_screenshot_hash_fb();
         int has_draws = pal_screenshot_has_draws();
         fprintf(stdout,
             "{\"verify_frame\":{\"frame\":%u,\"draw_calls\":%u,\"verts\":%u,"
