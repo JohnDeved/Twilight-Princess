@@ -458,8 +458,9 @@ static void swap_mat3(u8* block, u32 blockSize) {
         swap_u32_range(block, off, end);
     }
 
-    /* TexMtxInfo (offset[13], 0x40): large struct per entry, many f32/u16 fields.
-     * Each TexMtxInfo is 0x64 bytes. Swap as u16 for simplicity. */
+    /* TexMtxInfo (offset[13], 0x40): large struct per entry, many f32 fields.
+     * Each TexMtxInfo is 0x64 bytes with mixed u8/f32 fields.
+     * Swap as u32 to correctly handle f32 values. */
     off = *(u32*)(block + 0x40);
     if (off != 0 && off < blockSize) {
         u32 end = blockSize;
@@ -467,7 +468,17 @@ static void swap_mat3(u8* block, u32 blockSize) {
             u32 nextOff = *(u32*)(block + 0x0C + k * 4);
             if (nextOff > off) { end = nextOff; break; }
         }
-        swap_u16_range(block, off, end);
+        /* TexMtxInfo layout per entry (0x64 bytes):
+         * u8 type, u8 info, pad[2], f32 centerS, f32 centerT, f32 unknown,
+         * f32 scaleS, f32 scaleT, f32 rotation, f32 transS, f32 transT,
+         * f32 effectMtx[4][4] */
+        u32 entrySize = 0x64;
+        int numEntries = (end - off) / entrySize;
+        for (int i = 0; i < numEntries && i < 256; i++) {
+            u32 eoff = off + i * entrySize;
+            /* Skip first 4 bytes (u8 type, u8 info, pad[2]) */
+            swap_u32_range(block, eoff + 4, eoff + entrySize);
+        }
     }
 
     /* TexNo (offset[15], 0x48): u16 per entry */
@@ -504,7 +515,10 @@ static void swap_mat3(u8* block, u32 blockSize) {
     /* TevSwapMode, TevSwapTable, FogInfo, AlphaCompInfo, BlendInfo, ZMode:
      * Most are u8/small structs. ZMode is 4 bytes (u8 fields). */
 
-    /* FogInfo (offset[24], 0x68): contains f32 fields */
+    /* FogInfo (offset[24], 0x68): contains f32 fields
+     * Layout: u8 type, u8 enable, u16 pad, f32 startZ, f32 endZ,
+     *         f32 nearZ, f32 farZ, GXColor color (4 u8) = 0x2C bytes
+     * There may also be a fog adjustment table with u16 entries. */
     off = *(u32*)(block + 0x68);
     if (off != 0 && off < blockSize) {
         u32 end = blockSize;
@@ -512,7 +526,16 @@ static void swap_mat3(u8* block, u32 blockSize) {
             u32 nextOff = *(u32*)(block + 0x0C + k * 4);
             if (nextOff > off) { end = nextOff; break; }
         }
-        swap_u16_range(block, off, end);
+        u32 fogSize = 0x2C;
+        int numEntries = (end - off) / fogSize;
+        for (int i = 0; i < numEntries && i < 256; i++) {
+            u32 eoff = off + i * fogSize;
+            swap_u16_array(block, eoff + 2, 1);  /* pad u16 */
+            swap_u32_range(block, eoff + 4, eoff + 0x14); /* 4 f32 fields */
+            /* GXColor at +0x14 is 4 u8s, no swap */
+            /* Fog adj table entries at +0x18 are u16s */
+            swap_u16_range(block, eoff + 0x18, eoff + fogSize);
+        }
     }
 
     /* NBTScaleInfo (offset[29], 0x80): contains u8 enable + f32[3] scale */
