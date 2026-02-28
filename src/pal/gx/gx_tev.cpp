@@ -670,6 +670,7 @@ void pal_tev_flush_draw(void) {
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;
     gx_frame_valid_verts += nverts;
+    gx_stub_draw_call_crosscheck();
 }
 
 } /* extern "C" */

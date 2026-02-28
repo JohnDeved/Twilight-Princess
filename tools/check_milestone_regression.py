@@ -4,12 +4,11 @@ Compare milestone results against a stored baseline to detect regressions.
 
 Usage:
     python3 tools/check_milestone_regression.py milestone-summary.json \\
-        --baseline milestone-baseline.json \\
-        --update-on-improvement
+        --baseline milestone-baseline.json
 
 Exit codes:
-    0 = pass (same or improved)
-    1 = regression detected
+    0 = pass (same or improved, integrity valid)
+    1 = regression detected or integrity failure
     2 = input error
 """
 import json
@@ -124,8 +123,6 @@ def main():
     parser.add_argument("summary", help="Path to milestone-summary.json from current run")
     parser.add_argument("--baseline", default="milestone-baseline.json",
                         help="Path to baseline milestone file")
-    parser.add_argument("--update-on-improvement", action="store_true",
-                        help="Update baseline file when milestone improves")
     parser.add_argument("--output", default=None,
                         help="Write regression report to this JSON file")
     args = parser.parse_args()
@@ -140,8 +137,16 @@ def main():
     current = summary.get("highest_milestone", -1)
     baseline_milestone = baseline.get("highest_milestone", -1) if baseline else -1
 
+    # Check integrity from parse_milestones.py
+    integrity = summary.get("integrity", {})
+    integrity_valid = integrity.get("valid", True)
+    integrity_issues = integrity.get("issues", [])
+
     # Determine status
-    if current > baseline_milestone:
+    if not integrity_valid:
+        status = "integrity_failure"
+        emoji = "🚫"
+    elif current > baseline_milestone:
         status = "improved"
         emoji = "🎉"
     elif current == baseline_milestone:
@@ -161,7 +166,9 @@ def main():
         "crash": summary.get("crash"),
         "stubs_hit": summary.get("stubs_hit", [])[:10],
         "next_action": next_action,
-        "pass": status != "regressed",
+        "integrity_valid": integrity_valid,
+        "integrity_issues": integrity_issues,
+        "pass": status in ("same", "improved"),
     }
 
     # Print human-readable report
@@ -171,6 +178,13 @@ def main():
     print(f"Current milestone:  {current}")
     print(f"Baseline milestone: {baseline_milestone}")
     print(f"Status: {status.upper()} (delta: {current - baseline_milestone:+d})")
+
+    if not integrity_valid:
+        print(f"\n🚫 INTEGRITY FAILURE — milestone claims are invalid:")
+        for issue in integrity_issues:
+            print(f"   ❌ {issue}")
+        print(f"\n   Milestones that fail integrity checks are not trusted.")
+        print(f"   Fix the underlying issues — do not attempt to bypass checks.")
 
     if report["crash"]:
         print(f"\n⚠️  CRASH detected: signal {report['crash'].get('signal', '?')}")
@@ -193,20 +207,6 @@ def main():
         with open(args.output, "w") as f:
             json.dump(report, f, indent=2)
         print(f"Report written to: {args.output}")
-
-    # Update baseline on improvement
-    if args.update_on_improvement and status == "improved":
-        last = summary.get("last_milestone", {})
-        new_baseline = {
-            "highest_milestone": current,
-            "highest_milestone_name": last.get("milestone", "UNKNOWN"),
-            "updated": "auto",
-            "note": f"Auto-updated from {baseline_milestone} to {current}",
-        }
-        with open(args.baseline, "w") as f:
-            json.dump(new_baseline, f, indent=2)
-            f.write("\n")
-        print(f"✅ Baseline updated: {baseline_milestone} → {current}")
 
     sys.exit(0 if report["pass"] else 1)
 

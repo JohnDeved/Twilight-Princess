@@ -1,5 +1,5 @@
 {
-  "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. Updated automatically when rendering improves.",
+  "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. These values represent minimum acceptable metrics and must not be lowered without justification.",
   "version": 1,
   "frames": {
     "30": {
@@ -28,9 +28,10 @@
     }
   },
   "global": {
-    "min_peak_draw_calls": 0,
-    "min_peak_verts": 0,
+    "min_peak_draw_calls": 1,
+    "min_peak_verts": 1,
     "min_frames_with_draws_pct": 0,
     "min_render_health_pct": 0
-  }
+  },
+  "_anti_cheat_note": "Do not lower these thresholds. Global min_peak values ensure the rendering pipeline is functional. Per-frame thresholds should be raised as rendering improves, never lowered. Changes to this file should be reviewed carefully."
 }

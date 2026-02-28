@@ -126,8 +126,7 @@ jobs:
             --verify-dir verify_output \
             --golden-dir tests/golden \
             --render-baseline tests/render-baseline.json \
-            --check-all \
-            --update-golden || true
+            --check-all || true
 
       - name: Check milestone regression
         id: regression
@@ -281,6 +280,7 @@ jobs:
               'improved': '🎉',
               'same': '✅',
               'regressed': '🚨',
+              'integrity_failure': '🚫',
               'unknown': '❓'
             };
 
@@ -295,6 +295,17 @@ jobs:
             body += `| **Baseline** | ${regression.baseline_milestone ?? 'N/A'} |\n`;
             body += `| **Status** | ${(regression.status || 'unknown').toUpperCase()} |\n`;
             body += `| **Delta** | ${regression.delta >= 0 ? '+' : ''}${regression.delta ?? 0} |\n`;
+            body += `| **Integrity** | ${summary.integrity?.valid ? '✅ VALID' : '🚫 FAILED'} |\n`;
+
+            // Integrity check failures
+            if (summary.integrity && !summary.integrity.valid) {
+              body += `\n### 🚫 Integrity Check Failed\n`;
+              body += `> Milestone claims are invalid — the following issues were detected:\n\n`;
+              for (const issue of (summary.integrity.issues || [])) {
+                body += `- ❌ ${issue}\n`;
+              }
+              body += `\n> **These results are not trusted.** Fix the underlying issues.\n`;
+            }
 
             // Milestones reached
             if (summary.milestones_reached && summary.milestones_reached.length > 0) {

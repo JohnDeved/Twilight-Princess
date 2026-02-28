@@ -38,8 +38,13 @@ void gx_stub_frame_reset(void);
 /* Check if the current frame produced a valid verifiable image:
  * - No GX stubs were hit during rendering
  * - At least one real draw call with valid vertices was submitted
+ * - Draw call counter matches the cross-check counter (anti-tamper)
  * Returns 1 if valid, 0 if not. */
 int gx_stub_frame_is_valid(void);
+
+/* Anti-cheat: must be called from the actual TEV draw path only.
+ * Provides independent verification that gx_frame_draw_calls is honest. */
+void gx_stub_draw_call_crosscheck(void);
 
 static inline void gx_stub_hit(int id, const char* name) {
     if (id >= 0 && id < GX_STUB_MAX) {
