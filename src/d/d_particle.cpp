@@ -1189,6 +1189,13 @@ u8 dPa_control_c::getRM_ID(u16 param_0) {
 }
 
 void dPa_control_c::createCommon(void const* param_0) {
+#if PLATFORM_PC
+    /* JPC (particle) binary is big-endian and needs comprehensive endian conversion.
+     * For now, skip particle system init on PC to avoid crashes.
+     * Particles are cosmetic and not needed for scene rendering. */
+    (void)param_0;
+    return;
+#endif
 #if DEBUG
     s32 heapSize = m_resHeap->getSize((void*)param_0);
     // "Resident particle resource size"
@@ -1241,6 +1248,12 @@ void dPa_control_c::createRoomScene() {
 }
 
 bool dPa_control_c::readScene(u8 param_0, mDoDvdThd_toMainRam_c** param_1) {
+#if PLATFORM_PC
+    /* Particle system not initialized on PC */
+    (void)param_0;
+    *param_1 = NULL;
+    return 0;
+#endif
     if (param_0 == 0xff || param_0 == field_0x18) {
         return 0;
     }
@@ -1259,6 +1272,11 @@ bool dPa_control_c::readScene(u8 param_0, mDoDvdThd_toMainRam_c** param_1) {
 }
 
 void dPa_control_c::createScene(void const* param_0) {
+#if PLATFORM_PC
+    /* Particle system not initialized on PC — skip scene particle creation */
+    (void)param_0;
+    return;
+#endif
     for (int i = 0; i < field_0x1a; i++) {
         field_0x1c[i].createEmitter(mEmitterMng);
     }
