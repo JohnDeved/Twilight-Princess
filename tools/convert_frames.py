@@ -140,7 +140,8 @@ def generate_video(png_dir, output_path, fps=4):
             print(f"ffmpeg failed: {result.stderr[:500]}")
             return False
     except FileNotFoundError:
-        print("ffmpeg not found — skipping video generation")
+        print("ffmpeg not found — install ffmpeg to enable video generation "
+              "(e.g., apt-get install ffmpeg)")
         return False
     except subprocess.TimeoutExpired:
         print("ffmpeg timed out — skipping video generation")

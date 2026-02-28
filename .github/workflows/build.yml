@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    branches-ignore:
-      - 'port'
-      - 'copilot/**'
   workflow_dispatch:
     inputs:
       debug_incremental:

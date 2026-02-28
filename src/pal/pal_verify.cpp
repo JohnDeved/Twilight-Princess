@@ -17,6 +17,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 extern "C" {
 #include "pal/pal_verify.h"
@@ -96,8 +97,10 @@ void pal_verify_init(void) {
     if (!s_verify_dir || s_verify_dir[0] == '\0')
         s_verify_dir = "verify_output";
 
-    /* Create output directory */
-    mkdir(s_verify_dir, 0755);
+    /* Create output directory (ignore EEXIST) */
+    if (mkdir(s_verify_dir, 0755) != 0 && errno != EEXIST) {
+        fprintf(stderr, "{\"verify\":\"warning\",\"msg\":\"mkdir failed: %s\"}\n", s_verify_dir);
+    }
 
     /* Parse capture frame schedule */
     const char* capture_spec = getenv("TP_VERIFY_CAPTURE_FRAMES");
@@ -257,7 +260,8 @@ int pal_verify_analyze_fb(u32 frame_num) {
         avg_g += g;
         avg_b += b;
 
-        /* Track unique colors via quantized 8-bit hash (all pixels) */
+        /* Track unique colors via 3-bit R, 3-bit G, 2-bit B quantization
+         * (256 buckets) — samples all pixels for accurate diversity count */
         {
             uint8_t hash = (uint8_t)(((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6));
             color_set[hash] = 1;
