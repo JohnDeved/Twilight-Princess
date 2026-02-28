@@ -56,3 +56,5 @@ regression-report.json
 # PC port save data
 /save
 logo_render.bmp
+/test_output/
+/test_output2/

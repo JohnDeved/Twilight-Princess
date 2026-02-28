@@ -456,7 +456,6 @@ dScnLogo_c::~dScnLogo_c() {
     field_0x1d0->destroy();
     JKRFree(dummyGameAlloc);
 
-#if !PLATFORM_PC
     dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
     dComIfGp_setFieldMapArchive2(mpField0Command->getArchive());
     dComIfGp_setAnmArchive(mpAlAnmCommand->getArchive());
@@ -501,6 +500,9 @@ dScnLogo_c::~dScnLogo_c() {
     mpRubyResCommand->destroy();
     mParticleCommand->destroy();
 
+#if !PLATFORM_PC
+    /* Font resources are big-endian binary — need byte-swap on PC before parsing.
+     * Skip font/particle init on PC until comprehensive endian conversion is added. */
     JKRAramHeap* aram_heap = JKRAram::getAramHeap();
     u32 free_size = aram_heap->getTotalFreeSize();
     mDoExt_getMesgFont();
@@ -524,7 +526,12 @@ dScnLogo_c::~dScnLogo_c() {
     dDlst_shadowControl_c::setSimpleTex((ResTIMG*)dComIfG_getObjectRes("Always", 0x4A));
     dTres_c::createWork();
     dMpath_c::createWork();
-#endif /* !PLATFORM_PC */
+#else
+    /* On PC, skip font/item/particle resource parsing (big-endian binary),
+     * but still destroy the load commands to free memory. */
+    mItemTableCommand->destroy();
+    mEnemyItemCommand->destroy();
+#endif
 
     #if PLATFORM_WII
     data_8053a730 = 0;
@@ -622,8 +629,8 @@ int dScnLogo_c::create() {
     logoInitGC();
     mpHeap->becomeCurrentHeap();
 
-#if !PLATFORM_PC
     dvdDataLoad();
+#if !PLATFORM_PC
     Z2AudioMgr::getInterface()->loadStaticWaves();
 #endif
     mDoGph_gInf_c::setTickRate((OS_BUS_CLOCK / 4) / 60);
@@ -785,28 +792,37 @@ void dScnLogo_c::dvdDataLoad() {
 
     dComIfG_setObjectRes("Alink", (u8)0, NULL);
 
+#if PLATFORM_PC
+    /* On PC there's no ARAM; use MOUNT_MEM + system heap to avoid J2D heap pressure */
+    #define PC_MOUNT JKRArchive::MOUNT_MEM
+    #define PC_HEAP  NULL
+#else
+    #define PC_MOUNT JKRArchive::MOUNT_ARAM
+    #define PC_HEAP  mDoExt_getJ2dHeap()
+#endif
+
     mpField0Command = mDoDvdThd_mountXArchive_c::create(
-        "/res/FieldMap/Field0.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/FieldMap/Field0.arc", 0, PC_MOUNT, PC_HEAP);
     mpAlAnmCommand =
-        mDoDvdThd_mountXArchive_c::create("/res/Object/AlAnm.arc", 0, JKRArchive::MOUNT_ARAM, NULL);
+        mDoDvdThd_mountXArchive_c::create("/res/Object/AlAnm.arc", 0, PC_MOUNT, NULL);
     mpFmapResCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/fmapres.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/fmapres.arc", 0, PC_MOUNT, PC_HEAP);
     mpDmapResCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/dmapres.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/dmapres.arc", 0, PC_MOUNT, PC_HEAP);
     mpCollectResCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/clctres.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/clctres.arc", 0, PC_MOUNT, PC_HEAP);
     mpItemIconCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/itemicon.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/itemicon.arc", 0, PC_MOUNT, PC_HEAP);
     mpRingResCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/ringres.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/ringres.arc", 0, PC_MOUNT, PC_HEAP);
     mpPlayerNameCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/playerName.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/playerName.arc", 0, PC_MOUNT, PC_HEAP);
     mpItemInfResCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/itmInfRes.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/itmInfRes.arc", 0, PC_MOUNT, PC_HEAP);
     mpButtonCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/button.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/button.arc", 0, PC_MOUNT, PC_HEAP);
     mpCardIconCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/CardIcon/cardicon.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/CardIcon/cardicon.arc", 0, PC_MOUNT, PC_HEAP);
 
     #if VERSION == VERSION_GCN_PAL
     switch (getPalLanguage()) {
@@ -832,26 +848,26 @@ void dScnLogo_c::dvdDataLoad() {
     #endif
 
     mpMsgComCommand = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgcom.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgcom.arc", 0, PC_MOUNT, PC_HEAP);
     mpMsgResCommand[0] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres00.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres00.arc", 0, PC_MOUNT, PC_HEAP);
     mpMsgResCommand[1] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres01.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres01.arc", 0, PC_MOUNT, PC_HEAP);
     mpMsgResCommand[2] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres02.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres02.arc", 0, PC_MOUNT, PC_HEAP);
     mpMsgResCommand[3] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres03.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres03.arc", 0, PC_MOUNT, PC_HEAP);
 #if VERSION == VERSION_GCN_JPN
     mpMsgResCommand[4] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres04.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres04.arc", 0, PC_MOUNT, PC_HEAP);
 #else
     mpMsgResCommand[4] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres04F.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres04F.arc", 0, PC_MOUNT, PC_HEAP);
 #endif
     mpMsgResCommand[5] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres05.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres05.arc", 0, PC_MOUNT, PC_HEAP);
     mpMsgResCommand[6] = mDoDvdThd_mountXArchive_c::create(
-        "/res/Layout/msgres06.arc", 0, JKRArchive::MOUNT_ARAM, mDoExt_getJ2dHeap());
+        "/res/Layout/msgres06.arc", 0, PC_MOUNT, PC_HEAP);
     mpMain2DCommand =
         mDoDvdThd_mountXArchive_c::create("/res/Layout/main2D.arc", 0, JKRArchive::MOUNT_MEM, NULL);
 
@@ -878,6 +894,11 @@ void dScnLogo_c::dvdDataLoad() {
 
     preLoad_dyl_create();
     preLoad_dyl();
+
+#if PLATFORM_PC
+    #undef PC_MOUNT
+    #undef PC_HEAP
+#endif
 }
 
 static int dScnLogo_Create(scene_class* i_this) {
