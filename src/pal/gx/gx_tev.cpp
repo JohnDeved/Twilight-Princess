@@ -114,6 +114,8 @@ static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
 
 static bgfx::ProgramHandle s_programs[GX_TEV_SHADER_COUNT];
 static bgfx::UniformHandle s_tex_uniform;
+static bgfx::UniformHandle s_tev_reg0_uniform;
+static bgfx::UniformHandle s_tev_reg1_uniform;
 static int s_tev_ready = 0;
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
@@ -258,7 +260,22 @@ static int detect_tev_preset(void) {
         return GX_TEV_SHADER_MODULATE;
     }
 
-    /* Multi-stage TEV — fall back to MODULATE for textured, PASSCLR otherwise */
+    /* Multi-stage TEV — detect common patterns */
+    if (has_texture && g_gx_state.num_tev_stages >= 2) {
+        const GXTevStage* s1 = &g_gx_state.tev_stages[1];
+
+        /* J2DPicture mBlack/mWhite tinting:
+         * Stage 0: color=(TEXC, ZERO, ZERO, ZERO) — texture REPLACE
+         * Stage 1: color=(C0, C1, CPREV, ZERO) — lerp(mBlack, mWhite, texColor)
+         * Use BLEND shader with TEV register uniforms. */
+        if (uses_texc &&
+            s1->color_a == GX_CC_C0 && s1->color_b == GX_CC_C1 &&
+            s1->color_c == GX_CC_CPREV && s1->color_d == GX_CC_ZERO) {
+            return GX_TEV_SHADER_BLEND;
+        }
+    }
+
+    /* Generic multi-stage: MODULATE for textured, PASSCLR otherwise */
     return has_texture ? GX_TEV_SHADER_MODULATE : GX_TEV_SHADER_PASSCLR;
 }
 
@@ -675,6 +692,10 @@ void pal_tev_init(void) {
     /* Create texture sampler uniform */
     s_tex_uniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 
+    /* Create TEV register uniforms for BLEND shader (mBlack/mWhite lerp) */
+    s_tev_reg0_uniform = bgfx::createUniform("u_tevReg0", bgfx::UniformType::Vec4);
+    s_tev_reg1_uniform = bgfx::createUniform("u_tevReg1", bgfx::UniformType::Vec4);
+
     s_tev_ready = all_ok;
 
     /* For Noop renderer, mark ready even if shader creation "fails" (it's a no-op anyway) */
@@ -702,6 +723,14 @@ void pal_tev_shutdown(void) {
     if (bgfx::isValid(s_tex_uniform)) {
         bgfx::destroy(s_tex_uniform);
         s_tex_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_reg0_uniform)) {
+        bgfx::destroy(s_tev_reg0_uniform);
+        s_tev_reg0_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_reg1_uniform)) {
+        bgfx::destroy(s_tev_reg1_uniform);
+        s_tev_reg1_uniform = BGFX_INVALID_HANDLE;
     }
 
     /* Destroy cached textures */
@@ -975,6 +1004,24 @@ void pal_tev_flush_draw(void) {
                         s0->color_a, s0->color_b, s0->color_c, s0->color_d,
                         s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d);
             }
+        }
+
+        /* Set TEV register uniforms for BLEND shader (mBlack/mWhite lerp) */
+        if (preset == GX_TEV_SHADER_BLEND) {
+            float reg0[4] = {
+                g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f
+            };
+            float reg1[4] = {
+                g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f
+            };
+            bgfx::setUniform(s_tev_reg0_uniform, reg0);
+            bgfx::setUniform(s_tev_reg1_uniform, reg1);
         }
     }
 
