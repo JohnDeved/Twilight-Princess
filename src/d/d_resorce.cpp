@@ -20,6 +20,7 @@
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #include "pal/pal_endian.h"
+#include "pal/pal_error.h"
 #include <signal.h>
 #include <setjmp.h>
 static volatile sig_atomic_t s_j3d_crash = 0;
@@ -53,7 +54,7 @@ static void* j3d_safe_load(Func func) {
     sigaction(SIGABRT, &sa_abrt_old, NULL);
 
     if (s_j3d_crash) {
-        fprintf(stderr, "{\"j3d_crash\":\"signal caught in J3D loader, returning NULL\"}\n");
+        pal_error(PAL_ERR_J3D_LOAD, "signal caught in J3D loader");
         return NULL;
     }
     return result;
@@ -423,6 +424,7 @@ int dRes_info_c::loadResource() {
 #if PLATFORM_PC
                         /* On PC, skip failed J3D models but continue loading other resources.
                          * mRes[fileIndex] stays NULL, callers must check. */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDP model load failed");
 #else
                         return -1;
 #endif
@@ -457,6 +459,7 @@ int dRes_info_c::loadResource() {
                     if (res == NULL) {
 #if PLATFORM_PC
                         /* On PC, skip failed J3D models but continue loading other resources */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDR/BMDV/BMDE model load failed");
 #else
                         return -1;
 #endif
@@ -471,7 +474,7 @@ int dRes_info_c::loadResource() {
 #endif
                     if (res == NULL) {
 #if PLATFORM_PC
-                        /* skip */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDG model load failed");
 #else
                         return -1;
 #endif
@@ -507,7 +510,7 @@ int dRes_info_c::loadResource() {
 #endif
                     if (res == NULL) {
 #if PLATFORM_PC
-                        /* skip */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDA model load failed");
 #else
                         return -1;
 #endif
@@ -618,7 +621,7 @@ int dRes_info_c::loadResource() {
                         return J3DAnmLoaderDataBase::load(res);
                     });
                     if (res == NULL) {
-                        /* skip failed animation resources on PC */
+                        pal_error(PAL_ERR_J3D_LOAD, "animation load failed (BTP/BTK/BPK/BRK/BLK/BVA/BXA)");
                     }
 #else
                     res = J3DAnmLoaderDataBase::load(res);

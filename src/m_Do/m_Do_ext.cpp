@@ -26,6 +26,7 @@
 #if PLATFORM_PC
 #include <signal.h>
 #include <setjmp.h>
+#include "pal/pal_error.h"
 static volatile sig_atomic_t s_mdl_crash = 0;
 static sigjmp_buf s_mdl_jmpbuf;
 static void mdl_sigsegv_handler(int sig) {
@@ -325,14 +326,14 @@ static void mDoExt_modelDiff(J3DModel* i_model) {
 
 void mDoExt_modelUpdate(J3DModel* i_model) {
 #if PLATFORM_PC
-    if (i_model == NULL) return;
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: model"); return; }
 #endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
 #if PLATFORM_PC
-    if (model_data == NULL) return;
-    if (model_data->getMaterialNodePointer(0) == NULL) return;
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: material"); return; }
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -350,14 +351,14 @@ void mDoExt_modelUpdate(J3DModel* i_model) {
 
 void mDoExt_modelUpdateDL(J3DModel* i_model) {
 #if PLATFORM_PC
-    if (i_model == NULL) return;
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: model"); return; }
 #endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
 #if PLATFORM_PC
-    if (model_data == NULL) return;
-    if (model_data->getMaterialNodePointer(0) == NULL) return;
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: material"); return; }
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -376,14 +377,14 @@ void mDoExt_modelUpdateDL(J3DModel* i_model) {
 
 void mDoExt_modelEntryDL(J3DModel* i_model) {
 #if PLATFORM_PC
-    if (i_model == NULL) return;
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: model"); return; }
 #endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
 #if PLATFORM_PC
-    if (model_data == NULL) return;
-    if (model_data->getMaterialNodePointer(0) == NULL) return;
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: material"); return; }
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -3771,7 +3772,7 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
             if (sigsetjmp(s_mdl_jmpbuf, 1) != 0) {
                 sigaction(SIGSEGV, &sa_old_segv, NULL);
                 sigaction(SIGABRT, &sa_old_abrt, NULL);
-                fprintf(stderr, "{\"j3d_model_crash\":\"signal in mDoExt_J3DModel__create\"}\n");
+                pal_error(PAL_ERR_J3D_LOAD, "signal in mDoExt_J3DModel__create");
                 return NULL;
             }
 #endif

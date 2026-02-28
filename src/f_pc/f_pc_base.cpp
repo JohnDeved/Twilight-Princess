@@ -16,6 +16,7 @@
 #include "Z2AudioLib/Z2AudioMgr.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
+#include "pal/pal_error.h"
 #endif
 
 BOOL fpcBs_Is_JustOfType(int i_typeA, int i_typeB) {
@@ -76,7 +77,7 @@ void fpcBs_DeleteAppend(base_process_class* i_proc) {
 int fpcBs_IsDelete(base_process_class* i_proc) {
     int result;
 #if PLATFORM_PC
-    if (i_proc == NULL || i_proc->methods == NULL) return 1;
+    if (i_proc == NULL || i_proc->methods == NULL) { pal_error(PAL_ERR_NULL_PTR, "fpcBs_IsDelete: proc/methods"); return 1; }
 #endif
     layer_class* save_layer = fpcLy_CurrentLayer();
 
@@ -91,6 +92,7 @@ int fpcBs_Delete(base_process_class* i_proc) {
     BOOL result = TRUE;
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) {
+        pal_error(PAL_ERR_NULL_PTR, "fpcBs_Delete: proc/methods");
         if (i_proc) { i_proc->type = 0; cMl::free(i_proc); }
         return 1;
     }
@@ -131,7 +133,7 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
 
     pprofile = (process_profile_definition*)fpcPf_Get(i_profname);
 #if PLATFORM_PC
-    if (pprofile == NULL) return NULL;
+    if (pprofile == NULL) { pal_error(PAL_ERR_RESOURCE, "fpcBs_Create: NULL profile"); return NULL; }
 #endif
     size = pprofile->process_size + pprofile->unk_size;
 
