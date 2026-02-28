@@ -2782,18 +2782,7 @@ void dStage_Delete() {
         dComIfG_deleteObjectResMain(demoArcName);
     }
 
-#if PLATFORM_PC
-    /* Stage info may be NULL on PC (stage data parsing skipped due to
-     * big-endian binary + 32-bit offset-to-pointer incompatibility). */
-    {
-        stage_stag_info_class* saveStagInfo = dComIfGp_getStageStagInfo();
-        if (saveStagInfo) {
-            dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(saveStagInfo));
-        }
-    }
-#else
     dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStageStagInfo()));
-#endif
     dStage_roomControl_c::removeRoomDzs();
 
     if (mDoRst::isReset() || !dComIfGp_isEnableNextStage() ||
@@ -2801,13 +2790,7 @@ void dStage_Delete() {
     {
         dStage_roomControl_c::destroyMemoryBlock();
 
-#if PLATFORM_PC
-        /* getStagInfo may be NULL on PC (stage data parsing skipped) */
-        stage_stag_info_class* stagInfo = dComIfGp_getStage()->getStagInfo();
-        if (stagInfo && dStage_stagInfo_GetSTType(stagInfo) == ST_DUNGEON)
-#else
         if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
-#endif
         {
             dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
             JUT_ASSERT(4579, info != NULL);
