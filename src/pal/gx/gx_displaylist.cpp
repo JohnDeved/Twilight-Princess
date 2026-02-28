@@ -279,6 +279,15 @@ static void dl_handle_bp_reg(u32 value) {
         }
         return;
     }
+
+    /* GEN_MODE (register 0x00): number of TEV stages, tex gens, color channels */
+    if (addr == 0x00) {
+        /* BP_GEN_MODE bit layout:
+         * [3:0] = nTexGens, [5:4] = nChans, [13:10] = nTevs, [18:16] = nInds */
+        u8 nTevs = (u8)(((data >> 10) & 0xF) + 1); /* stored as n-1 */
+        pal_gx_set_num_tev_stages(nTevs);
+        return;
+    }
 }
 
 /* ================================================================ */

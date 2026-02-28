@@ -1007,14 +1007,24 @@ void pal_tev_flush_draw(void) {
             /* PNMTXIDX */
             if (has_pnmtx) { dst[di++] = src[si++]; }
 
-            /* Position → Float with frac-bit scaling */
+            /* Position → Float with frac-bit scaling + index resolution */
             GXCompType pt = af[GX_VA_POS].comp_type;
             uint8_t frac = af[GX_VA_POS].frac;
             uint32_t csz = gx_comp_size(pt);
-            for (int c = 0; c < npos; c++) {
-                float v = read_gx_component(src + si, pt, frac);
-                memcpy(dst + di, &v, 4);
-                si += csz; di += 4;
+            const uint8_t* pos_data = resolve_attr_data(GX_VA_POS, src, &si);
+            if (desc[GX_VA_POS].type == GX_DIRECT) si += npos * csz;
+            if (pos_data) {
+                for (int c = 0; c < npos; c++) {
+                    float v = read_gx_component(pos_data + c * csz, pt, frac);
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            } else {
+                for (int c = 0; c < npos; c++) {
+                    float v = 0.0f;
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
             }
 
             /* Append constant color */
