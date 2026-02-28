@@ -2738,34 +2738,15 @@ void dStage_Create() {
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
 #if PLATFORM_PC
-    if (!stageRsrc) {
-        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
-        if (info && info->getArchive()) {
-            JKRArchive* arc = info->getArchive();
-            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
-            if (e) {
-                stageRsrc = arc->getIdxResource((s32)(e - arc->mFiles));
-            }
-        }
-        if (!stageRsrc) {
-            /* Can't load stage data — skip stage parsing but run
-             * environment/event init so the scene doesn't crash. */
-            *dStage_roomControl_c::getDemoArcName() = NULL;
-            dKankyo_create();
-            dComIfGp_evmng_create();
-            return;
-        }
-    }
     /* Stage binary data uses 32-bit offsets cast to pointers via offsetToPtr,
-     * which is fundamentally broken on 64-bit. Skip stage data parsing on PC
-     * until a proper 64-bit-safe stage loader is implemented, but still
-     * initialise environment and event systems. */
-    {
-        *dStage_roomControl_c::getDemoArcName() = NULL;
-        dKankyo_create();
-        dComIfGp_evmng_create();
-        return;
-    }
+     * which is fundamentally broken on 64-bit (u32 += uintptr_t truncates
+     * upper bits). Skip stage data parsing on PC until a proper 64-bit-safe
+     * stage loader is implemented, but still initialise environment and
+     * event systems so the scene framework runs. */
+    *dStage_roomControl_c::getDemoArcName() = NULL;
+    dKankyo_create();
+    dComIfGp_evmng_create();
+    return;
 #endif
 #if DEBUG
     data_8074C568_debug = false;
@@ -2804,8 +2785,11 @@ void dStage_Delete() {
 #if PLATFORM_PC
     /* Stage info may be NULL on PC (stage data parsing skipped due to
      * big-endian binary + 32-bit offset-to-pointer incompatibility). */
-    if (dComIfGp_getStageStagInfo()) {
-        dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStageStagInfo()));
+    {
+        stage_stag_info_class* saveStagInfo = dComIfGp_getStageStagInfo();
+        if (saveStagInfo) {
+            dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(saveStagInfo));
+        }
     }
 #else
     dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStageStagInfo()));
@@ -2819,8 +2803,8 @@ void dStage_Delete() {
 
 #if PLATFORM_PC
         /* getStagInfo may be NULL on PC (stage data parsing skipped) */
-        if (dComIfGp_getStage()->getStagInfo() &&
-            dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
+        stage_stag_info_class* stagInfo = dComIfGp_getStage()->getStagInfo();
+        if (stagInfo && dStage_stagInfo_GetSTType(stagInfo) == ST_DUNGEON)
 #else
         if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
 #endif {
