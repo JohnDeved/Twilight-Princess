@@ -255,8 +255,9 @@ void pal_render_end_frame(void) {
                      gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
     /* Submit frame — triggers rendering and capture.
-     * With BGFX_RESET_CAPTURE enabled, bgfx calls captureFrame() callback
-     * with the rendered pixel data for every frame automatically. */
+     * With BGFX_RESET_CAPTURE enabled (set in pal_render_init via
+     * init.resolution.reset), bgfx calls captureFrame() on s_callback
+     * (registered via init.callback) for every frame automatically. */
     bgfx::frame();
 
     /* Save screenshot at frame 30 (logo should be visible) */

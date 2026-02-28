@@ -105,7 +105,7 @@ void pal_capture_init(void) {
 }
 
 void pal_capture_begin(uint32_t width, uint32_t height, uint32_t pitch, int yflip) {
-    /* Only log first time dimensions change */
+    /* Only log when dimensions change */
     if (s_cap_width != width || s_cap_height != height) {
         fprintf(stderr, "{\"capture\":\"begin\",\"width\":%u,\"height\":%u,"
                 "\"pitch\":%u,\"yflip\":%d}\n", width, height, pitch, yflip);
