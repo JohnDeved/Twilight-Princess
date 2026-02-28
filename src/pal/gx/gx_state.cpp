@@ -508,7 +508,7 @@ void pal_gx_end(void) {
 /* Vertex data write helpers — append to vertex buffer */
 static void vtx_write(const void* data, u32 size) {
     GXDrawState* ds = &g_gx_state.draw;
-    if (!ds->active) return;
+    if (!ds->active || !ds->vtx_data || !data) return;
     if (ds->vtx_data_pos + size <= ds->vtx_data_size) {
         memcpy(ds->vtx_data + ds->vtx_data_pos, data, size);
         ds->vtx_data_pos += size;

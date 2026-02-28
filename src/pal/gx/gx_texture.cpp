@@ -339,6 +339,10 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
     if (!src || !dst || width == 0 || height == 0)
         return 0;
 
+    /* Sanity check dimensions to prevent integer overflow */
+    if (width > 16384 || height > 16384)
+        return 0;
+
     u32 out_size = (u32)width * height * 4;
     memset(dst, 0, out_size);
 
