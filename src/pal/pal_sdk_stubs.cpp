@@ -23,6 +23,7 @@
 #include "pal/pal_error.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
+#include "revolution/os/OSMutex.h"
 #include "revolution/os/OSMessage.h"
 
 /* ---------------------------------------------------------------- */
@@ -339,12 +340,66 @@ void OSSleepTicks(s64 ticks) { (void)ticks; }
 /* OS Mutex / Cond                                                  */
 /* ================================================================ */
 
-void OSInitMutex(OSMutex* mutex) { if (mutex) memset(mutex, 0, 0x18); }
-void OSLockMutex(OSMutex* mutex) { (void)mutex; }
-void OSUnlockMutex(OSMutex* mutex) { (void)mutex; }
-BOOL OSTryLockMutex(OSMutex* mutex) { (void)mutex; return TRUE; }
-void OSInitCond(OSCond* cond) { if (cond) memset(cond, 0, 8); }
-void OSWaitCond(OSCond* cond, OSMutex* mutex) { (void)cond; (void)mutex; }
+/* Bounded-correct mutex: tracks owner thread and lock count.
+ * In single-threaded mode there's no contention, but correct count tracking
+ * ensures recursive lock/unlock pairs balance properly. */
+
+void OSInitMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    memset(mutex, 0, sizeof(OSMutex));
+    mutex->thread = NULL;
+    mutex->count = 0;
+}
+
+void OSLockMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    OSThread* cur = OSGetCurrentThread();
+    if (mutex->thread == cur) {
+        /* Recursive lock — increment count */
+        mutex->count++;
+    } else {
+        /* First lock — take ownership */
+        mutex->thread = cur;
+        mutex->count = 1;
+    }
+}
+
+void OSUnlockMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    if (mutex->count > 0) mutex->count--;
+    if (mutex->count == 0) mutex->thread = NULL;
+}
+
+BOOL OSTryLockMutex(OSMutex* mutex) {
+    if (!mutex) return TRUE;
+    OSThread* cur = OSGetCurrentThread();
+    if (mutex->thread == NULL || mutex->thread == cur) {
+        OSLockMutex(mutex);
+        return TRUE;
+    }
+    return FALSE; /* would block (shouldn't happen in single-threaded mode) */
+}
+
+void OSInitCond(OSCond* cond) {
+    if (cond) {
+        cond->queue.head = NULL;
+        cond->queue.tail = NULL;
+    }
+}
+
+void OSWaitCond(OSCond* cond, OSMutex* mutex) {
+    (void)cond;
+    /* In single-threaded mode, unlock+relock the mutex to maintain count correctness */
+    if (mutex && mutex->count > 0) {
+        s32 savedCount = mutex->count;
+        mutex->count = 0;
+        mutex->thread = NULL;
+        /* Would wait here in multi-threaded mode... */
+        mutex->thread = OSGetCurrentThread();
+        mutex->count = savedCount;
+    }
+}
+
 void OSSignalCond(OSCond* cond) { (void)cond; }
 
 /* ================================================================ */

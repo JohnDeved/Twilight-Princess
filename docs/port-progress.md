@@ -8,9 +8,9 @@
 | Field | Value |
 |---|---|
 | **Highest CI Milestone** | `13` (logo renders, scene progression works, title screen loads) |
-| **Current Step** | Step 5 complete + scene progression; rendering pipeline + crash guards working |
+| **Current Step** | Step 5+ — Error telemetry, generic TEV, bounded-correct stubs, BMG endian swap |
 | **Last Updated** | 2026-02-28 |
-| **Blocking Issue** | Title screen 3D model rendering needs additional TEV shader presets for J3D materials |
+| **Blocking Issue** | Title screen 3D model rendering needs full DL state replay + generic TEV→shader path |
 
 ## Step Checklist
 
@@ -220,6 +220,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-28 | **BMG message endian swap + bounded-correct stubs**: (1) `pal_swap_bmg()` — in-place endian swap for BMG message files (header size/n_sections, INF1 entry metadata: string_offset u32, message_id u16, event_label_id u16, unk_0x12 u16). Auto-detects already-swapped state via n_sections field check. getString/getStringKana/getStringKanji now call pal_swap_bmg() instead of returning early on PC. (2) OSThread bounded-correct state tracking — OSCreateThread initializes full struct (state=READY, suspend=1, priority, stackBase/stackEnd), OSSuspendThread/OSResumeThread track suspend count, OSCancelThread sets MORIBUND, OSIsThreadSuspended/OSIsThreadTerminated return accurate state. (3) OSMutex bounded-correct behavior — tracks owner thread and recursive lock count, OSTryLockMutex checks ownership, OSWaitCond saves/restores lock count. | 13 (no change) | Actor/camera spawning from stage data (ACTR/SCLS 64-bit struct fix), generic TEV→shader generation |
 | 2026-02-28 | **Error telemetry + generic TEV + per-queue FIFO + BP registers**: (1) Created `pal_error.h/cpp` — structured error reporting with 9 categories (J3D_LOAD, J3D_ENDIAN, RARC_PARSE, RESOURCE, NULL_PTR, DL_PARSE, TEV_CONFIG, STAGE_DATA, STUB_CALL), deduplication by (category, detail), frame-number context, JSON summary at shutdown. Wired into: `d_resorce.cpp` (all J3D model load failures), `m_Do_ext.cpp` (model update/create crash guards), `f_pc_base.cpp` (process management), `gx_displaylist.cpp` (unknown DL opcode), `d_stage.cpp` (stage data access). (2) Replaced hardcoded TEV preset pattern matching with generic input class analysis — `classify_tev_config()` analyzes all active TEV stages via `tev_arg_class()` bitmask to determine shader selection. (3) OSMessageQueue upgraded from global single-slot to per-queue circular FIFO using the struct's own `msgArray/msgCount/firstIndex/usedCount` fields; `OSJamMessage` now inserts at front for priority. (4) Display list BP register handling: alpha compare (0xF3), Z mode (0x40), blend mode (0x41), TEV konst color/alpha selectors (0x18-0x1F), TEV color register pairs (0xE0-0xE7), GEN_MODE nChans/nTexGens. (5) DVD handle slot reclamation (reuse closed handles instead of exhausting pool). (6) J3D/RARC validation: signature check, header bounds, block size alignment, block count reporting. | 13 (no change) | Full DL state replay correctness, TEV IR → shader generation |
 | 2026-02-28 | **J3D endian swap correctness + BP register TEV + 64-bit stage loader**: Fixed critical f32 data corruption — VTX1 vertex positions/normals/texcoords were being swapped as u16 pairs instead of u32 (giving [B A D C] not [D C B A]). Added type-aware VTX1 swap using VtxAttrFmtList component types. Fixed EVP1 weights/matrices (f32→u32 swap). Added specialized animation block handlers (ANK1/CLK1/TRK1/TTK1) replacing broken generic handler. MAT3 material init data now struct-aware (swap u16 index fields only, skip u8 regions). Animation name table detection preserves ASCII strings. BP register parsing decodes TEV color/alpha combiner state from display lists (registers 0xC0-0xDF for stages, 0x28-0x2F for TEV order). This enables J3D material rendering which sets TEV state via display lists. 64-bit safe stage data loader: DSTAGE_NODE_PTR macro keeps offsets relative and resolves at access time. STAG chunk endian swap for stage_stag_info_class. JUTNameTab NULL guards. | 13 (no change) | Multi-texture J3D materials, actor spawning from stage data, further J3D block types |
 | 2026-02-28 | **Debug overlay metadata approach + port-progress update**: Removed bitmap font from C code (~100 lines of font data + stamp_char/burn_line/burn_debug_overlay). Debug text now written to `verify_output/frame_metadata.txt` as `frame|line0|line1` per frame. Python `convert_frames.py` reads metadata and burns text into BMP→PNG conversion using its own bitmap font. This keeps the C code clean and lets external tooling handle text overlay. Updated port-progress.md with current state. | 13 (no change) | Additional TEV combiner patterns for J3D 3D materials, stage binary endian conversion |
@@ -262,8 +263,8 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_remaining_stubs.cpp` — JStudio, JSU streams, JOR, J3D, misc SDK
 - `src/pal/pal_crash.cpp` — Crash signal handler
 - `src/pal/pal_milestone.cpp` — Boot milestone state (shared across translation units)
-- `src/pal/pal_endian.cpp` — RARC archive byte-swap + 64-bit file entry repack
-- `include/pal/pal_endian.h` — Byte-swap inline functions (pal_swap16/32)
+- `src/pal/pal_endian.cpp` — RARC archive byte-swap + 64-bit file entry repack + BMG message byte-swap
+- `include/pal/pal_endian.h` — Byte-swap inline functions (pal_swap16/32) + pal_swap_bmg
 - `include/pal/pal_error.h` — Structured error reporting with categories and dedup
 - `src/pal/pal_error.cpp` — Error telemetry implementation (JSON summary, frame context)
 - `src/pal/gx/gx_stub_tracker.cpp` — GX stub tracker implementation
@@ -337,6 +338,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/d/d_s_play.cpp` — Play scene PC guards (dvdDataLoad, audio bypass, particle guards)
 - `src/d/d_stage.cpp` — Stage data PC guards (skip stage binary parsing on 64-bit)
 - `src/d/actor/d_a_title.cpp` — Title actor PC guards (resource NULL checks, font skip)
+- `src/d/d_meter2_info.cpp` — BMG endian swap call in getString/getStringKana/getStringKanji
 - `include/d/d_com_inf_game.h` — All 45 particle inline functions NULL-guarded on PC
 - `include/d/d_stage.h` — getStagInfo() returns static default struct on PC
 - `include/JSystem/JKernel/JKRMemArchive.h` — Added mRepackedFiles member for PC
