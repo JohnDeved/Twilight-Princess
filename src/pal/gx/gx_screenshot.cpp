@@ -240,7 +240,21 @@ void pal_screenshot_blit(void) {
         }
     }
 
-    /* Calculate screen-space bounding box */
+    /* Calculate screen-space bounding box.
+     * Apply current position matrix (3x4 affine) to transform local-space
+     * vertex positions to screen space. This handles J2DPane position offsets
+     * (e.g. the Nintendo logo at 117,154 has vertices at 0,0 → width,height
+     * with the offset baked into the matrix via makeMatrix/GXLoadPosMtxImm). */
+    uint32_t mtx_idx = g_gx_state.current_pos_mtx;
+    if (mtx_idx >= GX_MAX_POS_MTX) mtx_idx = 0;
+    const float (*mtx)[4] = g_gx_state.pos_mtx[mtx_idx];
+    for (int v = 0; v < 4; v++) {
+        float ox = pos[v][0], oy = pos[v][1], oz = pos[v][2];
+        pos[v][0] = mtx[0][0] * ox + mtx[0][1] * oy + mtx[0][2] * oz + mtx[0][3];
+        pos[v][1] = mtx[1][0] * ox + mtx[1][1] * oy + mtx[1][2] * oz + mtx[1][3];
+        pos[v][2] = mtx[2][0] * ox + mtx[2][1] * oy + mtx[2][2] * oz + mtx[2][3];
+    }
+
     float x0 = pos[0][0], y0 = pos[0][1];
     float x1 = pos[0][0], y1 = pos[0][1];
     for (int v = 1; v < 4; v++) {
@@ -256,6 +270,7 @@ void pal_screenshot_blit(void) {
     if (iy0 < 0) iy0 = 0;
     if (ix1 > FB_W) ix1 = FB_W;
     if (iy1 > FB_H) iy1 = FB_H;
+
     if (ix1 <= ix0 || iy1 <= iy0)
         return;
 
@@ -263,27 +278,90 @@ void pal_screenshot_blit(void) {
     if (qw <= 0.0f || qh <= 0.0f)
         return;
 
-    /* Get texture for this draw (from TEV stage 0) */
+    /* Analyze TEV stage 0 combiner to determine pixel color source.
+     * Instead of blindly decoding any bound texture, check what the TEV
+     * combiner actually does with its inputs. */
     const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+
+    /* TEV constant color mode: (ZERO, ZERO, ZERO, C0) → output = C0.
+     * Used by clearEfb() — texture is a Z-buffer utility, not a color source.
+     * The output is purely the TEV register constant color. */
+    int use_const_color = 0;
+    uint8_t const_r = 0, const_g = 0, const_b = 0, const_a = 0;
+    if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+        s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0) {
+        use_const_color = 1;
+        const_r = g_gx_state.tev_regs[GX_TEVREG0].r;
+        const_g = g_gx_state.tev_regs[GX_TEVREG0].g;
+        const_b = g_gx_state.tev_regs[GX_TEVREG0].b;
+        const_a = g_gx_state.tev_regs[GX_TEVREG0].a;
+    }
+
+    /* Decode texture only when TEV actually samples it (not constant color mode) */
     uint8_t* tex_rgba = NULL;
     uint32_t tw = 0, th = 0;
-
-    if (s0->tex_map < GX_MAX_TEXMAP && g_gx_state.tex_bindings[s0->tex_map].valid) {
-        const GXTexBinding* tb = &g_gx_state.tex_bindings[s0->tex_map];
-        tw = tb->width;
-        th = tb->height;
-        if (tw > 0 && th > 0 && tb->image_ptr) {
-            tex_rgba = (uint8_t*)malloc(tw * th * 4);
-            if (tex_rgba) {
-                u32 decoded = pal_gx_decode_texture(tb->image_ptr, tex_rgba,
-                                                     (u16)tw, (u16)th, tb->format, NULL, 0);
-                if (decoded == 0) {
-                    free(tex_rgba);
-                    tex_rgba = NULL;
+    if (!use_const_color) {
+        int ns = g_gx_state.num_tev_stages;
+        if (ns < 1) ns = 1;
+        if (ns > GX_MAX_TEVSTAGE) ns = GX_MAX_TEVSTAGE;
+        for (int si = 0; si < ns; si++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[si];
+            /* Only decode texture if the TEV stage color combiner actually references TEXC */
+            int uses_tex = (st->color_a == GX_CC_TEXC || st->color_b == GX_CC_TEXC ||
+                            st->color_c == GX_CC_TEXC || st->color_d == GX_CC_TEXC);
+            if (uses_tex && st->tex_map < GX_MAX_TEXMAP &&
+                g_gx_state.tex_bindings[st->tex_map].valid) {
+                const GXTexBinding* tb = &g_gx_state.tex_bindings[st->tex_map];
+                tw = tb->width;
+                th = tb->height;
+                if (tw > 0 && th > 0 && tb->image_ptr) {
+                    tex_rgba = (uint8_t*)malloc(tw * th * 4);
+                    if (tex_rgba) {
+                        u32 decoded = pal_gx_decode_texture(tb->image_ptr, tex_rgba,
+                                                             (u16)tw, (u16)th, tb->format, NULL, 0);
+                        if (decoded == 0) {
+                            free(tex_rgba);
+                            tex_rgba = NULL;
+                        }
+                    }
                 }
+                break;
             }
         }
     }
+
+    /* Detect TEV register lerp in multi-stage draws.
+     * J2DPicture uses: stage 0 = REPLACE (texture), stage 1 = lerp(C0, C1, CPREV)
+     * where C0 = mBlack (GX_TEVREG0), C1 = mWhite (GX_TEVREG1).
+     * Formula: output = (1-CPREV)*C0 + CPREV*C1 = lerp(C0, C1, texture_intensity) */
+    int use_tev_lerp = 0;
+    uint8_t c0r = 0, c0g = 0, c0b = 0, c0a = 0;
+    uint8_t c1r = 255, c1g = 255, c1b = 255, c1a = 255;
+    if (!use_const_color) {
+        int ns = g_gx_state.num_tev_stages;
+        if (ns < 1) ns = 1;
+        for (int si = 0; si < ns && si < GX_MAX_TEVSTAGE; si++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[si];
+            if (st->color_a == GX_CC_C0 && st->color_b == GX_CC_C1 &&
+                st->color_c == GX_CC_CPREV && st->color_d == GX_CC_ZERO) {
+                use_tev_lerp = 1;
+                c0r = g_gx_state.tev_regs[GX_TEVREG0].r;
+                c0g = g_gx_state.tev_regs[GX_TEVREG0].g;
+                c0b = g_gx_state.tev_regs[GX_TEVREG0].b;
+                c0a = g_gx_state.tev_regs[GX_TEVREG0].a;
+                c1r = g_gx_state.tev_regs[GX_TEVREG1].r;
+                c1g = g_gx_state.tev_regs[GX_TEVREG1].g;
+                c1b = g_gx_state.tev_regs[GX_TEVREG1].b;
+                c1a = g_gx_state.tev_regs[GX_TEVREG1].a;
+                break;
+            }
+        }
+    }
+
+    /* Check blend mode for alpha blending */
+    int do_alpha_blend = (g_gx_state.blend_mode == GX_BM_BLEND &&
+                          g_gx_state.blend_src == GX_BL_SRCALPHA &&
+                          g_gx_state.blend_dst == GX_BL_INVSRCALPHA);
 
     /* Blit to software framebuffer */
     for (int sy = iy0; sy < iy1; sy++) {
@@ -299,34 +377,74 @@ void pal_screenshot_blit(void) {
             if (tx < 0) tx = 0;
 
             uint8_t r, g, b, a;
-            if (tex_rgba && tw > 0 && th > 0) {
+
+            if (use_const_color) {
+                /* TEV outputs a constant register color (e.g. clearEfb) */
+                r = const_r;
+                g = const_g;
+                b = const_b;
+                a = const_a;
+            } else if (tex_rgba && tw > 0 && th > 0) {
                 int tidx = (ty * (int)tw + tx) * 4;
                 r = tex_rgba[tidx + 0];
                 g = tex_rgba[tidx + 1];
                 b = tex_rgba[tidx + 2];
                 a = tex_rgba[tidx + 3];
+
+                /* Apply TEV register lerp: lerp(C0, C1, texture_intensity) */
+                if (use_tev_lerp) {
+                    uint8_t t = r; /* intensity (IA8 has R=G=B=I) */
+                    r = (uint8_t)((c0r * (255 - t) + c1r * t) / 255);
+                    g = (uint8_t)((c0g * (255 - t) + c1g * t) / 255);
+                    b = (uint8_t)((c0b * (255 - t) + c1b * t) / 255);
+                    a = (uint8_t)((c0a * (255 - a) + c1a * a) / 255);
+                }
+            } else if (has_clr) {
+                /* No texture — use vertex color (e.g. fillBox, darwFilter) */
+                float fu = (float)(sx - ix0) / qw;
+                float fv = (float)(sy - iy0) / qh;
+                float w00 = (1.0f - fu) * (1.0f - fv);
+                float w10 = fu * (1.0f - fv);
+                float w11 = fu * fv;
+                float w01 = (1.0f - fu) * fv;
+                r = (uint8_t)(clr[0][0]*w00 + clr[1][0]*w10 + clr[2][0]*w11 + clr[3][0]*w01);
+                g = (uint8_t)(clr[0][1]*w00 + clr[1][1]*w10 + clr[2][1]*w11 + clr[3][1]*w01);
+                b = (uint8_t)(clr[0][2]*w00 + clr[1][2]*w10 + clr[2][2]*w11 + clr[3][2]*w01);
+                a = (uint8_t)(clr[0][3]*w00 + clr[1][3]*w10 + clr[2][3]*w11 + clr[3][3]*w01);
             } else {
-                /* No texture — use vertex color */
-                r = g = b = a = 255;
+                /* No texture, no vertex color — use material color */
+                r = g_gx_state.chan_ctrl[0].mat_color.r;
+                g = g_gx_state.chan_ctrl[0].mat_color.g;
+                b = g_gx_state.chan_ctrl[0].mat_color.b;
+                a = g_gx_state.chan_ctrl[0].mat_color.a;
             }
 
-            /* Modulate with vertex color (MODULATE TEV mode) */
-            uint8_t cr = clr[0][0], cg = clr[0][1], cb = clr[0][2], ca = clr[0][3];
-            r = (uint8_t)((r * cr) / 255);
-            g = (uint8_t)((g * cg) / 255);
-            b = (uint8_t)((b * cb) / 255);
-            a = (uint8_t)((a * ca) / 255);
+            /* Modulate with vertex color for standard textured draws
+             * (MODULATE TEV mode: texture * vertex_color) */
+            if (tex_rgba && !use_tev_lerp && has_clr) {
+                uint8_t cr = clr[0][0], cg = clr[0][1], cb = clr[0][2], ca = clr[0][3];
+                r = (uint8_t)((r * cr) / 255);
+                g = (uint8_t)((g * cg) / 255);
+                b = (uint8_t)((b * cb) / 255);
+                a = (uint8_t)((a * ca) / 255);
+            }
 
             /* Alpha blend with framebuffer */
             int fb_idx = (sy * FB_W + sx) * 4;
-            uint8_t fb_r = s_fb[fb_idx + 0];
-            uint8_t fb_g = s_fb[fb_idx + 1];
-            uint8_t fb_b = s_fb[fb_idx + 2];
-
-            s_fb[fb_idx + 0] = (uint8_t)((r * a + fb_r * (255 - a)) / 255);
-            s_fb[fb_idx + 1] = (uint8_t)((g * a + fb_g * (255 - a)) / 255);
-            s_fb[fb_idx + 2] = (uint8_t)((b * a + fb_b * (255 - a)) / 255);
-            s_fb[fb_idx + 3] = 255;
+            if (do_alpha_blend && a < 255) {
+                uint8_t fb_r = s_fb[fb_idx + 0];
+                uint8_t fb_g = s_fb[fb_idx + 1];
+                uint8_t fb_b = s_fb[fb_idx + 2];
+                s_fb[fb_idx + 0] = (uint8_t)((r * a + fb_r * (255 - a)) / 255);
+                s_fb[fb_idx + 1] = (uint8_t)((g * a + fb_g * (255 - a)) / 255);
+                s_fb[fb_idx + 2] = (uint8_t)((b * a + fb_b * (255 - a)) / 255);
+                s_fb[fb_idx + 3] = 255;
+            } else {
+                s_fb[fb_idx + 0] = r;
+                s_fb[fb_idx + 1] = g;
+                s_fb[fb_idx + 2] = b;
+                s_fb[fb_idx + 3] = 255;
+            }
         }
     }
 
