@@ -2807,7 +2807,8 @@ void dStage_Delete() {
         if (stagInfo && dStage_stagInfo_GetSTType(stagInfo) == ST_DUNGEON)
 #else
         if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
-#endif {
+#endif
+        {
             dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
             JUT_ASSERT(4579, info != NULL);
             *info->getArchiveName() = 'X';
