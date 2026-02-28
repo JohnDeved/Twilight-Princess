@@ -75,6 +75,9 @@ void fpcBs_DeleteAppend(base_process_class* i_proc) {
 
 int fpcBs_IsDelete(base_process_class* i_proc) {
     int result;
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) return 1;
+#endif
     layer_class* save_layer = fpcLy_CurrentLayer();
 
     fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
@@ -86,6 +89,12 @@ int fpcBs_IsDelete(base_process_class* i_proc) {
 
 int fpcBs_Delete(base_process_class* i_proc) {
     BOOL result = TRUE;
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) {
+        if (i_proc) { i_proc->type = 0; cMl::free(i_proc); }
+        return 1;
+    }
+#endif
     if (result == TRUE) {
         result = fpcMtd_Delete(i_proc->methods, i_proc);
         if (result == 1) {

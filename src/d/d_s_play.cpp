@@ -163,6 +163,9 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     if (!dComIfGp_isPauseFlag()) {
         dEyeHL_mng_c::update();
         dComIfG_Ccsp()->Draw();
+#if PLATFORM_PC
+        if (dComIfGp_getPlayer(0) != NULL)
+#endif
         dComIfGp_getAttention()->Draw();
     }
 
@@ -190,6 +193,9 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
     if (!dComIfGp_isPauseFlag()) {
         dDemo_c::update();
         dComIfGp_getEvent()->Step();
+#if PLATFORM_PC
+        if (dComIfGp_getPlayer(0) != NULL)
+#endif
         dComIfGp_getAttention()->Run();
     }
     return 1;

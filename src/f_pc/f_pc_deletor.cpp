@@ -17,10 +17,19 @@ BOOL fpcDt_IsComplete() {
 }
 
 int fpcDt_deleteMethod(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc == NULL) return 1;
+#endif
     fpc_ProcID id = i_proc->id;
     layer_class* layer = i_proc->delete_tag.layer;
     s16 profname = i_proc->profname;
 
+#if PLATFORM_PC
+    if (layer == NULL) {
+        fpcBs_Delete(i_proc);
+        return 1;
+    }
+#endif
     fpcLy_SetCurrentLayer(layer);
     fpcLnTg_QueueTo(&i_proc->line_tag_);
 
@@ -50,6 +59,9 @@ int fpcDt_ToQueue(base_process_class* i_proc) {
 
         i_proc->delete_tag.layer = i_proc->layer_tag.layer;
         fpcDtTg_ToDeleteQ(&i_proc->delete_tag);
+#if PLATFORM_PC
+        if (i_proc->layer_tag.layer != NULL)
+#endif
         fpcLy_DeletingMesg(i_proc->layer_tag.layer);
 #if DEBUG
         i_proc->delete_tag.unk_0x1c = 60;

@@ -640,6 +640,9 @@ int dAttention_c::makeList() {
 }
 
 void dAttention_c::setOwnerAttentionPos() {
+#if PLATFORM_PC
+    if (mpPlayer == NULL) return;
+#endif
     mOwnerAttnPos = mpPlayer->attention_info.position;
 
     if (fopAcM_GetName(mpPlayer) == PROC_ALINK) {

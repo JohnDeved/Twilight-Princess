@@ -755,6 +755,11 @@ static void dKy_FiveSenses_fullthrottle_dark_static1() {
     dScnKy_env_light_c* kankyo = dKy_getEnvlight();
     BOOL init_mode_change = FALSE;
 
+#if PLATFORM_PC
+    /* Player actor doesn't exist during title screen */
+    if (dComIfGp_getLinkPlayer() == NULL) return;
+#endif
+
     cXyz particle_pos;
     cXyz particle_size;
 
