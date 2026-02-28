@@ -16,7 +16,12 @@ int dTres_c::createWork() {
 }
 
 void dTres_c::create() {
+#if PLATFORM_PC
+    stage_stag_info_class* p_stag = dComIfGp_getStage()->getStagInfo();
+    if (!p_stag || dStage_stagInfo_GetSTType(p_stag) != ST_BOSS_ROOM) {
+#else
     if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) != ST_BOSS_ROOM) {
+#endif
         reset();
     }
 }
