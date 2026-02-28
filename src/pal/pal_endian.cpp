@@ -80,6 +80,8 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
     /* Validate that the source file entry range is within the loaded buffer */
     u8* filesEnd = filesBase + numFiles * RARC_FILE_ENTRY_DISC_SIZE;
     if (filesBase < (u8*)arcData || filesEnd > arcEnd || numFiles == 0) {
+        fprintf(stderr, "pal_swap_rarc: invalid file entries (base=%p end=%p arcEnd=%p numFiles=%u)\n",
+                (void*)filesBase, (void*)filesEnd, (void*)arcEnd, numFiles);
         return;  /* corrupt or empty — skip file entry processing */
     }
 
@@ -105,7 +107,8 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
              * provides enough slack. Verify we don't write past the buffer. */
             size_t repack_size = numFiles * sizeof(JKRArchive::SDIFileEntry);
             if (filesBase + repack_size > arcEnd) {
-                /* Repack would overflow the archive buffer — skip */
+                fprintf(stderr, "pal_swap_rarc: repack overflow (%zu bytes at offset %td in %u byte buffer)\n",
+                        repack_size, filesBase - (u8*)arcData, loadedSize);
                 free(repacked);
                 return;
             }

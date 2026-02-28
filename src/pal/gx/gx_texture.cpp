@@ -339,8 +339,9 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
     if (!src || !dst || width == 0 || height == 0)
         return 0;
 
-    /* Sanity check dimensions to prevent integer overflow */
-    if (width > 16384 || height > 16384)
+    /* Sanity check dimensions to prevent integer overflow in size calculations */
+#define GX_MAX_TEXTURE_DIM 16384
+    if (width > GX_MAX_TEXTURE_DIM || height > GX_MAX_TEXTURE_DIM)
         return 0;
 
     u32 out_size = (u32)width * height * 4;

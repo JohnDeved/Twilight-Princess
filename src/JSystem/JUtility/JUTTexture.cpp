@@ -20,18 +20,19 @@ void JUTTexture::storeTIMG(ResTIMG const* param_0, u8 param_1) {
     if (param_0 && param_1 < 0x10) {
 #if PLATFORM_PC
         /* Swap big-endian ResTIMG fields in-place.
-         * Use the 'unknown' field (offset 0x19, normally 0) as a swap guard
+         * Use the 'unknown' field (offset 0x19, normally 0 on disc) as a swap guard
          * to prevent double-swapping when the same ResTIMG* is reused.
-         * The const_cast is safe here — the data came from a loaded archive buffer. */
+         * 0xAB chosen as marker — not a valid disc value (field is always 0 in known data). */
+#define TIMG_SWAP_MARKER 0xAB
         ResTIMG* timg = const_cast<ResTIMG*>(param_0);
-        if (timg->unknown != 0xAB) {
+        if (timg->unknown != TIMG_SWAP_MARKER) {
             timg->width         = pal_swap16(timg->width);
             timg->height        = pal_swap16(timg->height);
             timg->numColors     = pal_swap16(timg->numColors);
             timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
             timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
             timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
-            timg->unknown = 0xAB;  /* mark as already swapped */
+            timg->unknown = TIMG_SWAP_MARKER;
         }
 #endif
         mTexInfo = param_0;
@@ -96,14 +97,14 @@ void JUTTexture::storeTIMG(ResTIMG const* param_0, JUTPalette* param_1, GXTlut p
 #if PLATFORM_PC
     {
         ResTIMG* timg = const_cast<ResTIMG*>(param_0);
-        if (timg->unknown != 0xAB) {
+        if (timg->unknown != TIMG_SWAP_MARKER) {
             timg->width         = pal_swap16(timg->width);
             timg->height        = pal_swap16(timg->height);
             timg->numColors     = pal_swap16(timg->numColors);
             timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
             timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
             timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
-            timg->unknown = 0xAB;  /* mark as already swapped */
+            timg->unknown = TIMG_SWAP_MARKER;
         }
     }
 #endif
