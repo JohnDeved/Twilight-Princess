@@ -47,6 +47,19 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
     hdr->field_0x18       = pal_swap32(hdr->field_0x18);
     hdr->field_0x1c       = pal_swap32(hdr->field_0x1c);
 
+    /* Validate RARC signature */
+    if (hdr->signature != 0x52415243 /* 'RARC' */) {
+        fprintf(stderr, "pal_swap_rarc: bad signature 0x%08X (expected RARC)\n", hdr->signature);
+        return;
+    }
+
+    /* Validate header length */
+    if (hdr->header_length > loadedSize || hdr->header_length < 0x20) {
+        fprintf(stderr, "pal_swap_rarc: invalid header_length %u (loaded %u)\n",
+                hdr->header_length, loadedSize);
+        return;
+    }
+
     /* Swap SArcDataInfo */
     if (loadedSize < hdr->header_length + sizeof(SArcDataInfo)) return;
 
@@ -58,6 +71,17 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
     info->string_table_length = pal_swap32(info->string_table_length);
     info->string_table_offset = pal_swap32(info->string_table_offset);
     info->next_free_file_id   = pal_swap16(info->next_free_file_id);
+
+    /* Validate node and file counts against reasonable bounds */
+    if (info->num_nodes > 4096) {
+        fprintf(stderr, "pal_swap_rarc: suspicious num_nodes %u, clamping to 4096\n", info->num_nodes);
+        info->num_nodes = 4096;
+    }
+    if (info->num_file_entries > 65536) {
+        fprintf(stderr, "pal_swap_rarc: suspicious num_file_entries %u, clamping to 65536\n",
+                info->num_file_entries);
+        info->num_file_entries = 65536;
+    }
 
     /* Swap SDIDirEntry nodes (sizeof matches on 32/64-bit, no pointer fields) */
     u8* nodesBase = (u8*)&info->num_nodes + info->node_offset;

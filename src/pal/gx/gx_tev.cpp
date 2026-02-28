@@ -214,95 +214,110 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
 /* ================================================================ */
 
 /**
- * Detect which TEV preset the current state matches.
- * Returns shader ID (0-4) or -1 for unknown configs.
+ * Classify what inputs a TEV color argument references.
+ * Returns a bitmask: bit 0=texture, bit 1=rasterized, bit 2=constant/register, bit 3=prev
  */
-static int detect_tev_preset(void) {
-    const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+static u32 tev_arg_class(GXTevColorArg arg) {
+    switch (arg) {
+    case GX_CC_TEXC: case GX_CC_TEXA: return 0x1; /* texture */
+    case GX_CC_RASC: case GX_CC_RASA: return 0x2; /* rasterized */
+    case GX_CC_C0:   case GX_CC_A0:
+    case GX_CC_C1:   case GX_CC_A1:
+    case GX_CC_C2:   case GX_CC_A2:
+    case GX_CC_KONST: case GX_CC_ONE: case GX_CC_HALF: return 0x4; /* constant/register */
+    case GX_CC_CPREV: case GX_CC_APREV: return 0x8; /* previous stage */
+    case GX_CC_ZERO: return 0x0; /* zero */
+    default: return 0x0;
+    }
+}
 
-    /* Check if any texture is bound for stage 0 */
+/**
+ * Generic TEV preset selection based on input class analysis.
+ *
+ * Analyzes the TEV combiner formula: out = (d + (1-c)*a + c*b) op bias << scale
+ * to determine which shader to use. This replaces hardcoded pattern matching
+ * with a classification approach:
+ *
+ * - If no texture referenced anywhere → PASSCLR (vertex color only)
+ * - If texture used but no rasterized/vertex color → REPLACE (texture only)
+ * - If both texture and rasterized → MODULATE (tex * color)
+ * - If multi-stage with register lerp → BLEND
+ * - If texture and constant only → MODULATE (via konst)
+ */
+static int classify_tev_config(void) {
+    u32 all_tex = 0, all_ras = 0, all_konst = 0, all_prev = 0;
+    int num_stages = g_gx_state.num_tev_stages;
+    if (num_stages == 0) num_stages = 1;
+
+    /* Accumulate input classes across all active stages */
+    for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+        const GXTevStage* st = &g_gx_state.tev_stages[s];
+        u32 ca = tev_arg_class(st->color_a);
+        u32 cb = tev_arg_class(st->color_b);
+        u32 cc = tev_arg_class(st->color_c);
+        u32 cd = tev_arg_class(st->color_d);
+        u32 classes = ca | cb | cc | cd;
+
+        all_tex   |= (classes & 0x1);
+        all_ras   |= (classes & 0x2);
+        all_konst |= (classes & 0x4);
+        all_prev  |= (classes & 0x8);
+    }
+
+    /* Check if texture is actually available */
+    const GXTevStage* s0 = &g_gx_state.tev_stages[0];
     int has_texture = (s0->tex_map != GX_TEXMAP_NULL && s0->tex_map < GX_MAX_TEXMAP &&
                        g_gx_state.tex_bindings[s0->tex_map].valid);
 
-    /* Check if the TEV combiner actually references texture color */
-    int uses_texc = (s0->color_a == GX_CC_TEXC || s0->color_b == GX_CC_TEXC ||
-                     s0->color_c == GX_CC_TEXC || s0->color_d == GX_CC_TEXC);
+    /* If TEV doesn't reference texture at all, or no texture bound */
+    if (!all_tex || !has_texture) {
+        return GX_TEV_SHADER_PASSCLR;
+    }
 
-    if (g_gx_state.num_tev_stages == 0 || g_gx_state.num_tev_stages == 1) {
-        /* If combiner doesn't reference texture, treat as PASSCLR.
-         * clearEfb uses TEV (ZERO,ZERO,ZERO,C0) which outputs constant C0 regardless
-         * of bound texture — no texture lookup needed. */
-        if (!uses_texc || !has_texture) {
-            return GX_TEV_SHADER_PASSCLR;
+    /* Multi-stage with register references: check for BLEND pattern
+     * (register lerp: a=C0, b=C1, c=CPREV → lerp(mBlack, mWhite, prev)) */
+    if (num_stages >= 2 && all_konst && all_prev) {
+        const GXTevStage* s1 = &g_gx_state.tev_stages[1];
+        if ((tev_arg_class(s1->color_a) & 0x4) &&
+            (tev_arg_class(s1->color_b) & 0x4) &&
+            (tev_arg_class(s1->color_c) & 0x8)) {
+            return GX_TEV_SHADER_BLEND;
         }
+    }
 
-        /* REPLACE: color_a=ZERO, color_b=ZERO, color_c=ZERO, color_d=TEXC */
+    /* Texture + rasterized → MODULATE */
+    if (all_ras) {
+        return GX_TEV_SHADER_MODULATE;
+    }
+
+    /* Texture + constant → MODULATE (konst tinting) */
+    if (all_konst) {
+        return GX_TEV_SHADER_MODULATE;
+    }
+
+    /* Texture-only single stage checks */
+    if (num_stages <= 1) {
+        /* REPLACE: only texture in d slot, everything else is zero */
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_TEXC) {
             return GX_TEV_SHADER_REPLACE;
         }
-
-        /* MODULATE: typical GX_MODULATE pattern (tex * ras) */
-        if ((s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_TEXC &&
-             s0->color_c == GX_CC_RASC && s0->color_d == GX_CC_ZERO) ||
-            (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_RASC &&
-             s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO)) {
-            return GX_TEV_SHADER_MODULATE;
-        }
-
-        /* DECAL: blend texture with vertex color using texture alpha */
-        if (s0->color_a == GX_CC_RASC && s0->color_b == GX_CC_TEXC &&
-             s0->color_c == GX_CC_TEXA && s0->color_d == GX_CC_ZERO) {
+        /* DECAL: alpha-blended texture over vertex color */
+        if (s0->color_c == GX_CC_TEXA) {
             return GX_TEV_SHADER_DECAL;
         }
-
-        /* GX_BLEND mode: ras*(1-tex) + tex = lerp(ras, 1, tex) */
-        if (s0->color_a == GX_CC_RASC && s0->color_b == GX_CC_ONE &&
-            s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO) {
-            return GX_TEV_SHADER_MODULATE; /* approximate as modulate */
-        }
-
-        /* Texture + constant add: d=TEXC + b*c with KONST or ONE */
-        if (s0->color_d == GX_CC_TEXC &&
-            (s0->color_a == GX_CC_ZERO || s0->color_b == GX_CC_ZERO ||
-             s0->color_c == GX_CC_ZERO)) {
-            return GX_TEV_SHADER_REPLACE;
-        }
-
-        /* KONST color patterns: treat KONST like vertex color for modulate */
-        if (s0->color_b == GX_CC_TEXC && s0->color_c == GX_CC_KONST &&
-            s0->color_a == GX_CC_ZERO && s0->color_d == GX_CC_ZERO) {
-            return GX_TEV_SHADER_MODULATE; /* konst * tex ≈ modulate */
-        }
-
-        /* Has texture but no matching preset → use MODULATE as default */
-        return GX_TEV_SHADER_MODULATE;
     }
 
-    /* Multi-stage TEV — detect common patterns */
-    if (has_texture && g_gx_state.num_tev_stages >= 2) {
-        const GXTevStage* s1 = &g_gx_state.tev_stages[1];
+    /* Default: texture-only → REPLACE */
+    return GX_TEV_SHADER_REPLACE;
+}
 
-        /* J2DPicture mBlack/mWhite tinting:
-         * Stage 0: color=(TEXC, ZERO, ZERO, ZERO) — texture REPLACE
-         * Stage 1: color=(C0, C1, CPREV, ZERO) — lerp(mBlack, mWhite, texColor)
-         * Use BLEND shader with TEV register uniforms. */
-        if (uses_texc &&
-            s1->color_a == GX_CC_C0 && s1->color_b == GX_CC_C1 &&
-            s1->color_c == GX_CC_CPREV && s1->color_d == GX_CC_ZERO) {
-            return GX_TEV_SHADER_BLEND;
-        }
-
-        /* Multi-stage modulate: stage 0 is REPLACE, stage 1 modulates with ras */
-        if (uses_texc &&
-            (s1->color_b == GX_CC_CPREV || s1->color_c == GX_CC_CPREV) &&
-            (s1->color_b == GX_CC_RASC || s1->color_c == GX_CC_RASC)) {
-            return GX_TEV_SHADER_MODULATE;
-        }
-    }
-
-    /* Generic multi-stage: MODULATE for textured, PASSCLR otherwise */
-    return has_texture ? GX_TEV_SHADER_MODULATE : GX_TEV_SHADER_PASSCLR;
+/**
+ * Detect which TEV shader to use for the current state.
+ * Uses generic input classification instead of hardcoded preset patterns.
+ */
+static int detect_tev_preset(void) {
+    return classify_tev_config();
 }
 
 /**

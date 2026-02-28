@@ -22,6 +22,7 @@
 #include "pal/pal_save.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
+#include "revolution/os/OSMessage.h"
 
 /* ---------------------------------------------------------------- */
 /* Forward declarations for SDK types used in signatures.           */
@@ -31,7 +32,6 @@
 /* OSThread, OSThreadQueue, OSContext are included from OSThread.h */
 struct OSMutex;
 struct OSCond;
-struct OSMessageQueue;
 struct OSAlarm;
 struct OSStopwatch;
 
@@ -72,7 +72,6 @@ typedef void (*SCFlushCallback)(s32);
 typedef s32  (*VIRetraceCallback)(u32 retraceCount);
 typedef void (*WPADCallback)(s32 chan, s32 result);
 typedef void (*NANDCallback)(s32 result, NANDCommandBlock* block);
-typedef void* OSMessage;
 
 extern "C" {
 
@@ -275,38 +274,53 @@ void OSSignalCond(OSCond* cond) { (void)cond; }
 /* OS Message Queue                                                 */
 /* ================================================================ */
 
-/* Message queue — simple synchronous implementation for single-threaded mode.
- * LIMITATION: Uses global state — all message queues share one slot. This works
- * because in single-threaded mode, only one queue is active at a time. If
- * multi-threading is added later, this must be changed to per-queue storage. */
+/* Per-queue circular FIFO using the queue's own msgArray and fields.
+ * The OSMessageQueue struct has: msgArray (void* buffer), msgCount (capacity),
+ * firstIndex (head), usedCount (current fill level). */
 void OSInitMessageQueue(OSMessageQueue* mq, void* msgArray, s32 msgCount) {
-    if (mq) memset(mq, 0, 32);
+    if (!mq) return;
+    memset(mq, 0, sizeof(OSMessageQueue));
+    mq->msgArray = msgArray;
+    mq->msgCount = msgCount;
+    mq->firstIndex = 0;
+    mq->usedCount = 0;
 }
 
-static void* s_mq_pending_msg = NULL;
-static int s_mq_has_msg = 0;
-
 int OSSendMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)flags;
-    s_mq_pending_msg = msg;
-    s_mq_has_msg = 1;
+    if (!mq || !mq->msgArray || mq->msgCount <= 0) return 0;
+    if (mq->usedCount >= mq->msgCount) {
+        /* Queue full — non-blocking returns 0, blocking also returns 0
+         * since in single-threaded mode blocking would deadlock */
+        return 0;
+    }
+    s32 idx = (mq->firstIndex + mq->usedCount) % mq->msgCount;
+    ((void**)mq->msgArray)[idx] = msg;
+    mq->usedCount++;
     return 1;
 }
 
 int OSReceiveMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq;
-    if (s_mq_has_msg) {
-        if (msg) *(void**)msg = s_mq_pending_msg;
-        s_mq_has_msg = 0;
-        return 1;
+    if (!mq || !mq->msgArray) return 0;
+    if (mq->usedCount <= 0) {
+        return 0; /* Empty — no message */
     }
-    /* Non-blocking: return 0 (no message). Blocking: also return 0 since
-     * in single-threaded mode, blocking would deadlock. */
-    return 0;
+    if (msg) {
+        *(void**)msg = ((void**)mq->msgArray)[mq->firstIndex];
+    }
+    mq->firstIndex = (mq->firstIndex + 1) % mq->msgCount;
+    mq->usedCount--;
+    return 1;
 }
 
 int OSJamMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)msg; (void)flags;
+    if (!mq || !mq->msgArray || mq->msgCount <= 0) return 0;
+    if (mq->usedCount >= mq->msgCount) {
+        return 0; /* Queue full */
+    }
+    /* Jam inserts at the front (high priority) */
+    mq->firstIndex = (mq->firstIndex - 1 + mq->msgCount) % mq->msgCount;
+    ((void**)mq->msgArray)[mq->firstIndex] = msg;
+    mq->usedCount++;
     return 1;
 }
 
@@ -579,9 +593,20 @@ BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
     fseek(fp, 0, SEEK_END);
     long sz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    /* Store handle */
-    if (s_dvd_next_handle >= PAL_DVD_MAX_OPEN) { fclose(fp); return FALSE; }
-    s32 handle = s_dvd_next_handle++;
+    /* Find a free handle slot (reclaim closed slots) */
+    s32 handle = -1;
+    for (s32 i = 1; i < PAL_DVD_MAX_OPEN; i++) {
+        if (s_dvd_files[i] == NULL) {
+            handle = i;
+            break;
+        }
+    }
+    if (handle < 0) {
+        fclose(fp);
+        fprintf(stderr, "[pal_dvd] WARNING: no free DVD handles (max=%d)\n", PAL_DVD_MAX_OPEN);
+        return FALSE;
+    }
+    if (handle >= s_dvd_next_handle) s_dvd_next_handle = handle + 1;
     s_dvd_files[handle] = fp;
     strncpy(s_dvd_open_paths[handle], hostPath, 255);
     s_dvd_open_paths[handle][255] = '\0';

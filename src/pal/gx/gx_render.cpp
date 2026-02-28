@@ -26,6 +26,7 @@ extern "C" {
 #include "pal/pal_window.h"
 #include "pal/pal_verify.h"
 #include "pal/pal_milestone.h"
+#include "pal/pal_error.h"
 
 /* Provided by pal_gx_stubs.cpp */
 extern int gx_shim_active;
@@ -197,6 +198,7 @@ int pal_render_init(void) {
     s_initialized = 1;
     gx_shim_active = 1;
 
+    pal_error_init();
     pal_tev_init();
     pal_capture_init();
     pal_verify_init();
@@ -211,6 +213,7 @@ int pal_render_init(void) {
 void pal_render_shutdown(void) {
     if (s_initialized) {
         pal_capture_shutdown();
+        pal_error_shutdown();
         pal_tev_shutdown();
         bgfx::shutdown();
         s_initialized = 0;

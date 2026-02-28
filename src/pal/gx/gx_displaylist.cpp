@@ -31,6 +31,7 @@
 #include "revolution/gx/GXEnum.h"
 #include "pal/gx/gx_displaylist.h"
 #include "pal/gx/gx_state.h"
+#include "pal/pal_error.h"
 
 /* ================================================================ */
 /* Big-endian byte stream reader                                    */
@@ -286,6 +287,105 @@ static void dl_handle_bp_reg(u32 value) {
          * [3:0] = nTexGens, [5:4] = nChans, [13:10] = nTevs, [18:16] = nInds */
         u8 nTevs = (u8)(((data >> 10) & 0xF) + 1); /* stored as n-1 */
         pal_gx_set_num_tev_stages(nTevs);
+        u8 nChans = (u8)((data >> 4) & 0x3);
+        pal_gx_set_num_chans(nChans);
+        u8 nTexGens = (u8)(data & 0xF);
+        pal_gx_set_num_tex_gens(nTexGens);
+        return;
+    }
+
+    /* Alpha compare (register 0xF3) */
+    if (addr == 0xF3) {
+        /* BP_ALPHA_COMPARE bit layout:
+         * [7:0] = ref0, [10:8] = comp0, [15:11] = ref1 (top 5 bits)
+         * Actually: [7:0]=ref0, [10:8]=comp0, [13:11]=op, [16:14]=comp1, [23:17]=ref1(7 bits) */
+        u8 ref0 = (u8)(data & 0xFF);
+        GXCompare comp0 = (GXCompare)((data >> 8) & 0x7);
+        GXAlphaOp op = (GXAlphaOp)((data >> 11) & 0x3);
+        GXCompare comp1 = (GXCompare)((data >> 13) & 0x7);
+        u8 ref1 = (u8)((data >> 16) & 0xFF);
+        pal_gx_set_alpha_compare(comp0, ref0, op, comp1, ref1);
+        return;
+    }
+
+    /* Z mode (register 0x40) */
+    if (addr == 0x40) {
+        /* BP_ZMODE bit layout:
+         * [0] = test enable, [3:1] = func, [4] = update enable */
+        GXBool enable = (GXBool)(data & 0x1);
+        GXCompare func = (GXCompare)((data >> 1) & 0x7);
+        GXBool update = (GXBool)((data >> 4) & 0x1);
+        pal_gx_set_z_mode(enable, func, update);
+        return;
+    }
+
+    /* Blend mode (register 0x41) */
+    if (addr == 0x41) {
+        /* BP_BLENDMODE bit layout:
+         * [0] = blend enable, [1] = logic enable, [2] = dither,
+         * [3] = color update, [4] = alpha update,
+         * [7:5] = dst factor, [10:8] = src factor, [11] = subtract,
+         * [15:12] = logic op */
+        int blend_en = data & 0x1;
+        int logic_en = (data >> 1) & 0x1;
+        int subtract = (data >> 11) & 0x1;
+        GXBlendMode mode = GX_BM_NONE;
+        if (subtract) mode = GX_BM_SUBTRACT;
+        else if (blend_en) mode = GX_BM_BLEND;
+        else if (logic_en) mode = GX_BM_LOGIC;
+        GXBlendFactor src = (GXBlendFactor)((data >> 8) & 0x7);
+        GXBlendFactor dst = (GXBlendFactor)((data >> 5) & 0x7);
+        GXLogicOp logic = (GXLogicOp)((data >> 12) & 0xF);
+        pal_gx_set_blend_mode(mode, src, dst, logic);
+
+        GXBool color_upd = (GXBool)((data >> 3) & 0x1);
+        GXBool alpha_upd = (GXBool)((data >> 4) & 0x1);
+        pal_gx_set_color_update(color_upd);
+        pal_gx_set_alpha_update(alpha_upd);
+        return;
+    }
+
+    /* TEV konst color selector (register 0x18-0x1F, covers 2 stages each) */
+    if (addr >= 0x18 && addr <= 0x1F) {
+        /* 4 stages per register, alternating k_color_sel and k_alpha_sel */
+        /* Actually: 0x18-0x1B = kcolor sel for stages 0-15 (4 per reg)
+         * 0x1C-0x1F = kalpha sel for stages 0-15 (4 per reg) */
+        if (addr <= 0x1B) {
+            int base = (addr - 0x18) * 4;
+            for (int i = 0; i < 4 && base + i < GX_MAX_TEVSTAGE; i++) {
+                GXTevKColorSel sel = (GXTevKColorSel)((data >> (i * 5)) & 0x1F);
+                pal_gx_set_tev_k_color_sel((GXTevStageID)(base + i), sel);
+            }
+        } else {
+            int base = (addr - 0x1C) * 4;
+            for (int i = 0; i < 4 && base + i < GX_MAX_TEVSTAGE; i++) {
+                GXTevKAlphaSel sel = (GXTevKAlphaSel)((data >> (i * 5)) & 0x1F);
+                pal_gx_set_tev_k_alpha_sel((GXTevStageID)(base + i), sel);
+            }
+        }
+        return;
+    }
+
+    /* TEV color register (registers 0xE0-0xE7): Pairs of 24-bit values (R/A then B/G)
+     * 0xE0/0xE1 = TEVREG0, 0xE2/0xE3 = TEVREG1, etc. */
+    if (addr >= 0xE0 && addr <= 0xE7) {
+        int reg = (addr - 0xE0) / 2;
+        int is_bg = (addr & 1); /* even = R+A (lo), odd = B+G (hi) */
+        if (reg < GX_MAX_TEVREG) {
+            if (!is_bg) {
+                /* [10:0] = A, [22:12] = R */
+                u16 a_val = (u16)(data & 0x7FF);
+                u16 r_val = (u16)((data >> 12) & 0x7FF);
+                g_gx_state.tev_regs[reg].r = (u8)(r_val & 0xFF);
+                g_gx_state.tev_regs[reg].a = (u8)(a_val & 0xFF);
+            } else {
+                /* [10:0] = B, [22:12] = G */
+                u16 b_val = (u16)(data & 0x7FF);
+                u16 g_val = (u16)((data >> 12) & 0x7FF);
+                g_gx_state.tev_regs[reg].g = (u8)(g_val & 0xFF);
+                g_gx_state.tev_regs[reg].b = (u8)(b_val & 0xFF);
+            }
+        }
         return;
     }
 }
@@ -526,7 +626,12 @@ void pal_gx_call_display_list(const void* list, u32 nbytes) {
             continue;
         }
 
-        /* Unknown opcode — skip one byte and try to recover */
+        /* Unknown opcode — report and break */
+        {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "opcode=0x%02X pos=%u", opcode, reader.pos);
+            pal_error(PAL_ERR_DL_PARSE, buf);
+        }
         break;
     }
 }

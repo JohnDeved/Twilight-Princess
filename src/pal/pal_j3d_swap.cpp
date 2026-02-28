@@ -22,6 +22,7 @@
 #if PLATFORM_PC
 
 #include "pal/pal_endian.h"
+#include "pal/pal_error.h"
 #include <cstdio>
 #include <cstring>
 
@@ -718,15 +719,22 @@ int pal_j3d_swap_model(void* data, u32 size) {
         return 0; /* Already native endian */
     }
 
-    fprintf(stderr, "[pal_j3d] Swapping model: magic=%c%c%c%c type=%c%c%c%c\n",
-            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+    fprintf(stderr, "[pal_j3d] Swapping model: magic=%c%c%c%c type=%c%c%c%c size=%u\n",
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], size);
 
     /* Swap file header */
     swap_u32_array(buf, 0x00, 2);  /* magic1, magic2 */
     swap_u32_array(buf, 0x08, 1);  /* fileSize */
     swap_u32_array(buf, 0x0C, 1);  /* blockNum */
 
+    u32 fileSize = *(u32*)(buf + 0x08);
     u32 blockNum = *(u32*)(buf + 0x0C);
+
+    /* Validate file size against buffer */
+    if (fileSize > size) {
+        fprintf(stderr, "[pal_j3d] WARNING: header fileSize %u > buffer size %u\n", fileSize, size);
+    }
+
     if (blockNum > 64) {
         fprintf(stderr, "[pal_j3d] Suspicious blockNum %u, aborting swap\n", blockNum);
         return 0;
@@ -734,6 +742,7 @@ int pal_j3d_swap_model(void* data, u32 size) {
 
     /* Walk blocks and swap each */
     u8* blockPtr = buf + 0x20;
+    u32 blocks_swapped = 0;
     for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < size; i++) {
         /* Read block header in big-endian */
         u32 blockType = r32(blockPtr);
@@ -743,9 +752,21 @@ int pal_j3d_swap_model(void* data, u32 size) {
         w32(blockPtr, blockType);
         w32(blockPtr + 4, blockSize);
 
-        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > size) {
-            fprintf(stderr, "[pal_j3d] Block %u: bad size %u, stopping\n", i, blockSize);
+        /* Validate block size */
+        if (blockSize < 8) {
+            fprintf(stderr, "[pal_j3d] Block %u: size %u too small, stopping\n", i, blockSize);
             break;
+        }
+        if ((u32)(blockPtr - buf) + blockSize > size) {
+            fprintf(stderr, "[pal_j3d] Block %u: size %u exceeds buffer (offset %u + size %u > %u), stopping\n",
+                    i, blockSize, (u32)(blockPtr - buf), blockSize, size);
+            break;
+        }
+        /* Block size must be 32-byte aligned in J3D format */
+        if (blockSize & 0x1F) {
+            fprintf(stderr, "[pal_j3d] Block %u '%c%c%c%c': size %u not 32-byte aligned (non-fatal)\n",
+                    i, (char)(blockType>>24), (char)(blockType>>16),
+                    (char)(blockType>>8), (char)blockType, blockSize);
         }
 
         /* Dispatch by block type (big-endian FCC) */
@@ -788,9 +809,11 @@ int pal_j3d_swap_model(void* data, u32 size) {
             break;
         }
 
+        blocks_swapped++;
         blockPtr += blockSize;
     }
 
+    fprintf(stderr, "[pal_j3d] Swap complete: %u/%u blocks swapped\n", blocks_swapped, blockNum);
     return 1;
 }
 
