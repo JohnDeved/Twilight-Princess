@@ -311,6 +311,61 @@ def check_render_baseline(data, baseline_path):
                 "passed": False,
             })
 
+    # Check pipeline requirements
+    pipeline = baseline.get("pipeline", {})
+    if pipeline.get("require_geometry") and summary.get("peak_verts", 0) == 0:
+        issues.append({
+            "metric": "pipeline_geometry",
+            "expected_min": "vertices > 0",
+            "actual": summary.get("peak_verts", 0),
+            "passed": False,
+        })
+    if pipeline.get("require_textures") and summary.get("frames_with_textures", 0) == 0:
+        issues.append({
+            "metric": "pipeline_textures",
+            "expected_min": "textured frames > 0",
+            "actual": summary.get("frames_with_textures", 0),
+            "passed": False,
+        })
+    if pipeline.get("require_textured_shaders") and not (summary.get("all_shader_mask", 0) & ~1):
+        issues.append({
+            "metric": "pipeline_textured_shaders",
+            "expected_min": "shader_mask has textured shaders",
+            "actual": summary.get("all_shader_mask", 0),
+            "passed": False,
+        })
+    if pipeline.get("require_depth") and summary.get("frames_with_depth", 0) == 0:
+        issues.append({
+            "metric": "pipeline_depth",
+            "expected_min": "depth testing frames > 0",
+            "actual": summary.get("frames_with_depth", 0),
+            "passed": False,
+        })
+    if pipeline.get("require_blend") and summary.get("frames_with_blend", 0) == 0:
+        issues.append({
+            "metric": "pipeline_blend",
+            "expected_min": "blended frames > 0",
+            "actual": summary.get("frames_with_blend", 0),
+            "passed": False,
+        })
+    min_complexity = pipeline.get("min_visual_complexity", 0)
+    if min_complexity > 0:
+        # Compute complexity same as check_pipeline_health
+        pk_tex = summary.get("peak_unique_textures", 0)
+        pk_dc = summary.get("peak_draw_calls", 0)
+        shader_mask = summary.get("all_shader_mask", 0)
+        prim_mask = summary.get("all_prim_mask", 0)
+        shaders = bin(shader_mask).count('1')
+        prims = bin(prim_mask).count('1')
+        complexity = min(pk_tex * 5, 25) + min(pk_dc, 25) + min(shaders * 10, 25) + min(prims * 8, 25)
+        if complexity < min_complexity:
+            issues.append({
+                "metric": "visual_complexity",
+                "expected_min": min_complexity,
+                "actual": complexity,
+                "passed": False,
+            })
+
     return issues
 
 
@@ -349,14 +404,222 @@ def check_golden_images(verify_dir, golden_dir):
     return results
 
 
+# TEV shader preset names for human-readable output
+TEV_SHADER_NAMES = {
+    0: "PASSCLR",    # vertex color only (no texture)
+    1: "REPLACE",    # texture replaces color
+    2: "MODULATE",   # texture * vertex color
+    3: "BLEND",      # lerp(texture, vertex color, alpha)
+    4: "DECAL",      # texture with alpha blend
+}
+
+# GX primitive type names
+GX_PRIM_NAMES = {
+    0x80: "QUADS",
+    0x90: "TRIANGLES",
+    0x98: "TRISTRIP",
+    0xA0: "TRIFAN",
+    0xA8: "LINES",
+    0xB0: "LINESTRIP",
+    0xB8: "POINTS",
+}
+
+
+def check_pipeline_health(data):
+    """Check render pipeline stage health — each stage of the GX→bgfx pipeline.
+
+    Returns a dict with stage-by-stage health status and actionable guidance.
+    This tells agents exactly which part of the rendering pipeline needs work.
+
+    Pipeline stages checked:
+    1. Geometry submission — are vertices being submitted?
+    2. Texture loading — are textures being decoded from GX formats?
+    3. Shader variety — are textured shaders used (not just PASSCLR)?
+    4. Depth testing — is z-buffering active for 3D scenes?
+    5. Alpha blending — is transparency working?
+    6. Primitive diversity — are multiple primitive types used?
+    7. Visual complexity — peak textures × draw calls indicates scene richness
+    """
+    summary = data.get("summary", {})
+    frames = data.get("frames", [])
+    issues = []
+
+    total_frames = summary.get("total_frames", 0)
+    frames_with_draws = summary.get("frames_with_draws", 0)
+    frames_with_textures = summary.get("frames_with_textures", 0)
+    total_textured_draws = summary.get("total_textured_draws", 0)
+    peak_unique_textures = summary.get("peak_unique_textures", 0)
+    frames_with_depth = summary.get("frames_with_depth", 0)
+    frames_with_blend = summary.get("frames_with_blend", 0)
+    all_shader_mask = summary.get("all_shader_mask", 0)
+    all_prim_mask = summary.get("all_prim_mask", 0)
+    peak_draw_calls = summary.get("peak_draw_calls", 0)
+    peak_verts = summary.get("peak_verts", 0)
+
+    # Decode shader mask to names
+    shaders_used = []
+    for bit, name in TEV_SHADER_NAMES.items():
+        if all_shader_mask & (1 << bit):
+            shaders_used.append(name)
+
+    # Decode primitive mask to names
+    prims_used = []
+    for val, name in GX_PRIM_NAMES.items():
+        if all_prim_mask & (1 << val):
+            prims_used.append(name)
+
+    # Stage 1: Geometry
+    has_geometry = peak_verts > 0 and frames_with_draws > 0
+
+    # Stage 2: Textures
+    has_textures = frames_with_textures > 0 and peak_unique_textures > 0
+
+    # Stage 3: Shader variety (real scenes use textured shaders, not just PASSCLR)
+    has_textured_shaders = bool(all_shader_mask & ~1)  # any bit besides PASSCLR
+
+    # Stage 4: Depth testing
+    has_depth = frames_with_depth > 0
+
+    # Stage 5: Alpha blending
+    has_blend = frames_with_blend > 0
+
+    # Stage 6: Primitive diversity (real scenes use multiple prim types)
+    prim_count = bin(all_prim_mask).count('1')
+    has_prim_diversity = prim_count >= 2
+
+    # Stage 7: Visual complexity score (0-100)
+    # Based on: texture count, draw call density, shader variety, prim diversity
+    complexity = 0
+    if peak_unique_textures >= 1:
+        complexity += min(peak_unique_textures * 5, 25)  # up to 25 for textures
+    if peak_draw_calls >= 1:
+        complexity += min(peak_draw_calls, 25)  # up to 25 for draw calls
+    if len(shaders_used) >= 1:
+        complexity += min(len(shaders_used) * 10, 25)  # up to 25 for shader variety
+    if prim_count >= 1:
+        complexity += min(prim_count * 8, 25)  # up to 25 for prim diversity
+
+    # Build per-frame pipeline data from verify_frame entries
+    per_frame_textured = []
+    per_frame_textures = []
+    for vf in frames:
+        td = vf.get("textured_draws", 0)
+        ut = vf.get("unique_textures", 0)
+        if td > 0 or ut > 0:
+            per_frame_textured.append({
+                "frame": vf.get("frame", 0),
+                "textured": td,
+                "unique_tex": ut,
+            })
+        if ut > 0:
+            per_frame_textures.append(ut)
+
+    pipeline_result = {
+        "stages": {
+            "geometry": {"ok": has_geometry, "peak_verts": peak_verts,
+                         "frames_with_draws": frames_with_draws},
+            "textures": {"ok": has_textures, "frames_with_textures": frames_with_textures,
+                         "peak_unique_textures": peak_unique_textures,
+                         "total_textured_draws": total_textured_draws},
+            "shaders": {"ok": has_textured_shaders, "shaders_used": shaders_used,
+                        "mask": all_shader_mask},
+            "depth": {"ok": has_depth, "frames_with_depth": frames_with_depth},
+            "blend": {"ok": has_blend, "frames_with_blend": frames_with_blend},
+            "primitives": {"ok": has_prim_diversity, "prims_used": prims_used,
+                           "mask": all_prim_mask, "count": prim_count},
+        },
+        "visual_complexity": complexity,
+        "issues": [],
+    }
+
+    # Generate actionable issues for broken pipeline stages
+    if not has_geometry:
+        pipeline_result["issues"].append(
+            "Pipeline: No geometry submitted — GX vertex submission is broken. "
+            "Fix GXBegin/GXPosition/GXEnd → pal_tev_flush_draw()"
+        )
+    elif not has_textures:
+        pipeline_result["issues"].append(
+            "Pipeline: No textures decoded — draws are untextured. "
+            "Fix GXLoadTexObj → pal_gx_decode_texture(). Game will look like solid colors"
+        )
+    elif not has_textured_shaders:
+        pipeline_result["issues"].append(
+            "Pipeline: Only PASSCLR shader used — textures exist but aren't applied. "
+            "Fix TEV preset detection in detect_tev_preset() to return REPLACE/MODULATE"
+        )
+
+    # Informational guidance (not blocking — these improve quality incrementally)
+    if has_geometry and not has_depth and total_frames > 60:
+        pipeline_result["issues"].append(
+            "Pipeline: No depth testing — 3D scenes will have z-fighting. "
+            "Ensure GXSetZMode sets z_compare_enable in g_gx_state"
+        )
+
+    issues.extend(pipeline_result["issues"])
+
+    return pipeline_result
+
+
+def check_frame_progression(data):
+    """Check that rendering content changes between frames.
+
+    A game that renders the same image every frame may be stuck in a loop,
+    not actually progressing through scenes. Frame progression detects this
+    by comparing framebuffer hashes between captured frames.
+    """
+    summary = data.get("summary", {})
+    frames = data.get("frames", [])
+    issues = []
+
+    hash_changes = summary.get("hash_changes", 0)
+    total_frames = summary.get("total_frames", 0)
+
+    # Collect hashes from captured frames
+    captured_hashes = []
+    for vf in frames:
+        fb_hash = vf.get("fb_hash")
+        if fb_hash:
+            captured_hashes.append((vf.get("frame", 0), fb_hash))
+
+    distinct_hashes = len(set(h for _, h in captured_hashes))
+
+    progression_result = {
+        "hash_changes": hash_changes,
+        "captured_hashes": len(captured_hashes),
+        "distinct_hashes": distinct_hashes,
+        "issues": [],
+    }
+
+    # Check for frozen rendering — if we have many frames but all same hash
+    if total_frames > 60 and hash_changes == 0:
+        progression_result["issues"].append(
+            "Frame progression: framebuffer hash never changed across "
+            f"{total_frames} frames — game may be stuck or rendering "
+            "the same clear color every frame"
+        )
+
+    # Check captured frame diversity
+    if len(captured_hashes) >= 3 and distinct_hashes <= 1:
+        progression_result["issues"].append(
+            f"Frame progression: all {len(captured_hashes)} captured frames "
+            "have identical hashes — scene content is not changing"
+        )
+
+    issues.extend(progression_result["issues"])
+    return progression_result
+
+
 def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
-    """Check rendering health using five automated verification layers:
+    """Check rendering health using seven automated verification layers:
 
     1. Metric checks — draw calls, vertex counts, non-black pixels
     2. Hash comparison — deterministic CRC32 of framebuffer content
     3. Golden image comparison — RMSE against reference BMP files (or BMP analysis when no golden exists)
     4. Render baseline — stored thresholds that must not regress
     5. Captured frame BMP analysis — pixel-level inspection of saved frames
+    6. Pipeline stage health — textures, shaders, depth, blend, primitives
+    7. Frame progression — content changes between frames prove game isn't frozen
 
     No human review needed.
     """
@@ -464,6 +727,18 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
                 analysis["file"] = bmp.name
                 frame_analyses.append(analysis)
         result["details"]["captured_frames"] = frame_analyses
+
+    # --- Layer 6: Render pipeline stage health ---
+    pipeline = check_pipeline_health(data)
+    result["details"]["pipeline"] = pipeline
+    for issue in pipeline.get("issues", []):
+        result["issues"].append(issue)
+
+    # --- Layer 7: Frame progression ---
+    progression = check_frame_progression(data)
+    result["details"]["progression"] = progression
+    for issue in progression.get("issues", []):
+        result["issues"].append(issue)
 
     result["passed"] = len(result["issues"]) == 0
     return result
@@ -667,6 +942,24 @@ def main():
                 print(f"  Frame hashes: {len(val)} frames tracked")
                 for fn, fh in sorted(val.items(), key=lambda x: int(x[0])):
                     print(f"    frame {fn}: {fh}")
+            elif key == "pipeline":
+                stages = val.get("stages", {})
+                complexity = val.get("visual_complexity", 0)
+                print(f"  🔧 RENDER PIPELINE HEALTH (complexity: {complexity}/100)")
+                for stage_name, stage in stages.items():
+                    ok = stage.get("ok", False)
+                    icon = "✅" if ok else "❌"
+                    details_parts = []
+                    for sk, sv in stage.items():
+                        if sk == "ok":
+                            continue
+                        details_parts.append(f"{sk}={sv}")
+                    details_str = ", ".join(details_parts)
+                    print(f"    {icon} {stage_name}: {details_str}")
+            elif key == "progression":
+                hc = val.get("hash_changes", 0)
+                dh = val.get("distinct_hashes", 0)
+                print(f"  📈 Frame progression: {hc} hash changes, {dh} distinct hashes")
             elif key == "note":
                 print(f"  ℹ️  {val}")
             elif isinstance(val, dict):

@@ -375,6 +375,39 @@ jobs:
                 }
                 body += `| ${name} | ${checkEmoji} | ${detail} |\n`;
               }
+
+              // Render pipeline health breakdown
+              const pipelineData = verify.checks?.rendering?.details?.pipeline;
+              if (pipelineData && pipelineData.stages) {
+                body += `\n### 🔧 Render Pipeline Health\n`;
+                body += `| Stage | Status | Details |\n|---|---|---|\n`;
+                const stageNames = {
+                  geometry: '📐 Geometry',
+                  textures: '🖼️ Textures',
+                  shaders: '🎨 Shaders',
+                  depth: '📏 Depth Test',
+                  blend: '🔮 Blending',
+                  primitives: '🔺 Primitives',
+                };
+                for (const [stageName, stage] of Object.entries(pipelineData.stages)) {
+                  const stageEmoji = stage.ok ? '✅' : '❌';
+                  const displayName = stageNames[stageName] || stageName;
+                  const details = Object.entries(stage)
+                    .filter(([k]) => k !== 'ok')
+                    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`)
+                    .join(', ');
+                  body += `| ${displayName} | ${stageEmoji} | ${details} |\n`;
+                }
+                body += `| **Visual Complexity** | | **${pipelineData.visual_complexity ?? 0}/100** |\n`;
+              }
+
+              // Frame progression
+              const progressionData = verify.checks?.rendering?.details?.progression;
+              if (progressionData) {
+                const hc = progressionData.hash_changes ?? 0;
+                const dh = progressionData.distinct_hashes ?? 0;
+                body += `\n📈 **Frame progression:** ${hc} hash changes, ${dh} distinct hashes\n`;
+              }
             }
 
             // Render screenshots — embed uploaded images
