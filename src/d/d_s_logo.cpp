@@ -107,13 +107,14 @@ void dScnLogo_c::checkProgSelect() {
 int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
 #if PLATFORM_PC
-    /* On PC, render the Nintendo logo via J2D → GX → bgfx pipeline.
-     * Skip warning/progressive/dolby states — just show the Nintendo logo. */
+    /* On PC, skip warning/progressive/dolby states — just show the Nintendo logo,
+     * then transition to the opening scene. */
     if (mNintendoLogo) {
         dComIfGd_set2DOpa(mNintendoLogo);
     }
     if (mTimer == 0) {
-        mExecCommand = EXEC_SCENE_CHANGE;
+        nextSceneChange();
+        return 1;
     }
     return 1;
 #endif
@@ -630,6 +631,11 @@ int dScnLogo_c::create() {
     field_0x20a = 0;
     mDoGph_gInf_c::startFadeIn(30);
 
+#if PLATFORM_PC
+    /* PC: skip safety/warning screen, show Nintendo logo for 90 frames then transition */
+    mExecCommand = EXEC_NINTENDO_IN;
+    mTimer = 90;
+#else
     checkProgSelect();
     if (field_0x20a != 0) {
         mExecCommand = EXEC_PROG_IN;
@@ -645,6 +651,7 @@ int dScnLogo_c::create() {
         }
         mDoRst::setProgSeqFlag(1);
     }
+#endif
 
     JUTGamePad::clearResetOccurred();
     JUTGamePad::setResetCallback(mDoRst_resetCallBack, NULL);

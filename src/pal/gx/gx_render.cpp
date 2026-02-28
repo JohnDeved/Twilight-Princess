@@ -259,8 +259,13 @@ void pal_render_end_frame(void) {
 
     /* Debug text overlay — frame number + stats visible in captured frames */
     bgfx::dbgTextPrintf(1, 1, 0x0f,
-        "TP-PC Frame %u  DC:%u  V:%u",
-        s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
+        "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
+        s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+        gx_frame_stub_count);
+    bgfx::dbgTextPrintf(1, 2, 0x0f,
+        "Renderer: %s  Capture: %s",
+        bgfx::getRendererName(bgfx::getRendererType()),
+        s_fb_capture_enabled ? "ON" : "OFF");
 
     if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
         && gx_stub_frame_is_valid()) {

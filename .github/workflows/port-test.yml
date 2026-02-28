@@ -197,7 +197,9 @@ jobs:
               COMMIT_MSG="ci: auto-update milestone baseline ($(python3 -c "import json; r=json.load(open('regression-report.json')); print(f\"{r['baseline_milestone_count']} → {r['current_milestone_count']}\")" 2>/dev/null || echo "improved"))"
             fi
             git commit -m "$COMMIT_MSG"
-            git push origin HEAD:${{ github.head_ref }}
+            # Pull any new commits (e.g. from Copilot agent) before pushing
+            git pull --rebase origin ${{ github.head_ref }} || true
+            git push origin HEAD:${{ github.head_ref }} || echo "⚠️ Push failed (concurrent updates) — baseline will be updated on next run"
             echo "✅ Baseline committed and pushed"
           fi
 
