@@ -23,6 +23,9 @@
 #include "m_Do/m_Do_main.h"
 #include "m_Do/m_Do_mtx.h"
 #include <cstdio>
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
 
 u8 mDoExt::CurrentHeapAdjustVerbose;
 u8 mDoExt::HeapAdjustVerbose;
@@ -3559,6 +3562,11 @@ static void mDoExt_initFontCommon(JUTFont** mDoExt_font_p, ResFONT** mDoExt_resf
     JUT_ASSERT_MSG(7142, *mDoExt_resfont == NULL, "mDoExt_resfont == 0");
     *mDoExt_resfont = (ResFONT*)JKRGetResource('ROOT', param_3, param_4);
 #if PLATFORM_PC
+    /* On PC, font resources are big-endian binary from the disc.
+     * Byte-swap in-place before parsing. */
+    if (*mDoExt_resfont != NULL) {
+        pal_font_swap(*mDoExt_resfont, 0x100000);
+    }
     /* On PC without game assets, font resources may not be available.
      * Return gracefully instead of crashing. */
     if (*mDoExt_resfont == NULL) {

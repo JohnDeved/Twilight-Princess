@@ -39,6 +39,13 @@ int pal_j3d_swap_model(void* data, u32 size);
  */
 int pal_j3d_swap_anim(void* data, u32 size);
 
+/**
+ * Byte-swap a ResFONT binary (.bfn font file) from big-endian to little-endian
+ * in-place. Must be called before JUTResFont::initiate().
+ * Returns 1 if the data was swapped, 0 if already little-endian or not a font.
+ */
+int pal_font_swap(void* data, u32 size);
+
 #ifdef __cplusplus
 }
 #endif

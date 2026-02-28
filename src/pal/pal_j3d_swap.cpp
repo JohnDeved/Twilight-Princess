@@ -796,4 +796,105 @@ int pal_j3d_swap_anim(void* data, u32 size) {
     return 1;
 }
 
+/*
+ * ResFONT (.bfn) binary format:
+ *   Header (0x20 bytes):
+ *     u64 magic ('FONT' or 'RFNT'), u32 filesize, u32 numBlocks, padding[0x10]
+ *   Blocks: INF1, WID1, GLY1, MAP1
+ *     Each block: u32 magic, u32 size, then type-specific data
+ */
+int pal_font_swap(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* buf = (u8*)data;
+
+    /* ResFONT magic is a u64. Check if first 4 bytes look like big-endian magic.
+     * Common font magics: 'FONT' (0x464F4E54), 'RFNT' (0x52464E54) */
+    u32 magic_be = r32(buf);
+    u32 magic_native = *(u32*)buf;
+
+    /* If native read matches a known FCC, already swapped */
+    if (magic_native == FCC('F','O','N','T') || magic_native == FCC('R','F','N','T') ||
+        magic_native == FCC('f','o','n','t'))
+    {
+        return 0;
+    }
+
+    /* Check if big-endian read matches */
+    if (magic_be != FCC('F','O','N','T') && magic_be != FCC('R','F','N','T') &&
+        magic_be != FCC('f','o','n','t'))
+    {
+        return 0; /* Not a font file */
+    }
+
+    fprintf(stderr, "[pal_font] Swapping font: magic=%c%c%c%c\n",
+            buf[0], buf[1], buf[2], buf[3]);
+
+    /* Swap file header */
+    swap_u32_array(buf, 0x00, 2);  /* magic (as two u32) */
+    swap_u32_array(buf, 0x08, 2);  /* filesize, numBlocks */
+
+    u32 numBlocks = *(u32*)(buf + 0x0C);
+    if (numBlocks > 64) {
+        fprintf(stderr, "[pal_font] Suspicious numBlocks %u, aborting\n", numBlocks);
+        return 0;
+    }
+
+    /* Walk blocks */
+    u8* blockPtr = buf + 0x20;
+    for (u32 i = 0; i < numBlocks && (u32)(blockPtr - buf) < size; i++) {
+        u32 blockType = r32(blockPtr);
+        u32 blockSize = r32(blockPtr + 4);
+
+        /* Swap block header */
+        w32(blockPtr, blockType);
+        w32(blockPtr + 4, blockSize);
+
+        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > size) break;
+
+        switch (blockType) {
+        case FCC('I','N','F','1'):
+            /* INF1: u16 fontType, ascent, descent, width, leading, defaultCode */
+            swap_u16_array(blockPtr, 0x08, 6);
+            break;
+
+        case FCC('W','I','D','1'):
+            /* WID1: u16 startCode, endCode, then u8 width data */
+            swap_u16_array(blockPtr, 0x08, 2);
+            break;
+
+        case FCC('G','L','Y','1'):
+            /* GLY1: u16 startCode, endCode, cellWidth, cellHeight,
+             *       u32 textureSize, u16 textureFormat, numRows, numColumns,
+             *       textureWidth, textureHeight, padding */
+            swap_u16_array(blockPtr, 0x08, 2);  /* startCode, endCode */
+            swap_u16_array(blockPtr, 0x0C, 2);  /* cellWidth, cellHeight */
+            swap_u32_array(blockPtr, 0x10, 1);  /* textureSize */
+            swap_u16_array(blockPtr, 0x14, 6);  /* format, rows, cols, w, h, pad */
+            break;
+
+        case FCC('M','A','P','1'): {
+            /* MAP1: u16 mappingMethod, startCode, endCode, numEntries, mLeading */
+            swap_u16_array(blockPtr, 0x08, 5);
+            /* Map entries: u16 per entry */
+            u16 numEntries = *(u16*)(blockPtr + 0x0E);
+            if (numEntries > 0 && 0x12 + numEntries * 2 <= blockSize) {
+                swap_u16_array(blockPtr, 0x12, numEntries);
+            }
+            break;
+        }
+
+        default:
+            fprintf(stderr, "[pal_font] Unknown block '%c%c%c%c'\n",
+                    (char)(blockType>>24), (char)(blockType>>16),
+                    (char)(blockType>>8), (char)blockType);
+            break;
+        }
+
+        blockPtr += blockSize;
+    }
+
+    return 1;
+}
+
 #endif /* PLATFORM_PC */

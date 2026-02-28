@@ -523,13 +523,14 @@ dScnLogo_c::~dScnLogo_c() {
     mParticleCommand->destroy();
 
 #if !PLATFORM_PC
-    /* Font resources are big-endian binary — need byte-swap on PC before parsing.
-     * Skip font/particle init on PC until comprehensive endian conversion is added. */
     JKRAramHeap* aram_heap = JKRAram::getAramHeap();
     u32 free_size = aram_heap->getTotalFreeSize();
+#endif
+    /* Font init — endian conversion is now handled in mDoExt_initFontCommon */
     mDoExt_getMesgFont();
     mDoExt_getSubFont();
     mDoExt_getRubyFont();
+#if !PLATFORM_PC
     mDoExt_setAraCacheSize(free_size - aram_heap->getTotalFreeSize());
 
 #if VERSION == VERSION_GCN_JPN
@@ -537,6 +538,7 @@ dScnLogo_c::~dScnLogo_c() {
         dComIfGp_getFontArchive()->unmount();
         dComIfGp_setFontArchive(NULL);
     }
+#endif
 #endif
 
     dComIfGp_setItemTable(mItemTableCommand->getMemAddress());
@@ -548,12 +550,6 @@ dScnLogo_c::~dScnLogo_c() {
     dDlst_shadowControl_c::setSimpleTex((ResTIMG*)dComIfG_getObjectRes("Always", 0x4A));
     dTres_c::createWork();
     dMpath_c::createWork();
-#else
-    /* On PC, skip font/item/particle resource parsing (big-endian binary),
-     * but still destroy the load commands to free memory. */
-    mItemTableCommand->destroy();
-    mEnemyItemCommand->destroy();
-#endif
 
     #if PLATFORM_WII
     data_8053a730 = 0;
