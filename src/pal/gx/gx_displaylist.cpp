@@ -117,13 +117,49 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
  * XF registers handle transform matrices and lighting.
  */
 static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
-    /* XF registers 0x0000-0x03FF: Position/normal matrix memory
-     * XF registers 0x0400-0x04FF: Texture matrix memory
-     * For now, skip XF register parsing — matrix state is set
-     * by GXLoadPosMtxImm/GXLoadTexMtxImm before display lists. */
-    (void)addr;
-    (void)values;
-    (void)count;
+    /* XF register space:
+     * 0x0000-0x00FF: Position/Normal matrix memory (4x3 f32, 12 regs per matrix)
+     * 0x0400-0x04FF: Post-transform matrix memory
+     * 0x0500-0x05FF: Texture matrix memory
+     * 0x1000-0x10FF: Light parameter memory */
+
+    /* Position matrix memory: 0x0000 + mtxIdx*3 (mtxIdx in units of 4 floats) */
+    if (addr < 0x0400) {
+        /* Each matrix is stored as 3x4 f32 (12 values) at addr.
+         * Matrix index = addr / 3, slot = addr / 3 * 4 / 12 = addr / 9.
+         * GX matrix indices: 0, 3, 6, 9, ... for slots 0, 1, 2, 3, ... */
+        int mtxSlot = addr / 3;
+        if (mtxSlot < 10 && count >= 12) {
+            /* Load 3x4 matrix (row-major, 12 floats) */
+            f32 mtx[3][4];
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 4; j++) {
+                    union { u32 u; f32 f; } conv;
+                    conv.u = values[i * 4 + j];
+                    mtx[i][j] = conv.f;
+                }
+            }
+            pal_gx_load_pos_mtx_imm(mtx, (u32)(mtxSlot * 3));
+        }
+        return;
+    }
+
+    /* Texture matrix memory: 0x0500 + mtxIdx*3 */
+    if (addr >= 0x0500 && addr < 0x0600) {
+        int mtxSlot = (addr - 0x0500) / 3;
+        if (mtxSlot < 10 && count >= 12) {
+            f32 mtx[3][4];
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 4; j++) {
+                    union { u32 u; f32 f; } conv;
+                    conv.u = values[i * 4 + j];
+                    mtx[i][j] = conv.f;
+                }
+            }
+            pal_gx_load_tex_mtx_imm(mtx, (u32)(GX_TEXMTX0 + mtxSlot * 3), GX_MTX3x4);
+        }
+        return;
+    }
 }
 
 /* ================================================================ */
