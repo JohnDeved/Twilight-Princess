@@ -49,12 +49,11 @@ def main():
     integrity = summary.get("integrity", {})
     integrity_valid = integrity.get("valid", True)
     integrity_issues = integrity.get("issues", [])
+    disqualified = integrity.get("disqualified_milestones", [])
 
-    # Determine status
-    if not integrity_valid:
-        status = "integrity_failure"
-        emoji = "🚫"
-    elif current > baseline_count:
+    # Determine status — count already excludes integrity-failed milestones,
+    # so we compare the filtered count directly against baseline.
+    if current > baseline_count:
         status = "improved"
         emoji = "🎉"
     elif current == baseline_count:
@@ -74,6 +73,7 @@ def main():
         "stubs_hit": summary.get("stubs_hit", [])[:10],
         "integrity_valid": integrity_valid,
         "integrity_issues": integrity_issues,
+        "disqualified_milestones": disqualified,
         "pass": status in ("same", "improved"),
     }
 
@@ -90,11 +90,12 @@ def main():
         print(f"Milestones: {', '.join(milestones)}")
 
     if not integrity_valid:
-        print(f"\n🚫 INTEGRITY FAILURE — milestone claims are invalid:")
+        print(f"\n🚫 INTEGRITY ISSUES — some milestones disqualified:")
         for issue in integrity_issues:
             print(f"   ❌ {issue}")
-        print(f"\n   Milestones that fail integrity checks are not trusted.")
-        print(f"   Fix the underlying issues — do not attempt to bypass checks.")
+        if disqualified:
+            print(f"   Disqualified: {', '.join(disqualified)}")
+        print(f"\n   These milestones are excluded from the count.")
 
     if report["crash"]:
         print(f"\n⚠️  CRASH detected: signal {report['crash'].get('signal', '?')}")

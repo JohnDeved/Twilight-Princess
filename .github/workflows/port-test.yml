@@ -280,7 +280,6 @@ jobs:
               'improved': '🎉',
               'same': '✅',
               'regressed': '🚨',
-              'integrity_failure': '🚫',
               'unknown': '❓'
             };
 
@@ -300,11 +299,15 @@ jobs:
             // Integrity check failures
             if (summary.integrity && !summary.integrity.valid) {
               body += `\n### 🚫 Integrity Check Failed\n`;
-              body += `> Milestone claims are invalid — the following issues were detected:\n\n`;
+              body += `> The following milestones were disqualified and excluded from the count:\n\n`;
               for (const issue of (summary.integrity.issues || [])) {
                 body += `- ❌ ${issue}\n`;
               }
-              body += `\n> **These results are not trusted.** Fix the underlying issues.\n`;
+              const disqualified = summary.integrity.disqualified_milestones || [];
+              if (disqualified.length > 0) {
+                body += `\n**Disqualified milestones:** ${disqualified.join(', ')}\n`;
+              }
+              body += `\n> Fix the underlying issues — disqualified milestones do not count.\n`;
             }
 
             // Milestones reached

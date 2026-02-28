@@ -94,6 +94,9 @@ game's boot sequence. Each milestone is a JSON line emitted to stdout:
 - Milestones 6-8 require the scene's `create()` to return `cPhs_COMPLEATE_e` (real assets loaded)
 - Milestones 10-12 require `RENDER_FRAME` (15) to fire first (no trivial frame counting)
 - `RENDER_FRAME` requires: bgfx active + zero GX stubs hit + real draw calls + valid vertices
+- **Milestones that fail integrity checks are excluded from the count** — they don't count toward
+  `milestones_reached_count`. This includes milestones with missing prerequisites, implausible
+  timing, or missing corroborating data.
 
 ### GX Stub Tracker
 
