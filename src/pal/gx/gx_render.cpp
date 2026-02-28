@@ -267,10 +267,9 @@ void pal_render_end_frame(void) {
         bgfx::getRendererName(bgfx::getRendererType()),
         s_fb_capture_enabled ? "ON" : "OFF");
 
-    /* Pass debug info to capture buffer — burned directly into captured pixels.
-     * bgfx captures the backbuffer BEFORE rendering its debug text overlay
-     * (see renderer_gl.cpp: capture() runs before blit(textVideoMemBlitter)),
-     * so we burn the text into the captured pixel data instead. */
+    /* Pass debug info to capture metadata file — external tooling (ffmpeg/Python)
+     * burns it into BMPs and MP4. bgfx captures the backbuffer BEFORE rendering
+     * its debug text overlay, so we use a metadata approach instead of pixel burn-in. */
     if (s_fb_capture_enabled) {
         char line0[128], line1[128];
         snprintf(line0, sizeof(line0),
@@ -297,7 +296,7 @@ void pal_render_end_frame(void) {
 
     /* Submit frame — triggers rendering and capture.
      * bgfx calls captureFrame() on s_callback during frame(), which
-     * stores the rendered pixels + burns debug text into the buffer. */
+     * stores the rendered pixels. Debug info is in frame_metadata.txt. */
     bgfx::frame();
 
     /* Verify after bgfx::frame() so capture buffer is up-to-date */

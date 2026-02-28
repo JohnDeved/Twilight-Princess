@@ -62,10 +62,10 @@ uint32_t pal_capture_get_frame_count(void);
 void pal_capture_shutdown(void);
 
 /**
- * Set debug text to burn into captured frames.
+ * Set debug text metadata for captured frames.
  * Called each frame from pal_render_end_frame() before bgfx::frame().
- * Text is stamped directly into the pixel buffer after bgfx delivers it,
- * because bgfx captures the backbuffer BEFORE its own debug text overlay.
+ * Text is written to verify_output/frame_metadata.txt so that external
+ * tooling (ffmpeg drawtext / Python) can burn it into BMPs and MP4.
  */
 void pal_capture_set_debug_info(const char* line0, const char* line1);
 
