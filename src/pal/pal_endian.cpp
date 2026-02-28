@@ -75,6 +75,13 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
      * process in reverse order to avoid overlap). */
     u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
     u32 numFiles = info->num_file_entries;
+    u8* arcEnd = (u8*)arcData + loadedSize;
+
+    /* Validate that the source file entry range is within the loaded buffer */
+    u8* filesEnd = filesBase + numFiles * RARC_FILE_ENTRY_DISC_SIZE;
+    if (filesBase < (u8*)arcData || filesEnd > arcEnd || numFiles == 0) {
+        return;  /* corrupt or empty — skip file entry processing */
+    }
 
     if (sizeof(JKRArchive::SDIFileEntry) != RARC_FILE_ENTRY_DISC_SIZE && numFiles > 0) {
         /* Allocate temporary buffer for the repacked entries */
@@ -83,6 +90,8 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
         if (repacked) {
             for (u32 i = 0; i < numFiles; i++) {
                 SDIFileEntryDisc* disc = (SDIFileEntryDisc*)(filesBase + i * RARC_FILE_ENTRY_DISC_SIZE);
+                /* Bounds check each entry read */
+                if ((u8*)(disc + 1) > arcEnd) break;
                 repacked[i].file_id                   = pal_swap16(disc->file_id);
                 repacked[i].name_hash                 = pal_swap16(disc->name_hash);
                 repacked[i].type_flags_and_name_offset = pal_swap32(disc->type_flags_and_name_offset);
@@ -93,10 +102,14 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
             /* Copy repacked entries back over the original location.
              * The native array is larger (24*N vs 20*N), but there is
              * typically string table data after the file entries which
-             * provides enough slack. If not, entries may overwrite
-             * some string table bytes — but this is the standard
-             * trade-off for 64-bit RARC loading. */
-            memcpy(filesBase, repacked, numFiles * sizeof(JKRArchive::SDIFileEntry));
+             * provides enough slack. Verify we don't write past the buffer. */
+            size_t repack_size = numFiles * sizeof(JKRArchive::SDIFileEntry);
+            if (filesBase + repack_size > arcEnd) {
+                /* Repack would overflow the archive buffer — skip */
+                free(repacked);
+                return;
+            }
+            memcpy(filesBase, repacked, repack_size);
             free(repacked);
         }
     } else {

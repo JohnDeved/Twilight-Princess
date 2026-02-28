@@ -10,13 +10,16 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>  /* _exit */
 
 #ifdef __linux__
 #include <execinfo.h>
 #endif
 
 static void crash_handler(int sig) {
-    fprintf(stderr, "{\"milestone\":\"CRASH\",\"id\":-1,\"signal\":%d}\n", sig);
+    /* Emit CRASH JSON to stdout so parse_milestones.py can consume it */
+    fprintf(stdout, "{\"milestone\":\"CRASH\",\"id\":-1,\"signal\":%d}\n", sig);
+    fflush(stdout);
 #ifdef __linux__
     void* bt[32];
     int n = backtrace(bt, 32);

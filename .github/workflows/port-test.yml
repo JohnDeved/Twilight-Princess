@@ -92,8 +92,9 @@ jobs:
           TP_TEST_FRAMES: "2000"
           TP_SCREENSHOT: "logo_render.bmp"
         run: |
-          timeout 120s build/tp-pc 2>crash.log | tee milestones.log || true
-          EXIT_CODE=$?
+          set -o pipefail
+          timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
+          EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           if [ -f logo_render.bmp ]; then
             echo "Screenshot captured: $(ls -la logo_render.bmp)"
@@ -113,6 +114,5 @@ jobs:
           name: port-test-results
           path: |
             milestones.log
-            crash.log
             milestone-summary.json
             logo_render.bmp

@@ -141,11 +141,13 @@ def setup_data_dir(extract_dir, data_dir):
     if data_path.is_symlink():
         data_path.unlink()
     elif data_path.is_dir():
-        # Only remove if empty
+        # Remove non-empty directory that doesn't have the expected structure
         try:
-            data_path.rmdir()
-        except OSError:
-            pass
+            shutil.rmtree(str(data_path))
+            print(f"  Removed stale data directory: {data_dir}")
+        except OSError as e:
+            print(f"  ERROR: Cannot remove existing data directory {data_dir}: {e}")
+            return False
 
     # Create symlink to extracted files
     try:

@@ -39,7 +39,7 @@ set(BGFX_CUSTOM_TARGETS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     bgfx
     GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
-    GIT_TAG        v1.129.8958-499
+    GIT_TAG        a952acef35b431a39c790d39736867c515f32aff  # v1.129.8958-499 pinned to immutable SHA
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(bgfx)
@@ -69,6 +69,7 @@ set(SDL_SYSTEM_ICONV OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     sdl3
     URL            https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.8.tar.gz
+    URL_HASH       SHA256=76f3f3e19d21c55d7572d14247d30ad676854ba815204d90da957864df5bf82e
 )
 FetchContent_MakeAvailable(sdl3)
 
