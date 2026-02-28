@@ -171,6 +171,11 @@ int pal_render_init(void) {
                         0x000000ff, 1.0f, 0);
     bgfx::setViewRect(0, 0, 0, (uint16_t)s_frame_width, (uint16_t)s_frame_height);
 
+    /* GX processes draws sequentially — preserve submission order.
+     * Without this, bgfx sorts by render state hash, scrambling the
+     * draw order and breaking alpha-blended overlays (e.g. JUTFader). */
+    bgfx::setViewMode(0, bgfx::ViewMode::Sequential);
+
     s_initialized = 1;
     gx_shim_active = 1;
 
@@ -219,10 +224,6 @@ void pal_render_begin_frame(void) {
 
     bgfx::touch(0);
 
-    /* Enable bgfx debug text overlay for frame diagnostics */
-    bgfx::setDebug(BGFX_DEBUG_TEXT);
-    bgfx::dbgTextClear();
-
     g_gx_state.draw_calls = 0;
     g_gx_state.total_verts = 0;
 }
@@ -233,11 +234,6 @@ void pal_render_end_frame(void) {
 
     static uint32_t s_frame_count = 0;
     s_frame_count++;
-
-    /* Debug text overlay — verifies bgfx is rendering */
-    bgfx::dbgTextPrintf(2, 2, 0x0f,
-        "TP-PC Frame %u  DC:%u  V:%u",
-        s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
 
     if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
         && gx_stub_frame_is_valid()) {

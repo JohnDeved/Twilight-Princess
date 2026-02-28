@@ -421,7 +421,6 @@ static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
 
     uint32_t stride = 0;
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
-    /* Use format 0 as default — matches GX_VTXFMT0 used by J2D */
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
     /* PNMTXIDX — 1 byte matrix index (not a bgfx attribute, skip it) */
@@ -430,48 +429,152 @@ static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
         stride += 1;
     }
 
-    /* Position — check actual component type */
+    /* Position — always Float in bgfx.
+     * GX integer positions use frac bits (fixed-point) which bgfx
+     * doesn't understand, so we always use float and convert data
+     * in convert_vertex_to_float(). */
     if (desc[GX_VA_POS].type != GX_NONE) {
-        GXCompType pt = afmt[GX_VA_POS].comp_type;
-        uint32_t comp_sz = gx_comp_size(pt);
         int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
-        layout.add(bgfx::Attrib::Position, (uint8_t)ncomps, gx_to_bgfx_type(pt));
-        stride += ncomps * comp_sz;
+        layout.add(bgfx::Attrib::Position, (uint8_t)ncomps, bgfx::AttribType::Float);
+        stride += ncomps * 4;
     }
 
-    /* Normal */
+    /* Normal — always Float */
     if (desc[GX_VA_NRM].type != GX_NONE) {
-        GXCompType nt = afmt[GX_VA_NRM].comp_type;
-        uint32_t comp_sz = gx_comp_size(nt);
-        layout.add(bgfx::Attrib::Normal, 3, gx_to_bgfx_type(nt));
-        stride += 3 * comp_sz;
+        layout.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float);
+        stride += 3 * 4;
     }
 
-    /* Colors */
+    /* Colors — always Uint8 normalized */
     if (desc[GX_VA_CLR0].type != GX_NONE) {
         layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
         stride += 4;
     }
-
     if (desc[GX_VA_CLR1].type != GX_NONE) {
         layout.add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true);
         stride += 4;
     }
 
-    /* Texture coordinates — use actual component type */
+    /* Texture coordinates — always Float (frac-bit safe) */
     for (int i = 0; i < 8; i++) {
         if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
-            GXCompType tt = afmt[GX_VA_TEX0 + i].comp_type;
-            uint32_t comp_sz = gx_comp_size(tt);
             int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
             layout.add((bgfx::Attrib::Enum)(bgfx::Attrib::TexCoord0 + i),
-                       (uint8_t)ncomps, gx_to_bgfx_type(tt));
-            stride += ncomps * comp_sz;
+                       (uint8_t)ncomps, bgfx::AttribType::Float);
+            stride += ncomps * 4;
         }
     }
 
     layout.end();
     return stride;
+}
+
+/**
+ * Calculate the raw GX vertex stride (bytes per vertex as stored in vtx_data).
+ * This may differ from the bgfx layout stride when integer components are
+ * promoted to float.
+ */
+static uint32_t calc_raw_vertex_stride(void) {
+    uint32_t stride = 0;
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) stride += 1;
+    if (desc[GX_VA_POS].type != GX_NONE) {
+        int n = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        stride += n * gx_comp_size(afmt[GX_VA_POS].comp_type);
+    }
+    if (desc[GX_VA_NRM].type != GX_NONE)
+        stride += 3 * gx_comp_size(afmt[GX_VA_NRM].comp_type);
+    if (desc[GX_VA_CLR0].type != GX_NONE) stride += 4;
+    if (desc[GX_VA_CLR1].type != GX_NONE) stride += 4;
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            int n = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+            stride += n * gx_comp_size(afmt[GX_VA_TEX0 + i].comp_type);
+        }
+    }
+    return stride;
+}
+
+/**
+ * Read a GX component value as float, applying frac-bit scaling.
+ */
+static float read_gx_component(const uint8_t* src, GXCompType type, uint8_t frac) {
+    float scale = (frac > 0) ? (1.0f / (float)(1 << frac)) : 1.0f;
+    switch (type) {
+    case GX_S16: { int16_t v; memcpy(&v, src, 2); return (float)v * scale; }
+    case GX_U16: { uint16_t v; memcpy(&v, src, 2); return (float)v * scale; }
+    case GX_S8:  return (float)(*(const int8_t*)src) * scale;
+    case GX_U8:  return (float)(*src) * scale;
+    case GX_F32: { float v; memcpy(&v, src, 4); return v; }
+    default: return 0.0f;
+    }
+}
+
+/**
+ * Convert one vertex from raw GX format to the bgfx float layout.
+ * Walks through each attribute, converting integer components to float
+ * with frac-bit scaling applied.
+ */
+static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+    uint32_t si = 0, di = 0;
+
+    /* PNMTXIDX — copy 1 byte */
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
+        dst[di++] = src[si++];
+    }
+
+    /* Position → Float */
+    if (desc[GX_VA_POS].type != GX_NONE) {
+        GXCompType pt = afmt[GX_VA_POS].comp_type;
+        uint8_t frac = afmt[GX_VA_POS].frac;
+        int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        uint32_t csz = gx_comp_size(pt);
+        for (int c = 0; c < ncomps; c++) {
+            float v = read_gx_component(src + si, pt, frac);
+            memcpy(dst + di, &v, 4);
+            si += csz; di += 4;
+        }
+    }
+
+    /* Normal → Float */
+    if (desc[GX_VA_NRM].type != GX_NONE) {
+        GXCompType nt = afmt[GX_VA_NRM].comp_type;
+        uint8_t frac = afmt[GX_VA_NRM].frac;
+        uint32_t csz = gx_comp_size(nt);
+        for (int c = 0; c < 3; c++) {
+            float v = read_gx_component(src + si, nt, frac);
+            memcpy(dst + di, &v, 4);
+            si += csz; di += 4;
+        }
+    }
+
+    /* Color0 — copy 4 bytes as-is */
+    if (desc[GX_VA_CLR0].type != GX_NONE) {
+        memcpy(dst + di, src + si, 4); si += 4; di += 4;
+    }
+    /* Color1 — copy 4 bytes as-is */
+    if (desc[GX_VA_CLR1].type != GX_NONE) {
+        memcpy(dst + di, src + si, 4); si += 4; di += 4;
+    }
+
+    /* Texture coordinates → Float */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            GXCompType tt = afmt[GX_VA_TEX0 + i].comp_type;
+            uint8_t frac = afmt[GX_VA_TEX0 + i].frac;
+            int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+            uint32_t csz = gx_comp_size(tt);
+            for (int c = 0; c < ncomps; c++) {
+                float v = read_gx_component(src + si, tt, frac);
+                memcpy(dst + di, &v, 4);
+                si += csz; di += 4;
+            }
+        }
+    }
 }
 
 /* ================================================================ */
@@ -669,16 +772,23 @@ void pal_tev_flush_draw(void) {
     const GXDrawState* ds = &g_gx_state.draw;
     if (ds->verts_written == 0 || ds->vtx_data_pos == 0) return;
 
+    static uint32_t s_total_draw_count = 0;
+    s_total_draw_count++;
+
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
-    /* 2. Build vertex layout */
+    /* 2. Build vertex layout (always Float for pos/texcoord) */
     bgfx::VertexLayout layout;
-    uint32_t expected_stride = build_vertex_layout(layout);
-    if (expected_stride == 0) return;
+    uint32_t bgfx_stride = build_vertex_layout(layout);
+    if (bgfx_stride == 0) return;
+
+    /* Raw stride matches the actual GX vertex data byte layout */
+    uint32_t raw_stride = calc_raw_vertex_stride();
+    if (raw_stride == 0) return;
 
     /* 3. Check if we need to inject constant color for PASSCLR without vertex color */
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
@@ -701,17 +811,17 @@ void pal_tev_flush_draw(void) {
             const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
         }
 
-        /* Rebuild layout with color attribute */
+        /* Rebuild layout with color attribute (position always Float) */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
-        GXCompType pt = af[GX_VA_POS].comp_type;
         int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
 
         layout.begin();
         if (has_pnmtx) layout.skip(1);
-        layout.add(bgfx::Attrib::Position, (uint8_t)npos, gx_to_bgfx_type(pt));
+        layout.add(bgfx::Attrib::Position, (uint8_t)npos, bgfx::AttribType::Float);
         layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
         layout.end();
+        bgfx_stride = layout.getStride();
     }
 
     /* Allocate transient vertex buffer */
@@ -722,25 +832,45 @@ void pal_tev_flush_draw(void) {
     if (!bgfx::getAvailTransientVertexBuffer(nverts, layout)) return;
     bgfx::allocTransientVertexBuffer(&tvb, nverts, layout);
 
-    /* Copy vertex data */
+    /* Copy vertex data — convert from raw GX format to bgfx float format */
     if (inject_color) {
-        /* Copy position data and append constant color per vertex */
+        /* Convert position to float, then append constant color */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
         uint32_t pnmtx_sz = has_pnmtx ? 1 : 0;
-        uint32_t pos_sz = ((af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3) *
-                          gx_comp_size(af[GX_VA_POS].comp_type);
-        uint32_t new_stride = pnmtx_sz + pos_sz + 4;
+        uint32_t pos_raw_sz = npos * gx_comp_size(af[GX_VA_POS].comp_type);
+        uint32_t pos_float_sz = npos * 4;
+        uint32_t new_stride = pnmtx_sz + pos_float_sz + 4;
+
         for (uint16_t vi = 0; vi < nverts; vi++) {
             uint8_t* dst = tvb.data + vi * new_stride;
-            const uint8_t* src = ds->vtx_data + vi * expected_stride;
-            memcpy(dst, src, pnmtx_sz + pos_sz);
-            memcpy(dst + pnmtx_sz + pos_sz, const_clr, 4);
+            const uint8_t* src = ds->vtx_data + vi * raw_stride;
+            uint32_t si = 0, di = 0;
+
+            /* PNMTXIDX */
+            if (has_pnmtx) { dst[di++] = src[si++]; }
+
+            /* Position → Float with frac-bit scaling */
+            GXCompType pt = af[GX_VA_POS].comp_type;
+            uint8_t frac = af[GX_VA_POS].frac;
+            uint32_t csz = gx_comp_size(pt);
+            for (int c = 0; c < npos; c++) {
+                float v = read_gx_component(src + si, pt, frac);
+                memcpy(dst + di, &v, 4);
+                si += csz; di += 4;
+            }
+
+            /* Append constant color */
+            memcpy(dst + di, const_clr, 4);
         }
     } else {
-        uint32_t copy_size = nverts * expected_stride;
-        if (copy_size > ds->vtx_data_pos) copy_size = ds->vtx_data_pos;
-        memcpy(tvb.data, ds->vtx_data, copy_size);
+        /* Full vertex conversion: raw GX → float */
+        for (uint16_t vi = 0; vi < nverts; vi++) {
+            const uint8_t* src = ds->vtx_data + vi * raw_stride;
+            uint8_t* dst = tvb.data + vi * bgfx_stride;
+            convert_vertex_to_float(src, dst);
+        }
     }
 
     /* 4. Handle primitive conversion */
@@ -819,6 +949,31 @@ void pal_tev_flush_draw(void) {
             bgfx::TextureHandle tex = upload_gx_texture(binding);
             if (bgfx::isValid(tex)) {
                 bgfx::setTexture(0, s_tex_uniform, tex);
+            }
+            /* Log first few textured draws for diagnostics */
+            static int s_tex_log_count = 0;
+            if (s_tex_log_count < 10) {
+                s_tex_log_count++;
+                fprintf(stderr, "{\"tev_tex_draw\":{\"n\":%d,\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"tex_valid\":%d,\"tex_map\":%d,"
+                        "\"w\":%u,\"h\":%u,\"fmt\":%d,\"img_ptr\":\"%p\","
+                        "\"nverts\":%u,\"stride\":%u,\"prim\":%d,"
+                        "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
+                        "\"z_enable\":%d,\"z_func\":%d,"
+                        "\"mvp_diag\":[%.3f,%.3f,%.3f,%.3f],"
+                        "\"tev\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}"
+                        "}}\n",
+                        s_tex_log_count, s_total_draw_count, s_fs_names[preset],
+                        bgfx::isValid(tex) ? 1 : 0,
+                        s0->tex_map,
+                        (unsigned)binding->width, (unsigned)binding->height,
+                        (int)binding->format, binding->image_ptr,
+                        (unsigned)nverts, raw_stride, ds->prim_type,
+                        g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
+                        g_gx_state.z_compare_enable, g_gx_state.z_func,
+                        mvp[0], mvp[5], mvp[10], mvp[15],
+                        s0->color_a, s0->color_b, s0->color_c, s0->color_d,
+                        s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d);
             }
         }
     }
