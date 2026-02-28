@@ -22,6 +22,7 @@
 extern "C" {
 #include "pal/pal_verify.h"
 #include "pal/gx/gx_screenshot.h"
+#include "pal/gx/gx_stub_tracker.h"
 }
 
 /* ================================================================ */
@@ -48,6 +49,18 @@ static u32 s_audio_frames_active = 0;
 static u32 s_audio_frames_nonsilent = 0;
 static int s_peak_draw_calls = 0;
 static int s_peak_verts = 0;
+
+/* Render pipeline aggregate stats */
+static u32 s_frames_with_textures = 0;     /* frames that had textured draws */
+static u32 s_frames_with_depth = 0;        /* frames that used depth testing */
+static u32 s_frames_with_blend = 0;        /* frames that used alpha blending */
+static u32 s_total_textured_draws = 0;     /* cumulative textured draws */
+static int s_peak_unique_textures = 0;     /* max unique textures in any frame */
+static u32 s_all_shader_mask = 0;          /* union of all shader presets ever used */
+static u32 s_all_prim_mask = 0;            /* union of all primitive types ever used */
+static u32 s_distinct_hashes = 0;          /* number of distinct framebuffer hashes */
+static u32 s_prev_fb_hash = 0;            /* previous frame's hash for change detection */
+static u32 s_hash_changes = 0;            /* number of times fb hash changed frame-to-frame */
 
 static void parse_capture_frames(const char* spec) {
     if (!spec || spec[0] == '\0')
@@ -140,6 +153,27 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     if ((int)total_verts > s_peak_verts)
         s_peak_verts = (int)total_verts;
 
+    /* Track render pipeline aggregate stats from per-frame counters */
+    if (gx_frame_textured_draws > 0)
+        s_frames_with_textures++;
+    if (gx_frame_depth_draws > 0)
+        s_frames_with_depth++;
+    if (gx_frame_blend_draws > 0)
+        s_frames_with_blend++;
+    s_total_textured_draws += gx_frame_textured_draws;
+    if ((int)gx_frame_unique_textures > s_peak_unique_textures)
+        s_peak_unique_textures = (int)gx_frame_unique_textures;
+    s_all_shader_mask |= gx_frame_shader_mask;
+    s_all_prim_mask |= gx_frame_prim_mask;
+
+    /* Track frame-to-frame hash changes for progression detection */
+    {
+        uint32_t fb_hash = pal_screenshot_hash_fb();
+        if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)
+            s_hash_changes++;
+        s_prev_fb_hash = fb_hash;
+    }
+
     /* Emit detailed frame report every 60 frames, or on capture frames */
     if (frame_num % 60 == 0 || should_capture(frame_num) || frame_num <= 5) {
         /* Include framebuffer hash for deterministic rendering comparison */
@@ -148,9 +182,15 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
         fprintf(stdout,
             "{\"verify_frame\":{\"frame\":%u,\"draw_calls\":%u,\"verts\":%u,"
             "\"stub_count\":%u,\"valid\":%u,\"fb_hash\":\"0x%08X\","
-            "\"fb_has_draws\":%d}}\n",
+            "\"fb_has_draws\":%d,"
+            "\"textured_draws\":%u,\"untextured_draws\":%u,"
+            "\"unique_textures\":%u,\"shader_mask\":%u,"
+            "\"depth_draws\":%u,\"blend_draws\":%u,\"prim_mask\":%u}}\n",
             frame_num, draw_calls, total_verts, stub_count, valid,
-            fb_hash, has_draws);
+            fb_hash, has_draws,
+            gx_frame_textured_draws, gx_frame_untextured_draws,
+            gx_frame_unique_textures, gx_frame_shader_mask,
+            gx_frame_depth_draws, gx_frame_blend_draws, gx_frame_prim_mask);
         fflush(stdout);
     }
 
@@ -400,6 +440,14 @@ void pal_verify_summary(void) {
         "\"peak_draw_calls\":%d,"
         "\"peak_verts\":%d,"
         "\"total_draw_calls\":%u,"
+        "\"frames_with_textures\":%u,"
+        "\"total_textured_draws\":%u,"
+        "\"peak_unique_textures\":%d,"
+        "\"frames_with_depth\":%u,"
+        "\"frames_with_blend\":%u,"
+        "\"all_shader_mask\":%u,"
+        "\"all_prim_mask\":%u,"
+        "\"hash_changes\":%u,"
         "\"input_events\":%u,"
         "\"input_responses\":%u,"
         "\"audio_frames_active\":%u,"
@@ -410,6 +458,9 @@ void pal_verify_summary(void) {
         "}}\n",
         s_total_frames, s_frames_with_draws, s_frames_nonblack,
         s_peak_draw_calls, s_peak_verts, s_total_draw_calls,
+        s_frames_with_textures, s_total_textured_draws,
+        s_peak_unique_textures, s_frames_with_depth, s_frames_with_blend,
+        s_all_shader_mask, s_all_prim_mask, s_hash_changes,
         s_total_input_events, s_total_input_responses,
         s_audio_frames_active, s_audio_frames_nonsilent,
         render_health, input_health, audio_health);

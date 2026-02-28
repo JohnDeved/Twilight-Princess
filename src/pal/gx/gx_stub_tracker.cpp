@@ -25,6 +25,20 @@ unsigned int gx_frame_stub_count = 0;
 unsigned int gx_frame_draw_calls = 0;
 unsigned int gx_frame_valid_verts = 0;
 
+/* Per-frame render pipeline metrics */
+unsigned int gx_frame_textured_draws = 0;
+unsigned int gx_frame_untextured_draws = 0;
+unsigned int gx_frame_shader_mask = 0;
+unsigned int gx_frame_depth_draws = 0;
+unsigned int gx_frame_blend_draws = 0;
+unsigned int gx_frame_unique_textures = 0;
+unsigned int gx_frame_prim_mask = 0;
+
+/* Unique texture tracking — small fixed-size set */
+#define GX_MAX_TRACKED_TEXTURES 64
+static const void* s_tracked_textures[GX_MAX_TRACKED_TEXTURES];
+static unsigned int s_tracked_texture_count = 0;
+
 /* Anti-cheat: independent cross-check counter incremented only by
  * the actual TEV draw path. If gx_frame_draw_calls doesn't match
  * this counter, someone tampered with the counters directly. */
@@ -34,11 +48,34 @@ void gx_stub_frame_reset(void) {
     gx_frame_stub_count = 0;
     gx_frame_draw_calls = 0;
     gx_frame_valid_verts = 0;
+    gx_frame_textured_draws = 0;
+    gx_frame_untextured_draws = 0;
+    gx_frame_shader_mask = 0;
+    gx_frame_depth_draws = 0;
+    gx_frame_blend_draws = 0;
+    gx_frame_unique_textures = 0;
+    gx_frame_prim_mask = 0;
+    s_tracked_texture_count = 0;
     s_draw_calls_crosscheck = 0;
 }
 
 void gx_stub_draw_call_crosscheck(void) {
     s_draw_calls_crosscheck++;
+}
+
+void gx_stub_track_texture(const void* tex_ptr) {
+    unsigned int i;
+    if (!tex_ptr) return;
+    /* Check if already tracked */
+    for (i = 0; i < s_tracked_texture_count; i++) {
+        if (s_tracked_textures[i] == tex_ptr)
+            return; /* already seen */
+    }
+    /* Add to set */
+    if (s_tracked_texture_count < GX_MAX_TRACKED_TEXTURES) {
+        s_tracked_textures[s_tracked_texture_count++] = tex_ptr;
+    }
+    gx_frame_unique_textures = s_tracked_texture_count;
 }
 
 int gx_stub_frame_is_valid(void) {
