@@ -37,7 +37,7 @@
 #endif
 
 #if PLATFORM_PC
-#include "pal/gx/gx_bgfx.h"
+#include "pal/gx/gx_render.h"
 #endif
 
 #if PLATFORM_WII
@@ -1527,7 +1527,7 @@ int mDoGph_Painter() {
     /* On PC, use bgfx for rendering. Set up 2D orthographic projection
      * and flush draw lists populated by scene draw() functions. */
     if (JFWDisplay::getManager() != NULL) {
-        pal_gx_begin_frame();
+        pal_render_begin_frame();
         mDoGph_gInf_c::beginRender();
 
         /* Initialize GX draw state for J2D rendering */
@@ -1546,7 +1546,7 @@ int mDoGph_Painter() {
 
         /* Submit frame to bgfx — required for any pixels to appear.
          * On non-PC, this happens via GXCopyDisp in JFWDisplay::endFrame(). */
-        pal_gx_end_frame();
+        pal_render_end_frame();
     }
     return 1;
 #else

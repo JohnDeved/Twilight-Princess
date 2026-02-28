@@ -32,7 +32,7 @@
 #include "revolution/gd/GDBase.h"
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
-#include "pal/gx/gx_bgfx.h"
+#include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
 
@@ -71,8 +71,8 @@ GXFifoObj* GXInit(void* base, u32 size) {
     /* Initialize GX state machine */
     pal_gx_state_init();
 
-    /* Initialize bgfx rendering backend */
-    pal_gx_bgfx_init();
+    /* Initialize rendering backend */
+    pal_render_init();
 
     return &s_gx_fifo;
 }
@@ -613,7 +613,7 @@ void GXCopyDisp(void* dest, GXBool clear) {
      * is valid — no GX stubs were hit and real draw calls were submitted,
      * ensuring a valid verifiable image was produced. */
     if (gx_shim_active) {
-        pal_gx_end_frame();
+        pal_render_end_frame();
         if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
             && gx_stub_frame_is_valid()) {
             pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME,

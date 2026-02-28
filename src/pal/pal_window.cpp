@@ -38,30 +38,55 @@ int pal_window_init(u32 width, u32 height, const char* title) {
     s_headless = (headless_env && headless_env[0] == '1');
 
     if (s_headless) {
-        fprintf(stderr, "{\"pal_window\":\"headless\",\"skip\":true}\n");
-        s_initialized = 1;
-        return 1;
+        /* If DISPLAY is set (Xvfb), create a real window for OpenGL rendering
+         * via Mesa's software rasterizer — no GPU needed. */
+        const char* display = getenv("DISPLAY");
+        if (!display || display[0] == '\0') {
+            fprintf(stderr, "{\"window\":\"headless\",\"display\":null,"
+                    "\"note\":\"no Xvfb, renderer will use Noop\"}\n");
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"headless\",\"display\":\"%s\","
+                "\"note\":\"Xvfb detected, creating window for software OpenGL\"}\n",
+                display);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-        fprintf(stderr, "{\"pal_window\":\"sdl_init_failed\",\"error\":\"%s\"}\n", SDL_GetError());
+        if (s_headless) {
+            fprintf(stderr, "{\"window\":\"sdl_video_failed_headless\","
+                    "\"error\":\"%s\",\"fallback\":\"Noop\"}\n", SDL_GetError());
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"sdl_init_failed\",\"error\":\"%s\"}\n",
+                SDL_GetError());
         return 0;
     }
 
     s_window = SDL_CreateWindow(
         title ? title : "Twilight Princess",
         (int)width, (int)height,
-        SDL_WINDOW_RESIZABLE
+        s_headless ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE
     );
 
     if (!s_window) {
-        fprintf(stderr, "{\"pal_window\":\"window_create_failed\",\"error\":\"%s\"}\n", SDL_GetError());
+        if (s_headless) {
+            fprintf(stderr, "{\"window\":\"create_failed_headless\","
+                    "\"error\":\"%s\",\"fallback\":\"Noop\"}\n", SDL_GetError());
+            SDL_Quit();
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"create_failed\",\"error\":\"%s\"}\n",
+                SDL_GetError());
         SDL_Quit();
         return 0;
     }
 
     s_initialized = 1;
-    fprintf(stderr, "{\"pal_window\":\"ready\",\"width\":%u,\"height\":%u}\n", width, height);
+    fprintf(stderr, "{\"window\":\"ready\",\"width\":%u,\"height\":%u,"
+            "\"headless\":%d}\n", width, height, s_headless);
     return 1;
 }
 

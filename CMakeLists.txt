@@ -135,12 +135,12 @@ set(PAL_SOURCES
     src/pal/pal_save.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
-    src/pal/gx/gx_bgfx.cpp
+    src/pal/gx/gx_render.cpp
     src/pal/gx/gx_state.cpp
     src/pal/gx/gx_texture.cpp
     src/pal/gx/gx_tev.cpp
     src/pal/gx/gx_displaylist.cpp
-    src/pal/gx/gx_screenshot.cpp
+    src/pal/gx/gx_capture.cpp
     src/pal/pal_verify.cpp
 )
 

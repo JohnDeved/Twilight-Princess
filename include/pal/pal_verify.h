@@ -26,7 +26,7 @@ extern "C" {
 /**
  * Initialize the verification system.
  * Checks TP_VERIFY env var. If not set, all verification is disabled.
- * Call once at startup (from pal_gx_bgfx_init or main).
+ * Call once at startup (from pal_render_init or main).
  */
 void pal_verify_init(void);
 
@@ -41,7 +41,7 @@ int pal_verify_active(void);
 
 /**
  * Report per-frame rendering metrics as JSON.
- * Called at end of each frame (from pal_gx_end_frame).
+ * Called at end of each frame (from pal_render_end_frame).
  *
  * Emits: draw_calls, total_verts, stub_count, valid, fb_hash, fb_has_draws,
  *        textured_draws, untextured_draws, unique_textures, shader_mask,

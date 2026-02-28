@@ -21,7 +21,7 @@
 
 extern "C" {
 #include "pal/pal_verify.h"
-#include "pal/gx/gx_screenshot.h"
+#include "pal/gx/gx_capture.h"
 #include "pal/gx/gx_stub_tracker.h"
 }
 
@@ -169,7 +169,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     /* Track frame-to-frame hash changes for progression detection.
      * Skip first frame (s_total_frames==1) since s_prev_fb_hash is uninitialized.
      * Compute hash once and reuse for both progression and logging. */
-    uint32_t fb_hash = pal_screenshot_hash_fb();
+    uint32_t fb_hash = pal_capture_hash_fb();
     if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)
         s_hash_changes++;
     s_prev_fb_hash = fb_hash;
@@ -177,7 +177,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     /* Emit detailed frame report every 60 frames, or on capture frames */
     if (frame_num % 60 == 0 || should_capture(frame_num) || frame_num <= 5) {
         /* Include framebuffer hash for deterministic rendering comparison */
-        int has_draws = pal_screenshot_has_draws();
+        int has_draws = pal_capture_has_data();
         fprintf(stdout,
             "{\"verify_frame\":{\"frame\":%u,\"draw_calls\":%u,\"verts\":%u,"
             "\"stub_count\":%u,\"valid\":%u,\"fb_hash\":\"0x%08X\","
@@ -204,18 +204,18 @@ void pal_verify_capture_frame(u32 frame_num) {
     if (!s_verify_active || !s_verify_dir)
         return;
 
-    /* Use the software framebuffer from gx_screenshot.cpp */
-    uint8_t* fb = pal_screenshot_get_fb();
+    /* Use the capture buffer from gx_capture.cpp */
+    uint8_t* fb = pal_capture_get_fb();
     if (!fb)
         return;
 
-    int fb_w = pal_screenshot_get_fb_width();
-    int fb_h = pal_screenshot_get_fb_height();
+    int fb_w = pal_capture_get_fb_width();
+    int fb_h = pal_capture_get_fb_height();
 
     char path[512];
     snprintf(path, sizeof(path), "%s/frame_%04u.bmp", s_verify_dir, frame_num);
 
-    /* Write BMP file (same format as gx_screenshot.cpp) */
+    /* Write BMP file (same format as gx_capture.cpp) */
     FILE* f = fopen(path, "wb");
     if (!f) {
         fprintf(stdout, "{\"verify_capture\":\"write_failed\",\"frame\":%u,\"path\":\"%s\"}\n",
@@ -271,12 +271,12 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (!s_verify_active)
         return 0;
 
-    uint8_t* fb = pal_screenshot_get_fb();
+    uint8_t* fb = pal_capture_get_fb();
     if (!fb)
         return 0;
 
-    int fb_w = pal_screenshot_get_fb_width();
-    int fb_h = pal_screenshot_get_fb_height();
+    int fb_w = pal_capture_get_fb_width();
+    int fb_h = pal_capture_get_fb_height();
     u32 total_pixels = (u32)(fb_w * fb_h);
     u32 nonblack = 0;
     u32 unique_colors = 0;
@@ -321,7 +321,7 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (pct_nonblack > 0)
         s_frames_nonblack++;
 
-    uint32_t fb_hash = pal_screenshot_hash_fb();
+    uint32_t fb_hash = pal_capture_hash_fb();
 
     fprintf(stdout,
         "{\"verify_fb\":{\"frame\":%u,\"pct_nonblack\":%d,\"unique_colors\":%u,"

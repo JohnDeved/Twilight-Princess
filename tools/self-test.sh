@@ -105,7 +105,19 @@ export TP_VERIFY=1
 export TP_VERIFY_DIR="$TMP_DIR/verify"
 export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,300,600,1200,1800"
 
+# Start Xvfb for software OpenGL rendering (no GPU needed)
+XVFB_PID=""
+if ! pgrep -x Xvfb > /dev/null 2>&1; then
+    Xvfb :99 -screen 0 640x480x24 &
+    XVFB_PID=$!
+    sleep 1
+fi
+export DISPLAY="${DISPLAY:-:99}"
+
 timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
+if [ -n "$XVFB_PID" ]; then
+    kill "$XVFB_PID" 2>/dev/null || true
+fi
 echo "  ✅ Test run completed"
 echo ""
 
