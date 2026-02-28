@@ -222,9 +222,15 @@ static int detect_tev_preset(void) {
     int has_texture = (s0->tex_map != GX_TEXMAP_NULL && s0->tex_map < GX_MAX_TEXMAP &&
                        g_gx_state.tex_bindings[s0->tex_map].valid);
 
+    /* Check if the TEV combiner actually references texture color */
+    int uses_texc = (s0->color_a == GX_CC_TEXC || s0->color_b == GX_CC_TEXC ||
+                     s0->color_c == GX_CC_TEXC || s0->color_d == GX_CC_TEXC);
+
     if (g_gx_state.num_tev_stages == 0 || g_gx_state.num_tev_stages == 1) {
-        if (!has_texture) {
-            /* No texture → PASSCLR (vertex color only) */
+        /* If combiner doesn't reference texture, treat as PASSCLR.
+         * clearEfb uses TEV (ZERO,ZERO,ZERO,C0) which outputs constant C0 regardless
+         * of bound texture — no texture lookup needed. */
+        if (!uses_texc || !has_texture) {
             return GX_TEV_SHADER_PASSCLR;
         }
 
@@ -254,6 +260,23 @@ static int detect_tev_preset(void) {
 
     /* Multi-stage TEV — fall back to MODULATE for textured, PASSCLR otherwise */
     return has_texture ? GX_TEV_SHADER_MODULATE : GX_TEV_SHADER_PASSCLR;
+}
+
+/**
+ * Override shader preset when vertex data is incompatible.
+ * MODULATE requires vertex color (multiplies texture × color).
+ * If no color attribute exists, fall back to REPLACE (texture only).
+ */
+static int fixup_preset_for_vertex(int preset) {
+    if (preset == GX_TEV_SHADER_MODULATE || preset == GX_TEV_SHADER_DECAL ||
+        preset == GX_TEV_SHADER_BLEND) {
+        const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+        if (desc[GX_VA_CLR0].type == GX_NONE) {
+            /* No vertex color — can't modulate. Use REPLACE to show texture. */
+            return GX_TEV_SHADER_REPLACE;
+        }
+    }
+    return preset;
 }
 
 /* ================================================================ */
@@ -401,8 +424,9 @@ static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
     /* Use format 0 as default — matches GX_VTXFMT0 used by J2D */
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
-    /* PNMTXIDX — 1 byte matrix index */
+    /* PNMTXIDX — 1 byte matrix index (not a bgfx attribute, skip it) */
     if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
+        layout.skip(1);
         stride += 1;
     }
 
@@ -592,6 +616,53 @@ int pal_tev_is_ready(void) {
     return s_tev_ready;
 }
 
+void pal_tev_submit_test_quad(void) {
+    if (!s_tev_ready || !bgfx::isValid(s_programs[GX_TEV_SHADER_PASSCLR]))
+        return;
+
+    /* Simple quad: position (3 floats) + color (4 bytes) = 16 bytes/vert */
+    struct TestVert {
+        float x, y, z;
+        uint32_t abgr;  /* bgfx uses ABGR packing for Uint8 color */
+    };
+
+    bgfx::VertexLayout layout;
+    layout.begin()
+          .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+          .end();
+
+    bgfx::TransientVertexBuffer tvb;
+    if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
+    bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
+
+    /* NDC coordinates: centered green quad */
+    TestVert* v = (TestVert*)tvb.data;
+    v[0] = { -0.5f, -0.5f, 0.0f, 0xff00ff00 }; /* green */
+    v[1] = {  0.5f, -0.5f, 0.0f, 0xff00ff00 };
+    v[2] = {  0.5f,  0.5f, 0.0f, 0xff00ff00 };
+    v[3] = { -0.5f,  0.5f, 0.0f, 0xff00ff00 };
+
+    bgfx::TransientIndexBuffer tib;
+    if (!bgfx::getAvailTransientIndexBuffer(6)) return;
+    bgfx::allocTransientIndexBuffer(&tib, 6);
+    uint16_t* idx = (uint16_t*)tib.data;
+    idx[0] = 0; idx[1] = 1; idx[2] = 2;
+    idx[3] = 0; idx[4] = 2; idx[5] = 3;
+
+    /* Identity transform */
+    float identity[16] = {
+        1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1
+    };
+    bgfx::setTransform(identity);
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::setIndexBuffer(&tib);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+
+    fprintf(stderr, "{\"tev\":\"test_quad_submitted\"}\n");
+}
+
 void pal_tev_flush_draw(void) {
     if (!s_tev_ready) return;
 
@@ -601,6 +672,7 @@ void pal_tev_flush_draw(void) {
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
+    preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
     /* 2. Build vertex layout */
@@ -608,7 +680,41 @@ void pal_tev_flush_draw(void) {
     uint32_t expected_stride = build_vertex_layout(layout);
     if (expected_stride == 0) return;
 
-    /* 3. Allocate transient vertex buffer */
+    /* 3. Check if we need to inject constant color for PASSCLR without vertex color */
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    int inject_color = (preset == GX_TEV_SHADER_PASSCLR &&
+                        desc[GX_VA_CLR0].type == GX_NONE);
+    uint8_t const_clr[4] = {0, 0, 0, 255};
+
+    if (inject_color) {
+        /* Determine the constant color from TEV state */
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_d == GX_CC_C0 || s0->color_d == GX_CC_CPREV) {
+            const_clr[0] = g_gx_state.tev_regs[GX_TEVREG0].r;
+            const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
+            const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
+            const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
+        } else if (s0->color_d == GX_CC_RASC) {
+            const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
+            const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
+            const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
+            const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+        }
+
+        /* Rebuild layout with color attribute */
+        const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+        int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        GXCompType pt = af[GX_VA_POS].comp_type;
+        int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+
+        layout.begin();
+        if (has_pnmtx) layout.skip(1);
+        layout.add(bgfx::Attrib::Position, (uint8_t)npos, gx_to_bgfx_type(pt));
+        layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+        layout.end();
+    }
+
+    /* Allocate transient vertex buffer */
     uint16_t nverts = ds->verts_written;
     if (nverts == 0) return;
 
@@ -617,9 +723,25 @@ void pal_tev_flush_draw(void) {
     bgfx::allocTransientVertexBuffer(&tvb, nverts, layout);
 
     /* Copy vertex data */
-    uint32_t copy_size = nverts * expected_stride;
-    if (copy_size > ds->vtx_data_pos) copy_size = ds->vtx_data_pos;
-    memcpy(tvb.data, ds->vtx_data, copy_size);
+    if (inject_color) {
+        /* Copy position data and append constant color per vertex */
+        const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+        int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        uint32_t pnmtx_sz = has_pnmtx ? 1 : 0;
+        uint32_t pos_sz = ((af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3) *
+                          gx_comp_size(af[GX_VA_POS].comp_type);
+        uint32_t new_stride = pnmtx_sz + pos_sz + 4;
+        for (uint16_t vi = 0; vi < nverts; vi++) {
+            uint8_t* dst = tvb.data + vi * new_stride;
+            const uint8_t* src = ds->vtx_data + vi * expected_stride;
+            memcpy(dst, src, pnmtx_sz + pos_sz);
+            memcpy(dst + pnmtx_sz + pos_sz, const_clr, 4);
+        }
+    } else {
+        uint32_t copy_size = nverts * expected_stride;
+        if (copy_size > ds->vtx_data_pos) copy_size = ds->vtx_data_pos;
+        memcpy(tvb.data, ds->vtx_data, copy_size);
+    }
 
     /* 4. Handle primitive conversion */
     bgfx::TransientIndexBuffer tib;
@@ -662,12 +784,20 @@ void pal_tev_flush_draw(void) {
         };
 
         /* Multiply: mvp = proj * model (row-major) */
+        float mvp_rm[16];
         for (int r = 0; r < 4; r++) {
             for (int c = 0; c < 4; c++) {
-                mvp[r * 4 + c] = 0.0f;
+                mvp_rm[r * 4 + c] = 0.0f;
                 for (int k = 0; k < 4; k++) {
-                    mvp[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
+                    mvp_rm[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
                 }
+            }
+        }
+
+        /* Transpose to column-major for bgfx (OpenGL convention) */
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 4; c++) {
+                mvp[c * 4 + r] = mvp_rm[r * 4 + c];
             }
         }
     }

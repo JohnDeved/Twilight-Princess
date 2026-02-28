@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils libegl-dev libgles2-mesa-dev
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils libegl-dev libgles2-mesa-dev ffmpeg
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -521,10 +521,11 @@ jobs:
               }
             }
 
-            // Video link
+            // Video embed
             if (imageUrls['video']) {
               body += `\n### 🎬 Render Progress Video\n`;
-              body += `[▶️ Download render_progress.mp4](${imageUrls['video']})\n`;
+              body += `<video src="${imageUrls['video']}" controls autoplay loop muted width="640"></video>\n\n`;
+              body += `[📥 Download render_progress.mp4](${imageUrls['video']})\n`;
             }
 
             // Golden image comparisons

@@ -52,6 +52,9 @@ void pal_tev_flush_draw(void);
  */
 int pal_tev_is_ready(void);
 
+/* Diagnostic: submit a test quad directly through bgfx */
+void pal_tev_submit_test_quad(void);
+
 #ifdef __cplusplus
 }
 #endif
