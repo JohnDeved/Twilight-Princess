@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -109,7 +109,11 @@ jobs:
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
           export DISPLAY=:99
-          sleep 1
+          # Wait for Xvfb to be ready (CI can be slow)
+          for i in 1 2 3 4 5; do
+            xdpyinfo -display :99 >/dev/null 2>&1 && break
+            sleep 1
+          done
           timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT

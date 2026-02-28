@@ -86,7 +86,10 @@ void pal_capture_frame(const void* data, uint32_t size) {
     uint32_t copy_w = (w < (uint32_t)FB_W) ? w : (uint32_t)FB_W;
     uint32_t copy_h = (h < (uint32_t)FB_H) ? h : (uint32_t)FB_H;
 
-    (void)size;
+    /* Validate size covers the rows we'll read */
+    uint32_t required = h * pitch;
+    if (size > 0 && size < required)
+        return;
 
     for (uint32_t y = 0; y < copy_h; y++) {
         uint32_t src_y = s_cap_yflip ? (h - 1 - y) : y;

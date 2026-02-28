@@ -110,7 +110,11 @@ XVFB_PID=""
 if ! pgrep -x Xvfb > /dev/null 2>&1; then
     Xvfb :99 -screen 0 640x480x24 &
     XVFB_PID=$!
-    sleep 1
+    # Wait for Xvfb to be ready
+    for i in 1 2 3 4 5; do
+        xdpyinfo -display :99 >/dev/null 2>&1 && break
+        sleep 1
+    done
 fi
 export DISPLAY="${DISPLAY:-:99}"
 

@@ -119,15 +119,18 @@ int pal_render_init(void) {
 
     init.resolution.width = s_frame_width;
     init.resolution.height = s_frame_height;
-    /* Enable CAPTURE — bgfx calls captureFrame() every frame with pixels */
-    init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_CAPTURE;
+    /* Enable CAPTURE so bgfx calls captureFrame() every frame.
+     * Only enable VSYNC for windowed mode (useless on Xvfb/Noop). */
+    init.resolution.reset = BGFX_RESET_CAPTURE;
+    if (!headless)
+        init.resolution.reset |= BGFX_RESET_VSYNC;
 
     if (!bgfx::init(init)) {
         if (!s_using_noop) {
             fprintf(stderr, "{\"render\":\"opengl_failed\",\"fallback\":\"Noop\"}\n");
             init.type = bgfx::RendererType::Noop;
             s_using_noop = 1;
-            init.resolution.reset = BGFX_RESET_VSYNC;
+            init.resolution.reset = 0; /* Noop needs neither VSYNC nor CAPTURE */
             if (!bgfx::init(init)) {
                 fprintf(stderr, "{\"render\":\"init_failed\"}\n");
                 return 0;
