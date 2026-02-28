@@ -144,7 +144,29 @@ int mDoExt_bpkAnm::init(J3DMaterialTable* i_matTable, J3DAnmColor* i_bpk, int i_
     JUT_ASSERT(371, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_bpk != NULL);
 
     mpAnm = i_bpk;
+#if PLATFORM_PC
+    /* searchUpdateMaterialID accesses name tables that may have corrupt
+     * endian data from incomplete J3D swap.  Catch signals to prevent crash. */
+    struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+    memset(&sa_new, 0, sizeof(sa_new));
+    sa_new.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = 0;
+    sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+    sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+    s_mdl_crash = 0;
+    if (sigsetjmp(s_mdl_jmpbuf, 1) != 0) {
+        sigaction(SIGSEGV, &sa_old_segv, NULL);
+        sigaction(SIGABRT, &sa_old_abrt, NULL);
+        pal_error(PAL_ERR_J3D_LOAD, "signal in bpkAnm searchUpdateMaterialID");
+        return 0;
+    }
+#endif
     mpAnm->searchUpdateMaterialID(i_matTable);
+#if PLATFORM_PC
+    sigaction(SIGSEGV, &sa_old_segv, NULL);
+    sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute,

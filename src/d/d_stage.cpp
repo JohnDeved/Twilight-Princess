@@ -2540,6 +2540,19 @@ static void dStage_dt_c_decode(void* i_data, dStage_dt_c* i_stage, FuncTable* fu
                                         memcpy(rbuf + 12, &np, sizeof(void*));
                                     }
                                 }
+                            } else {
+                                /* Layer-tagged chunks: LGTx, PALx, Colx have multi-byte fields.
+                                 * Match on first 3 characters since 4th is the layer number. */
+                                char t3[4];
+                                memcpy(t3, &tag, 4);
+                                if (t3[0] == 'L' && t3[1] == 'G' && t3[2] == 'T') {
+                                    pal_swap_lgtvec_entries((stage_pure_lightvec_info_class*)entries, entryNum);
+                                } else if (t3[0] == 'P' && t3[1] == 'A' && t3[2] == 'L') {
+                                    pal_swap_palette_entries((stage_palette_info_class*)entries, entryNum);
+                                } else if (t3[0] == 'C' && t3[1] == 'o' && t3[2] == 'l') {
+                                    pal_swap_pselect_entries((stage_pselect_info_class*)entries, entryNum);
+                                }
+                                /* Envx, VRBx, SONx — all u8/char fields, no swap needed */
                             }
 
                             funcTbl[i].function(i_stage, rbuf, entryNum, i_data);
