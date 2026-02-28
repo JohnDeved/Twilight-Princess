@@ -15,9 +15,18 @@ jobs:
       actions: write
       contents: read
     steps:
+      - name: Ensure PAT token is configured
+        if: ${{ secrets.PAT_TOKEN == '' }}
+        run: |
+          echo "Missing required secret PAT_TOKEN."
+          echo "Create a PAT with repo/actions permissions and store it as PAT_TOKEN."
+          exit 1
+
       - name: Select best runner target for Copilot setup
+        if: ${{ secrets.PAT_TOKEN != '' }}
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.PAT_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
