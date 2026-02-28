@@ -12,6 +12,7 @@ The summary JSON is designed for machine consumption by AI agents:
 - integrity: whether milestone ordering and timing are physically valid
 """
 import json
+import re
 import sys
 import argparse
 
@@ -174,9 +175,12 @@ def main():
     crash = None
     frame_validation = None
 
+    # Pattern to strip ANSI escape codes (e.g. \x1b[m from terminal output)
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+
     with open(args.logfile) as f:
         for line in f:
-            line = line.strip()
+            line = ansi_escape.sub('', line.strip())
             if not line.startswith("{"):
                 continue
             try:
