@@ -128,6 +128,9 @@ JKRArchive::SDIFileEntry* JKRArchive::findIdxResource(u32 fileIndex) const {
 
 JKRArchive::SDIFileEntry* JKRArchive::findNameResource(const char* name) const {
     SDIFileEntry* fileEntry = mFiles;
+#if PLATFORM_PC
+    if (fileEntry == NULL || mArcInfoBlock == NULL || mStringTable == NULL) return NULL;
+#endif
 
     CArcName arcName(name);
     for (int i = 0; i < mArcInfoBlock->num_file_entries; i++) {

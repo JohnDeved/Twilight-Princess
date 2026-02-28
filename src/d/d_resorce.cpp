@@ -30,26 +30,30 @@ static void j3d_sigsegv_handler(int sig) {
     siglongjmp(s_j3d_jmpbuf, 1);
 }
 
-/* Wrap a J3D loader call with SIGSEGV protection.
+/* Wrap a J3D loader call with SIGSEGV/SIGABRT protection.
  * Returns the loader result, or NULL if the loader crashed. */
 template<typename Func>
 static void* j3d_safe_load(Func func) {
-    struct sigaction sa_new, sa_old;
-    memset(&sa_new, 0, sizeof(sa_new));
-    sa_new.sa_handler = j3d_sigsegv_handler;
-    sigemptyset(&sa_new.sa_mask);
-    sa_new.sa_flags = 0;
-    sigaction(SIGSEGV, &sa_new, &sa_old);
+    struct sigaction sa_segv_new, sa_segv_old;
+    struct sigaction sa_abrt_new, sa_abrt_old;
+    memset(&sa_segv_new, 0, sizeof(sa_segv_new));
+    sa_segv_new.sa_handler = j3d_sigsegv_handler;
+    sigemptyset(&sa_segv_new.sa_mask);
+    sa_segv_new.sa_flags = 0;
+    sa_abrt_new = sa_segv_new;
+    sigaction(SIGSEGV, &sa_segv_new, &sa_segv_old);
+    sigaction(SIGABRT, &sa_abrt_new, &sa_abrt_old);
     s_j3d_crash = 0;
 
     void* result = NULL;
     if (sigsetjmp(s_j3d_jmpbuf, 1) == 0) {
         result = func();
     }
-    sigaction(SIGSEGV, &sa_old, NULL);
+    sigaction(SIGSEGV, &sa_segv_old, NULL);
+    sigaction(SIGABRT, &sa_abrt_old, NULL);
 
     if (s_j3d_crash) {
-        fprintf(stderr, "{\"j3d_crash\":\"SIGSEGV in J3D loader, returning NULL\"}\n");
+        fprintf(stderr, "{\"j3d_crash\":\"signal caught in J3D loader, returning NULL\"}\n");
         return NULL;
     }
     return result;
@@ -416,8 +420,13 @@ int dRes_info_c::loadResource() {
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020030);
 #endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* On PC, skip failed J3D models but continue loading other resources.
+                         * mRes[fileIndex] stays NULL, callers must check. */
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
                     for (u16 k = 0; k < modelData->getMaterialNum(); k++) {
@@ -440,12 +449,17 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDP */
                 } else if (nodeType == 'BMDR' || nodeType == 'BMDV' || nodeType == 'BMDE' ||
                            nodeType == 'BMWR' || nodeType == 'BMWE')
                 {
                     res = loaderBasicBmd(nodeType, res);
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* On PC, skip failed J3D models but continue loading other resources */
+#else
                         return -1;
+#endif
                     }
                 } else if (nodeType == 'BMDG') {
 #if PLATFORM_PC
@@ -456,8 +470,12 @@ int dRes_info_c::loadResource() {
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
 #endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* skip */
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
 #if DEBUG
@@ -475,6 +493,7 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDG */
                 } else if (nodeType == 'BMDA') {
 #if DEBUG
                     g_kankyoHIO.navy.field_0x22a |= u16(0x800);
@@ -487,8 +506,12 @@ int dRes_info_c::loadResource() {
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
 #endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* skip */
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
 
@@ -499,6 +522,7 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDA */
 #if DEBUG
                 } else if (nodeType == 'BMDL') {
                     J3DModelFileData* fileData = (J3DModelFileData*)res;
@@ -541,7 +565,33 @@ int dRes_info_c::loadResource() {
 #if PLATFORM_PC
                     /* Byte-swap the animation file before reading the offset field */
                     pal_j3d_swap_anim(res, 0x800000);
-#endif
+
+                    /* Wrap BCKS/BCK load with crash protection */
+                    {
+                        J3DUnkChunk* chunk = (J3DUnkChunk*)res;
+                        void* bas;
+                        if (chunk->some_data_offset != 0xFFFFFFFF) {
+                            bas = (void*)((uintptr_t)chunk->some_data_offset + (uintptr_t)res);
+                        } else {
+                            bas = NULL;
+                        }
+                        mDoExt_transAnmBas* transAnmBas = new mDoExt_transAnmBas(bas);
+                        if (transAnmBas != NULL) {
+                            void* loadResult = j3d_safe_load([&]() -> void* {
+                                J3DAnmLoaderDataBase::setResource(transAnmBas, res);
+                                return transAnmBas;
+                            });
+                            if (loadResult == NULL) {
+                                delete transAnmBas;
+                                res = NULL;
+                            } else {
+                                res = transAnmBas;
+                            }
+                        } else {
+                            res = NULL;
+                        }
+                    }
+#else
                     J3DUnkChunk* chunk = (J3DUnkChunk*)res;
                     void* bas;
 
@@ -558,14 +608,24 @@ int dRes_info_c::loadResource() {
 
                     J3DAnmLoaderDataBase::setResource(transAnmBas, res);
                     res = transAnmBas;
+#endif
                 } else if (nodeType == 'BTP ' || nodeType == 'BTK ' || nodeType == 'BPK ' ||
                            nodeType == 'BRK ' || nodeType == 'BLK ' || nodeType == 'BVA ' ||
                            nodeType == 'BXA ')
                 {
+#if PLATFORM_PC
+                    res = j3d_safe_load([&]() -> void* {
+                        return J3DAnmLoaderDataBase::load(res);
+                    });
+                    if (res == NULL) {
+                        /* skip failed animation resources on PC */
+                    }
+#else
                     res = J3DAnmLoaderDataBase::load(res);
                     if (res == NULL) {
                         return -1;
                     }
+#endif
                 } else if (nodeType == 'DZB ') {
                     res = cBgS::ConvDzb(res);
                 } else if (nodeType == 'KCL ') {
@@ -972,6 +1032,9 @@ void* dRes_control_c::getRes(char const* i_arcName, char const* i_resName, dRes_
     }
 
     JKRArchive* archive = resInfo->getArchive();
+#if PLATFORM_PC
+    if (archive == NULL) return NULL;
+#endif
     JKRArchive::SDIFileEntry* entry = archive->findNameResource(i_resName);
 
     if (entry != NULL) {
@@ -990,6 +1053,9 @@ void* dRes_control_c::getIDRes(char const* i_arcName, u16 i_resID, dRes_info_c* 
     }
 
     JKRArchive* archive = resInfo->getArchive();
+#if PLATFORM_PC
+    if (archive == NULL) return NULL;
+#endif
     int index = mDoExt_resIDToIndex(archive, i_resID);
     if (index < 0) {
         return 0;

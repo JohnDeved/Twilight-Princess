@@ -1163,10 +1163,12 @@ static void dungeonlight_init() {
 }
 
 static void undwater_init() {
-    J3DModelData* modelData2 = (J3DModelData*)dComIfG_getObjectRes("Always", 0x1D);
 #if PLATFORM_PC
-    if (modelData2 == NULL) return;
+    /* On PC, J3D model data from Always.arc may be corrupt due to incomplete endian swap.
+     * Skip underwater effect init entirely — it's a visual effect that needs full J3D pipeline. */
+    return;
 #endif
+    J3DModelData* modelData2 = (J3DModelData*)dComIfG_getObjectRes("Always", 0x1D);
     JUT_ASSERT(1867, modelData2 != NULL);
 
     g_env_light.undwater_ef_heap = mDoExt_createSolidHeapFromGameToCurrent(0x600, 0x20);
