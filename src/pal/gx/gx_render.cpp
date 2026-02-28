@@ -257,12 +257,7 @@ void pal_render_end_frame(void) {
     static uint32_t s_frame_count = 0;
     s_frame_count++;
 
-    /* Debug text overlay — frame number + stats visible in captured frames.
-     * bgfx renders debug text AFTER capture (see renderer_gl.cpp: capture()
-     * is called before blit(textVideoMemBlitter)). To make debug text appear
-     * in captured frames, we submit the text and call frame() once to bake it
-     * into the backbuffer, then call frame() again so the capture reads the
-     * backbuffer that now contains the debug text. */
+    /* Debug text overlay — visible on the live window via bgfx debug text */
     bgfx::dbgTextPrintf(1, 1, 0x0f,
         "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
         s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
@@ -271,6 +266,22 @@ void pal_render_end_frame(void) {
         "Renderer: %s  Capture: %s",
         bgfx::getRendererName(bgfx::getRendererType()),
         s_fb_capture_enabled ? "ON" : "OFF");
+
+    /* Pass debug info to capture buffer — burned directly into captured pixels.
+     * bgfx captures the backbuffer BEFORE rendering its debug text overlay
+     * (see renderer_gl.cpp: capture() runs before blit(textVideoMemBlitter)),
+     * so we burn the text into the captured pixel data instead. */
+    if (s_fb_capture_enabled) {
+        char line0[128], line1[128];
+        snprintf(line0, sizeof(line0),
+            "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
+            s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+            gx_frame_stub_count);
+        snprintf(line1, sizeof(line1),
+            "Renderer: %s  Capture: ON",
+            bgfx::getRendererName(bgfx::getRendererType()));
+        pal_capture_set_debug_info(line0, line1);
+    }
 
     if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
         && gx_stub_frame_is_valid()) {
@@ -284,24 +295,10 @@ void pal_render_end_frame(void) {
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
 
-    /* Submit the scene frame — this renders all draw calls + captures the
-     * backbuffer (without debug text) + then blits debug text on top. */
+    /* Submit frame — triggers rendering and capture.
+     * bgfx calls captureFrame() on s_callback during frame(), which
+     * stores the rendered pixels + burns debug text into the buffer. */
     bgfx::frame();
-
-    /* When capture is active, submit a second frame so the capture reads
-     * the backbuffer that now has debug text baked in from the first frame(). */
-    if (s_fb_capture_enabled) {
-        bgfx::touch(0);
-        bgfx::dbgTextPrintf(1, 1, 0x0f,
-            "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
-            s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
-            gx_frame_stub_count);
-        bgfx::dbgTextPrintf(1, 2, 0x0f,
-            "Renderer: %s  Capture: %s",
-            bgfx::getRendererName(bgfx::getRendererType()),
-            s_fb_capture_enabled ? "ON" : "OFF");
-        bgfx::frame();
-    }
 
     /* Verify after bgfx::frame() so capture buffer is up-to-date */
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,

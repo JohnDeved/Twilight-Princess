@@ -62,6 +62,14 @@ uint32_t pal_capture_get_frame_count(void);
 void pal_capture_shutdown(void);
 
 /**
+ * Set debug text to burn into captured frames.
+ * Called each frame from pal_render_end_frame() before bgfx::frame().
+ * Text is stamped directly into the pixel buffer after bgfx delivers it,
+ * because bgfx captures the backbuffer BEFORE its own debug text overlay.
+ */
+void pal_capture_set_debug_info(const char* line0, const char* line1);
+
+/**
  * Direct OpenGL readback (fallback for when bgfx capture doesn't work).
  * Calls glReadPixels to read the actual framebuffer after bgfx::frame().
  */
