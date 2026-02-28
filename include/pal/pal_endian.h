@@ -31,6 +31,13 @@ static inline s32 pal_swap32s(s32 v) {
     return (s32)pal_swap32((u32)v);
 }
 
+static inline f32 pal_swap_f32(f32 v) {
+    union { f32 f; u32 u; } x;
+    x.f = v;
+    x.u = pal_swap32(x.u);
+    return x.f;
+}
+
 /**
  * Swap the header of a RARC archive in-place.
  * Call after loading from disc, before parsing.

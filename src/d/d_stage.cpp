@@ -1779,7 +1779,7 @@ static void dummy4() {
 static int dStage_paletteInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* pal_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPaletteInfo((stage_palette_info_class*)pal_info->m_offset);
+    i_stage->setPaletteInfo(DSTAGE_NODE_PTR(pal_info, param_3, stage_palette_info_class));
 #if DEBUG
     i_stage->setPaletteNumInfo(param_2);
 #endif
@@ -1789,7 +1789,7 @@ static int dStage_paletteInfoInit(dStage_dt_c* i_stage, void* i_data, int param_
 static int dStage_pselectInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* psel_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPselectInfo((stage_pselect_info_class*)psel_info->m_offset);
+    i_stage->setPselectInfo(DSTAGE_NODE_PTR(psel_info, param_3, stage_pselect_info_class));
 #if DEBUG
     i_stage->setPselectNumInfo(param_2);
 #endif
@@ -1799,7 +1799,7 @@ static int dStage_pselectInfoInit(dStage_dt_c* i_stage, void* i_data, int param_
 static int dStage_envrInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* envr_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setEnvrInfo((stage_envr_info_class*)envr_info->m_offset);
+    i_stage->setEnvrInfo(DSTAGE_NODE_PTR(envr_info, param_3, stage_envr_info_class));
 #if DEBUG
     i_stage->setEnvrNumInfo(param_2);
 #endif
@@ -1833,7 +1833,7 @@ static int dStage_filiInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
     if (entryNum == 0) {
         i_stage->setFileListInfo(NULL);
     } else {
-        i_stage->setFileListInfo((dStage_FileList_dt_c*)fili_info->m_offset);
+        i_stage->setFileListInfo(DSTAGE_NODE_PTR(fili_info, param_3, dStage_FileList_dt_c));
     }
 
     return 1;
@@ -1842,7 +1842,7 @@ static int dStage_filiInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
 static int dStage_vrboxInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* vrbox_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setVrboxInfo((stage_vrbox_info_class*)vrbox_info->m_offset);
+    i_stage->setVrboxInfo(DSTAGE_NODE_PTR(vrbox_info, param_3, stage_vrbox_info_class));
 #if DEBUG
     i_stage->setVrboxNumInfo(entryNum);
 #endif
@@ -1853,7 +1853,7 @@ static int dStage_vrboxcolInfoInit(dStage_dt_c* i_stage, void* i_data, int entry
                                    void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* vrcol_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setVrboxcolInfo((stage_vrboxcol_info_class*)vrcol_info->m_offset);
+    i_stage->setVrboxcolInfo(DSTAGE_NODE_PTR(vrcol_info, param_3, stage_vrboxcol_info_class));
 #if DEBUG
     i_stage->setVrboxcolNumInfo(entryNum);
 #endif
@@ -1862,7 +1862,7 @@ static int dStage_vrboxcolInfoInit(dStage_dt_c* i_stage, void* i_data, int entry
 
 static int dStage_plightInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum, void* param_3) {
     dStage_nodeHeader* plight_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPlightInfo((stage_plight_info_class*)plight_info->m_offset);
+    i_stage->setPlightInfo(DSTAGE_NODE_PTR(plight_info, param_3, stage_plight_info_class));
     i_stage->setPlightNumInfo(entryNum);
     return 1;
 }
@@ -1874,7 +1874,7 @@ static int dStage_lgtvInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
         i_stage->setLightVecInfo(NULL);
     } else {
         dStage_nodeHeader* lgtv_info = (dStage_nodeHeader*)(i_data);
-        i_stage->setLightVecInfo((stage_pure_lightvec_info_class*)lgtv_info->m_offset);
+        i_stage->setLightVecInfo(DSTAGE_NODE_PTR(lgtv_info, param_3, stage_pure_lightvec_info_class));
     }
 
     return 1;
@@ -1889,7 +1889,24 @@ static int dStage_stagInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
     UNUSED(entryNum);
     UNUSED(param_3);
     dStage_nodeHeader* stag_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setStagInfo((stage_stag_info_class*)stag_info->m_offset);
+    stage_stag_info_class* info = DSTAGE_NODE_PTR(stag_info, param_3, stage_stag_info_class);
+#if PLATFORM_PC
+    if (info) {
+        /* Endian swap stage info fields (big-endian binary data) */
+        info->mNear = pal_swap_f32(info->mNear);
+        info->mFar  = pal_swap_f32(info->mFar);
+        info->field_0x0a = pal_swap16(info->field_0x0a);
+        info->field_0x0c = pal_swap32(info->field_0x0c);
+        info->field_0x10 = pal_swap32(info->field_0x10);
+        info->mGapLevel  = (s16)pal_swap16((u16)info->mGapLevel);
+        info->mRangeUp   = (s16)pal_swap16((u16)info->mRangeUp);
+        info->mRangeDown = (s16)pal_swap16((u16)info->mRangeDown);
+        info->field_0x20 = pal_swap_f32(info->field_0x20);
+        info->field_0x24 = pal_swap_f32(info->field_0x24);
+        info->mStageTitleNo = pal_swap16(info->mStageTitleNo);
+    }
+#endif
+    i_stage->setStagInfo(info);
 
     if (!dStage_isBossStage(i_stage)) {
         dComIfG_deleteStageRes("Xtg_00");
@@ -2298,6 +2315,12 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
             p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
         }
     }
+
+    /* On 64-bit PC, m_offset (u32) cannot hold a full pointer.
+     * Instead of adding the base, keep the relative offset.
+     * Callers use dStage_resolvePtr() to get the actual pointer. */
+    /* (offsets are already relative — don't add base on PC) */
+    return;
 #endif
 
     for (int i = 0; i < file->m_chunkCount; i++) {
@@ -2738,11 +2761,18 @@ void dStage_Create() {
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
 #if PLATFORM_PC
-    /* Stage binary data uses 32-bit offsets cast to pointers via offsetToPtr,
-     * which is fundamentally broken on 64-bit (u32 += uintptr_t truncates
-     * upper bits). Skip stage data parsing on PC until a proper 64-bit-safe
-     * stage loader is implemented, but still initialise environment and
-     * event systems so the scene framework runs. */
+    if (!stageRsrc) {
+        /* No stage data available — init env and events with defaults */
+        *dStage_roomControl_c::getDemoArcName() = NULL;
+        dKankyo_create();
+        dComIfGp_evmng_create();
+        return;
+    }
+    /* Stage data available: parse header + STAG chunk for stage info.
+     * Skip actor/camera/path spawning (struct overlays broken on 64-bit).
+     * dStage_dt_c_stageInitLoader handles offsetToPtr + STAG parsing. */
+    dStage_dt_c_stageInitLoader(stageRsrc, dComIfGp_getStage());
+
     *dStage_roomControl_c::getDemoArcName() = NULL;
     dKankyo_create();
     dComIfGp_evmng_create();

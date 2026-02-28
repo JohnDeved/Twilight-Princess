@@ -23,6 +23,14 @@ struct dStage_nodeHeader {
     /* 0x8 */ u32 m_offset;
 };
 
+/* On 64-bit PC, m_offset stays as a relative offset (not resolved to pointer).
+ * Use this macro to get the actual data pointer from a node + file base. */
+#if PLATFORM_PC
+#define DSTAGE_NODE_PTR(node, base, type) ((type*)((u8*)(base) + (node)->m_offset))
+#else
+#define DSTAGE_NODE_PTR(node, base, type) ((type*)(node)->m_offset)
+#endif
+
 // made up name
 struct dStage_fileHeader {
     /* 0x0 */ int m_chunkCount;
