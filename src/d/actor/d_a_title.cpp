@@ -190,6 +190,12 @@ void daTitle_c::loadWait_init() {
 }
 
 void daTitle_c::loadWait_proc() {
+#if PLATFORM_PC
+    if (mpMount == NULL) {
+        logoDispWaitInit();
+        return;
+    }
+#endif
     if (mpMount->sync()) {
         JKRHeap* heap = mDoExt_setCurrentHeap(m2DHeap);
         mpHeap = heap;
