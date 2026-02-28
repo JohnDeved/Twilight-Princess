@@ -520,9 +520,20 @@ static int phase_1(dScnPly_c* i_this) {
 static int phase_1_0(dScnPly_c* i_this) {
     static char camparamarc[10] = "CamParam";
 
+#if PLATFORM_PC
+    /* On PC, syncStageRes can return -1 (resource not registered) if stage
+     * archive loading failed due to setRes error. Treat -1 as "done" to
+     * avoid getting stuck in phase_1_0 forever. */
+    int stgSync = dComIfG_syncStageRes("Stg_00");
+    if (stgSync > 0) {
+        return cPhs_INIT_e;
+    }
+#else
     if (dComIfG_syncStageRes("Stg_00")) {
         return cPhs_INIT_e;
-    } else {
+    }
+#endif
+    {
         dStage_infoCreate();
         dComIfG_setObjectRes("Event", (u8)0, NULL);
         dComIfGp_setCameraParamFileName(0, camparamarc);

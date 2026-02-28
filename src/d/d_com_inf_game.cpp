@@ -2448,6 +2448,16 @@ struct field_data {
 };
 
 void dComIfGp_calcNowRegion() {
+#if PLATFORM_PC
+    /* Field0.arc may not be loaded on PC (setRes error from heap pressure).
+     * Skip region calculation to avoid NULL dereference on archive. */
+    if (dComIfGp_getFieldMapArchive2() == NULL) {
+        for (int i = 0; i < 64; i++) {
+            dStage_roomControl_c::setRegionNo(i, 0xFF);
+        }
+        return;
+    }
+#endif
     u8 buffer[0x800] ATTRIBUTE_ALIGN(32);
 
     dComIfGp_getFieldMapArchive2()->readResource(buffer, 0x800, "dat/field.dat");

@@ -118,7 +118,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Obj_BkDoor — REL module, not available */
     NULL, /* g_profile_Obj_Cboard — REL module, not available */
     NULL, /* g_profile_Obj_MGate — REL module, not available */
-    NULL, /* g_profile_Obj_Ikada — REL module, not available */
+    &g_profile_Obj_Ikada,
     NULL, /* g_profile_Obj_Ice_l — REL module, not available */
     NULL, /* g_profile_Obj_Ice_s — REL module, not available */
     NULL, /* g_profile_Obj_E_CREATE — REL module, not available */
@@ -559,14 +559,14 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Obj_LifeContainer — REL module, not available */
     NULL, /* g_profile_Obj_Shield — REL module, not available */
     NULL, /* g_profile_Demo_Item — REL module, not available */
-    NULL, /* g_profile_ShopItem — REL module, not available */
+    &g_profile_ShopItem,
     NULL, /* g_profile_Obj_Drop — REL module, not available */
     NULL, /* g_profile_OBJ_RW — REL module, not available */
     NULL, /* g_profile_NBOMB — REL module, not available */
     NULL, /* g_profile_TAG_CSW — REL module, not available */
     NULL, /* g_profile_TAG_QS — REL module, not available */
     NULL, /* g_profile_HOZELDA — REL module, not available */
-    NULL, /* g_profile_SWC00 — REL module, not available */
+    &g_profile_SWC00,
     NULL, /* g_profile_KNOB20 — REL module, not available */
     NULL, /* g_profile_DBDOOR — REL module, not available */
     NULL, /* g_profile_BOSS_DOOR — REL module, not available */
@@ -578,7 +578,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Tag_ChgRestart — REL module, not available */
     NULL, /* g_profile_Tag_Restart — REL module, not available */
     NULL, /* g_profile_ANDSW — REL module, not available */
-    NULL, /* g_profile_ANDSW2 — REL module, not available */
+    &g_profile_ANDSW2,
     NULL, /* g_profile_MYNA — REL module, not available */
     NULL, /* g_profile_NPC_GND — REL module, not available */
     NULL, /* g_profile_NPC_GRA — REL module, not available */
@@ -697,10 +697,10 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_NPC_CHIN — REL module, not available */
     NULL, /* g_profile_NPC_INS — REL module, not available */
     NULL, /* g_profile_NPC_SHOP0 — REL module, not available */
-    NULL, /* g_profile_NPC_MK — REL module, not available */
+    &g_profile_NPC_MK,
     NULL, /* g_profile_NPC_P2 — REL module, not available */
     NULL, /* g_profile_KYTAG00 — REL module, not available */
-    NULL, /* g_profile_KYTAG01 — REL module, not available */
+    &g_profile_KYTAG01,
     NULL, /* g_profile_KYTAG02 — REL module, not available */
     NULL, /* g_profile_KYTAG03 — REL module, not available */
     NULL, /* g_profile_KYTAG04 — REL module, not available */
@@ -738,11 +738,11 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_DEMO00 — REL module, not available */
     NULL, /* g_profile_TAG_CAMERA — REL module, not available */
     NULL, /* g_profile_TAG_CHKPOINT — REL module, not available */
-    NULL, /* g_profile_TAG_EVENT — REL module, not available */
+    &g_profile_TAG_EVENT,
     NULL, /* g_profile_TAG_EVT — REL module, not available */
     NULL, /* g_profile_TAG_TELOP — REL module, not available */
     NULL, /* g_profile_TAG_HOWL — REL module, not available */
-    NULL, /* g_profile_TAG_MSG — REL module, not available */
+    &g_profile_TAG_MSG,
     NULL, /* g_profile_TAG_LANTERN — REL module, not available */
     NULL, /* g_profile_Tag_Mist — REL module, not available */
     NULL, /* g_profile_DMIDNA — REL module, not available */
@@ -754,7 +754,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_BG_OBJ — REL module, not available */
     NULL, /* g_profile_MIRROR — REL module, not available */
     NULL, /* g_profile_MOVIE_PLAYER — REL module, not available */
-    NULL, /* g_profile_TITLE — REL module, not available */
+    &g_profile_TITLE,
     NULL, /* g_profile_FR — REL module, not available */
     NULL, /* g_profile_ECONT — REL module, not available */
     NULL, /* g_profile_MG_ROD — REL module, not available */
@@ -814,7 +814,7 @@ static process_profile_definition* s_pc_profile_list[] = {
 
 void pal_profile_list_init(void) {
     g_fpcPf_ProfileList_p = s_pc_profile_list;
-    fprintf(stdout, "[PAL] Profile list initialized (792 entries, 35 available)\n");
+    fprintf(stdout, "[PAL] Profile list initialized (792 entries, 45 available)\n");
     fflush(stdout);
 }
 

@@ -150,6 +150,15 @@ set(PAL_SOURCES
 # Instead of compiling it, we call ModuleProlog directly (which sets g_fpcPf_ProfileList_p)
 # via a stub in pal_remaining_stubs.cpp that only includes profiles already compiled.
 set(REL_SOURCES
+    src/d/actor/d_a_title.cpp
+    src/d/actor/d_a_obj_ikada.cpp
+    src/d/actor/d_a_shop_item.cpp
+    src/d/actor/d_a_swc00.cpp
+    src/d/actor/d_a_andsw2.cpp
+    src/d/actor/d_a_npc_mk.cpp
+    src/d/actor/d_a_kytag01.cpp
+    src/d/actor/d_a_tag_event.cpp
+    src/d/actor/d_a_tag_msg.cpp
 )
 
 # --- Include directories ---
