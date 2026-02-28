@@ -98,14 +98,41 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
     /* CP register 0x50: VCD_Lo — vertex descriptor low bits
      * CP register 0x60: VCD_Hi — vertex descriptor high bits
      * These set which vertex attributes are present and how they're specified
-     * (direct, index8, index16).
-     *
-     * For now, we skip CP register parsing — the game code typically
-     * calls GXSetVtxDesc/GXSetVtxAttrFmt before display lists,
-     * and the display list's CP commands just reinforce the same state.
-     * A full implementation would parse the CP register bits. */
-    (void)addr;
-    (void)value;
+     * (none, direct, index8, index16). */
+
+    if (addr == GX_CP_REG_VCD_LO) {
+        /* VCD_Lo bit layout:
+         * [0]    PNMTXIDX (1=direct)
+         * [1-8]  T0MTXIDX..T7MTXIDX (1=direct each)
+         * [10:9] POS  (2 bits: 0=none, 1=direct, 2=idx8, 3=idx16)
+         * [12:11] NRM
+         * [14:13] CLR0
+         * [16:15] CLR1 */
+        pal_gx_set_vtx_desc(GX_VA_PNMTXIDX, (GXAttrType)((value >> 0) & 0x1 ? GX_DIRECT : GX_NONE));
+        for (int i = 0; i < 8; i++) {
+            pal_gx_set_vtx_desc((GXAttr)(GX_VA_TEX0MTXIDX + i),
+                                (GXAttrType)((value >> (1 + i)) & 0x1 ? GX_DIRECT : GX_NONE));
+        }
+        pal_gx_set_vtx_desc(GX_VA_POS,  (GXAttrType)((value >> 9) & 0x3));
+        pal_gx_set_vtx_desc(GX_VA_NRM,  (GXAttrType)((value >> 11) & 0x3));
+        pal_gx_set_vtx_desc(GX_VA_CLR0, (GXAttrType)((value >> 13) & 0x3));
+        pal_gx_set_vtx_desc(GX_VA_CLR1, (GXAttrType)((value >> 15) & 0x3));
+        return;
+    }
+
+    if (addr == GX_CP_REG_VCD_HI) {
+        /* VCD_Hi bit layout:
+         * [1:0] TEX0, [3:2] TEX1, ..., [15:14] TEX7 */
+        for (int i = 0; i < 8; i++) {
+            pal_gx_set_vtx_desc((GXAttr)(GX_VA_TEX0 + i),
+                                (GXAttrType)((value >> (i * 2)) & 0x3));
+        }
+        return;
+    }
+
+    /* CP registers 0x70-0x9F: VAT (Vertex Attribute Table) groups 0-2
+     * These configure component counts, types, and frac bits for each vertex format.
+     * Skip for now — vertex format is typically set before the DL call. */
 }
 
 /* ================================================================ */
