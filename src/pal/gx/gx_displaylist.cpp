@@ -136,9 +136,86 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
  */
 static void dl_handle_bp_reg(u32 value) {
     /* BP register format: bits [31:24] = register address, [23:0] = data.
-     * For now, skip BP register parsing — TEV, blend, z-mode state is set
-     * by GXSetTevOp, GXSetBlendMode, etc. before display lists. */
-    (void)value;
+     * Parse TEV stage configuration from display list BP commands.
+     * This enables J3D material rendering which sets TEV state via display lists. */
+    u8 addr = (u8)(value >> 24);
+    u32 data = value & 0x00FFFFFF;
+
+    /* TEV color combiner: registers 0xC0, 0xC2, 0xC4, ... (even = color) */
+    if (addr >= 0xC0 && addr <= 0xDF && (addr & 1) == 0) {
+        int stage = (addr - 0xC0) / 2;
+        if (stage < GX_MAX_TEVSTAGE) {
+            /* BP_TEV_COLOR bit layout:
+             * [3:0]   = d, [7:4]   = c, [11:8]  = b, [15:12] = a
+             * [17:16] = bias, [18] = op, [19] = clamp, [21:20] = scale, [23:22] = out_reg */
+            GXTevColorArg d_arg = (GXTevColorArg)((data >> 0) & 0xF);
+            GXTevColorArg c_arg = (GXTevColorArg)((data >> 4) & 0xF);
+            GXTevColorArg b_arg = (GXTevColorArg)((data >> 8) & 0xF);
+            GXTevColorArg a_arg = (GXTevColorArg)((data >> 12) & 0xF);
+            pal_gx_set_tev_color_in((GXTevStageID)stage, a_arg, b_arg, c_arg, d_arg);
+
+            GXTevOp op = (GXTevOp)((data >> 18) & 0x1);
+            GXTevBias bias = (GXTevBias)((data >> 16) & 0x3);
+            GXBool clamp = (GXBool)((data >> 19) & 0x1);
+            GXTevScale scale = (GXTevScale)((data >> 20) & 0x3);
+            GXTevRegID out_reg = (GXTevRegID)((data >> 22) & 0x3);
+            pal_gx_set_tev_color_op((GXTevStageID)stage, op, bias, scale, clamp, out_reg);
+        }
+        return;
+    }
+
+    /* TEV alpha combiner: registers 0xC1, 0xC3, 0xC5, ... (odd = alpha) */
+    if (addr >= 0xC0 && addr <= 0xDF && (addr & 1) == 1) {
+        int stage = (addr - 0xC0) / 2;
+        if (stage < GX_MAX_TEVSTAGE) {
+            /* BP_TEV_ALPHA bit layout:
+             * [1:0] = ras_sel, [3:2] = tex_sel
+             * [6:4] = d, [9:7] = c, [12:10] = b, [15:13] = a
+             * [17:16] = bias, [18] = op, [19] = clamp, [21:20] = scale, [23:22] = out_reg */
+            GXTevAlphaArg d_arg = (GXTevAlphaArg)((data >> 4) & 0x7);
+            GXTevAlphaArg c_arg = (GXTevAlphaArg)((data >> 7) & 0x7);
+            GXTevAlphaArg b_arg = (GXTevAlphaArg)((data >> 10) & 0x7);
+            GXTevAlphaArg a_arg = (GXTevAlphaArg)((data >> 13) & 0x7);
+            pal_gx_set_tev_alpha_in((GXTevStageID)stage, a_arg, b_arg, c_arg, d_arg);
+
+            GXTevOp op = (GXTevOp)((data >> 18) & 0x1);
+            GXTevBias bias = (GXTevBias)((data >> 16) & 0x3);
+            GXBool clamp = (GXBool)((data >> 19) & 0x1);
+            GXTevScale scale = (GXTevScale)((data >> 20) & 0x3);
+            GXTevRegID out_reg = (GXTevRegID)((data >> 22) & 0x3);
+            pal_gx_set_tev_alpha_op((GXTevStageID)stage, op, bias, scale, clamp, out_reg);
+
+            GXTevSwapSel ras_sel = (GXTevSwapSel)((data >> 0) & 0x3);
+            GXTevSwapSel tex_sel = (GXTevSwapSel)((data >> 2) & 0x3);
+            pal_gx_set_tev_swap_mode((GXTevStageID)stage, ras_sel, tex_sel);
+        }
+        return;
+    }
+
+    /* TEV order: registers 0x28-0x2F (each covers 2 stages) */
+    if (addr >= 0x28 && addr <= 0x2F) {
+        int base_stage = (addr - 0x28) * 2;
+        /* BP_TEV_ORDER bit layout:
+         * [2:0] = map0, [5:3] = coord0, [6] = enable0, [9:7] = color0 (stage N)
+         * [14:12] = map1, [17:15] = coord1, [18] = enable1, [21:19] = color1 (stage N+1) */
+        if (base_stage < GX_MAX_TEVSTAGE) {
+            GXTexMapID map0 = (GXTexMapID)((data >> 0) & 0x7);
+            GXTexCoordID coord0 = (GXTexCoordID)((data >> 3) & 0x7);
+            int enable0 = (data >> 6) & 0x1;
+            GXChannelID color0 = (GXChannelID)((data >> 7) & 0x7);
+            if (!enable0) map0 = GX_TEXMAP_NULL;
+            pal_gx_set_tev_order((GXTevStageID)base_stage, coord0, map0, color0);
+        }
+        if (base_stage + 1 < GX_MAX_TEVSTAGE) {
+            GXTexMapID map1 = (GXTexMapID)((data >> 12) & 0x7);
+            GXTexCoordID coord1 = (GXTexCoordID)((data >> 15) & 0x7);
+            int enable1 = (data >> 18) & 0x1;
+            GXChannelID color1 = (GXChannelID)((data >> 19) & 0x7);
+            if (!enable1) map1 = GX_TEXMAP_NULL;
+            pal_gx_set_tev_order((GXTevStageID)(base_stage + 1), coord1, map1, color1);
+        }
+        return;
+    }
 }
 
 /* ================================================================ */

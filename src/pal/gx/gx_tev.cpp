@@ -242,7 +242,7 @@ static int detect_tev_preset(void) {
             return GX_TEV_SHADER_REPLACE;
         }
 
-        /* MODULATE: typical GX_MODULATE pattern */
+        /* MODULATE: typical GX_MODULATE pattern (tex * ras) */
         if ((s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_TEXC &&
              s0->color_c == GX_CC_RASC && s0->color_d == GX_CC_ZERO) ||
             (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_RASC &&
@@ -252,8 +252,27 @@ static int detect_tev_preset(void) {
 
         /* DECAL: blend texture with vertex color using texture alpha */
         if (s0->color_a == GX_CC_RASC && s0->color_b == GX_CC_TEXC &&
-            s0->color_c == GX_CC_TEXA && s0->color_d == GX_CC_ZERO) {
+             s0->color_c == GX_CC_TEXA && s0->color_d == GX_CC_ZERO) {
             return GX_TEV_SHADER_DECAL;
+        }
+
+        /* GX_BLEND mode: ras*(1-tex) + tex = lerp(ras, 1, tex) */
+        if (s0->color_a == GX_CC_RASC && s0->color_b == GX_CC_ONE &&
+            s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO) {
+            return GX_TEV_SHADER_MODULATE; /* approximate as modulate */
+        }
+
+        /* Texture + constant add: d=TEXC + b*c with KONST or ONE */
+        if (s0->color_d == GX_CC_TEXC &&
+            (s0->color_a == GX_CC_ZERO || s0->color_b == GX_CC_ZERO ||
+             s0->color_c == GX_CC_ZERO)) {
+            return GX_TEV_SHADER_REPLACE;
+        }
+
+        /* KONST color patterns: treat KONST like vertex color for modulate */
+        if (s0->color_b == GX_CC_TEXC && s0->color_c == GX_CC_KONST &&
+            s0->color_a == GX_CC_ZERO && s0->color_d == GX_CC_ZERO) {
+            return GX_TEV_SHADER_MODULATE; /* konst * tex ≈ modulate */
         }
 
         /* Has texture but no matching preset → use MODULATE as default */
@@ -272,6 +291,13 @@ static int detect_tev_preset(void) {
             s1->color_a == GX_CC_C0 && s1->color_b == GX_CC_C1 &&
             s1->color_c == GX_CC_CPREV && s1->color_d == GX_CC_ZERO) {
             return GX_TEV_SHADER_BLEND;
+        }
+
+        /* Multi-stage modulate: stage 0 is REPLACE, stage 1 modulates with ras */
+        if (uses_texc &&
+            (s1->color_b == GX_CC_CPREV || s1->color_c == GX_CC_CPREV) &&
+            (s1->color_b == GX_CC_RASC || s1->color_c == GX_CC_RASC)) {
+            return GX_TEV_SHADER_MODULATE;
         }
     }
 
