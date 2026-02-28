@@ -674,8 +674,9 @@ void pal_tev_flush_draw(void) {
 
     /* Track render pipeline metrics for verification */
     gx_frame_shader_mask |= (1u << preset);
-    if (ds->prim_type >= 0 && ds->prim_type < 32)
-        gx_frame_prim_mask |= (1u << ds->prim_type);
+    /* Map GX prim type (0x80-0xB8) to sequential bit position 0-7 */
+    if (ds->prim_type >= 0x80 && ds->prim_type <= 0xB8)
+        gx_frame_prim_mask |= (1u << ((ds->prim_type - 0x80) >> 3));
     if (preset != GX_TEV_SHADER_PASSCLR) {
         gx_frame_textured_draws++;
     } else {

@@ -34,7 +34,9 @@ unsigned int gx_frame_blend_draws = 0;
 unsigned int gx_frame_unique_textures = 0;
 unsigned int gx_frame_prim_mask = 0;
 
-/* Unique texture tracking — small fixed-size set */
+/* Unique texture tracking — small fixed-size set.
+ * Per-frame cap of 64 textures is sufficient for verification.
+ * Textures beyond this limit are silently ignored. */
 #define GX_MAX_TRACKED_TEXTURES 64
 static const void* s_tracked_textures[GX_MAX_TRACKED_TEXTURES];
 static unsigned int s_tracked_texture_count = 0;

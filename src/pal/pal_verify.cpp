@@ -166,7 +166,8 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     s_all_shader_mask |= gx_frame_shader_mask;
     s_all_prim_mask |= gx_frame_prim_mask;
 
-    /* Track frame-to-frame hash changes for progression detection */
+    /* Track frame-to-frame hash changes for progression detection.
+     * Skip first frame (s_total_frames==1) since s_prev_fb_hash is uninitialized. */
     {
         uint32_t fb_hash = pal_screenshot_hash_fb();
         if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)

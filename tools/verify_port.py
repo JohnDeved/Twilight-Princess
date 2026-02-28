@@ -413,15 +413,16 @@ TEV_SHADER_NAMES = {
     4: "DECAL",      # texture with alpha blend
 }
 
-# GX primitive type names
+# GX primitive type names — mapped to sequential bit positions 0-7
+# C-side mapping: bit = (prim_type - 0x80) >> 3
 GX_PRIM_NAMES = {
-    0x80: "QUADS",
-    0x90: "TRIANGLES",
-    0x98: "TRISTRIP",
-    0xA0: "TRIFAN",
-    0xA8: "LINES",
-    0xB0: "LINESTRIP",
-    0xB8: "POINTS",
+    0: "QUADS",      # GX_QUADS    = 0x80 → bit 0
+    1: "TRIANGLES",  # GX_TRIANGLES = 0x90 → bit 1
+    2: "TRISTRIP",   # GX_TRISTRIP  = 0x98 → bit 2
+    3: "TRIFAN",     # GX_TRIFAN    = 0xA0 → bit 3
+    4: "LINES",      # GX_LINES     = 0xA8 → bit 4
+    5: "LINESTRIP",  # GX_LINESTRIP = 0xB0 → bit 5
+    6: "POINTS",     # GX_POINTS    = 0xB8 → bit 6
 }
 
 
@@ -462,10 +463,10 @@ def check_pipeline_health(data):
         if all_shader_mask & (1 << bit):
             shaders_used.append(name)
 
-    # Decode primitive mask to names
+    # Decode primitive mask to names (bits 0-6 correspond to sequential prim types)
     prims_used = []
-    for val, name in GX_PRIM_NAMES.items():
-        if all_prim_mask & (1 << val):
+    for bit, name in GX_PRIM_NAMES.items():
+        if all_prim_mask & (1 << bit):
             prims_used.append(name)
 
     # Stage 1: Geometry
@@ -475,7 +476,8 @@ def check_pipeline_health(data):
     has_textures = frames_with_textures > 0 and peak_unique_textures > 0
 
     # Stage 3: Shader variety (real scenes use textured shaders, not just PASSCLR)
-    has_textured_shaders = bool(all_shader_mask & ~1)  # any bit besides PASSCLR
+    # Bit 0 = PASSCLR (vertex color only, no texture). Bits 1-4 = textured shaders.
+    has_textured_shaders = bool(all_shader_mask & ~1)
 
     # Stage 4: Depth testing
     has_depth = frames_with_depth > 0
@@ -592,6 +594,7 @@ def check_frame_progression(data):
     }
 
     # Check for frozen rendering — if we have many frames but all same hash
+    # 60 frames ≈ 1 second at 60fps — enough to expect content changes
     if total_frames > 60 and hash_changes == 0:
         progression_result["issues"].append(
             "Frame progression: framebuffer hash never changed across "
@@ -599,7 +602,8 @@ def check_frame_progression(data):
             "the same clear color every frame"
         )
 
-    # Check captured frame diversity
+    # Check captured frame diversity — need ≥3 captures to detect stuck rendering
+    # (1 could be a loading screen, 2 could be a fade transition)
     if len(captured_hashes) >= 3 and distinct_hashes <= 1:
         progression_result["issues"].append(
             f"Frame progression: all {len(captured_hashes)} captured frames "
