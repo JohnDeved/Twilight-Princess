@@ -140,16 +140,43 @@ static void swap_vtx1(u8* block, u32 blockSize) {
         }
     }
 
-    /* Swap vertex data arrays - positions, normals, texcoords are f32 or s16 arrays.
-     * For now, swap all vertex data as u16 arrays since most vertex attributes
-     * are either f32 (swap as two u16) or s16 (swap as u16). This is a simplification
-     * that works because f32 byte-swap == two u16 byte-swaps at the same positions. */
+    /* Swap vertex data arrays based on component type from the format list.
+     * Vertex attributes can be f32, s16, s8, u8, etc. We need u32 swap for f32
+     * and u16 swap for s16/u16. The format list tells us the component type. */
+
+    /* First, build a map of attribute index → component type from format list */
+    u8 attrCompType[14]; /* 0=f32, 1=u8/s8, 2=u16/s16, 3=unknown */
+    for (int i = 0; i < 14; i++) attrCompType[i] = 3;
+
+    if (fmtOff != 0 && fmtOff < blockSize) {
+        u8* fmt = block + fmtOff;
+        while ((u32)(fmt - block) + 16 <= blockSize) {
+            u32 attr = *(u32*)fmt; /* already native-endian */
+            if (attr == 0xFF || attr == 26) break;
+            u32 compType = *(u32*)(fmt + 8); /* compType: 0=u8,1=s8,2=u16,3=s16,4=f32 */
+            /* Map to our VTX1 offset index:
+             * attr 9 (POS) → index 1, attr 10 (NRM) → index 2,
+             * attr 11-12 (CLR0/1) → index 3-4 (u8 rgba, no swap),
+             * attr 13-20 (TEX0-7) → index 5-12 */
+            int idx = -1;
+            if (attr == 9) idx = 1;       /* GX_VA_POS */
+            else if (attr == 10) idx = 2;  /* GX_VA_NRM */
+            else if (attr >= 13 && attr <= 20) idx = (int)(attr - 13 + 5); /* GX_VA_TEX0-7 */
+            if (idx >= 0 && idx < 14) {
+                if (compType == 4) attrCompType[idx] = 0; /* f32 */
+                else if (compType == 2 || compType == 3) attrCompType[idx] = 2; /* u16/s16 */
+                else attrCompType[idx] = 1; /* u8/s8 */
+            }
+            fmt += 16;
+        }
+    }
+
     u32 offsets[14];
     for (int i = 0; i < 14; i++) {
         offsets[i] = *(u32*)(block + 0x08 + i * 4);
     }
 
-    /* For each data array, find its extent and swap as u16 */
+    /* For each data array, swap based on component type */
     for (int i = 1; i < 14; i++) { /* skip fmtList (index 0) */
         if (offsets[i] == 0) continue;
         /* Find end: next non-zero offset or blockSize */
@@ -160,12 +187,22 @@ static void swap_vtx1(u8* block, u32 blockSize) {
                 break;
             }
         }
-        /* Color arrays (indices 3,4) are GXColor (4 bytes, RGBA) - no swap needed.
-         * Position/Normal arrays are f32 triples or s16 triples.
-         * TexCoord arrays are f32 pairs or s16 pairs.
-         * Swap everything as u16 (works for both f32 and s16). */
-        if (i == 3 || i == 4) continue; /* skip color arrays */
-        swap_u16_range(block, offsets[i], end);
+        /* Color arrays (indices 3,4) are GXColor (4 bytes, RGBA) - no swap needed. */
+        if (i == 3 || i == 4) continue;
+
+        if (attrCompType[i] == 0) {
+            /* f32 data: swap as u32 */
+            u32 count = (end - offsets[i]) / 4;
+            swap_u32_array(block, offsets[i], count);
+        } else if (attrCompType[i] == 2) {
+            /* s16/u16 data: swap as u16 */
+            swap_u16_range(block, offsets[i], end);
+        } else {
+            /* Unknown or u8: default to u32 swap (safest for f32) since
+             * most vertex attributes are f32 in Twilight Princess */
+            u32 count = (end - offsets[i]) / 4;
+            swap_u32_array(block, offsets[i], count);
+        }
     }
 }
 
@@ -190,14 +227,16 @@ static void swap_evp1(u8* block, u32 blockSize) {
     if (mixIdxOff != 0 && mixWgtOff != 0) {
         swap_u16_range(block, mixIdxOff, mixWgtOff);
     }
-    /* mixWeight: f32 array */
+    /* mixWeight: f32 array - swap as u32 */
     u32 invMtxOff = *(u32*)(block + 0x18);
     if (mixWgtOff != 0 && invMtxOff != 0) {
-        swap_u16_range(block, mixWgtOff, invMtxOff);
+        u32 cnt = (invMtxOff - mixWgtOff) / 4;
+        swap_u32_array(block, mixWgtOff, cnt);
     }
-    /* invJointMtx: Mtx43 array (3x4 f32) = 12 floats per entry */
+    /* invJointMtx: Mtx43 array (3x4 f32) = 12 floats per entry - swap as u32 */
     if (invMtxOff != 0) {
-        swap_u16_range(block, invMtxOff, blockSize);
+        u32 cnt = (blockSize - invMtxOff) / 4;
+        swap_u32_array(block, invMtxOff, cnt);
     }
 }
 
@@ -1056,7 +1095,7 @@ static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
 
     /* Loop mode (u8) and padding - no swap */
     swap_u16_array(block, 0x0A, 1); /* frameCount */
-    swap_u16_array(block, 0x0C, 1); /* entryCount */
+    swap_u16_array(block, 0x0C, 2); /* entryCount + additional count */
 
     /* Scan for u32 offsets starting at 0x10 */
     u32 numOffsets = 0;
