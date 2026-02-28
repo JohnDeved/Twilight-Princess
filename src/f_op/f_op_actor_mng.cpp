@@ -468,7 +468,7 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
                 else {
                     int margin = fopAcM::HeapAdjustMargin;
                     adjustedHeap = ALIGN_NEXT(heap->getHeapSize() - heap->getFreeSize(), 0x20);
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
                     if (i_size < adjustedHeap + margin || fopAcM::HeapSkipMargin) {
 #elif VERSION == VERSION_WII_USA_R2 || VERSION == VERSION_WII_PAL
                     if (i_size < adjustedHeap + margin || fopAcM::HeapAdjustUnk) {

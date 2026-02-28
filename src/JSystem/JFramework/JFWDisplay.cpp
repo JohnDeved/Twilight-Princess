@@ -340,6 +340,12 @@ void JFWDisplay::waitBlanking(int param_0) {
 }
 
 static void waitForTick(u32 p1, u16 p2) {
+#if PLATFORM_PC
+    /* On PC, skip retrace-based waiting (no hardware retrace interrupt).
+     * In headless mode, run as fast as possible. */
+    (void)p1; (void)p2;
+    return;
+#else
     if (p1 != 0) {
         static OSTime nextTick = OSGetTime();
         OSTime time = OSGetTime();
@@ -360,6 +366,7 @@ static void waitForTick(u32 p1, u16 p2) {
         } while (((intptr_t)msg - (intptr_t)nextCount) < 0);
         nextCount = (intptr_t)msg + uVar1;
     }
+#endif
 }
 
 JSUList<JFWAlarm> JFWAlarm::sList(false);
@@ -508,7 +515,7 @@ static void JFWDrawDoneAlarm() {
     s32 status = OSDisableInterrupts();
     alarm.createAlarm();
     alarm.appendLink();
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
     OSSetAlarm(&alarm, OSSecondsToTicks(0.5), JFWGXAbortAlarmHandler);
 #endif
     GXDrawDone();

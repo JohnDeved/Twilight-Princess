@@ -908,7 +908,7 @@ void daNpcCdn3_c::checkSchedule() {
         u8 rawStartTime = field_0xb88->getStartTime();
         int schedStartTime = (u16)((rawStartTime / 10) * 60 + (rawStartTime % 10) * 10);
         int currentTime = getTime();
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         if (field_0xb88->getWeekNum() == getDayOfWeek() && schedStartTime <= currentTime)
 #else
         int currentDay = getDayOfWeek();
@@ -1675,7 +1675,7 @@ void daNpcCdn3_c::checkTimeSchedule() {
                 }
             }
         } else if (field_0xb95 != 0 && mTagSched->getStartEnd() != 1) {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
             if (mTagSched->getWeekNum() == getDayOfWeek() && field_0xb8c <= iVar2)
 #else
             int day = getDayOfWeek();

@@ -373,7 +373,7 @@ void* JKRExpHeap::allocFromTail(u32 size, int align) {
     CMemBlock* foundBlock = NULL;
     CMemBlock* newBlock = NULL;
     u32 usedSize;
-    u32 start;
+    uintptr_t start;
 
     for (CMemBlock* block = mTailFreeList; block; block = block->mPrev) {
         start = ALIGN_PREV((uintptr_t)block->getContent() + block->size - size, align);
@@ -783,9 +783,9 @@ void JKRExpHeap::recycleFreeBlock(JKRExpHeap::CMemBlock* block) {
 }
 
 void JKRExpHeap::joinTwoBlocks(CMemBlock* block) {
-    u32 endAddr = (uintptr_t)(block + 1) + block->size;
+    uintptr_t endAddr = (uintptr_t)(block + 1) + block->size;
     CMemBlock* next = block->mNext;
-    u32 nextAddr = (uintptr_t)next - (next->mFlags & 0x7f);
+    uintptr_t nextAddr = (uintptr_t)next - (next->mFlags & 0x7f);
     if (endAddr > nextAddr) {
         JUTWarningConsole_f(":::Heap may be broken. (block = %x)", block);
         OS_REPORT(":::block = %x\n", block);

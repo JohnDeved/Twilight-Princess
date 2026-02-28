@@ -383,7 +383,7 @@ public:
     /* 0x04F47 */ u8 field_0x4f47[2];
     /* 0x04F49 */ u8 mDirection;
     /* 0x04F4A */ u8 field_0x4f4a;
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     /* 0x04FE3 */ u8 unk_0x4fe3;
 #endif
     /* 0x04F4B */ u8 field_0x4f4b;  // related to itemInit

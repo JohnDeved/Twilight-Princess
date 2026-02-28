@@ -710,7 +710,7 @@ void mReCPd::Pad::clean() {
 }
 
 void mReCPd::Pad::cleanOneTime() {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     field_0x1ddd = 0;
     field_0x1de8 = 0;
     field_0x1df0 = 0;
@@ -1086,7 +1086,7 @@ void mReCPd::create() {
     WPADSetAcceptConnection(1);
     KPADSetFSStickClamp(0xF, 0x4E);
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     WPADSetAutoSleepTime(0);
 #endif
 }

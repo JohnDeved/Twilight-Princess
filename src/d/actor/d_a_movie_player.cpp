@@ -4164,7 +4164,7 @@ int daMP_c::daMP_c_Callback_Finish(daMP_c* i_this) {
 }
 
 int daMP_c::daMP_c_Callback_Main(daMP_c* i_this) {
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     mDoGph_gInf_c::resetDimming();
     #endif
 

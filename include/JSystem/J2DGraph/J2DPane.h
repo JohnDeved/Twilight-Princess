@@ -232,7 +232,7 @@ public:
     /* 0xDC */ JSUTree<J2DPane> mPaneTree;
     /* 0xF8 */ const J2DAnmTransform* mTransform;
 
-    #if !(PLATFORM_WII || PLATFORM_SHIELD)
+    #if !(PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
     /* 0xFC */ u32 _fc;
     #endif
 };

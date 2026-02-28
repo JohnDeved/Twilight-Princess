@@ -2818,7 +2818,7 @@ void daCow_c::action_damage() {
 
     case daCow_c::Mode_2:
         (void)0;
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
         return;
 #endif
 

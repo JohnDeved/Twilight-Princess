@@ -31,7 +31,7 @@ public:
     bool loadSeWave(u32 wave);
     bool loadBgmWave(u32 wave);
 
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     bool loadSceneWave(u32 wave, u32 bank);
     #endif
 

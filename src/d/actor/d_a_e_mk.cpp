@@ -1957,7 +1957,7 @@ static void* s_brg_sub2(void* i_actor, void* i_data) {
     UNUSED(i_data);
 
     if (fopAcM_IsActor(i_actor) && fopAcM_GetName(i_actor) == PROC_OBJ_BRG) {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         static_cast<obj_brg_class*>(i_actor)->mType &= (u8)~4u;
 #else
         static_cast<obj_brg_class*>(i_actor)->mType &= ~4u;

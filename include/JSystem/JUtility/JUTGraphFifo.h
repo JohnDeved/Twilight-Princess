@@ -25,7 +25,7 @@ public:
     }
 
     void save() {
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
         GXSaveCPUFifo(this->mFifo);
 #endif
     }

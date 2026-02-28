@@ -106,6 +106,17 @@ void dScnLogo_c::checkProgSelect() {
 
 int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
+#if PLATFORM_PC
+    /* On PC, render the Nintendo logo via J2D → GX → bgfx pipeline.
+     * Skip warning/progressive/dolby states — just show the Nintendo logo. */
+    if (mNintendoLogo) {
+        dComIfGd_set2DOpa(mNintendoLogo);
+    }
+    if (mTimer == 0) {
+        mExecCommand = EXEC_SCENE_CHANGE;
+    }
+    return 1;
+#endif
     (this->*l_execFunc[mExecCommand])();
     return 1;
 }
@@ -415,7 +426,9 @@ void dScnLogo_c::nextSceneChange() {
 dScnLogo_c::~dScnLogo_c() {
     if (mDoRst::isReset()) {
         if (mDoAud_zelAudio_c::isInitFlag()) {
+#if !PLATFORM_PC
             Z2AudioMgr::getInterface()->resetProcess(5, true);
+#endif
         }
         mDoRst_reset(0, 0x80000000, 0);
     }
@@ -442,6 +455,7 @@ dScnLogo_c::~dScnLogo_c() {
     field_0x1d0->destroy();
     JKRFree(dummyGameAlloc);
 
+#if !PLATFORM_PC
     dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
     dComIfGp_setFieldMapArchive2(mpField0Command->getArchive());
     dComIfGp_setAnmArchive(mpAlAnmCommand->getArchive());
@@ -509,6 +523,7 @@ dScnLogo_c::~dScnLogo_c() {
     dDlst_shadowControl_c::setSimpleTex((ResTIMG*)dComIfG_getObjectRes("Always", 0x4A));
     dTres_c::createWork();
     dMpath_c::createWork();
+#endif /* !PLATFORM_PC */
 
     #if PLATFORM_WII
     data_8053a730 = 0;
@@ -553,9 +568,13 @@ static int phase_1(dScnLogo_c* i_this) {
         return cPhs_INIT_e;
     }
 
+#if PLATFORM_PC
+    /* Audio not initialized on PC — skip the audio ready check */
+#else
     if (!mDoAud_zelAudio_c::isInitFlag() || Z2AudioMgr::getInterface()->checkFirstWaves()) {
         return cPhs_INIT_e;
     }
+#endif
 
     #if VERSION == VERSION_GCN_PAL
     if (!mDoDvdThd::SyncWidthSound) {
@@ -602,8 +621,10 @@ int dScnLogo_c::create() {
     logoInitGC();
     mpHeap->becomeCurrentHeap();
 
+#if !PLATFORM_PC
     dvdDataLoad();
     Z2AudioMgr::getInterface()->loadStaticWaves();
+#endif
     mDoGph_gInf_c::setTickRate((OS_BUS_CLOCK / 4) / 60);
     mDoGph_gInf_c::waitBlanking(0);
     field_0x20a = 0;

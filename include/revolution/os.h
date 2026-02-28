@@ -61,6 +61,22 @@ typedef u32 OSTick;
 #define OS_BASE_CACHED   (OS_CACHED_REGION_PREFIX << 16)
 #define OS_BASE_UNCACHED (OS_UNCACHED_REGION_PREFIX << 16)
 
+#if defined(VERSION) && (VERSION == 13 || VERSION == 14)
+/* PC/NX port: redirect OS_BASE_CACHED to pal_fake_mem1 (host buffer)
+ * instead of 0x80000000 (unmapped on x86_64). This must happen at the
+ * macro definition site because __OSBusClock (which depends on
+ * OS_BASE_CACHED) is read during C++ static initialization. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char pal_fake_mem1[];
+#ifdef __cplusplus
+}
+#endif
+#undef OS_BASE_CACHED
+#define OS_BASE_CACHED ((unsigned long)(pal_fake_mem1))
+#endif
+
 #ifdef __MWERKS__
 u32 __OSPhysicalMemSize AT_ADDRESS(OS_BASE_CACHED | 0x0028);
 volatile int __OSTVMode AT_ADDRESS(OS_BASE_CACHED | 0x00CC);
@@ -276,12 +292,22 @@ void* OSCachedToUncached(void* caddr);
 void* OSUncachedToCached(void* ucaddr);
 
 #if !DEBUG
+#if defined(VERSION) && (VERSION == 13 || VERSION == 14)
+/* On 64-bit PC, use uintptr_t instead of u32 to avoid address truncation */
+#define OSPhysicalToCached(paddr)    ((void*) ((uintptr_t)(OS_BASE_CACHED   + (uintptr_t)(paddr))))
+#define OSPhysicalToUncached(paddr)  ((void*) ((uintptr_t)(OS_BASE_CACHED   + (uintptr_t)(paddr))))
+#define OSCachedToPhysical(caddr)    ((u32)   ((uintptr_t)(caddr)  - OS_BASE_CACHED))
+#define OSUncachedToPhysical(ucaddr) ((u32)   ((uintptr_t)(ucaddr) - OS_BASE_CACHED))
+#define OSCachedToUncached(caddr)    ((void*) (caddr))
+#define OSUncachedToCached(ucaddr)   ((void*) (ucaddr))
+#else
 #define OSPhysicalToCached(paddr)    ((void*) ((u32)(OS_BASE_CACHED   + (u32)(paddr))))
 #define OSPhysicalToUncached(paddr)  ((void*) ((u32)(OS_BASE_UNCACHED + (u32)(paddr))))
 #define OSCachedToPhysical(caddr)    ((u32)   ((u32)(caddr)  - OS_BASE_CACHED))
 #define OSUncachedToPhysical(ucaddr) ((u32)   ((u32)(ucaddr) - OS_BASE_UNCACHED))
 #define OSCachedToUncached(caddr)    ((void*) ((u8*)(caddr)  + (OS_BASE_UNCACHED - OS_BASE_CACHED)))
 #define OSUncachedToCached(ucaddr)   ((void*) ((u8*)(ucaddr) - (OS_BASE_UNCACHED - OS_BASE_CACHED)))
+#endif
 #endif
 
 #define OSIsMEM1Region(addr) (((u32)(addr) & 0x30000000) == 0x00000000)

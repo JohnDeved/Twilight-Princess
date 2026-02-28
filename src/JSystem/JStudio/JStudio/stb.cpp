@@ -67,7 +67,7 @@ void TObject::setFlag_operation(u8 op, int val) {
     }
 }
 
-#if !PLATFORM_SHIELD || DEBUG
+#if (!PLATFORM_SHIELD && !PLATFORM_PC) || DEBUG
 void TObject::reset(const void* arg1) {
     bSequence_ = 0;
     mStatus = STATUS_STILL;

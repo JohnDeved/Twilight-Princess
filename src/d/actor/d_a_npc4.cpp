@@ -1286,7 +1286,7 @@ void daNpcF_c::orderEvent(int i_speak, char* i_evtName, u16 param_2, u16 i_prior
         mEventIdx = dComIfGp_getEventManager().getEventIdx(this, i_evtName, 0xff);
         fopAcM_orderOtherEventId(this, mEventIdx, i_mapToolID, param_2, i_priority, i_flag);
     } else if (
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
         true
 #else
         !mTwilight|| daPy_py_c::checkNowWolfEyeUp()

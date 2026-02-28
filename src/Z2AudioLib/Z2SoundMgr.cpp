@@ -10,7 +10,7 @@
 #include "JSystem/JAudio2/JAUSectionHeap.h"
 #include "d/d_com_inf_game.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include "Z2AudioCS/Z2AudioCS.h"
 #endif
 
@@ -126,7 +126,7 @@ bool Z2SoundMgr::startSound(JAISoundID soundID, JAISoundHandle* handle, const JG
             soundID_ = soundID;
         }
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         if ((u32)soundID == 12) {
             Z2AudioCS::start(0, 0);
         } else if ((u32)soundID == 13) {

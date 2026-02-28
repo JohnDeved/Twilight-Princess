@@ -3,6 +3,9 @@
 #include "JSystem/JUtility/JUTTexture.h"
 #include "JSystem/JUtility/JUTPalette.h"
 #include <dolphin/gx.h>
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 
 JUTTexture::~JUTTexture() {
     if (getCaptureFlag()) {
@@ -15,6 +18,23 @@ JUTTexture::~JUTTexture() {
 
 void JUTTexture::storeTIMG(ResTIMG const* param_0, u8 param_1) {
     if (param_0 && param_1 < 0x10) {
+#if PLATFORM_PC
+        /* Swap big-endian ResTIMG fields in-place.
+         * Use the 'unknown' field (offset 0x19, normally 0 on disc) as a swap guard
+         * to prevent double-swapping when the same ResTIMG* is reused.
+         * 0xAB chosen as marker — not a valid disc value (field is always 0 in known data). */
+#define TIMG_SWAP_MARKER 0xAB
+        ResTIMG* timg = const_cast<ResTIMG*>(param_0);
+        if (timg->unknown != TIMG_SWAP_MARKER) {
+            timg->width         = pal_swap16(timg->width);
+            timg->height        = pal_swap16(timg->height);
+            timg->numColors     = pal_swap16(timg->numColors);
+            timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
+            timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
+            timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
+            timg->unknown = TIMG_SWAP_MARKER;
+        }
+#endif
         mTexInfo = param_0;
         mTexData = (void*)((intptr_t)mTexInfo + mTexInfo->imageOffset);
 
@@ -74,6 +94,20 @@ void JUTTexture::storeTIMG(ResTIMG const* param_0, JUTPalette* param_1, GXTlut p
     if (param_0 == NULL) {
         return;
     }
+#if PLATFORM_PC
+    {
+        ResTIMG* timg = const_cast<ResTIMG*>(param_0);
+        if (timg->unknown != TIMG_SWAP_MARKER) {
+            timg->width         = pal_swap16(timg->width);
+            timg->height        = pal_swap16(timg->height);
+            timg->numColors     = pal_swap16(timg->numColors);
+            timg->LODBias       = (s16)pal_swap16((u16)timg->LODBias);
+            timg->paletteOffset = (uintptr_t)pal_swap32((u32)timg->paletteOffset);
+            timg->imageOffset   = (uintptr_t)pal_swap32((u32)timg->imageOffset);
+            timg->unknown = TIMG_SWAP_MARKER;
+        }
+    }
+#endif
     mTexInfo = param_0;
     mTexData = ((u8*)mTexInfo) + mTexInfo->imageOffset;
     if (mTexInfo->imageOffset == 0) {

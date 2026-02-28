@@ -52,7 +52,7 @@ public:
         /* 0x10 */ void* m_buffer;
     };
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     class csr_c {
     public:
         virtual ~csr_c() {}
@@ -281,7 +281,7 @@ public:
     static u8 mFade;
     static bool mAutoForcus;
 
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     static JKRHeap* getHeap() {
         return m_heap;
     }
@@ -293,7 +293,7 @@ public:
     static JKRHeap* m_heap;
     #endif
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     static void resetDimming();
 
     static csr_c* m_baseCsr;

@@ -255,7 +255,7 @@ int daTag_Cam_c::execute() {
         bool set_camera = mCheckFunc();
 
         if (condition == 0xFF) {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
             priority |= (u16)0x8000;
 #else
             priority |= 0x8000;

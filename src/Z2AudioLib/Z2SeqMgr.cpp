@@ -173,7 +173,7 @@ void Z2SeqMgr::bgmStart(u32 bgmID, u32 fadeTime, s32 param_2) {
         mStreamBgmMaster.forceIn();
     }
 
-    #if !PLATFORM_SHIELD
+    #if !PLATFORM_SHIELD && !PLATFORM_PC
     if (Z2GetStatusMgr()->getDemoStatus() == 9) {
         if (mMainBgmHandle) {
             mMainBgmHandle->stop(0);
@@ -657,7 +657,7 @@ void Z2SeqMgr::bgmStreamPlay() {
         }
     }
 
-    #if !PLATFORM_SHIELD
+    #if !PLATFORM_SHIELD && !PLATFORM_PC
     else if (getStreamBgmID() == 0x2000000) {
         if (mStreamBgmHandle) {
             mStreamBgmHandle->stop();
@@ -684,7 +684,7 @@ void Z2SeqMgr::changeBgmStatus(s32 status) {
         u32 moveTime = 0;
         bool mute;
 
-        #if PLATFORM_SHIELD
+        #if PLATFORM_SHIELD || PLATFORM_PC
         f32 volume1 = 1.0f;
         f32 volume2 = 1.0f;
         f32 volume3 = 1.0f;

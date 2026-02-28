@@ -1,0 +1,118 @@
+name: Port Test (PC Headless)
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/port-test.yml'
+      - 'tools/parse_milestones.py'
+      - 'tools/setup_game_data.py'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/port-test.yml'
+      - 'tools/parse_milestones.py'
+      - 'tools/setup_game_data.py'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            deps-${{ runner.os }}-
+
+      - name: Configure ccache
+        run: |
+          ccache --set-config=max_size=500M
+          ccache --set-config=compression=true
+          ccache -z
+
+      - name: Set up game data
+        if: env.ROMS_TOKEN != ''
+        env:
+          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
+        run: |
+          python3 tools/setup_game_data.py \
+            --data-dir data \
+            --rom-dir orig/GZ2E01 \
+            --extract-dir build/extract/GZ2E01 \
+            --tools-dir build/tools
+
+      - name: Cache disc image
+        if: env.ROMS_TOKEN != ''
+        uses: actions/cache@v4
+        with:
+          path: orig/GZ2E01/GZ2E01.rvz
+          key: rom-GZ2E01-v1
+
+      - name: Build PC port
+        env:
+          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DTP_VERSION=PC
+          ninja -C build tp-pc
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+      - name: Run headless test
+        if: success()
+        env:
+          TP_HEADLESS: "1"
+          TP_TEST_FRAMES: "2000"
+          TP_SCREENSHOT: "logo_render.bmp"
+        run: |
+          set -o pipefail
+          timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          if [ -f logo_render.bmp ]; then
+            echo "Screenshot captured: $(ls -la logo_render.bmp)"
+          fi
+
+      - name: Parse milestones
+        if: always()
+        run: |
+          python3 tools/parse_milestones.py milestones.log \
+            --output milestone-summary.json \
+            --min-milestone 5 || true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: port-test-results
+          path: |
+            milestones.log
+            milestone-summary.json
+            logo_render.bmp

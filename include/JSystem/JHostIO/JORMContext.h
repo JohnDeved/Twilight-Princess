@@ -191,7 +191,7 @@ public:
 
     void genNodeSub(const char* label, JORReflexible* i_node, u32, u32);
     void putNode(JORReflexible* obj) {
-        mOutputStream << (uintptr_t)obj;
+        mOutputStream << (u32)(uintptr_t)obj;
     }
     void invalidNode(JORReflexible* i_node, u32);
 

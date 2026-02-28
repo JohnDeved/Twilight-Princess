@@ -15,7 +15,7 @@
 #include "f_op/f_op_scene_mng.h"
 #include <cstdio>
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/sc.h>
 #include <revolution/wpad.h>
 #endif
@@ -2041,7 +2041,7 @@ void flagFile_c::listenPropertyEvent(const JORPropertyEvent* i_event) {
 #if VERSION > VERSION_GCN_JPN
 const
 #endif
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
 s16
 #else
 u16

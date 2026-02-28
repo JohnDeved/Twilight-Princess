@@ -79,7 +79,7 @@ double __ieee754_asin(x) double x;
 			/* asin(1)=+-pi/2 with inexact */
 			return x * pio2_hi + x * pio2_lo;
 
-		#if PLATFORM_SHIELD
+		#if PLATFORM_SHIELD || PLATFORM_PC
            errno = EDOM;
         #endif
 

@@ -15,9 +15,14 @@ public:
     JGadget_outMessage(MessageFunc fn, const char* file, int line);
     ~JGadget_outMessage();
 
+#if !(defined(VERSION) && (VERSION == 13 || VERSION == 14))
+    /* On PC, s32=int and u32=unsigned int, so these would duplicate. */
     JGadget_outMessage& operator<<(int param_1) { return *this << (s32)param_1; }
+#endif
     JGadget_outMessage& operator<<(u16);
+#if !(defined(VERSION) && (VERSION == 13 || VERSION == 14))
     JGadget_outMessage& operator<<(uint);
+#endif
     JGadget_outMessage& operator<<(u8 param_1) { return *this << (char)param_1; }
     JGadget_outMessage& operator<<(const char* str);
     JGadget_outMessage& operator<<(char);

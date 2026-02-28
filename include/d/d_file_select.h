@@ -202,7 +202,7 @@ public:
         DATASELPROC_TO_NAME_MOVE2,
         DATASELPROC_NEXT_MODE_WAIT,
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         DATASELPROC_DATA_SELECT_IN_COPY,
         DATASELPROC_CARD_TO_NAND_DATA_COPY,
         DATASELPROC_CARD_TO_NAND_DATA_COPY_WAIT,
@@ -245,7 +245,7 @@ public:
         MEMCARDCHECKPROC_ERR_YESNO_CURSOR_MOVE_ANM,
         MEMCARDCHECKPROC_SAVEDATA_CLEAR,
 
-        #if PLATFORM_WII || PLATFORM_SHIELD
+        #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
         MEMCARDCHECKPROC_NAND_STAT_CHECK,
         MEMCARDCHECKPROC_GAMEFILE_INIT_SEL,
         MEMCARDCHECKPROC_GAMEFILE_INIT_SEL_DISP,
@@ -418,7 +418,7 @@ public:
     void setInitSaveData();
     void dataSave();
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     bool GCtoWiiTimeConvert();
     void dataSelectInCopy();
     void cardToNandDataCopy();
@@ -670,7 +670,7 @@ public:
     /* 0x2378 */ J2DPicture* mpFadePict;
     #endif
 
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     /* 0x2376 */ u8 field_0x2376[SAVEFILE_SIZE];
     /* 0x4332 */ u8 field_0x4332;
     /* 0x4333 */ u8 field_0x4333;

@@ -28,6 +28,17 @@ extern volatile void* __memReg;
 
 /* GX fifo write helpers */
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+  void gx_fifo_write_u8(unsigned char ub);
+  void gx_fifo_write_u16(unsigned short us);
+  void gx_fifo_write_u32(unsigned int ui);
+  void gx_fifo_write_f32(float f);
+
+  #define GX_WRITE_U8(ub)   gx_fifo_write_u8(ub)
+  #define GX_WRITE_U16(us)  gx_fifo_write_u16(us)
+  #define GX_WRITE_U32(ui)  gx_fifo_write_u32(ui)
+  #define GX_WRITE_F32(f)   gx_fifo_write_f32(f)
+#else
 #define GX_WRITE_U8(ub)     \
     GXWGFifo.u8 = (u8)(ub)
 
@@ -39,6 +50,7 @@ extern volatile void* __memReg;
 
 #define GX_WRITE_F32(f)     \
    GXWGFifo.f32 = (f32)(f);
+#endif
 
 
 #define GX_PI_REG_WRITE_U32(a, d) *(vu32*)((vu8*)__piReg + (a)) = (u32)(d)

@@ -60,6 +60,19 @@ typedef u32 OSTick;
 #define OS_BASE_CACHED   (OS_CACHED_REGION_PREFIX << 16)
 #define OS_BASE_UNCACHED (OS_UNCACHED_REGION_PREFIX << 16)
 
+#if defined(VERSION) && (VERSION == 13 || VERSION == 14)
+/* PC/NX port: redirect OS_BASE_CACHED to pal_fake_mem1 — see revolution/os.h */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern unsigned char pal_fake_mem1[];
+#ifdef __cplusplus
+}
+#endif
+#undef OS_BASE_CACHED
+#define OS_BASE_CACHED ((unsigned long)(pal_fake_mem1))
+#endif
+
 #ifdef __MWERKS__
 u32 __OSPhysicalMemSize AT_ADDRESS(OS_BASE_CACHED | 0x0028);
 volatile int __OSTVMode AT_ADDRESS(OS_BASE_CACHED | 0x00CC);

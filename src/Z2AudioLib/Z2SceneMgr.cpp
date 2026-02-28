@@ -2022,7 +2022,7 @@ void Z2SceneMgr::sceneBgmStart() {
 
 void Z2SceneMgr::loadStaticWaves() {
     OS_REPORT("[Z2SceneMgr::loadStaticWaves] 常駐シーン波形を読み込みます\n");
-    #if PLATFORM_SHIELD
+    #if PLATFORM_SHIELD || PLATFORM_PC
     loadSceneWave(0, 2);
     #endif
     loadSeWave(0);
@@ -2078,7 +2078,7 @@ s32 Z2SceneMgr::getWaveLoadStatus(u32 wave, u32 bank) {
     return 0;
 }
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
 bool Z2SceneMgr::loadSceneWave(u32 wave, u32 bank) {
     JAUSectionHeap* sectionHeap = JASGlobalInstance<JAUSectionHeap>::getInstance();
     JUT_ASSERT(3014, sectionHeap);

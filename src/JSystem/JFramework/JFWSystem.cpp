@@ -84,14 +84,22 @@ void JFWSystem::init() {
 
     JUTException::create(dbPrint);
 
+#if PLATFORM_PC
+    /* Embedded font data is big-endian (PowerPC); skip on little-endian PC */
+    systemFont = NULL;
+#else
     systemFont = new JUTResFont(CSetUpParam::systemFontRes, NULL);
+#endif
 
     debugPrint = JUTDbPrint::start(NULL, NULL);
+#if !PLATFORM_PC
     debugPrint->changeFont(systemFont);
+#endif
 
     systemConsoleManager = JUTConsoleManager::createManager(NULL);
 
     systemConsole = JUTConsole::create(60, 200, NULL);
+#if !PLATFORM_PC
     systemConsole->setFont(systemFont);
 
     if (CSetUpParam::renderMode->efbHeight < 300) {
@@ -101,6 +109,7 @@ void JFWSystem::init() {
         systemConsole->setFontSize(systemFont->getWidth(), systemFont->getHeight());
         systemConsole->setPosition(20, 50);
     }
+#endif
 
     systemConsole->setHeight(25);
     systemConsole->setVisible(false);

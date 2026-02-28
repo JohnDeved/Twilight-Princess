@@ -25,7 +25,7 @@ JKRHeap* JKRHeap::sCurrentHeap;
 
 JKRHeap* JKRHeap::sRootHeap;
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 JKRHeap* JKRHeap::sRootHeap2;
 #endif
 
@@ -121,7 +121,7 @@ bool JKRHeap::initArena(char** memory, u32* size, int maxHeaps) {
     return true;
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 bool JKRHeap::initArena2(char** memory, u32* size, int maxHeaps) {
     void* arenaLo = OSGetMEM2ArenaLo();
     void* arenaHi = OSGetMEM2ArenaHi();
@@ -131,7 +131,13 @@ bool JKRHeap::initArena2(char** memory, u32* size, int maxHeaps) {
     if (arenaLo == arenaHi) {
         return false;
     }
+#if PLATFORM_PC
+    /* On PC, use the actual MEM2 arena pointers (host malloc buffer).
+     * The Wii hardcodes 0x91100000 which is invalid on PC. */
+    arenaLo = (void*)ALIGN_NEXT(uintptr_t(arenaLo), 32);
+#else
     arenaLo = (void*)0x91100000;
+#endif
     arenaHi = (void*)ALIGN_PREV(uintptr_t(arenaHi), 32);
     OSSetMEM2ArenaLo(arenaHi);
     OSSetMEM2ArenaHi(arenaHi);
@@ -289,7 +295,7 @@ u8 JKRHeap::getCurrentGroupId() {
 }
 
 u32 JKRHeap::getMaxAllocatableSize(int alignment) {
-    u32 maxFreeBlock = (uintptr_t)getMaxFreeBlock();
+    uintptr_t maxFreeBlock = (uintptr_t)getMaxFreeBlock();
     u32 ptrOffset = (alignment - 1) & alignment - (maxFreeBlock & 0xf);
     return ~(alignment - 1) & (getFreeSize() - ptrOffset);
 }
@@ -302,7 +308,7 @@ JKRHeap* JKRHeap::findFromRoot(void* ptr) {
     if (sRootHeap->mStart <= ptr && ptr < sRootHeap->mEnd) {
         return sRootHeap->find(ptr);
     }
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     if (sRootHeap2->mStart <= ptr && ptr < sRootHeap2->mEnd) {
         return sRootHeap2->find(ptr);
     }

@@ -89,7 +89,7 @@ public:
     /* 0x17 */ u8 mDisplay2D;
     /* 0x18 */ u8 mDisplayParticle;
     /* 0x19 */ u8 mDisplayProcessID;
-    #if PLATFORM_WII || PLATFORM_SHIELD
+    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
     /* 0x1A */ u8 mTrapFilter;
     /* 0x1B */ u8 mGammaCorrection;
     #endif
@@ -175,7 +175,7 @@ inline u8 fapGmHIO_getParticle() {
     #endif
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 inline u8 fapGmHIO_getTrapFilter() {
     return g_HIO.mTrapFilter;
 }

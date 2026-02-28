@@ -14,7 +14,7 @@
 #define FLT_MAX std::numeric_limits<float>::max()
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD
+#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include "Z2AudioCS/Z2AudioCS.h"
 #endif
 
@@ -167,7 +167,7 @@ Z2SoundHandlePool* Z2SoundObjBase::startLevelSound(JAISoundID soundID, u32 mapin
             if (handle != NULL && (*handle) != NULL) {
                 (*handle)->setLifeTime(1, false);
 
-                #if PLATFORM_WII || PLATFORM_SHIELD
+                #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
                 if (Z2GetSceneMgr()->isSceneExist()) {
                     switch (soundID) {
                     case Z2SE_BOOM_POWER_RESUME:

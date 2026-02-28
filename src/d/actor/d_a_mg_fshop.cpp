@@ -245,7 +245,7 @@ static cXyz BallStartPos;
 
 static cXyz BallEndPos;
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
 static J3DModel* ArcIX_A_crwaku_model;
 
 static J3DModel* ArcIX_A_crstart_model[1];
@@ -266,7 +266,7 @@ static J3DModel** koro2_union_model[6] = {
 };
 #endif
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     #define GET_CRWAKU_MODEL(ptr) (ptr)->mpA_crwaku_model
 #else
     #define GET_CRWAKU_MODEL(ptr) ArcIX_A_crwaku_model
@@ -1149,7 +1149,7 @@ static int daFshop_Delete(fshop_class* i_this) {
 }
 
 static int koro2_heapinit(fopAc_ac_c* actor) {
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     static int sg_bmd[2] = {
         0x0F, 0x0D,
     };
@@ -1183,7 +1183,7 @@ static int koro2_heapinit(fopAc_ac_c* actor) {
 
     i_this->koro2WakuBgw->SetCrrFunc(dBgS_MoveBGProc_Typical);
     i_this->koro2WakuBgw->SetRideCallback(ride_call_back);
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     i_this->field_0x4020.y = -16384.0f + cM_rndFX(2000.0f);
     J3DModelData* modelData = (J3DModelData*) dComIfG_getObjectRes("Fshop", 16);
     JUT_ASSERT(2554, modelData != NULL);
@@ -1264,7 +1264,7 @@ static int koro2_heapinit(fopAc_ac_c* actor) {
                     i_this->mKoro2[part_no].rot_y = 0x4000;
                 }
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
                 modelData = (J3DModelData*) dComIfG_getObjectRes("Fshop", koro2_bmd[i_this->mKoro2[part_no].part_id - 1]);
                 JUT_ASSERT(2704, modelData != NULL);
                 i_this->mKoro2[part_no].model = mDoExt_J3DModel__create(modelData, J3DMdlFlag_DifferedDLBuffer, 0x11000084);
@@ -1501,7 +1501,7 @@ static int useHeapInit(fopAc_ac_c* actor) {
         return 0;
     }
 
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
     i_this->field_0x4020.y = cM_rndFX(2000.0f) + -16384.0f;
 
     modelData = dComIfG_getObjectRes("Fshop", 16);
@@ -1596,7 +1596,7 @@ static int daFshop_Create(fopAc_ac_c* actor) {
             actor->field_0x567 = ((i_this->field_0x400e - 1) | (dComIfGs_getEventReg(0xF63F) & 8));
 
             u32 heapsizes[] =
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
             {
                 0x171C0,
                 0x18EF0,
@@ -1636,7 +1636,7 @@ static int daFshop_Create(fopAc_ac_c* actor) {
             }
 
             i_this->field_0x428d = 30;
-#if !PLATFORM_SHIELD
+#if !PLATFORM_SHIELD && !PLATFORM_PC
             i_this->field_0x400d = 1;
 #endif
             return phase_state;
@@ -1647,7 +1647,7 @@ static int daFshop_Create(fopAc_ac_c* actor) {
 
         OS_REPORT("FSHOP//////////////FSHOP SET 1 !!\n");
 
-#if PLATFORM_SHIELD
+#if PLATFORM_SHIELD || PLATFORM_PC
     #define HEAP_SIZE 0x522E0
 #else
     #define HEAP_SIZE 0x5B000
@@ -1708,7 +1708,7 @@ static int daFshop_Create(fopAc_ac_c* actor) {
         } else {
             sp10 = 0;
         }
-#elif PLATFORM_SHIELD
+#elif PLATFORM_SHIELD || PLATFORM_PC
         if (dComIfGs_getPalLanguage() == dSv_player_config_c::LANGUAGE_GERMAN) {
             sp10 = 2;
         } else {

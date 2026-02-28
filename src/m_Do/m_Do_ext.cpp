@@ -3558,6 +3558,13 @@ static void mDoExt_initFontCommon(JUTFont** mDoExt_font_p, ResFONT** mDoExt_resf
     JUT_ASSERT_MSG(7141, *mDoExt_font == NULL, "mDoExt_font == 0");
     JUT_ASSERT_MSG(7142, *mDoExt_resfont == NULL, "mDoExt_resfont == 0");
     *mDoExt_resfont = (ResFONT*)JKRGetResource('ROOT', param_3, param_4);
+#if PLATFORM_PC
+    /* On PC without game assets, font resources may not be available.
+     * Return gracefully instead of crashing. */
+    if (*mDoExt_resfont == NULL) {
+        return;
+    }
+#endif
     JUT_ASSERT_MSG(7144, *mDoExt_resfont != NULL, "mDoExt_resfont != 0");
     if (param_5 == 0) {
         u32 cacheSize = JUTCacheFont::calcCacheSize(param_7, param_6);

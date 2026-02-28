@@ -8,6 +8,11 @@
 #include "JSystem/JUtility/JUTAssert.h"
 #include "JSystem/JUtility/JUTException.h"
 #include <cmath>
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#include <stdlib.h>
+#include <string.h>
+#endif
 #include <string>
 
 JKRAramArchive::JKRAramArchive() {}
@@ -121,6 +126,16 @@ bool JKRAramArchive::open(s32 entryNum) {
         JKRDvdToMainRam(entryNum, (u8*)mem, EXPAND_SWITCH_UNKNOWN1, 32, NULL,
                         JKRDvdRipper::ALLOC_DIRECTION_FORWARD, 0, &mCompression, NULL);
         DCInvalidateRange(mem, 32);
+#if PLATFORM_PC
+        mem->signature        = pal_swap32(mem->signature);
+        mem->file_length      = pal_swap32(mem->file_length);
+        mem->header_length    = pal_swap32(mem->header_length);
+        mem->file_data_offset = pal_swap32(mem->file_data_offset);
+        mem->file_data_length = pal_swap32(mem->file_data_length);
+        mem->field_0x14       = pal_swap32(mem->field_0x14);
+        mem->field_0x18       = pal_swap32(mem->field_0x18);
+        mem->field_0x1c       = pal_swap32(mem->field_0x1c);
+#endif
         int alignment = mMountDirection == MOUNT_DIRECTION_HEAD ? 32 : -32;
         u32 alignedSize = ALIGN_NEXT(mem->file_data_offset, 32);
         mArcInfoBlock = (SArcDataInfo*)JKRAllocFromHeap(mHeap, alignedSize, alignment);
@@ -130,6 +145,50 @@ bool JKRAramArchive::open(s32 entryNum) {
             JKRDvdToMainRam(entryNum, (u8*)mArcInfoBlock, EXPAND_SWITCH_UNKNOWN1, alignedSize, NULL,
                             JKRDvdRipper::ALLOC_DIRECTION_FORWARD, 32, NULL, NULL);
             DCInvalidateRange(mArcInfoBlock, alignedSize);
+
+#if PLATFORM_PC
+            /* Swap data info and repack file entries for 64-bit */
+            {
+                SArcDataInfo* info = mArcInfoBlock;
+                info->num_nodes           = pal_swap32(info->num_nodes);
+                info->node_offset         = pal_swap32(info->node_offset);
+                info->num_file_entries    = pal_swap32(info->num_file_entries);
+                info->file_entry_offset   = pal_swap32(info->file_entry_offset);
+                info->string_table_length = pal_swap32(info->string_table_length);
+                info->string_table_offset = pal_swap32(info->string_table_offset);
+                info->next_free_file_id   = pal_swap16(info->next_free_file_id);
+
+                u8* nodesBase = (u8*)&info->num_nodes + info->node_offset;
+                for (u32 ni = 0; ni < info->num_nodes; ni++) {
+                    SDIDirEntry* node = (SDIDirEntry*)(nodesBase + ni * sizeof(SDIDirEntry));
+                    node->type             = pal_swap32(node->type);
+                    node->name_offset      = pal_swap32(node->name_offset);
+                    node->field_0x8        = pal_swap16(node->field_0x8);
+                    node->num_entries      = pal_swap16(node->num_entries);
+                    node->first_file_index = pal_swap32(node->first_file_index);
+                }
+
+                u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
+                u32 numFiles = info->num_file_entries;
+                if (sizeof(SDIFileEntry) != 20 && numFiles > 0) {
+                    SDIFileEntry* repacked = (SDIFileEntry*)malloc(numFiles * sizeof(SDIFileEntry));
+                    if (repacked) {
+                        struct DE { u16 fid; u16 hash; u32 tfl; u32 doff; u32 dsz; u32 dptr; };
+                        for (u32 fi = 0; fi < numFiles; fi++) {
+                            DE* d = (DE*)(filesBase + fi * 20);
+                            repacked[fi].file_id                   = pal_swap16(d->fid);
+                            repacked[fi].name_hash                 = pal_swap16(d->hash);
+                            repacked[fi].type_flags_and_name_offset = pal_swap32(d->tfl);
+                            repacked[fi].data_offset               = pal_swap32(d->doff);
+                            repacked[fi].data_size                 = pal_swap32(d->dsz);
+                            repacked[fi].data                      = NULL;
+                        }
+                        memcpy(filesBase, repacked, numFiles * sizeof(SDIFileEntry));
+                        free(repacked);
+                    }
+                }
+            }
+#endif
 
             mNodes = (SDIDirEntry*)((u8*)mArcInfoBlock + mArcInfoBlock->node_offset);
             mFiles = (SDIFileEntry*)((u8*)mArcInfoBlock + mArcInfoBlock->file_entry_offset);
