@@ -670,6 +670,50 @@ void pal_tev_flush_draw(void) {
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;
     gx_frame_valid_verts += nverts;
+    gx_stub_draw_call_crosscheck();
+
+    /* Track render pipeline metrics for verification */
+    gx_frame_shader_mask |= (1u << preset);
+    /* Map GX primitive type to sequential bit position 0-6.
+     * Keep this mapping in sync with tools/verify_port.py:GX_PRIM_NAMES. */
+    {
+        uint32_t prim_bit;
+        int prim_bit_valid = 1;
+        switch (ds->prim_type) {
+        case GX_QUADS:         prim_bit = 0; break;
+        case GX_TRIANGLES:     prim_bit = 1; break;
+        case GX_TRIANGLESTRIP: prim_bit = 2; break;
+        case GX_TRIANGLEFAN:   prim_bit = 3; break;
+        case GX_LINES:         prim_bit = 4; break;
+        case GX_LINESTRIP:     prim_bit = 5; break;
+        case GX_POINTS:        prim_bit = 6; break;
+        default:
+            prim_bit_valid = 0;
+            prim_bit = 0;
+            break;
+        }
+        if (prim_bit_valid)
+            gx_frame_prim_mask |= (1u << prim_bit);
+    }
+    if (preset != GX_TEV_SHADER_PASSCLR) {
+        gx_frame_textured_draws++;
+    } else {
+        gx_frame_untextured_draws++;
+    }
+    if (g_gx_state.z_compare_enable)
+        gx_frame_depth_draws++;
+    if (g_gx_state.blend_mode != 0 /* GX_BM_NONE */)
+        gx_frame_blend_draws++;
+
+    /* Track unique textures bound */
+    if (preset != GX_TEV_SHADER_PASSCLR) {
+        const GXTevStage* ts0 = &g_gx_state.tev_stages[0];
+        if (ts0->tex_map < GX_MAX_TEXMAP) {
+            const GXTexBinding* tb = &g_gx_state.tex_bindings[ts0->tex_map];
+            if (tb->valid && tb->image_ptr)
+                gx_stub_track_texture(tb->image_ptr);
+        }
+    }
 }
 
 } /* extern "C" */

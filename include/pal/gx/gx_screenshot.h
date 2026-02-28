@@ -12,6 +12,7 @@
 #define PAL_GX_SCREENSHOT_H
 
 #include "dolphin/types.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,34 @@ void pal_screenshot_save(void);
 
 /* Returns 1 if screenshot capture is active */
 int pal_screenshot_active(void);
+
+/* Get pointer to the software framebuffer (640x480 RGBA8, or NULL) */
+uint8_t* pal_screenshot_get_fb(void);
+
+/* Get framebuffer dimensions */
+int pal_screenshot_get_fb_width(void);
+int pal_screenshot_get_fb_height(void);
+
+/**
+ * Clear the software framebuffer to black (all zeros).
+ * Call at the start of each frame so captures represent a single frame,
+ * not accumulated draws from multiple frames.
+ */
+void pal_screenshot_clear_fb(void);
+
+/**
+ * Returns 1 if any draw calls have been blitted to the framebuffer
+ * since the last clear.
+ */
+int pal_screenshot_has_draws(void);
+
+/**
+ * Compute a CRC32 hash of the framebuffer contents.
+ * Deterministic: identical pixel data → identical hash.
+ * Use to detect rendering changes between commits without comparing full images.
+ * Returns 0 if framebuffer is not allocated.
+ */
+uint32_t pal_screenshot_hash_fb(void);
 
 #ifdef __cplusplus
 }

@@ -45,3 +45,10 @@ compile_commands.json
 *.iso
 crash.log
 milestones.log
+
+# CI-generated outputs
+verify_output/
+verify_png/
+verify-report.json
+milestone-summary.json
+regression-report.json

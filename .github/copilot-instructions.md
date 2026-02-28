@@ -20,12 +20,13 @@ it already solved most platform-abstraction problems.
 | File | Purpose |
 |---|---|
 | `docs/port-progress.md` | **Read first** — tracks what's done, what's next, session log |
+| `docs/automated-testing-guide.md` | **Authoritative testing guide** — CI, milestones, regression detection |
+| `milestone-baseline.json` | Current best milestone (regression baseline) |
 | `include/global.h` | Platform macros: `PLATFORM_GCN`, `PLATFORM_WII`, `PLATFORM_SHIELD` (add `PLATFORM_PC` in Step 1) |
 | `include/revolution/private/GXRegs.h` | `GX_WRITE_*` macros — redirect for PC port |
 | `src/m_Do/m_Do_main.cpp` | Main entry + game loop (`main01()`) |
 | `config/ShieldD/splits.txt` | Battle-tested file list (4,028 files for non-Nintendo build) |
 | `docs/multiplatform-port-plan.md` | Full port strategy and execution plan |
-| `docs/ai-agent-testing-plan.md` | Headless CI testing with boot milestones |
 | `docs/agent-port-workflow.md` | Step-by-step agent workflow for implementing the port |
 
 ## Coding Conventions
@@ -56,22 +57,40 @@ it already solved most platform-abstraction problems.
 ## When Working on the Port
 
 1. **Read `docs/port-progress.md` first** — check current status, step checklist, and session log.
-2. **Check `docs/multiplatform-port-plan.md`** for the current execution plan and step details.
-3. **Check `docs/ai-agent-testing-plan.md`** for the CI testing infrastructure.
-4. **Check `docs/agent-port-workflow.md`** for the step-by-step implementation guide.
-5. **Use the milestone system**: After changes, verify that the highest boot milestone
+2. **Read `docs/automated-testing-guide.md`** — the authoritative guide for testing and CI.
+3. **Check `milestone-baseline.json`** — know the current best milestone before making changes.
+4. **Check the latest CI PR comment** — it contains the milestone count, regression status,
+   and top unimplemented stubs.
+5. **Use the milestone system**: After changes, verify that the milestone count
    hasn't regressed. Milestones are logged as JSON to stdout.
-6. **GX stubs**: When adding a GX function stub, use the stub tracker so CI reports hit counts:
+6. **Always self-test before pushing** — one command runs the full CI pipeline locally:
+   ```bash
+   tools/self-test.sh --quick          # fast: skip build, 100 frames
+   tools/self-test.sh --skip-build     # full: skip build, 2000 frames
+   tools/self-test.sh                  # full: rebuild + 2000 frames
+   ```
+7. **GX stubs**: When adding a GX function stub, use the stub tracker so CI reports hit counts:
    ```c
    void GXSetFog(...) { gx_stub_hit(GX_STUB_SET_FOG, "GXSetFog"); }
    ```
-7. **Test headless**: Always ensure `TP_HEADLESS=1` mode works (bgfx Noop backend, no GPU).
-8. **Prioritize by frequency**: Implement the most-called GX stubs first (check `milestone-summary.json`).
-9. **Update `docs/port-progress.md` before ending your session** — mark completed items,
-   update the current status, and add a session log entry so the next agent knows where to continue.
-10. **Ask for what you need**: If you require assets, ROM files, disc images, tools, or any
+8. **Test headless**: Always ensure `TP_HEADLESS=1` mode works (bgfx Noop backend, no GPU).
+9. **Prioritize by frequency**: Implement the most-called GX stubs first (check `milestone-summary.json`).
+10. **Update `docs/port-progress.md` before ending your session** — mark completed items,
+    update the current status, and add a session log entry so the next agent knows where to continue.
+11. **Update `milestone-baseline.json`** if you improved the milestone.
+12. **Ask for what you need**: If you require assets, ROM files, disc images, tools, or any
     resources you cannot obtain yourself, **leave a comment on the PR** describing exactly what
     you need and why. Do not silently skip work that depends on missing resources.
+
+## CI Integration
+
+- **CI posts a PR comment** with structured test results on every push.
+- The comment includes: milestones reached, regression status, and top stubs.
+- **Read the PR comment** — it's the fastest way to understand what to do next.
+- **Regression detection**: CI compares against `milestone-baseline.json`. Regressions are
+  flagged with 🚨. Do not merge PRs that regress the milestone.
+- **Artifacts**: `milestone-summary.json`, `regression-report.json`, and `milestones.log`
+  are uploaded as CI artifacts for detailed analysis.
 
 ## Version Numbers
 

@@ -32,14 +32,35 @@ extern unsigned int gx_frame_stub_count;
 extern unsigned int gx_frame_draw_calls;
 extern unsigned int gx_frame_valid_verts;
 
+/* Per-frame render pipeline metrics for verification.
+ * These track how "real" the rendering is — not just whether draws happened,
+ * but whether the full pipeline (textures, shaders, transforms, etc.) is engaged.
+ * Tracked in gx_tev.cpp's pal_tev_flush_draw() and reset each frame. */
+extern unsigned int gx_frame_textured_draws;   /* draws that bound a texture */
+extern unsigned int gx_frame_untextured_draws;  /* draws with PASSCLR only */
+extern unsigned int gx_frame_shader_mask;       /* bitmask of TEV shader presets used */
+extern unsigned int gx_frame_depth_draws;       /* draws with z_compare enabled */
+extern unsigned int gx_frame_blend_draws;       /* draws with alpha blending */
+extern unsigned int gx_frame_unique_textures;   /* distinct texture pointers seen */
+extern unsigned int gx_frame_prim_mask;         /* bitmask of primitive types used */
+
 /* Reset per-frame counters. Call at beginning of each frame. */
 void gx_stub_frame_reset(void);
 
 /* Check if the current frame produced a valid verifiable image:
  * - No GX stubs were hit during rendering
  * - At least one real draw call with valid vertices was submitted
+ * - Draw call counter matches the cross-check counter (anti-tamper)
  * Returns 1 if valid, 0 if not. */
 int gx_stub_frame_is_valid(void);
+
+/* Anti-cheat: must be called from the actual TEV draw path only.
+ * Provides independent verification that gx_frame_draw_calls is honest. */
+void gx_stub_draw_call_crosscheck(void);
+
+/* Track a texture pointer for unique texture counting.
+ * Call from the TEV draw path when a texture is bound. */
+void gx_stub_track_texture(const void* tex_ptr);
 
 static inline void gx_stub_hit(int id, const char* name) {
     if (id >= 0 && id < GX_STUB_MAX) {

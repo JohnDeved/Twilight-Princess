@@ -1,0 +1,47 @@
+{
+  "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. These values represent minimum acceptable metrics and must not be lowered without justification.",
+  "version": 2,
+  "frames": {
+    "30": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 30: early boot — may not have rendering yet"
+    },
+    "60": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 60: logo scene should be loading"
+    },
+    "300": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 300: logo should be rendering if assets available"
+    }
+  },
+  "global": {
+    "min_peak_draw_calls": 1,
+    "min_peak_verts": 1,
+    "min_frames_with_draws_pct": 0,
+    "min_render_health_pct": 0,
+    "_note": "All global fields are enforced by verify_port.py. Raise thresholds as rendering improves, never lower."
+  },
+  "pipeline": {
+    "require_geometry": true,
+    "require_textures": false,
+    "require_textured_shaders": false,
+    "require_depth": false,
+    "require_blend": false,
+    "min_visual_complexity": 0,
+    "_note": "Pipeline requirements. Set require_textures=true once texture loading works, require_textured_shaders=true once TEV applies textures, etc. Each flag gates a pipeline stage check. Raise these as rendering progresses — never disable a requirement that was previously enabled."
+  },
+  "_anti_cheat_note": "Do not lower these thresholds. Global min_peak values ensure the rendering pipeline is functional. Per-frame thresholds should be raised as rendering improves, never lowered. Pipeline requirements gate each rendering stage. Changes to this file should be reviewed carefully."
+}

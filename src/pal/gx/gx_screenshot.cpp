@@ -30,26 +30,32 @@ extern "C" {
 
 static uint8_t* s_fb = NULL;
 static const char* s_screenshot_path = NULL;
-static int s_active = 0;
+static int s_active = 0;      /* TP_SCREENSHOT mode */
 static int s_saved = 0;
-static int s_has_draws = 0;  /* tracks if any textured draws hit the framebuffer */
+static int s_has_draws = 0;    /* tracks if any textured draws hit the framebuffer */
+static int s_fb_allocated = 0; /* framebuffer exists (screenshot or verify mode) */
 
 extern "C" {
 
 void pal_screenshot_init(void) {
     const char* path = getenv("TP_SCREENSHOT");
-    if (!path || path[0] == '\0')
-        return;
+    const char* verify = getenv("TP_VERIFY");
 
-    s_screenshot_path = path;
-    s_fb = (uint8_t*)calloc(FB_W * FB_H * 4, 1);
-    if (!s_fb)
-        return;
+    /* Allocate framebuffer if either screenshot or verify mode is active */
+    if ((path && path[0] != '\0') || (verify && verify[0] == '1')) {
+        s_fb = (uint8_t*)calloc(FB_W * FB_H * 4, 1);
+        if (!s_fb)
+            return;
+        s_fb_allocated = 1;
+    }
 
-    s_active = 1;
-    s_saved = 0;
-    s_has_draws = 0;
-    fprintf(stderr, "{\"screenshot\":\"init\",\"path\":\"%s\"}\n", path);
+    if (path && path[0] != '\0') {
+        s_screenshot_path = path;
+        s_active = 1;
+        s_saved = 0;
+        s_has_draws = 0;
+        fprintf(stderr, "{\"screenshot\":\"init\",\"path\":\"%s\"}\n", path);
+    }
 }
 
 int pal_screenshot_active(void) {
@@ -106,8 +112,12 @@ static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_o
 }
 
 void pal_screenshot_blit(void) {
-    if (!s_active || s_saved || !s_fb)
+    /* Blit whenever framebuffer is allocated (screenshot or verify mode).
+     * In screenshot mode, stop after save. In verify mode, blit every frame. */
+    if (!s_fb)
         return;
+    if (s_active && s_saved)
+        return;  /* screenshot already captured */
 
     const GXDrawState* ds = &g_gx_state.draw;
     if (ds->verts_written < 4 || ds->vtx_data_pos == 0)
@@ -311,6 +321,61 @@ void pal_screenshot_save(void) {
     s_saved = 1;
     fprintf(stderr, "{\"screenshot\":\"saved\",\"path\":\"%s\",\"width\":%d,\"height\":%d}\n",
             s_screenshot_path, FB_W, FB_H);
+}
+
+uint8_t* pal_screenshot_get_fb(void) {
+    return s_fb;
+}
+
+int pal_screenshot_get_fb_width(void) {
+    return FB_W;
+}
+
+int pal_screenshot_get_fb_height(void) {
+    return FB_H;
+}
+
+void pal_screenshot_clear_fb(void) {
+    if (s_fb && s_fb_allocated) {
+        memset(s_fb, 0, FB_W * FB_H * 4);
+        s_has_draws = 0;
+    }
+}
+
+int pal_screenshot_has_draws(void) {
+    return s_has_draws;
+}
+
+uint32_t pal_screenshot_hash_fb(void) {
+    if (!s_fb || !s_fb_allocated)
+        return 0;
+
+    /* Table-based CRC32 using the standard polynomial (0xEDB88320, reflected).
+     * Much faster than per-bit loop — processes one byte per table lookup. */
+    static uint32_t crc_table[256];
+    static int table_init = 0;
+    if (!table_init) {
+        uint32_t n, k;
+        for (n = 0; n < 256; n++) {
+            uint32_t c = n;
+            for (k = 0; k < 8; k++) {
+                if (c & 1)
+                    c = (c >> 1) ^ 0xEDB88320;
+                else
+                    c >>= 1;
+            }
+            crc_table[n] = c;
+        }
+        table_init = 1;
+    }
+
+    uint32_t crc = 0xFFFFFFFF;
+    uint32_t total = (uint32_t)(FB_W * FB_H * 4);
+    uint32_t i;
+    for (i = 0; i < total; i++) {
+        crc = crc_table[(crc ^ s_fb[i]) & 0xFF] ^ (crc >> 8);
+    }
+    return crc ^ 0xFFFFFFFF;
 }
 
 } /* extern "C" */
