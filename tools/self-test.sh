@@ -118,6 +118,10 @@ if ! pgrep -x Xvfb > /dev/null 2>&1; then
 fi
 export DISPLAY="${DISPLAY:-:99}"
 
+# Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
+export GALLIUM_DRIVER="${GALLIUM_DRIVER:-softpipe}"
+export LIBGL_ALWAYS_SOFTWARE=1
+
 timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
 if [ -n "$XVFB_PID" ]; then
     kill "$XVFB_PID" 2>/dev/null || true

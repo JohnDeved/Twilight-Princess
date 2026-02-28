@@ -54,6 +54,9 @@ public:
                bgfx::Fatal::Enum _code, const char* _str) override {
         fprintf(stderr, "{\"bgfx_fatal\":\"%s\",\"file\":\"%s\",\"line\":%u}\n",
                 _str, _filePath, _line);
+        /* bgfx expects fatal() to never return.  If we don't abort, bgfx
+         * continues with broken state and crashes.  Abort immediately. */
+        abort();
     }
 
     void traceVargs(const char*, uint16_t, const char*, va_list) override {}
@@ -97,12 +100,13 @@ int pal_render_init(void) {
     void* native_display = pal_window_get_native_display();
 
     if (native_handle) {
-        /* Real window (physical or Xvfb) — use OpenGL via Mesa */
-        init.type = bgfx::RendererType::OpenGL;
+        /* Real window (physical or Xvfb) — let bgfx auto-select renderer.
+         * bgfx will pick OpenGL via EGL if available, or another backend. */
+        init.type = bgfx::RendererType::Count; /* auto */
         init.platformData.nwh = native_handle;
         init.platformData.ndt = native_display;
         s_using_noop = 0;
-        fprintf(stderr, "{\"render\":\"init\",\"renderer\":\"OpenGL\","
+        fprintf(stderr, "{\"render\":\"init\",\"renderer\":\"auto\","
                 "\"headless\":%s,\"nwh\":\"%p\"}\n",
                 headless ? "true" : "false", native_handle);
     } else if (headless) {

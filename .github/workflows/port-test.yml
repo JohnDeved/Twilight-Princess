@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils libegl-dev libgles2-mesa-dev
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -105,7 +105,7 @@ jobs:
           set -o pipefail
           mkdir -p verify_output
           # Start Xvfb for software OpenGL rendering (no GPU needed).
-          # bgfx renders via Mesa llvmpipe, captures every frame.
+          # bgfx renders via Mesa softpipe, captures every frame.
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
           export DISPLAY=:99
@@ -114,6 +114,9 @@ jobs:
             xdpyinfo -display :99 >/dev/null 2>&1 && break
             sleep 1
           done
+          # Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
+          export GALLIUM_DRIVER=softpipe
+          export LIBGL_ALWAYS_SOFTWARE=1
           timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT

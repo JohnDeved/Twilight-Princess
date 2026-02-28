@@ -185,4 +185,33 @@ namespace JStudio_JParticle {
     void TCreateObject::emitter_destroy(JPABaseEmitter* emitter) { (void)emitter; }
 }
 
+/* --- CARD extras (extern "C" in revolution/card.h) --- */
+#include "revolution/card.h"
+s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
+    (void)chan; (void)fileNo; (void)stat;
+    return -1; /* CARD_RESULT_NOCARD */
+}
+s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
+    (void)chan; (void)fileNo; (void)stat;
+    return -1;
+}
+
+/* --- Matrix extras (extern "C" in revolution/mtx.h) --- */
+#include "revolution/mtx.h"
+void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
+    (void)m; (void)srcBase; (void)dstBase; (void)count;
+}
+
+/* --- Debug viewer (C++ linkage) --- */
+#include "SSystem/SComponent/c_xyz.h"
+void dDbVw_drawCircle(int i_bufferType, cXyz& i_pos, f32 i_radius,
+                      const GXColor& i_color, u8 i_clipZ, u8 i_width) {
+    (void)i_bufferType; (void)i_pos; (void)i_radius;
+    (void)i_color; (void)i_clipZ; (void)i_width;
+}
+
+/* --- HIO static member --- */
+#include "f_ap/f_ap_game.h"
+u8 fapGm_HIO_c::mCaptureScreenDivH = 1;
+
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */
