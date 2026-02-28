@@ -30,9 +30,10 @@ extern "C" {
 
 static uint8_t* s_fb = NULL;
 static const char* s_screenshot_path = NULL;
-static int s_active = 0;
+static int s_active = 0;      /* TP_SCREENSHOT mode */
 static int s_saved = 0;
-static int s_has_draws = 0;  /* tracks if any textured draws hit the framebuffer */
+static int s_has_draws = 0;    /* tracks if any textured draws hit the framebuffer */
+static int s_fb_allocated = 0; /* framebuffer exists (screenshot or verify mode) */
 
 extern "C" {
 
@@ -45,6 +46,7 @@ void pal_screenshot_init(void) {
         s_fb = (uint8_t*)calloc(FB_W * FB_H * 4, 1);
         if (!s_fb)
             return;
+        s_fb_allocated = 1;
     }
 
     if (path && path[0] != '\0') {
@@ -110,8 +112,12 @@ static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_o
 }
 
 void pal_screenshot_blit(void) {
-    if (!s_active || s_saved || !s_fb)
+    /* Blit whenever framebuffer is allocated (screenshot or verify mode).
+     * In screenshot mode, stop after save. In verify mode, blit every frame. */
+    if (!s_fb_allocated || !s_fb)
         return;
+    if (s_active && s_saved)
+        return;  /* screenshot already captured */
 
     const GXDrawState* ds = &g_gx_state.draw;
     if (ds->verts_written < 4 || ds->vtx_data_pos == 0)
@@ -327,6 +333,40 @@ int pal_screenshot_get_fb_width(void) {
 
 int pal_screenshot_get_fb_height(void) {
     return FB_H;
+}
+
+void pal_screenshot_clear_fb(void) {
+    if (s_fb && s_fb_allocated) {
+        memset(s_fb, 0, FB_W * FB_H * 4);
+        s_has_draws = 0;
+    }
+}
+
+int pal_screenshot_has_draws(void) {
+    return s_has_draws;
+}
+
+uint32_t pal_screenshot_hash_fb(void) {
+    if (!s_fb || !s_fb_allocated)
+        return 0;
+
+    /* CRC32 of the framebuffer — deterministic for identical pixel content.
+     * Uses the standard CRC32 polynomial (0xEDB88320, reflected). */
+    uint32_t crc = 0xFFFFFFFF;
+    uint32_t total = (uint32_t)(FB_W * FB_H * 4);
+    uint32_t i;
+    for (i = 0; i < total; i++) {
+        uint8_t byte = s_fb[i];
+        int j;
+        crc ^= byte;
+        for (j = 0; j < 8; j++) {
+            if (crc & 1)
+                crc = (crc >> 1) ^ 0xEDB88320;
+            else
+                crc >>= 1;
+        }
+    }
+    return crc ^ 0xFFFFFFFF;
 }
 
 } /* extern "C" */

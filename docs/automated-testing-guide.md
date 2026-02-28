@@ -183,7 +183,8 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 2. Build and test locally:
    ```bash
    ninja -C build tp-pc
-   TP_HEADLESS=1 TP_TEST_FRAMES=100 ./build/tp-pc 2>&1 | tee /tmp/test.log
+   TP_HEADLESS=1 TP_TEST_FRAMES=300 TP_VERIFY=1 TP_VERIFY_DIR=/tmp/verify \
+       ./build/tp-pc 2>&1 | tee /tmp/test.log
    python3 tools/parse_milestones.py /tmp/test.log --output /tmp/summary.json
    ```
 3. Check that the milestone hasn't regressed:
@@ -191,7 +192,15 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
    python3 tools/check_milestone_regression.py /tmp/summary.json \
        --baseline milestone-baseline.json
    ```
-4. Commit and push — CI will run automatically
+4. Verify rendering hasn't regressed:
+   ```bash
+   python3 tools/verify_port.py /tmp/test.log \
+       --verify-dir /tmp/verify \
+       --golden-dir tests/golden \
+       --render-baseline tests/render-baseline.json \
+       --check-rendering
+   ```
+5. Commit and push — CI will run automatically
 
 ### Interpreting CI Results
 
@@ -240,24 +249,83 @@ give agents concrete evidence of what's working.
 
 ### Rendering Verification
 
-The software framebuffer (640×480 RGBA) captures every draw call via the GX shim,
-even in headless mode (bgfx Noop). The verifier:
+The rendering verification is **fully automated and dependable without human review**.
+It uses five verification layers, any of which can independently detect regressions:
 
-1. **Captures frames** at configurable intervals → BMP files in `TP_VERIFY_DIR`
-2. **Analyzes pixel content** — percentage of non-black pixels, unique colors, average color
-3. **Reports per-frame metrics** — draw calls, vertex count, stub count, validity
+#### Layer 1: Per-Frame Metrics
+Each frame reports draw calls, vertex count, stub count, and validity flag.
+Zero draw calls or zero vertices = broken rendering pipeline.
 
-This answers the critical question: **"Is something actually rendering?"** without needing
-a GPU or a display. Even with bgfx Noop, the software framebuffer captures the GX shim's
-2D textured quad draws.
+#### Layer 2: Framebuffer Hashing (CRC32)
+The CPU-side software framebuffer (640×480 RGBA) produces a deterministic CRC32 hash
+per frame. Same input data + same rendering code = identical hash. If a code change
+causes a different hash on a previously-stable frame, the rendering changed.
+
+The hash is logged per frame:
+```json
+{"verify_frame":{"frame":30,"draw_calls":12,"verts":480,"fb_hash":"0xABCD1234","fb_has_draws":1}}
+```
+
+Expected hashes can be stored in `tests/render-baseline.json` — if the actual hash
+differs, CI flags it as a regression.
+
+#### Layer 3: Pixel Analysis
+For each captured frame, the system computes:
+- **Non-black pixel percentage** (0-100%): "Is anything rendering?"
+- **Unique colors**: "Is there visual diversity, or just a flat color?"
+- **Average color**: "Did the color palette change drastically?"
+
+These thresholds are stored in `tests/render-baseline.json` and must not regress.
+
+#### Layer 4: Golden Image Comparison (RMSE)
+Captured frame BMPs are compared against golden reference images in `tests/golden/`:
+- **RMSE** (Root Mean Square Error): 0 = identical, higher = more different
+- **Pixel diff percentage**: How many pixels changed beyond a threshold
+- **Threshold**: RMSE > 5.0 = regression
+
+When no golden reference exists for a frame, CI auto-saves the current frame
+(if non-black) as the new golden reference.
+
+#### Layer 5: Render Baseline Thresholds
+`tests/render-baseline.json` stores minimum expected values per frame:
+```json
+{
+  "frames": {
+    "30": {
+      "min_draw_calls": 5,
+      "min_pct_nonblack": 30,
+      "expected_fb_hash": "0xABCD1234"
+    }
+  },
+  "global": {
+    "min_peak_draw_calls": 10,
+    "min_render_health_pct": 50
+  }
+}
+```
+
+Any metric that falls below the baseline is flagged as a regression.
+
+#### How It Works in Headless CI
+The software framebuffer captures all GX shim draw calls at the CPU level,
+**independent of bgfx and the GPU**. Even with bgfx's Noop renderer (no GPU),
+every textured quad draw is rasterized into the 640×480 RGBA framebuffer.
+This means:
+- No GPU required in CI
+- Deterministic output (no GPU driver differences)
+- Frame captures are meaningful even in headless mode
 
 ```bash
-# Run with verification
+# Run with full verification
 TP_HEADLESS=1 TP_TEST_FRAMES=300 TP_VERIFY=1 TP_VERIFY_DIR=/tmp/verify \
     ./build/tp-pc 2>&1 | tee /tmp/test.log
 
-# Analyze results
-python3 tools/verify_port.py /tmp/test.log --verify-dir /tmp/verify --check-rendering
+# Analyze results — fully automated pass/fail
+python3 tools/verify_port.py /tmp/test.log \
+    --verify-dir /tmp/verify \
+    --golden-dir tests/golden \
+    --render-baseline tests/render-baseline.json \
+    --check-rendering
 ```
 
 ### Input Verification
@@ -302,22 +370,23 @@ Captured frame BMPs are uploaded as CI artifacts for visual inspection.
 
 ```
 milestone-baseline.json              ← Current best milestone (regression baseline)
+tests/render-baseline.json           ← Rendering metrics baseline (draw calls, hashes)
+tests/golden/                        ← Golden reference frame BMPs for image comparison
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
 tools/check_milestone_regression.py  ← Compare against baseline, recommend next action
-tools/verify_port.py                 ← Subsystem verification analysis (rendering/input/audio)
+tools/verify_port.py                 ← Subsystem verification (rendering/input/audio)
 tools/setup_game_data.py             ← Download + extract game data
 .github/workflows/port-test.yml      ← CI pipeline (build, test, verify, comment on PR)
 include/pal/pal_milestone.h          ← Milestone C API
 src/pal/pal_milestone.cpp            ← Milestone state management
 include/pal/pal_verify.h             ← Verification system C API
 src/pal/pal_verify.cpp               ← Verification system implementation
+include/pal/gx/gx_screenshot.h      ← Software framebuffer capture + hash
+src/pal/gx/gx_screenshot.cpp        ← Software framebuffer implementation
 include/pal/gx/gx_stub_tracker.h    ← GX stub hit tracker
 src/pal/gx/gx_stub_tracker.cpp      ← Stub tracker implementation
-include/pal/gx/gx_screenshot.h      ← Software framebuffer capture
-src/pal/gx/gx_screenshot.cpp        ← Software framebuffer implementation
 src/pal/pal_crash.cpp                ← Crash handler (signal → JSON)
 docs/port-progress.md                ← Progress tracker (session log, checklist)
 docs/multiplatform-port-plan.md      ← Full port strategy
 docs/agent-port-workflow.md          ← Step-by-step implementation guide
-docs/ai-agent-testing-plan.md        ← Original testing plan (superseded by this doc)
 ```

@@ -124,7 +124,10 @@ jobs:
           python3 tools/verify_port.py milestones.log \
             --output verify-report.json \
             --verify-dir verify_output \
-            --check-all || true
+            --golden-dir tests/golden \
+            --render-baseline tests/render-baseline.json \
+            --check-all \
+            --update-golden || true
 
       - name: Check milestone regression
         id: regression

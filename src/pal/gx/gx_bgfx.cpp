@@ -114,6 +114,9 @@ void pal_gx_begin_frame(void) {
     /* Reset per-frame stub tracking for honest milestone gating */
     gx_stub_frame_reset();
 
+    /* Clear software framebuffer so each frame is independently verifiable */
+    pal_screenshot_clear_fb();
+
     /* Process SDL3 events (window close, input, etc.) */
     pal_window_poll();
 

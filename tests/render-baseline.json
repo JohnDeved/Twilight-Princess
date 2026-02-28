@@ -1,0 +1,36 @@
+{
+  "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. Updated automatically when rendering improves.",
+  "version": 1,
+  "frames": {
+    "30": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 30: early boot — may not have rendering yet"
+    },
+    "60": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 60: logo scene should be loading"
+    },
+    "300": {
+      "min_draw_calls": 0,
+      "min_verts": 0,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 0,
+      "expected_fb_hash": null,
+      "note": "Frame 300: logo should be rendering if assets available"
+    }
+  },
+  "global": {
+    "min_peak_draw_calls": 0,
+    "min_peak_verts": 0,
+    "min_frames_with_draws_pct": 0,
+    "min_render_health_pct": 0
+  }
+}

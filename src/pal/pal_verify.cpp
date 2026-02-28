@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/stat.h>
 
 extern "C" {
 #include "pal/pal_verify.h"
@@ -96,9 +97,7 @@ void pal_verify_init(void) {
         s_verify_dir = "verify_output";
 
     /* Create output directory */
-    char mkdir_cmd[512];
-    snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", s_verify_dir);
-    (void)system(mkdir_cmd);
+    mkdir(s_verify_dir, 0755);
 
     /* Parse capture frame schedule */
     const char* capture_spec = getenv("TP_VERIFY_CAPTURE_FRAMES");
@@ -140,10 +139,15 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
 
     /* Emit detailed frame report every 60 frames, or on capture frames */
     if (frame_num % 60 == 0 || should_capture(frame_num) || frame_num <= 5) {
+        /* Include framebuffer hash for deterministic rendering comparison */
+        uint32_t fb_hash = pal_screenshot_hash_fb();
+        int has_draws = pal_screenshot_has_draws();
         fprintf(stdout,
             "{\"verify_frame\":{\"frame\":%u,\"draw_calls\":%u,\"verts\":%u,"
-            "\"stub_count\":%u,\"valid\":%u}}\n",
-            frame_num, draw_calls, total_verts, stub_count, valid);
+            "\"stub_count\":%u,\"valid\":%u,\"fb_hash\":\"0x%08X\","
+            "\"fb_has_draws\":%d}}\n",
+            frame_num, draw_calls, total_verts, stub_count, valid,
+            fb_hash, has_draws);
         fflush(stdout);
     }
 
@@ -273,11 +277,13 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (pct_nonblack > 0)
         s_frames_nonblack++;
 
+    uint32_t fb_hash = pal_screenshot_hash_fb();
+
     fprintf(stdout,
         "{\"verify_fb\":{\"frame\":%u,\"pct_nonblack\":%d,\"unique_colors\":%u,"
-        "\"avg_color\":[%u,%u,%u],\"total_pixels\":%u}}\n",
+        "\"avg_color\":[%u,%u,%u],\"total_pixels\":%u,\"fb_hash\":\"0x%08X\"}}\n",
         frame_num, pct_nonblack, unique_colors,
-        (u32)avg_r, (u32)avg_g, (u32)avg_b, total_pixels);
+        (u32)avg_r, (u32)avg_g, (u32)avg_b, total_pixels, fb_hash);
     fflush(stdout);
 
     return pct_nonblack;
