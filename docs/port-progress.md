@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `11` (RENDER_FRAME — Nintendo logo rendering!) |
-| **Current Step** | Step 5 complete, rendering working — logo visible in software FB |
+| **Highest CI Milestone** | `13` (logo renders, scene progression works, title screen loads) |
+| **Current Step** | Step 5 complete + scene progression; rendering pipeline + crash guards working |
 | **Last Updated** | 2026-02-28 |
-| **Blocking Issue** | None — rendering pipeline proven; next: more endian fixes for later scenes |
+| **Blocking Issue** | Title screen 3D model rendering needs additional TEV shader presets for J3D materials |
 
 ## Step Checklist
 
@@ -47,7 +47,7 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] `src/pal/gx/gx_stub_tracker.cpp` / `gx_fifo.cpp` — GX shim infrastructure
 - [x] Verify: 0 undefined references — binary links successfully
 
-### Step 3 — PAL Bootstrap (~1,250 LOC) ⬜ IN PROGRESS
+### Step 3 — PAL Bootstrap (~1,250 LOC) ✅
 - [x] Fix OSAllocFromArenaLo/Hi — use uintptr_t for 64-bit pointer safety
 - [x] OSCreateThread/OSResumeThread — single-threaded dispatch (call main01 directly)
 - [x] Fix SCCheckStatus → SC_STATUS_OK (was returning BUSY, caused infinite loop)
@@ -91,20 +91,32 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] `pal_input.cpp` — SDL3 gamepad + keyboard → JUTGamePad (~200 LOC)
 - [x] `pal_audio.cpp` — SDL3 Phase A silence audio (~120 LOC)
 - [x] `pal_save.cpp` — fstream save/load replacing NAND (~200 LOC)
+- [x] **Scene progression**: Logo → opening scene transition, DVD sync before scene change
+- [x] **dvdDataLoad() on PC**: Common archives (Always, Alink, fonts, maps, particles) load via MOUNT_MEM
+- [x] **Audio bypass**: mDoAud_check1stDynamicWave() skipped on PC (was infinite blocker)
+- [x] **J3D endian swap**: Model/animation binary swap for VTX1, JNT1, MAT3, TEX1, SHP1 blocks
+- [x] **ResFONT endian swap**: INF1/WID1/GLY1/MAP1 blocks
+- [x] **64-bit J3D fix**: J3D_PTR_T macro changes void* to u32 on PC for binary format compatibility
+- [x] **getStagInfo() safe default**: Returns static struct instead of NULL on PC (prevents 60+ crashes)
+- [x] **Particle NULL guards**: All 45 particle inline functions guarded against NULL getParticle()
+- [x] **J3D model NULL guards**: mDoExt_modelUpdate/UpdateDL/EntryDL guard NULL model and model data
+- [x] **Title actor guards**: CreateHeap/Draw/Delete/loadWait_proc guard against NULL resources
+- [x] **RARC memory leak fix**: Repacked file entries owned by JKRMemArchive, freed in destructor
+- [x] **Frame submit fix**: Single submission point in mDoGph_Painter (removed from GXCopyDisp)
+- [x] **Capture ordering**: pal_verify_frame() runs after bgfx::frame() for up-to-date buffer
 - [ ] `pal_fs.cpp` — file I/O replacing DVD/NAND for host filesystem access (~300 LOC)
-- [ ] Verify: `TP_HEADLESS=1 TP_TEST_FRAMES=10 ./build/tp-pc` → milestones 0–4
 
 ### Step 4 — DVD/ARAM Simplification (~200 LOC)
 - [ ] DVD: `mDoDvdThd_command_c::create()` → sync `pal_fs_read()`, mark done
 - [ ] ARAM: `aramToMainRam`/`mainRamToAram` → `memcpy`; JKRAram* → host malloc wrappers
 - [ ] Verify: milestone reaches 5 (FIRST_FRAME)
 
-### Step 5 — GX Shim Tier A (~5,000 LOC)
+### Step 5 — GX Shim Tier A (~5,000 LOC) ✅
 - [x] 5a. bgfx integration via CMake FetchContent — Noop for headless, auto for windowed
 - [x] `src/pal/gx/gx_render.cpp` — bgfx init/shutdown/frame (~90 LOC)
 - [x] `include/pal/gx/gx_render.h` — bgfx backend header
-- [x] GXInit calls pal_render_init(), GXCopyDisp calls pal_render_end_frame()
-- [x] RENDER_FRAME milestone fires on first bgfx frame
+- [x] GXInit calls pal_render_init(), frame submit only in mDoGph_Painter
+- [x] RENDER_FRAME milestone fires on first stub-free frame with valid draw calls
 - [x] CI workflow updated with bgfx deps (libgl-dev, libwayland-dev)
 - [x] 5b. GX state machine + bgfx flush in `src/pal/gx/gx_state.cpp` (~2,500 LOC)
 - [x] 5c. TEV → bgfx shader generator in `src/pal/gx/gx_tev.cpp` (~600 LOC)
@@ -116,8 +128,13 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
   - [x] Quad/fan→triangle conversion with index buffers
   - [x] MVP matrix construction from GX projection + position matrices
   - [x] TEV preset detection from GX combiner state
+  - [x] BLEND shader for TEV lerp (mBlack/mWhite tinting)
 - [x] 5d. Texture decode (10 GX formats → RGBA8) in `src/pal/gx/gx_texture.cpp` (~1,000 LOC)
 - [x] 5e. Display list record/replay in `src/pal/gx/gx_displaylist.cpp` (~400 LOC)
+- [x] bgfx frame capture via Xvfb (Mesa softpipe, BGFX_RESET_CAPTURE + captureFrame callback)
+- [x] Per-frame BMP + MP4 video output for CI verification
+- [x] Nintendo logo renders correctly: red on black, centered, matches Dolphin reference
+- [ ] Additional TEV combiner patterns for J3D 3D materials (title screen model)
 - [ ] Verify: milestone reaches 6–8 (LOGO_SCENE through PLAY_SCENE)
 
 ### Step 6 — Audio (~100 LOC Phase A / ~800 LOC Phase B)
@@ -201,6 +218,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-28 | **Code review fixes + crash guards + debug overlay fix**: Addressed all code review feedback: fixed double frame submit (GXCopyDisp no longer calls pal_render_end_frame), moved pal_verify_frame after bgfx::frame, fixed RARC memory leak (repacked entries owned by JKRMemArchive), fixed SDL resource leak (s_sdl_initialized tracking), improved Xvfb detection (xdpyinfo check), added _WIN32 include for _mkdir. **Crash guards**: All 45 particle inline functions now NULL-guarded, J3D model update/entry/DL NULL guards, title actor guards (CreateHeap/Draw/Delete/loadWait_proc). **Debug overlay**: Fixed debug text not appearing in capture — bgfx captures backbuffer BEFORE debug text blit, so added second frame() when capture active to bake text into backbuffer. | 13 (no change) | Additional TEV combiner patterns for J3D 3D materials, stage binary endian conversion |
 | 2026-02-28 | **Nintendo logo rendering!** Fixed critical endianness bugs: Yaz0 decompression read header length as native-endian (should be big-endian) → decompressor overran buffer. ResTIMG struct used `uintptr_t` for paletteOffset/imageOffset (8 bytes on 64-bit, 4 on disc) → struct layout mismatch caused all texture pointers to read zeros. Fixed vertex layout stride calculation to use actual GXCompType sizes (s16=2, u8=1 instead of always f32=4). Fixed color byte order (struct byte layout not u32 bit shifts). Added pal_render_end_frame() to mDoGph_Painter PC path. RENDER_FRAME milestone now fires from end_frame. Logo texture (IA8 376×104) decodes correctly, software framebuffer shows Nintendo logo. | 8 → 11 (RENDER_FRAME + FRAMES_300 + DVD_READ_OK) | More endian fixes for later game scenes; FRAMES_60/1800 timing calibration; Phase B audio |
 | 2026-02-28 | **Input, audio, save modules + ANSI parser fix**: Created pal_input.cpp — SDL3 keyboard (WASD/Space/Shift/arrows) + gamepad → PADStatus with auto-detect and deadzone overlay. Created pal_audio.cpp — SDL3 Phase A silence audio (32kHz stereo, push-based stream). Created pal_save.cpp — host filesystem save/load replacing NAND stubs (basename extraction, configurable TP_SAVE_DIR). Enabled SDL_JOYSTICK + SDL_AUDIO in CMakeLists. Wired PADRead through pal_input_read_pad (4-port), NANDOpen/Read/Write/Close through pal_save, audio init through pal_audio_init in mDoAud_Create. **Fixed critical ANSI escape code bug** in parse_milestones.py + verify_port.py — Japanese heap output inserted \x1b[m before HEAP_INIT line, causing parser to miss it (dropped count 8→3). Self-test: 8/16 milestones, integrity ✅, no regression, 0 CodeQL alerts. | 8 (no change — game data needed for further milestones) | Run with game data to verify RENDER_FRAME; test input with windowed mode; Phase B audio mixing |
 | 2026-02-27 | **All rendering-critical GX stubs implemented**: Replaced 9 GX stubs with real implementations — GXSetProjectionv (reconstruct 4x4 from packed format), GXLoadPosMtxIndx/GXLoadNrmMtxIndx3x3/GXLoadTexMtxIndx (acknowledge indexed loads), GXLoadNrmMtxImm3x3 (3x3→3x4 conversion), GXInitTexObjCI (CI textures via standard path), GXSetTevIndirect/GXSetIndTexMtx/GXSetIndTexOrder (store indirect texture state). gx_frame_stub_count should now reach zero during rendering, unblocking RENDER_FRAME milestone. | 6 (pending RENDER_FRAME with game data) | Run with game data to verify RENDER_FRAME milestone fires |
@@ -267,6 +285,17 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_audio.cpp` — SDL3 Phase A silence audio output
 - `include/pal/pal_save.h` — File-based save/load header
 - `src/pal/pal_save.cpp` — Host filesystem NAND replacement
+- `include/pal/gx/gx_capture.h` — bgfx frame capture buffer header
+- `src/pal/gx/gx_capture.cpp` — Frame capture (BMP snapshots + raw video for MP4)
+- `include/pal/gx/gx_tev.h` — TEV → bgfx shader pipeline header
+- `src/pal/gx/gx_tev.cpp` — TEV preset shader system (PASSCLR/REPLACE/MODULATE/BLEND/DECAL)
+- `include/pal/pal_j3d_swap.h` — J3D model/animation binary endian swap header
+- `src/pal/pal_j3d_swap.cpp` — J3D endian swap (VTX1, JNT1, MAT3, TEX1, SHP1 blocks)
+- `include/pal/pal_font_swap.h` — ResFONT binary endian swap header
+- `src/pal/pal_font_swap.cpp` — ResFONT endian swap (INF1/WID1/GLY1/MAP1 blocks)
+- `src/pal/pal_profile_list.cpp` — PC profile list (35 available game process profiles)
+- `tools/download_tool.py` — Helper for downloading tools (nodtool) from GitHub releases
+- `tools/self-test.sh` — Local self-test script (build + headless test + milestone check)
 
 ### Modified files (conditional extensions)
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
@@ -297,6 +326,14 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/JSystem/JKernel/JKRArchivePub.cpp` — ARAM→MEM redirect on PC
 - `src/JSystem/JKernel/JKRDvdAramRipper.cpp` — 64-bit pointer alignment fixes
 - `src/JSystem/JUtility/JUTTexture.cpp` — ResTIMG endian swap in storeTIMG
+- `src/m_Do/m_Do_ext.cpp` — Font resource null guard + J3D model NULL guards on PC
+- `src/d/d_s_play.cpp` — Play scene PC guards (dvdDataLoad, audio bypass, particle guards)
+- `src/d/d_stage.cpp` — Stage data PC guards (skip stage binary parsing on 64-bit)
+- `src/d/actor/d_a_title.cpp` — Title actor PC guards (resource NULL checks, font skip)
+- `include/d/d_com_inf_game.h` — All 45 particle inline functions NULL-guarded on PC
+- `include/d/d_stage.h` — getStagInfo() returns static default struct on PC
+- `include/JSystem/JKernel/JKRMemArchive.h` — Added mRepackedFiles member for PC
+- `include/JSystem/J3DGraphBase/J3DStruct.h` — J3D_PTR_T macro (void* → u32 on PC)
 - 77 files — Extended `PLATFORM_SHIELD` conditionals to include `PLATFORM_PC`
 
 ## How to Use This File

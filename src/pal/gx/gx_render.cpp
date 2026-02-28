@@ -257,7 +257,12 @@ void pal_render_end_frame(void) {
     static uint32_t s_frame_count = 0;
     s_frame_count++;
 
-    /* Debug text overlay — frame number + stats visible in captured frames */
+    /* Debug text overlay — frame number + stats visible in captured frames.
+     * bgfx renders debug text AFTER capture (see renderer_gl.cpp: capture()
+     * is called before blit(textVideoMemBlitter)). To make debug text appear
+     * in captured frames, we submit the text and call frame() once to bake it
+     * into the backbuffer, then call frame() again so the capture reads the
+     * backbuffer that now contains the debug text. */
     bgfx::dbgTextPrintf(1, 1, 0x0f,
         "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
         s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
@@ -279,11 +284,24 @@ void pal_render_end_frame(void) {
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
 
-    /* Submit frame — triggers rendering and capture.
-     * With BGFX_RESET_CAPTURE enabled (set in pal_render_init via
-     * init.resolution.reset), bgfx calls captureFrame() on s_callback
-     * (registered via init.callback) for every frame automatically. */
+    /* Submit the scene frame — this renders all draw calls + captures the
+     * backbuffer (without debug text) + then blits debug text on top. */
     bgfx::frame();
+
+    /* When capture is active, submit a second frame so the capture reads
+     * the backbuffer that now has debug text baked in from the first frame(). */
+    if (s_fb_capture_enabled) {
+        bgfx::touch(0);
+        bgfx::dbgTextPrintf(1, 1, 0x0f,
+            "TP-PC Frame %u  DC:%u  V:%u  Stubs:%u",
+            s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+            gx_frame_stub_count);
+        bgfx::dbgTextPrintf(1, 2, 0x0f,
+            "Renderer: %s  Capture: %s",
+            bgfx::getRendererName(bgfx::getRendererType()),
+            s_fb_capture_enabled ? "ON" : "OFF");
+        bgfx::frame();
+    }
 
     /* Verify after bgfx::frame() so capture buffer is up-to-date */
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
