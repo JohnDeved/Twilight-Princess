@@ -183,6 +183,7 @@ target_link_libraries(tp-pc PRIVATE bgfx bimg bx SDL3::SDL3-static)
 target_compile_definitions(tp-pc PRIVATE
     __REVOLUTION_SDK__
     WIDESCREEN_SUPPORT=1
+    TP_DEFAULT_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     $<$<CONFIG:Debug>:DEBUG=1>
     $<$<NOT:$<CONFIG:Debug>>:DEBUG=0>
 )

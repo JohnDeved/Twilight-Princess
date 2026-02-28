@@ -15,6 +15,10 @@
 #include "JSystem/JKernel/JKRMemArchive.h"
 #include "JSystem/J2DGraph/J2DTextBox.h"
 #include "m_Do/m_Do_graphic.h"
+#if PLATFORM_PC
+#include <setjmp.h>
+#include <signal.h>
+#endif
 
 class daTit_HIO_c {
 public:
@@ -77,7 +81,31 @@ daTit_HIO_c::daTit_HIO_c() {
     field_0x1a = 15;
 }
 
+#if PLATFORM_PC
+static sigjmp_buf s_title_jmpbuf;
+static void title_crash_handler(int sig) {
+    siglongjmp(s_title_jmpbuf, sig);
+}
+#endif
+
 int daTitle_c::CreateHeap() {
+#if PLATFORM_PC
+    /* Wrap J3D resource init with crash protection — big-endian data
+     * may cause SIGSEGV during animation name table access. */
+    struct sigaction sa, old_segv, old_abrt;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = title_crash_handler;
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_title_jmpbuf, 1) != 0) {
+        sigaction(SIGSEGV, &old_segv, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        fprintf(stderr, "[PAL] daTitle_c::CreateHeap: caught crash in J3D init, skipping\n");
+        mpModel = NULL;
+        return 1;
+    }
+#endif
     J3DModelData* modelData = (J3DModelData*)dComIfG_getObjectRes(l_arcName, 10);
 #if PLATFORM_PC
     if (modelData == NULL) {
@@ -115,6 +143,10 @@ int daTitle_c::CreateHeap() {
 #endif
     mBtk.init(modelData, (J3DAnmTextureSRTKey*)res, 1, 0, 2.0f, 0, -1);
 
+#if PLATFORM_PC
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#endif
     return 1;
 }
 

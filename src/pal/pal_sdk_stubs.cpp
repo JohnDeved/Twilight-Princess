@@ -464,7 +464,12 @@ static s32   s_dvd_next_handle = 1;
 /* Base directory for game data files */
 static const char* pal_dvd_get_data_dir(void) {
     const char* env = getenv("TP_DATA_DIR");
-    return env ? env : "data";
+    if (env) return env;
+#ifdef TP_DEFAULT_DATA_DIR
+    return TP_DEFAULT_DATA_DIR;
+#else
+    return "data";
+#endif
 }
 
 /* Build host path from DVD path */
