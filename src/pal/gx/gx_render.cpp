@@ -78,13 +78,31 @@ public:
     }
 
     void captureBegin(uint32_t _width, uint32_t _height, uint32_t _pitch,
-                      bgfx::TextureFormat::Enum, bool _yflip) override {
+                      bgfx::TextureFormat::Enum _format, bool _yflip) override {
+        fprintf(stderr, "{\"capture\":\"begin\",\"width\":%u,\"height\":%u,"
+                "\"pitch\":%u,\"format\":%d,\"yflip\":%d}\n",
+                _width, _height, _pitch, (int)_format, _yflip ? 1 : 0);
         pal_capture_begin(_width, _height, _pitch, _yflip ? 1 : 0);
     }
 
     void captureEnd() override {}
 
     void captureFrame(const void* _data, uint32_t _size) override {
+        /* Log first capture's raw pixel data for diagnostics */
+        static int s_cap_log = 0;
+        if (s_cap_log < 3 && _data && _size >= 16) {
+            const uint8_t* p = (const uint8_t*)_data;
+            /* Check a pixel from the middle of the frame (offset ~half of data) */
+            uint32_t mid = _size / 2;
+            mid &= ~3u; /* align to 4-byte boundary */
+            fprintf(stderr, "{\"capture_raw\":{\"n\":%d,\"size\":%u,"
+                    "\"first4\":[%u,%u,%u,%u],"
+                    "\"mid4\":[%u,%u,%u,%u]}}\n",
+                    s_cap_log, _size,
+                    p[0], p[1], p[2], p[3],
+                    p[mid], p[mid+1], p[mid+2], p[mid+3]);
+            s_cap_log++;
+        }
         pal_capture_frame(_data, _size);
     }
 };
@@ -224,6 +242,10 @@ void pal_render_begin_frame(void) {
 
     bgfx::touch(0);
 
+    /* Enable bgfx debug text overlay for frame diagnostics */
+    bgfx::setDebug(BGFX_DEBUG_TEXT);
+    bgfx::dbgTextClear();
+
     g_gx_state.draw_calls = 0;
     g_gx_state.total_verts = 0;
 }
@@ -234,6 +256,11 @@ void pal_render_end_frame(void) {
 
     static uint32_t s_frame_count = 0;
     s_frame_count++;
+
+    /* Debug text overlay — frame number + stats visible in captured frames */
+    bgfx::dbgTextPrintf(1, 1, 0x0f,
+        "TP-PC Frame %u  DC:%u  V:%u",
+        s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
 
     if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
         && gx_stub_frame_is_valid()) {
