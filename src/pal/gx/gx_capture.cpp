@@ -137,10 +137,12 @@ void pal_capture_set_debug_info(const char* line0, const char* line1) {
     if (line0) { strncpy(s_debug_line0, line0, 127); s_debug_line0[127] = '\0'; }
     if (line1) { strncpy(s_debug_line1, line1, 127); s_debug_line1[127] = '\0'; }
 
-    /* Write to metadata file for external tooling to burn in */
+    /* Write to metadata file for external tooling to burn in.
+     * Frame number is +1 because s_frame_number increments later in
+     * pal_capture_frame(), and BMP filenames use the post-increment value. */
     if (s_metadata_file) {
         fprintf(s_metadata_file, "%u|%s|%s\n",
-                s_frame_number + 1, /* +1 because frame increments in capture_frame */
+                s_frame_number + 1,
                 s_debug_line0, s_debug_line1);
         fflush(s_metadata_file);
     }
