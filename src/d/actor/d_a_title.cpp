@@ -79,6 +79,12 @@ daTit_HIO_c::daTit_HIO_c() {
 
 int daTitle_c::CreateHeap() {
     J3DModelData* modelData = (J3DModelData*)dComIfG_getObjectRes(l_arcName, 10);
+#if PLATFORM_PC
+    if (modelData == NULL) {
+        mpModel = NULL;
+        return 1;
+    }
+#endif
     mpModel = mDoExt_J3DModel__create(modelData, 0x80000, 0x11000285);
 
     if (mpModel == NULL) {
@@ -86,15 +92,27 @@ int daTitle_c::CreateHeap() {
     }
 
     void* res = dComIfG_getObjectRes(l_arcName, 7);
+#if PLATFORM_PC
+    if (res == NULL) return 1;
+#endif
     mBck.init((J3DAnmTransform*)res, 1, 0, 2.0f, 0, -1, false);
 
     res = dComIfG_getObjectRes(l_arcName, 13);
+#if PLATFORM_PC
+    if (res == NULL) return 1;
+#endif
     mBpk.init(modelData, (J3DAnmColor*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 16);
+#if PLATFORM_PC
+    if (res == NULL) return 1;
+#endif
     mBrk.init(modelData, (J3DAnmTevRegKey*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 19);
+#if PLATFORM_PC
+    if (res == NULL) return 1;
+#endif
     mBtk.init(modelData, (J3DAnmTextureSRTKey*)res, 1, 0, 2.0f, 0, -1);
 
     return 1;
@@ -325,6 +343,14 @@ int daTitle_c::getDemoPrm() {
 }
 
 int daTitle_c::Draw() {
+#if PLATFORM_PC
+    if (mpModel == NULL) {
+        if (field_0x5f8) {
+            dComIfGd_set2DOpaTop(&mTitle);
+        }
+        return 1;
+    }
+#endif
     J3DModelData* modelData = mpModel->getModelData();
     MTXTrans(mpModel->getBaseTRMtx(), 0.0f, 0.0f, -430.0f);
     mpModel->getBaseScale()->x = -1.0f;
@@ -350,9 +376,11 @@ int daTitle_c::Delete() {
     delete mTitle.Scr;
     delete field_0x600;
     
-    mpMount->getArchive()->removeResourceAll();
-    mpMount->getArchive()->unmount();
-    delete mpMount;
+    if (mpMount) {
+        mpMount->getArchive()->removeResourceAll();
+        mpMount->getArchive()->unmount();
+        delete mpMount;
+    }
 
     if (m2DHeap != NULL) {
         m2DHeap->destroy();
