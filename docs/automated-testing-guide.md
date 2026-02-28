@@ -226,8 +226,77 @@ The regression report's `next_action` field tells you exactly what to do:
 | `TP_HEADLESS` | Set to `1` for no-GPU testing (bgfx Noop) | unset (windowed) |
 | `TP_TEST_FRAMES` | Exit after N frames | unset (infinite loop) |
 | `TP_SCREENSHOT` | Save screenshot to this path | unset (no screenshot) |
+| `TP_VERIFY` | Set to `1` to enable subsystem verification | unset (disabled) |
+| `TP_VERIFY_DIR` | Directory for captured frame BMPs | `verify_output` |
+| `TP_VERIFY_CAPTURE_FRAMES` | Comma-separated frame numbers to capture | `30,60,120,300,600,1200,1800` |
 | `TP_TEST_INPUTS` | Enable synthetic input injection | unset (no injection) |
 | `ROMS_TOKEN` | GitHub PAT for game data download | unset (skip download) |
+
+## Subsystem Verification
+
+The verification system (`TP_VERIFY=1`) provides automated health checks for three
+subsystems: rendering, input, and audio. It works alongside the milestone system to
+give agents concrete evidence of what's working.
+
+### Rendering Verification
+
+The software framebuffer (640×480 RGBA) captures every draw call via the GX shim,
+even in headless mode (bgfx Noop). The verifier:
+
+1. **Captures frames** at configurable intervals → BMP files in `TP_VERIFY_DIR`
+2. **Analyzes pixel content** — percentage of non-black pixels, unique colors, average color
+3. **Reports per-frame metrics** — draw calls, vertex count, stub count, validity
+
+This answers the critical question: **"Is something actually rendering?"** without needing
+a GPU or a display. Even with bgfx Noop, the software framebuffer captures the GX shim's
+2D textured quad draws.
+
+```bash
+# Run with verification
+TP_HEADLESS=1 TP_TEST_FRAMES=300 TP_VERIFY=1 TP_VERIFY_DIR=/tmp/verify \
+    ./build/tp-pc 2>&1 | tee /tmp/test.log
+
+# Analyze results
+python3 tools/verify_port.py /tmp/test.log --verify-dir /tmp/verify --check-rendering
+```
+
+### Input Verification
+
+When input is implemented, the verification system logs:
+- **Input events**: button presses, stick positions per frame
+- **Game responses**: scene changes, menu actions triggered by input
+
+This proves the input pipeline works end-to-end: SDL3 → PAL input → JUTGamePad → game logic.
+
+### Audio Verification
+
+When audio is implemented, the verification system logs:
+- **Audio buffer status**: active/inactive, samples mixed, buffers queued
+- **Silence detection**: whether audio buffers contain non-silent samples
+
+This proves audio mixing produces actual sound data, not just silence stubs.
+
+### Running Verification Locally
+
+```bash
+# Build and run with full verification
+TP_HEADLESS=1 TP_TEST_FRAMES=300 TP_VERIFY=1 ./build/tp-pc 2>&1 | tee /tmp/test.log
+
+# Check all subsystems
+python3 tools/verify_port.py /tmp/test.log --check-all --output /tmp/verify-report.json
+
+# Check rendering only
+python3 tools/verify_port.py /tmp/test.log --check-rendering
+```
+
+### CI Integration
+
+CI automatically runs verification and includes results in the PR comment:
+- **Rendering**: ✅/❌ with frame counts, draw stats, pixel analysis
+- **Input**: ✅/❌ with event counts and response tracking
+- **Audio**: ✅/❌ with buffer activity and silence detection
+
+Captured frame BMPs are uploaded as CI artifacts for visual inspection.
 
 ## File Map
 
@@ -235,12 +304,17 @@ The regression report's `next_action` field tells you exactly what to do:
 milestone-baseline.json              ← Current best milestone (regression baseline)
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
 tools/check_milestone_regression.py  ← Compare against baseline, recommend next action
+tools/verify_port.py                 ← Subsystem verification analysis (rendering/input/audio)
 tools/setup_game_data.py             ← Download + extract game data
-.github/workflows/port-test.yml      ← CI pipeline (build, test, comment on PR)
+.github/workflows/port-test.yml      ← CI pipeline (build, test, verify, comment on PR)
 include/pal/pal_milestone.h          ← Milestone C API
 src/pal/pal_milestone.cpp            ← Milestone state management
+include/pal/pal_verify.h             ← Verification system C API
+src/pal/pal_verify.cpp               ← Verification system implementation
 include/pal/gx/gx_stub_tracker.h    ← GX stub hit tracker
 src/pal/gx/gx_stub_tracker.cpp      ← Stub tracker implementation
+include/pal/gx/gx_screenshot.h      ← Software framebuffer capture
+src/pal/gx/gx_screenshot.cpp        ← Software framebuffer implementation
 src/pal/pal_crash.cpp                ← Crash handler (signal → JSON)
 docs/port-progress.md                ← Progress tracker (session log, checklist)
 docs/multiplatform-port-plan.md      ← Full port strategy

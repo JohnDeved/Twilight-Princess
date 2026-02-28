@@ -22,6 +22,7 @@ extern "C" {
 #include "pal/gx/gx_tev.h"
 #include "pal/gx/gx_screenshot.h"
 #include "pal/pal_window.h"
+#include "pal/pal_verify.h"
 
 /* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
 extern int gx_shim_active;
@@ -87,6 +88,9 @@ int pal_gx_bgfx_init(void) {
 
     /* Initialize software framebuffer screenshot system */
     pal_screenshot_init();
+
+    /* Initialize verification/testing system */
+    pal_verify_init();
 
     fprintf(stderr, "{\"gx_bgfx\":\"ready\",\"width\":%u,\"height\":%u}\n",
             s_frame_width, s_frame_height);
@@ -160,6 +164,10 @@ void pal_gx_end_frame(void) {
         fprintf(stderr, "{\"gx_bgfx\":\"frame_stats\",\"frame\":%u,\"draw_calls\":%u,\"verts\":%u}\n",
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
+
+    /* Verification system: report per-frame rendering metrics */
+    pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+                     gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
     bgfx::frame();
 

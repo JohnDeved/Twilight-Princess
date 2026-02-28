@@ -38,18 +38,22 @@ extern "C" {
 
 void pal_screenshot_init(void) {
     const char* path = getenv("TP_SCREENSHOT");
-    if (!path || path[0] == '\0')
-        return;
+    const char* verify = getenv("TP_VERIFY");
 
-    s_screenshot_path = path;
-    s_fb = (uint8_t*)calloc(FB_W * FB_H * 4, 1);
-    if (!s_fb)
-        return;
+    /* Allocate framebuffer if either screenshot or verify mode is active */
+    if ((path && path[0] != '\0') || (verify && verify[0] == '1')) {
+        s_fb = (uint8_t*)calloc(FB_W * FB_H * 4, 1);
+        if (!s_fb)
+            return;
+    }
 
-    s_active = 1;
-    s_saved = 0;
-    s_has_draws = 0;
-    fprintf(stderr, "{\"screenshot\":\"init\",\"path\":\"%s\"}\n", path);
+    if (path && path[0] != '\0') {
+        s_screenshot_path = path;
+        s_active = 1;
+        s_saved = 0;
+        s_has_draws = 0;
+        fprintf(stderr, "{\"screenshot\":\"init\",\"path\":\"%s\"}\n", path);
+    }
 }
 
 int pal_screenshot_active(void) {
@@ -311,6 +315,18 @@ void pal_screenshot_save(void) {
     s_saved = 1;
     fprintf(stderr, "{\"screenshot\":\"saved\",\"path\":\"%s\",\"width\":%d,\"height\":%d}\n",
             s_screenshot_path, FB_W, FB_H);
+}
+
+uint8_t* pal_screenshot_get_fb(void) {
+    return s_fb;
+}
+
+int pal_screenshot_get_fb_width(void) {
+    return FB_W;
+}
+
+int pal_screenshot_get_fb_height(void) {
+    return FB_H;
 }
 
 } /* extern "C" */

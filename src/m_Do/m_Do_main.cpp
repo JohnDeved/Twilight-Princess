@@ -43,6 +43,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/pal_verify.h"
 #include <stdlib.h>
 #endif
 
@@ -773,6 +774,7 @@ void main01(void) {
             if (frame >= max_frames) {
                 pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
                 gx_stub_report();
+                pal_verify_summary();
                 exit(0);
             }
         }

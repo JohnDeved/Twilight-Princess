@@ -149,6 +149,12 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] Create `tools/check_milestone_regression.py` — regression detection + next-action recommendations
 - [x] CI posts structured PR comment with milestone results, regression status, and next action
 - [x] Create `docs/automated-testing-guide.md` — single authoritative testing reference
+- [x] Create `include/pal/pal_verify.h` + `src/pal/pal_verify.cpp` — rendering/input/audio verification
+- [x] Create `tools/verify_port.py` — subsystem health analysis
+- [x] Software framebuffer captures frames at configurable intervals for visual verification
+- [x] Framebuffer pixel analysis (non-black %, unique colors, average color)
+- [x] Input event logging + game response tracking framework
+- [x] Audio buffer silence detection framework
 - [ ] Auto-input injection for scene progression (~60 LOC)
 
 ## Milestone Reference
@@ -249,6 +255,9 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `tools/check_milestone_regression.py` — Milestone regression detection + next-action recommendations
 - `milestone-baseline.json` — Milestone regression baseline tracking
 - `docs/automated-testing-guide.md` — Authoritative testing guide for AI agents
+- `include/pal/pal_verify.h` — Verification system header (rendering/input/audio)
+- `src/pal/pal_verify.cpp` — Verification system (frame capture, pixel analysis, input/audio logging)
+- `tools/verify_port.py` — Subsystem verification analysis tool
 - `assets/` — Placeholder asset headers for compilation
 
 ### Modified files (conditional extensions)

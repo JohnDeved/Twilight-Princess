@@ -12,6 +12,7 @@
 #define PAL_GX_SCREENSHOT_H
 
 #include "dolphin/types.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,13 @@ void pal_screenshot_save(void);
 
 /* Returns 1 if screenshot capture is active */
 int pal_screenshot_active(void);
+
+/* Get pointer to the software framebuffer (640x480 RGBA8, or NULL) */
+uint8_t* pal_screenshot_get_fb(void);
+
+/* Get framebuffer dimensions */
+int pal_screenshot_get_fb_width(void);
+int pal_screenshot_get_fb_height(void);
 
 #ifdef __cplusplus
 }
