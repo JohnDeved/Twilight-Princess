@@ -25,6 +25,9 @@ void JUTNameTab::setResource(const ResNTAB* pNameTable) {
 
 s32 JUTNameTab::getIndex(const char* pName) const {
     JUT_ASSERT(101, mNameTable != NULL);
+#if PLATFORM_PC
+    if (mNameTable == NULL || pName == NULL) return -1;
+#endif
 
     const ResNTAB::Entry* pEntry = mNameTable->mEntries;
     u16 keyCode = calcKeyCode(pName);
@@ -44,6 +47,9 @@ s32 JUTNameTab::getIndex(const char* pName) const {
 
 const char* JUTNameTab::getName(u16 index) const {
     JUT_ASSERT(138, mNameTable != NULL);
+#if PLATFORM_PC
+    if (mNameTable == NULL) return NULL;
+#endif
     if (index < mNameNum)
         return ((const char*)mNameTable) + mNameTable->mEntries[index].mOffs;
     return NULL;

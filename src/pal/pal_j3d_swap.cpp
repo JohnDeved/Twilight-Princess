@@ -767,7 +767,34 @@ static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
         }
     }
 
-    /* Swap all data sections as u16 arrays (works for both s16 keyframes and f32 values) */
+    /* Find the last (highest) non-zero offset — this is typically the name table.
+     * Animation blocks that reference materials by name (TRK1, CLK1, TPT1, TTK1, PAK1,
+     * TRK3, etc.) store a ResNTAB name table as the last data section. The name table
+     * contains ASCII string data that must NOT be bulk-swapped as u16. */
+    u32 lastOffset = 0;
+    int lastIdx = -1;
+    for (u32 i = 0; i < numOffsets && i < 20; i++) {
+        if (offsets[i] != 0 && offsets[i] > lastOffset) {
+            lastOffset = offsets[i];
+            lastIdx = (int)i;
+        }
+    }
+
+    /* Heuristic: check if the last section looks like a name table.
+     * A ResNTAB starts with u16 entryNum, u16 pad, then entries of {u16 hash, u16 offset}.
+     * The entry count should be small (<1000) and match the animation's entry count. */
+    bool lastIsNameTable = false;
+    if (lastIdx >= 0 && lastOffset + 4 < blockSize) {
+        u16 ntabCount = r16(block + lastOffset);
+        /* Name table entry count should be > 0, reasonable, and the section should be
+         * large enough to hold the entries + some string data */
+        u32 ntabMinSize = 4 + ntabCount * 4;
+        if (ntabCount > 0 && ntabCount < 1000 && lastOffset + ntabMinSize <= blockSize) {
+            lastIsNameTable = true;
+        }
+    }
+
+    /* Swap data sections: use swap_name_table for the name table, swap_u16_range for data */
     for (u32 i = 0; i < numOffsets && i < 20; i++) {
         if (offsets[i] == 0) continue;
         u32 end = blockSize;
@@ -776,7 +803,12 @@ static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
                 end = offsets[j];
             }
         }
-        swap_u16_range(block, offsets[i], end);
+        if (lastIsNameTable && (int)i == lastIdx) {
+            /* Name table: swap structured data, preserve ASCII strings */
+            swap_name_table(block, offsets[i], blockSize);
+        } else {
+            swap_u16_range(block, offsets[i], end);
+        }
     }
 }
 
