@@ -26,6 +26,12 @@ struct SDIFileEntryDisc {
 
 extern "C" {
 
+static void* s_last_repacked_files = NULL;
+
+void* pal_swap_rarc_get_repacked_files(void) {
+    return s_last_repacked_files;
+}
+
 void pal_swap_rarc(void* arcData, u32 loadedSize) {
     if (!arcData || loadedSize < sizeof(SArcHeader)) return;
 
@@ -69,10 +75,8 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
      * On-disc: 20 bytes per entry (u16+u16+u32+u32+u32+u32_ptr = 20)
      * In-memory on 64-bit: sizeof(SDIFileEntry) = 24 (void* is 8 bytes)
      * We must read at 20-byte stride and write at native struct stride.
-     * We allocate a new array and copy, then memcpy back if it fits,
-     * or update the pointer. Since the data is inside the archive buffer,
-     * we expand in-place backwards (native entries are larger, so we
-     * process in reverse order to avoid overlap). */
+     * We keep the repacked array as a SEPARATE allocation to avoid
+     * overwriting the string table that follows the file entries. */
     u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
     u32 numFiles = info->num_file_entries;
     u8* arcEnd = (u8*)arcData + loadedSize;
@@ -85,8 +89,12 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
         return;  /* corrupt or empty — skip file entry processing */
     }
 
+    /* Track the last repacked array so JKRMemArchive can use it */
+    s_last_repacked_files = NULL;
+
     if (sizeof(JKRArchive::SDIFileEntry) != RARC_FILE_ENTRY_DISC_SIZE && numFiles > 0) {
-        /* Allocate temporary buffer for the repacked entries */
+        /* Allocate persistent buffer for the repacked entries.
+         * Do NOT copy back in-place — that overwrites the string table. */
         JKRArchive::SDIFileEntry* repacked = (JKRArchive::SDIFileEntry*)malloc(
             numFiles * sizeof(JKRArchive::SDIFileEntry));
         if (repacked) {
@@ -101,19 +109,7 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
                 repacked[i].data_size                 = pal_swap32(disc->data_size);
                 repacked[i].data                      = NULL;
             }
-            /* Copy repacked entries back over the original location.
-             * The native array is larger (24*N vs 20*N), but there is
-             * typically string table data after the file entries which
-             * provides enough slack. Verify we don't write past the buffer. */
-            size_t repack_size = numFiles * sizeof(JKRArchive::SDIFileEntry);
-            if (filesBase + repack_size > arcEnd) {
-                fprintf(stderr, "pal_swap_rarc: repack overflow (%zu bytes at offset %td in %u byte buffer)\n",
-                        repack_size, filesBase - (u8*)arcData, loadedSize);
-                free(repacked);
-                return;
-            }
-            memcpy(filesBase, repacked, repack_size);
-            free(repacked);
+            s_last_repacked_files = repacked;
         }
     } else {
         /* Struct sizes match (32-bit build) — swap in place */

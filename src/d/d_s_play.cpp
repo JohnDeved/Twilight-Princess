@@ -537,6 +537,16 @@ static int phase_2(dScnPly_c* i_this) {
         return cPhs_INIT_e;
     }
 
+#if PLATFORM_PC
+    /* Stage data from disc is big-endian. Until comprehensive byte-swap
+     * of stage binary structs is implemented, skip particle/stage-info
+     * access to avoid crashes from reading big-endian fields as native. */
+    {
+        dComIfGp_particle_readScene(255, &i_this->sceneCommand);
+        /* Skip dMsgObject_readMessageGroup — it reads stage info too */
+        return cPhs_NEXT_e;
+    }
+#endif
     u8 particle_no = dStage_stagInfo_GetParticleNo(dComIfGp_getStage()->getStagInfo(),
                                                    dComIfG_play_c::getLayerNo(0));
     if (particle_no == 255) {

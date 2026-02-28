@@ -903,7 +903,8 @@ void* dRes_control_c::getRes(char const* i_arcName, char const* i_resName, dRes_
     JKRArchive::SDIFileEntry* entry = archive->findNameResource(i_resName);
 
     if (entry != NULL) {
-        return resInfo->getRes(entry - archive->mFiles);
+        s32 idx = (s32)(entry - archive->mFiles);
+        return resInfo->getRes(idx);
     } else {
         OS_REPORT("\e[34m%s not found in %s.arc\n\e[m", i_resName, i_arcName);
         return NULL;

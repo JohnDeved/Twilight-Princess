@@ -14,6 +14,8 @@
 #include <cstring>
 #include <cstdint>
 #include <time.h>
+#include <dirent.h>
+#include <strings.h>
 
 #include "pal/pal_milestone.h"
 #include "pal/pal_input.h"
@@ -466,11 +468,59 @@ static const char* pal_dvd_get_data_dir(void) {
 }
 
 /* Build host path from DVD path */
+/* GCN/Wii filesystem is case-insensitive; Linux is not.
+ * Try exact path first, then walk each component case-insensitively. */
+static int pal_dvd_resolve_icase(const char* dir, const char* name, char* out, size_t outLen) {
+    DIR* d = opendir(dir);
+    if (!d) return 0;
+    struct dirent* ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcasecmp(ent->d_name, name) == 0) {
+            snprintf(out, outLen, "%s/%s", dir, ent->d_name);
+            closedir(d);
+            return 1;
+        }
+    }
+    closedir(d);
+    return 0;
+}
+
 static void pal_dvd_build_host_path(char* out, size_t outSize, const char* dvdPath) {
     const char* dataDir = pal_dvd_get_data_dir();
     /* Strip leading slash from dvdPath if present */
     if (dvdPath && dvdPath[0] == '/') dvdPath++;
     snprintf(out, outSize, "%s/%s", dataDir, dvdPath ? dvdPath : "");
+
+    /* If exact path exists, done */
+    FILE* test = fopen(out, "rb");
+    if (test) { fclose(test); return; }
+
+    /* Walk path components case-insensitively */
+    if (!dvdPath) return;
+    char resolved[512];
+    strncpy(resolved, dataDir, sizeof(resolved) - 1);
+    resolved[sizeof(resolved) - 1] = '\0';
+
+    char pathCopy[512];
+    strncpy(pathCopy, dvdPath, sizeof(pathCopy) - 1);
+    pathCopy[sizeof(pathCopy) - 1] = '\0';
+
+    char* saveptr;
+    char* tok = strtok_r(pathCopy, "/", &saveptr);
+    while (tok) {
+        char tmp[512];
+        if (pal_dvd_resolve_icase(resolved, tok, tmp, sizeof(tmp))) {
+            strncpy(resolved, tmp, sizeof(resolved) - 1);
+            resolved[sizeof(resolved) - 1] = '\0';
+        } else {
+            /* Component not found — use as-is */
+            snprintf(resolved + strlen(resolved),
+                     sizeof(resolved) - strlen(resolved), "/%s", tok);
+        }
+        tok = strtok_r(NULL, "/", &saveptr);
+    }
+    strncpy(out, resolved, outSize - 1);
+    out[outSize - 1] = '\0';
 }
 
 void DVDInit(void) {}

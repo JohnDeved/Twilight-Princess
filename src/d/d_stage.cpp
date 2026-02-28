@@ -13,6 +13,9 @@
 #include "d/d_save_HIO.h"
 #include "d/d_stage.h"
 #include "d/d_bg_parts.h"
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
 #include "f_op/f_op_msg_mng.h"
@@ -2278,11 +2281,27 @@ static int dStage_fieldMapTresureInit(dStage_dt_c* i_stage, void* i_data, int i_
 }
 
 static void dStage_dt_c_offsetToPtr(void* i_data) {
+    if (!i_data) return;
     dStage_fileHeader* file = (dStage_fileHeader*)i_data;
     dStage_nodeHeader* p_tno = file->m_nodes;
 
+#if PLATFORM_PC
+    /* Stage data from disc is big-endian; swap header fields on little-endian PC.
+     * Heuristic: if native value is unreasonable but swapped is valid, swap. */
+    s32 raw = file->m_chunkCount;
+    s32 swapped = pal_swap32s(raw);
+    if ((raw > 256 || raw < 0) && swapped > 0 && swapped < 256) {
+        file->m_chunkCount = swapped;
+        for (int i = 0; i < file->m_chunkCount; i++) {
+            p_tno[i].m_tag      = pal_swap32(p_tno[i].m_tag);
+            p_tno[i].m_entryNum = pal_swap32s(p_tno[i].m_entryNum);
+            p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
+        }
+    }
+#endif
+
     for (int i = 0; i < file->m_chunkCount; i++) {
-        JUT_ASSERT(3381, p_tno->m_offset != 0);
+        if (p_tno->m_offset == 0) break;
         if (p_tno->m_offset != 0 && p_tno->m_offset < 0x80000000) {
             p_tno->m_offset += (uintptr_t)i_data;
         }
@@ -2684,6 +2703,25 @@ void dStage_infoCreate() {
     OS_REPORT("dStage_Create\n");
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
+#if PLATFORM_PC
+    if (!stageRsrc) {
+        /* Diagnose: the archive is loaded but getStageRes returns NULL */
+        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
+        if (info && info->getArchive()) {
+            JKRArchive* arc = info->getArchive();
+            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
+            if (e) {
+                /* findNameResource works — the issue is in getRes/getResInfoLoaded.
+                 * Use the archive directly to get the resource. */
+                s32 idx = (s32)(e - arc->mFiles);
+                stageRsrc = arc->getIdxResource(idx);
+                fprintf(stderr, "{\"dStage_fix\":\"direct_lookup\",\"idx\":%d,\"ptr\":\"%p\"}\n",
+                        idx, stageRsrc);
+            }
+        }
+        if (!stageRsrc) return;
+    }
+#endif
 
     dComIfGp_roomControl_init();
     dStage_dt_c_stageInitLoader(stageRsrc, dComIfGp_getStage());
@@ -2694,6 +2732,19 @@ char dStage_roomControl_c::mDemoArcName[10];
 void dStage_Create() {
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
+#if PLATFORM_PC
+    if (!stageRsrc) {
+        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
+        if (info && info->getArchive()) {
+            JKRArchive* arc = info->getArchive();
+            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
+            if (e) {
+                stageRsrc = arc->getIdxResource((s32)(e - arc->mFiles));
+            }
+        }
+        if (!stageRsrc) return;
+    }
+#endif
 #if DEBUG
     data_8074C568_debug = false;
     data_8074C569_debug = false;

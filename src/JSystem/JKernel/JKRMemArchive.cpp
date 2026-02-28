@@ -99,6 +99,14 @@ bool JKRMemArchive::open(s32 entryNum, JKRArchive::EMountDirection mountDirectio
         mNodes = (SDIDirEntry *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->node_offset);
         mFiles = (SDIFileEntry *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->file_entry_offset);
         mStringTable = (char *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->string_table_offset);
+#if PLATFORM_PC
+        /* Use separately-allocated repacked file entries to avoid
+         * overwriting the string table (20-byte disc → 24-byte native). */
+        void* repacked = pal_swap_rarc_get_repacked_files();
+        if (repacked) {
+            mFiles = (SDIFileEntry *)repacked;
+        }
+#endif
 
         mArchiveData =
             (u8 *)((uintptr_t)mArcHeader + mArcHeader->header_length + mArcHeader->file_data_offset);

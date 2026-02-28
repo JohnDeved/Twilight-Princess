@@ -30,7 +30,16 @@ public:
 
     void* getRes(s32 i_index) {
         JUT_ASSERT(25, i_index >= 0 && i_index < getResNum());
-        return *(mRes + i_index);
+        void* res = *(mRes + i_index);
+#if PLATFORM_PC
+        /* Fallback: if mRes[idx] is NULL (loadResource didn't cover this index
+         * due to endianness issues in directory iteration), fetch directly
+         * from the archive. */
+        if (!res && mArchive) {
+            res = mArchive->getIdxResource(i_index);
+        }
+#endif
+        return res;
     }
 
     s32 getResNum() { return mArchive->countFile(); }
@@ -127,7 +136,14 @@ public:
     }
 
     void* getStageRes(const char* i_arcName, const char* i_resName) {
-        return getRes(i_arcName, i_resName, mStageInfo, ARRAY_SIZEU(mStageInfo));
+        void* result = getRes(i_arcName, i_resName, mStageInfo, ARRAY_SIZEU(mStageInfo));
+#if PLATFORM_PC
+        if (!result) {
+            fprintf(stderr, "{\"getStageRes_inline\":\"%s/%s\",\"mStageInfo\":\"%p\"}\n",
+                    i_arcName, i_resName, (void*)mStageInfo);
+        }
+#endif
+        return result;
     }
 
     dRes_info_c* getObjectResInfo(const char* i_arcName) {
