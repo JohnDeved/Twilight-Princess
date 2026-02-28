@@ -386,7 +386,7 @@ static uint32_t gx_comp_size(GXCompType t) {
 static bgfx::AttribType::Enum gx_to_bgfx_type(GXCompType t) {
     switch (t) {
     case GX_U8:  return bgfx::AttribType::Uint8;
-    case GX_S8:  return bgfx::AttribType::Int16; /* closest match */
+    case GX_S8:  return bgfx::AttribType::Uint8;  /* no Int8 in bgfx; size matches */
     case GX_U16: return bgfx::AttribType::Int16;
     case GX_S16: return bgfx::AttribType::Int16;
     case GX_F32: return bgfx::AttribType::Float;

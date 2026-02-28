@@ -178,8 +178,16 @@ void pal_screenshot_blit(void) {
             int16_t tmp[3];
             memcpy(tmp, base + pos_off, 6);
             for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
+        } else if (pos_type == GX_U16) {
+            uint16_t tmp[3];
+            memcpy(tmp, base + pos_off, 6);
+            for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
         } else if (pos_type == GX_S8) {
             int8_t tmp[3];
+            memcpy(tmp, base + pos_off, 3);
+            for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
+        } else if (pos_type == GX_U8) {
+            uint8_t tmp[3];
             memcpy(tmp, base + pos_off, 3);
             for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
         } else {
@@ -321,9 +329,6 @@ void pal_screenshot_blit(void) {
             s_fb[fb_idx + 3] = 255;
         }
     }
-
-    int had_tex_data = (tex_rgba != NULL) ? 1 : 0;
-    (void)had_tex_data;
 
     if (tex_rgba)
         free(tex_rgba);
