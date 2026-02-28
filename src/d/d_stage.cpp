@@ -16,6 +16,60 @@
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
 #include "pal/pal_error.h"
+#include <cstdlib>
+
+/* Endian-swap helpers for stage data chunk entries. */
+static void pal_swap_actor_entries(stage_actor_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_actor_data_class* e = &entries[i];
+        /* name[8] = ASCII, no swap */
+        /* fopAcM_prmBase_class: parameters(u32), position(3xf32), angle(3xs16), setID(u16) */
+        e->base.parameters = pal_swap32(e->base.parameters);
+        u32* pos = (u32*)&e->base.position;
+        pos[0] = pal_swap32(pos[0]); /* x */
+        pos[1] = pal_swap32(pos[1]); /* y */
+        pos[2] = pal_swap32(pos[2]); /* z */
+        u16* ang = (u16*)&e->base.angle;
+        ang[0] = pal_swap16(ang[0]); /* x */
+        ang[1] = pal_swap16(ang[1]); /* y */
+        ang[2] = pal_swap16(ang[2]); /* z */
+        e->base.setID = pal_swap16(e->base.setID);
+    }
+}
+
+static void pal_swap_tgsc_entries(stage_tgsc_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_tgsc_data_class* e = &entries[i];
+        /* name[8] = ASCII, no swap */
+        e->base.parameters = pal_swap32(e->base.parameters);
+        u32* pos = (u32*)&e->base.position;
+        pos[0] = pal_swap32(pos[0]);
+        pos[1] = pal_swap32(pos[1]);
+        pos[2] = pal_swap32(pos[2]);
+        u16* ang = (u16*)&e->base.angle;
+        ang[0] = pal_swap16(ang[0]);
+        ang[1] = pal_swap16(ang[1]);
+        ang[2] = pal_swap16(ang[2]);
+        e->base.setID = pal_swap16(e->base.setID);
+        /* scale is u8 x3 — no swap */
+    }
+}
+
+static void pal_swap_scls_entries(stage_scls_info_class* entries, int count) {
+    /* SCLS entries are mostly u8/char fields — only room needs no swap.
+     * stage[8]=char, mStart=u8, mRoom=s8, field_0xa=u8, field_0xb=u8, mWipe=u8 */
+    (void)entries; (void)count;
+    /* No multi-byte fields to swap */
+}
+
+static void pal_swap_camera_entries(stage_camera2_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_camera2_data_class* e = &entries[i];
+        /* m_cam_type[16] = char, no swap. m_arrow_idx,field_0x11-0x13 = u8, no swap */
+        e->field_0x14 = pal_swap16(e->field_0x14);
+        e->field_0x16 = pal_swap16(e->field_0x16);
+    }
+}
 #endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
@@ -2198,7 +2252,45 @@ static void dStage_dt_c_decode(void* i_data, dStage_dt_c* i_stage, FuncTable* fu
                 dStage_nodeHeader* node2 = node1;
                 if ((int)node2->m_tag == *(int*)nodeFunc->identifier) {
                     if (funcTbl[i].function != NULL) {
+#if PLATFORM_PC
+                        /* On 64-bit PC, the container struct overlay doesn't work because
+                         * pointer fields are 8 bytes but the raw data has 4-byte offsets.
+                         * Allocate a native-layout buffer: [tag][int num][pad][void* entries]
+                         * The handler does (int*)buf+1 = buf+4, overlaying a native struct:
+                         *   num at buf+4, m_entries at buf+4+offsetof(container,m_entries)
+                         * On 64-bit, offsetof(container, m_entries) = 8 (due to padding),
+                         * so m_entries is read from buf+12. */
+                        u8* rbuf = (u8*)malloc(24);
+                        if (rbuf) {
+                            void* entries = (void*)((u8*)i_data + node1->m_offset);
+                            int entryNum = node1->m_entryNum;
+                            memcpy(rbuf + 0, &node1->m_tag, 4);       /* tag */
+                            memcpy(rbuf + 4, &entryNum, 4);           /* num */
+                            memset(rbuf + 8, 0, 4);                   /* padding */
+                            memcpy(rbuf + 12, &entries, sizeof(void*)); /* entries ptr */
+
+                            /* Endian-swap chunk entry data based on tag */
+                            u32 tag = node1->m_tag;
+                            if (tag == *(u32*)"ACTR" || tag == *(u32*)"PLYR" ||
+                                tag == *(u32*)"TGOB") {
+                                pal_swap_actor_entries((stage_actor_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"TGSC" || tag == *(u32*)"SCOB" ||
+                                       tag == *(u32*)"Door" || tag == *(u32*)"TGDR") {
+                                pal_swap_tgsc_entries((stage_tgsc_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"SCLS") {
+                                pal_swap_scls_entries((stage_scls_info_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"CAMR" || tag == *(u32*)"RCAM") {
+                                pal_swap_camera_entries((stage_camera2_data_class*)entries, entryNum);
+                            }
+
+                            funcTbl[i].function(i_stage, rbuf, entryNum, i_data);
+                            /* rbuf is intentionally not freed — the handler stores a pointer
+                             * into it via setXxx() and it must persist for the stage lifetime.
+                             * It will be reclaimed when the process exits or stage is unloaded. */
+                        }
+#else
                         funcTbl[i].function(i_stage, node1, node1->m_entryNum, i_data);
+#endif
                     }
                     break;
                 }
@@ -2770,13 +2862,19 @@ void dStage_Create() {
         dComIfGp_evmng_create();
         return;
     }
-    /* Stage data available: parse header + STAG chunk for stage info.
-     * Skip actor/camera/path spawning (struct overlays broken on 64-bit).
-     * dStage_dt_c_stageInitLoader handles offsetToPtr + STAG parsing. */
-    dStage_dt_c_stageInitLoader(stageRsrc, dComIfGp_getStage());
+    /* Stage data available: parse header + STAG chunk, then run full loader.
+     * The 64-bit struct overlay fix in dStage_dt_c_decode allocates native
+     * containers with resolved pointers, so actor/camera/SCLS spawning works. */
+    dStage_dt_c_stageLoader(stageRsrc, dComIfGp_getStage());
 
     *dStage_roomControl_c::getDemoArcName() = NULL;
     dKankyo_create();
+
+    if (dComIfG_getStageRes("vrbox_sora.bmd")) {
+        fopAcM_Create(PROC_VRBOX, NULL, NULL);
+        fopAcM_Create(PROC_VRBOX2, NULL, NULL);
+    }
+
     dComIfGp_evmng_create();
     return;
 #endif
