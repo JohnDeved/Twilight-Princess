@@ -257,8 +257,8 @@ int pal_verify_analyze_fb(u32 frame_num) {
         avg_g += g;
         avg_b += b;
 
-        /* Track unique colors via quantized 8-bit hash */
-        if (i % 16 == 0) {
+        /* Track unique colors via quantized 8-bit hash (all pixels) */
+        {
             uint8_t hash = (uint8_t)(((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6));
             color_set[hash] = 1;
         }

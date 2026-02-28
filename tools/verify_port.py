@@ -193,17 +193,21 @@ def compare_images(path_a, path_b):
     max_diff = 0
     threshold = 3  # per-channel tolerance
 
-    for i in range(min(total, len(px_b))):
-        d = abs(px_a[i] - px_b[i])
-        sum_sq += d * d
-        if d > max_diff:
-            max_diff = d
-        if d > threshold and i % 3 == 0:  # count per-pixel (every 3 bytes)
+    num_pixels = total // 3
+    for p in range(num_pixels):
+        base = p * 3
+        d0 = abs(px_a[base] - px_b[base])
+        d1 = abs(px_a[base + 1] - px_b[base + 1])
+        d2 = abs(px_a[base + 2] - px_b[base + 2])
+        sum_sq += d0 * d0 + d1 * d1 + d2 * d2
+        dmax = max(d0, d1, d2)
+        if dmax > max_diff:
+            max_diff = dmax
+        if dmax > threshold:
             diff_count += 1
 
-    total_pixels = total // 3
     rmse = (sum_sq / total) ** 0.5 if total > 0 else 0.0
-    pct_different = (diff_count * 100.0) / total_pixels if total_pixels > 0 else 0.0
+    pct_different = (diff_count * 100.0) / num_pixels if num_pixels > 0 else 0.0
 
     return {
         "rmse": round(rmse, 2),

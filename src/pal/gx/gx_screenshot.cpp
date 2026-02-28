@@ -114,7 +114,7 @@ static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_o
 void pal_screenshot_blit(void) {
     /* Blit whenever framebuffer is allocated (screenshot or verify mode).
      * In screenshot mode, stop after save. In verify mode, blit every frame. */
-    if (!s_fb_allocated || !s_fb)
+    if (!s_fb)
         return;
     if (s_active && s_saved)
         return;  /* screenshot already captured */
