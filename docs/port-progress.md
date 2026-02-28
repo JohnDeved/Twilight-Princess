@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `8` (SCENE_CREATED — input, audio, save modules added) |
-| **Current Step** | Step 5 complete, Steps 3/7 partially complete — SDL3 input/audio/save wired |
+| **Highest CI Milestone** | `11` (RENDER_FRAME — Nintendo logo rendering!) |
+| **Current Step** | Step 5 complete, rendering working — logo visible in software FB |
 | **Last Updated** | 2026-02-28 |
-| **Blocking Issue** | Need game data (ROMS_TOKEN) to verify RENDER_FRAME with real disc assets |
+| **Blocking Issue** | None — rendering pipeline proven; next: more endian fixes for later scenes |
 
 ## Step Checklist
 
@@ -201,6 +201,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-28 | **Nintendo logo rendering!** Fixed critical endianness bugs: Yaz0 decompression read header length as native-endian (should be big-endian) → decompressor overran buffer. ResTIMG struct used `uintptr_t` for paletteOffset/imageOffset (8 bytes on 64-bit, 4 on disc) → struct layout mismatch caused all texture pointers to read zeros. Fixed vertex layout stride calculation to use actual GXCompType sizes (s16=2, u8=1 instead of always f32=4). Fixed color byte order (struct byte layout not u32 bit shifts). Added pal_gx_end_frame() to mDoGph_Painter PC path. RENDER_FRAME milestone now fires from end_frame. Logo texture (IA8 376×104) decodes correctly, software framebuffer shows Nintendo logo. | 8 → 11 (RENDER_FRAME + FRAMES_300 + DVD_READ_OK) | More endian fixes for later game scenes; FRAMES_60/1800 timing calibration; Phase B audio |
 | 2026-02-28 | **Input, audio, save modules + ANSI parser fix**: Created pal_input.cpp — SDL3 keyboard (WASD/Space/Shift/arrows) + gamepad → PADStatus with auto-detect and deadzone overlay. Created pal_audio.cpp — SDL3 Phase A silence audio (32kHz stereo, push-based stream). Created pal_save.cpp — host filesystem save/load replacing NAND stubs (basename extraction, configurable TP_SAVE_DIR). Enabled SDL_JOYSTICK + SDL_AUDIO in CMakeLists. Wired PADRead through pal_input_read_pad (4-port), NANDOpen/Read/Write/Close through pal_save, audio init through pal_audio_init in mDoAud_Create. **Fixed critical ANSI escape code bug** in parse_milestones.py + verify_port.py — Japanese heap output inserted \x1b[m before HEAP_INIT line, causing parser to miss it (dropped count 8→3). Self-test: 8/16 milestones, integrity ✅, no regression, 0 CodeQL alerts. | 8 (no change — game data needed for further milestones) | Run with game data to verify RENDER_FRAME; test input with windowed mode; Phase B audio mixing |
 | 2026-02-27 | **All rendering-critical GX stubs implemented**: Replaced 9 GX stubs with real implementations — GXSetProjectionv (reconstruct 4x4 from packed format), GXLoadPosMtxIndx/GXLoadNrmMtxIndx3x3/GXLoadTexMtxIndx (acknowledge indexed loads), GXLoadNrmMtxImm3x3 (3x3→3x4 conversion), GXInitTexObjCI (CI textures via standard path), GXSetTevIndirect/GXSetIndTexMtx/GXSetIndTexOrder (store indirect texture state). gx_frame_stub_count should now reach zero during rendering, unblocking RENDER_FRAME milestone. | 6 (pending RENDER_FRAME with game data) | Run with game data to verify RENDER_FRAME milestone fires |
 | 2026-02-27 | **TEV shader pipeline (Step 5c) + honest milestones**: Created gx_tev.h/cpp — TEV→bgfx shader flush pipeline with 5 preset shaders (PASSCLR/REPLACE/MODULATE/BLEND/DECAL). Enabled BGFX_BUILD_TOOLS to build shaderc. Shader .sc files compiled to GLSL 140 + ESSL 100 + SPIR-V at build time. Texture decode + bgfx upload with 256-entry LRU cache. Full GX→bgfx state conversion (blend, depth, cull, primitive), vertex layout from GX descriptor, quad/fan→triangle index conversion, MVP from GX matrices. **Honest render milestones**: RENDER_FRAME now requires zero GX stubs hit AND real draw calls with valid vertices. Per-frame stub tracking (gx_frame_stub_count reset at frame start). gx_stub_frame_is_valid() verifies valid verifiable image. FRAMES_60/300/1800 cascade from RENDER_FRAME. | 15 → 6 (honest: RENDER_FRAME requires stub-free frames) | Implement remaining GX stubs to reduce per-frame stub count, enable full render pipeline |

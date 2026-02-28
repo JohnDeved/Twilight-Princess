@@ -323,53 +323,10 @@ void pal_screenshot_blit(void) {
     }
 
     int had_tex_data = (tex_rgba != NULL) ? 1 : 0;
-
-    /* Debug: sample texture to verify decode */
-    static int s_tex_log = 0;
-    if (tex_rgba && tw > 0 && th > 0 && s_tex_log < 3) {
-        /* Sample center pixel */
-        int cx = (int)(tw / 2), cy = (int)(th / 2);
-        int ci = (cy * (int)tw + cx) * 4;
-        /* Count non-zero bytes in decoded texture */
-        int nonzero = 0;
-        for (uint32_t i = 0; i < tw * th * 4; i++) {
-            if (tex_rgba[i] > 0) nonzero++;
-        }
-        /* Check source data too */
-        const GXTexBinding* tb2 = &g_gx_state.tex_bindings[s0->tex_map];
-        int src_nonzero = 0;
-        u32 src_size = pal_gx_tex_size((u16)tw, (u16)th, tb2->format);
-        if (tb2->image_ptr && src_size > 0) {
-            const u8* sp = (const u8*)tb2->image_ptr;
-            for (u32 i = 0; i < src_size && i < 1024; i++) {
-                if (sp[i] > 0) src_nonzero++;
-            }
-        }
-        fprintf(stderr, "{\"tex_debug\":{\"size\":[%u,%u],\"format\":%d,"
-                "\"center_rgba\":[%u,%u,%u,%u],"
-                "\"nonzero_bytes\":%d,\"src_nonzero\":%d,\"src_size\":%u}}\n",
-                tw, th, (int)tb2->format,
-                tex_rgba[ci+0], tex_rgba[ci+1], tex_rgba[ci+2], tex_rgba[ci+3],
-                nonzero, src_nonzero, src_size);
-        s_tex_log++;
-    }
+    (void)had_tex_data;
 
     if (tex_rgba)
         free(tex_rgba);
-
-    /* Debug: log first blit result */
-    static int s_blit_log = 0;
-    if (s_blit_log < 10) {
-        int fb_idx = (iy0 * FB_W + ix0) * 4;
-        fprintf(stderr, "{\"blit_done\":{\"area\":[%d,%d,%d,%d],\"has_tc\":%d,\"had_tex\":%d,"
-                "\"clr0\":[%u,%u,%u,%u],\"fb_pixel\":[%u,%u,%u,%u],"
-                "\"tw\":%u,\"th\":%u}}\n",
-                ix0, iy0, ix1, iy1, has_tc, had_tex_data,
-                clr[0][0], clr[0][1], clr[0][2], clr[0][3],
-                s_fb[fb_idx+0], s_fb[fb_idx+1], s_fb[fb_idx+2], s_fb[fb_idx+3],
-                tw, th);
-        s_blit_log++;
-    }
 
     s_has_draws = 1;
 }

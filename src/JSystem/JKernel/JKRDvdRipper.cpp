@@ -305,19 +305,6 @@ static int JKRDecompressFromDVD(JKRDvdFile* dvdFile, void* dst, u32 fileSize, u3
     u8 *data = firstSrcData();
     if (data != NULL) {
         result = decompSZS_subroutine(data, (u8 *)dst);
-#if PLATFORM_PC
-        /* Debug: check decompress result */
-        {
-            u8* dstBytes = (u8*)dst;
-            int nonzero = 0;
-            u32 checkLen = (inMaxDest < 256) ? inMaxDest : 256;
-            for (u32 i = 0; i < checkLen; i++) {
-                if (dstBytes[i] != 0) nonzero++;
-            }
-            fprintf(stderr, "{\"szs_decomp\":{\"result\":%d,\"dst_nonzero_256\":%d,\"maxDest\":%u,\"ts\":%u}}\n",
-                    result, nonzero, inMaxDest, *tsPtr);
-        }
-#endif
     } else {
         result = -1;
     }
