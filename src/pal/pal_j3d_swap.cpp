@@ -398,17 +398,57 @@ static void swap_mat3(u8* block, u32 blockSize) {
     swap_name_table(block, nameOff, blockSize);
 
     /* Material init data at offset[0] (0x0C)
-     * Each entry is 0x14C bytes for MAT3 v26, containing indices into
-     * the data tables (all u16 or u8 values). We need to swap the
-     * u16 fields within each material entry. */
+     * Each entry is 0x14C bytes for MAT3 v26, containing mixed u8 and u16 fields.
+     * We need to swap only the u16 index fields, NOT the u8 fields.
+     * See J3DMaterialInitData struct for exact layout. */
     u32 matInitOff = *(u32*)(block + 0x0C);
-    if (matInitOff != 0 && matInitOff < blockSize) {
-        /* Material init data entries are all u8/u16 index values.
-         * Swap everything as u16 since the struct is mostly u16 indices.
-         * Entry size is determined by (matIdOff - matInitOff) / matNum.
-         * Typically 0x14C bytes for v26 materials. */
-        u32 entryEnd = matIdOff > matInitOff ? matIdOff : blockSize;
-        swap_u16_range(block, matInitOff, entryEnd);
+    if (matInitOff != 0 && matInitOff < blockSize && matNum > 0) {
+        u32 entrySize = 0x14C;
+        /* Verify entry size from actual data layout */
+        if (matIdOff > matInitOff && matNum > 0) {
+            u32 calcSize = (matIdOff - matInitOff) / matNum;
+            if (calcSize >= 0x14C) entrySize = 0x14C;
+            else if (calcSize > 0) entrySize = calcSize;
+        }
+
+        for (int i = 0; i < matNum && i < 1024; i++) {
+            u32 e = matInitOff + i * entrySize;
+            if (e + entrySize > blockSize) break;
+            /* J3DMaterialInitData layout:
+             * 0x00-0x07: u8 fields (mode, cullIdx, chanNum, texGenNum, etc.) - NO SWAP
+             * 0x08: u16 mMatColorIdx[2]
+             * 0x0C: u16 mColorChanIdx[4]
+             * 0x14: u16 mAmbColorIdx[2] */
+            swap_u16_array(block, e + 0x08, 2);  /* mMatColorIdx[2] */
+            swap_u16_array(block, e + 0x0C, 4);  /* mColorChanIdx[4] */
+            swap_u16_array(block, e + 0x14, 2);  /* mAmbColorIdx[2] */
+            /* 0x18-0x27: u8 field_0x018[0x10] - NO SWAP */
+            /* 0x28: u16 mTexCoordIdx[8] */
+            swap_u16_array(block, e + 0x28, 8);
+            /* 0x38-0x47: u8 field_0x038[0x10] - NO SWAP */
+            /* 0x48: u16 mTexMtxIdx[8] */
+            swap_u16_array(block, e + 0x48, 8);
+            /* 0x58-0x83: u8 field_0x058[0x2c] - NO SWAP */
+            /* 0x84: u16 mTexNoIdx[8] */
+            swap_u16_array(block, e + 0x84, 8);
+            /* 0x94: u16 mTevKColorIdx[4] */
+            swap_u16_array(block, e + 0x94, 4);
+            /* 0x9C-0xAB: u8 mTevKColorSel[0x10] - NO SWAP */
+            /* 0xAC-0xBB: u8 mTevKAlphaSel[0x10] - NO SWAP */
+            /* 0xBC: u16 mTevOrderIdx[0x10] */
+            swap_u16_array(block, e + 0xBC, 0x10);
+            /* 0xDC: u16 mTevColorIdx[4] */
+            swap_u16_array(block, e + 0xDC, 4);
+            /* 0xE4: u16 mTevStageIdx[0x10] */
+            swap_u16_array(block, e + 0xE4, 0x10);
+            /* 0x104: u16 mTevSwapModeIdx[0x10] */
+            swap_u16_array(block, e + 0x104, 0x10);
+            /* 0x124: u16 mTevSwapModeTableIdx[4] */
+            swap_u16_array(block, e + 0x124, 4);
+            /* 0x12C-0x143: u8 field_0x12c[0x18] - NO SWAP */
+            /* 0x144: u16 mFogIdx, mAlphaCompIdx, mBlendIdx, mNBTScaleIdx */
+            swap_u16_array(block, e + 0x144, 4);
+        }
     }
 
     /* Remaining data tables (cull mode, colors, tex coord info, TEV stages, etc.)
@@ -730,9 +770,289 @@ int pal_j3d_swap_model(void* data, u32 size) {
  *   0x10+: u32 offset fields for data tables
  *   Data tables: s16/f32 keyframe data
  */
+/*
+ * ANK1/ANF1 (transform full/key) block layout:
+ *   0x08: u8 loopMode, u8 rotDecShift
+ *   0x0A: u16 frameCount
+ *   0x0C: u16 jointCount, u16 scaleCount
+ *   0x10: u16 rotCount, u16 transCount
+ *   0x14: u32 tableOffset       [0] - J3DAnmTransformKeyTable (u16 array)
+ *   0x18: u32 scaleValOffset    [1] - f32 array
+ *   0x1C: u32 rotValOffset      [2] - s16 array
+ *   0x20: u32 transValOffset    [3] - f32 array
+ */
+static void swap_ank1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameCount */
+    swap_u16_array(block, 0x0C, 2); /* jointCount, scaleCount */
+    swap_u16_array(block, 0x10, 2); /* rotCount, transCount */
+    swap_u32_array(block, 0x14, 4); /* 4 offsets */
+
+    u16 scaleNum = *(u16*)(block + 0x0E);
+    u16 rotNum   = *(u16*)(block + 0x10);
+    u16 transNum = *(u16*)(block + 0x12);
+    u32 tableOff = *(u32*)(block + 0x14);
+    u32 scaleOff = *(u32*)(block + 0x18);
+    u32 rotOff   = *(u32*)(block + 0x1C);
+    u32 transOff = *(u32*)(block + 0x20);
+
+    /* Table data: u16 values (J3DAnmTransformKeyTable entries) */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = scaleOff > tableOff ? scaleOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+
+    /* Scale values: f32 array → swap as u32 */
+    if (scaleOff != 0 && scaleOff < blockSize) {
+        swap_u32_array(block, scaleOff, scaleNum);
+    }
+
+    /* Rotation values: s16 array → swap as u16 */
+    if (rotOff != 0 && rotOff < blockSize) {
+        swap_u16_array(block, rotOff, rotNum);
+    }
+
+    /* Translation values: f32 array → swap as u32 */
+    if (transOff != 0 && transOff < blockSize) {
+        swap_u32_array(block, transOff, transNum);
+    }
+}
+
+/*
+ * CLK1/CLF1 (color key/full) block layout:
+ *   0x08: u8 loopMode, u8[3] pad
+ *   0x0C: s16 frameMax
+ *   0x0E: u16 updateMaterialNum
+ *   0x10: u16 rNum, u16 gNum
+ *   0x14: u16 bNum, u16 aNum
+ *   0x18: u32 tableOffset
+ *   0x1C: u32 updateMaterialIDOffset
+ *   0x20: u32 nameTabOffset
+ *   0x24: u32 rValOffset (s16)
+ *   0x28: u32 gValOffset (s16)
+ *   0x2C: u32 bValOffset (s16)
+ *   0x30: u32 aValOffset (s16)
+ */
+static void swap_clk1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0C, 1); /* frameMax */
+    swap_u16_array(block, 0x0E, 1); /* updateMaterialNum */
+    swap_u16_array(block, 0x10, 2); /* rNum, gNum */
+    swap_u16_array(block, 0x14, 2); /* bNum, aNum */
+    swap_u32_array(block, 0x18, 7); /* 7 offsets */
+
+    u32 tableOff = *(u32*)(block + 0x18);
+    u32 matIdOff = *(u32*)(block + 0x1C);
+    u32 nameOff  = *(u32*)(block + 0x20);
+    u32 rOff     = *(u32*)(block + 0x24);
+    u32 gOff     = *(u32*)(block + 0x28);
+    u32 bOff     = *(u32*)(block + 0x2C);
+    u32 aOff     = *(u32*)(block + 0x30);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = matIdOff > tableOff ? matIdOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+    /* Material ID: u16 array */
+    if (matIdOff != 0 && matIdOff < blockSize) {
+        u32 end = nameOff > matIdOff ? nameOff : blockSize;
+        swap_u16_range(block, matIdOff, end);
+    }
+    /* Name table */
+    swap_name_table(block, nameOff, blockSize);
+    /* Color values: all s16 → u16 swap */
+    if (rOff != 0 && rOff < blockSize) { u32 end = gOff > rOff ? gOff : blockSize; swap_u16_range(block, rOff, end); }
+    if (gOff != 0 && gOff < blockSize) { u32 end = bOff > gOff ? bOff : blockSize; swap_u16_range(block, gOff, end); }
+    if (bOff != 0 && bOff < blockSize) { u32 end = aOff > bOff ? aOff : blockSize; swap_u16_range(block, bOff, end); }
+    if (aOff != 0 && aOff < blockSize) { swap_u16_range(block, aOff, blockSize); }
+}
+
+/*
+ * TRK1/TRF1 (TEV register key/full) block layout:
+ *   0x08: u8 loopMode, u8 pad
+ *   0x0A: s16 frameMax
+ *   0x0C-0x1E: u16 count fields (8 values)
+ *   0x20: u32 cRegTableOffset
+ *   0x24: u32 kRegTableOffset
+ *   0x28-0x54: u32 offsets for cReg/kReg material IDs, name tables, and 8 color channels
+ *   All color data is s16 → u16 swap
+ */
+static void swap_trk1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u16_array(block, 0x0C, 8); /* count fields at 0x0C-0x1E */
+    swap_u32_array(block, 0x20, 14); /* 14 offsets at 0x20-0x54 */
+
+    u32 cRegTableOff = *(u32*)(block + 0x20);
+    u32 kRegTableOff = *(u32*)(block + 0x24);
+    u32 cRegMatIdOff = *(u32*)(block + 0x28);
+    u32 kRegMatIdOff = *(u32*)(block + 0x2C);
+    u32 cRegNameOff  = *(u32*)(block + 0x30);
+    u32 kRegNameOff  = *(u32*)(block + 0x34);
+
+    /* Table data */
+    if (cRegTableOff != 0 && cRegTableOff < blockSize) {
+        u32 end = kRegTableOff > cRegTableOff ? kRegTableOff : blockSize;
+        swap_u16_range(block, cRegTableOff, end);
+    }
+    if (kRegTableOff != 0 && kRegTableOff < blockSize) {
+        u32 end = cRegMatIdOff > kRegTableOff ? cRegMatIdOff : blockSize;
+        swap_u16_range(block, kRegTableOff, end);
+    }
+    /* Material IDs */
+    if (cRegMatIdOff != 0 && cRegMatIdOff < blockSize) {
+        u32 end = kRegMatIdOff > cRegMatIdOff ? kRegMatIdOff : blockSize;
+        swap_u16_range(block, cRegMatIdOff, end);
+    }
+    if (kRegMatIdOff != 0 && kRegMatIdOff < blockSize) {
+        u32 end = cRegNameOff > kRegMatIdOff ? cRegNameOff : blockSize;
+        swap_u16_range(block, kRegMatIdOff, end);
+    }
+    /* Name tables */
+    swap_name_table(block, cRegNameOff, blockSize);
+    swap_name_table(block, kRegNameOff, blockSize);
+    /* 8 color value arrays (s16) at offsets 0x38-0x54 */
+    for (int c = 0; c < 8; c++) {
+        u32 valOff = *(u32*)(block + 0x38 + c * 4);
+        if (valOff == 0 || valOff >= blockSize) continue;
+        u32 end = blockSize;
+        for (int d = c + 1; d < 8; d++) {
+            u32 next = *(u32*)(block + 0x38 + d * 4);
+            if (next > valOff && next < end) end = next;
+        }
+        swap_u16_range(block, valOff, end);
+    }
+}
+
+/*
+ * TTK1 (texture SRT key) block layout:
+ *   0x08: u8 loopMode, u8 rotDecShift
+ *   0x0A: s16 frameMax
+ *   0x0C: u16 trackNum, u16 scaleNum
+ *   0x10: u16 rotNum, u16 transNum
+ *   0x14: u32 tableOffset         - u16 table
+ *   0x18: u32 updateMatIDOffset   - u16 array
+ *   0x1C: u32 nameTab1Offset      - name table
+ *   0x20: u32 updateTexMtxIDOffset - u8 array
+ *   0x24: u32 srtCenterOffset      - Vec (3x f32)
+ *   0x28: u32 scaleValOffset       - f32 array
+ *   0x2C: u32 rotValOffset         - s16 array
+ *   0x30: u32 transValOffset       - f32 array
+ *   Then post-update fields: u16 counts at 0x34-0x3A, more offsets at 0x3C+
+ */
+static void swap_ttk1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u16_array(block, 0x0C, 2); /* trackNum, scaleNum */
+    swap_u16_array(block, 0x10, 2); /* rotNum, transNum */
+
+    /* Count offsets: 7 base + potential post-update offsets */
+    u32 numOffsets = 7;
+    /* Check for post-update data (TTK1 has u16 fields at 0x34-0x3A then more offsets) */
+    if (blockSize > 0x54) {
+        /* Swap u16 fields at 0x34-0x3A */
+        swap_u16_array(block, 0x34, 4);
+        numOffsets = 14; /* extended with post-update offsets */
+    }
+    swap_u32_array(block, 0x14, numOffsets);
+
+    u16 scaleNum = *(u16*)(block + 0x0E);
+    u16 rotNum   = *(u16*)(block + 0x10);
+    u16 transNum = *(u16*)(block + 0x12);
+
+    u32 tableOff      = *(u32*)(block + 0x14);
+    u32 updateMatOff   = *(u32*)(block + 0x18);
+    u32 nameTab1Off    = *(u32*)(block + 0x1C);
+    u32 texMtxIDOff    = *(u32*)(block + 0x20); /* u8 array */
+    u32 srtCenterOff   = *(u32*)(block + 0x24); /* Vec (f32) */
+    u32 scaleOff       = *(u32*)(block + 0x28);
+    u32 rotOff         = *(u32*)(block + 0x2C);
+    u32 transOff       = *(u32*)(block + 0x30);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = updateMatOff > tableOff ? updateMatOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+
+    /* UpdateMaterialID: u16 array */
+    if (updateMatOff != 0 && updateMatOff < blockSize) {
+        u32 end = nameTab1Off > updateMatOff ? nameTab1Off : blockSize;
+        swap_u16_range(block, updateMatOff, end);
+    }
+
+    /* Name table 1 */
+    swap_name_table(block, nameTab1Off, blockSize);
+
+    /* texMtxID: u8 array - no swap */
+
+    /* SRT center: Vec (3x f32) per entry */
+    if (srtCenterOff != 0 && srtCenterOff < blockSize) {
+        u32 end = scaleOff > srtCenterOff ? scaleOff : blockSize;
+        u32 count = (end - srtCenterOff) / 4;
+        swap_u32_array(block, srtCenterOff, count);
+    }
+
+    /* Scale values: f32 array */
+    if (scaleOff != 0 && scaleOff < blockSize) {
+        swap_u32_array(block, scaleOff, scaleNum);
+    }
+
+    /* Rotation values: s16 array */
+    if (rotOff != 0 && rotOff < blockSize) {
+        swap_u16_array(block, rotOff, rotNum);
+    }
+
+    /* Translation values: f32 array */
+    if (transOff != 0 && transOff < blockSize) {
+        swap_u32_array(block, transOff, transNum);
+    }
+
+    /* Post-update name table and other offsets */
+    if (blockSize > 0x54) {
+        u32 nameTab2Off = *(u32*)(block + 0x44);
+        swap_name_table(block, nameTab2Off, blockSize);
+
+        /* Post-update material IDs */
+        u32 postMatOff = *(u32*)(block + 0x40);
+        if (postMatOff != 0 && postMatOff < blockSize) {
+            u32 end = nameTab2Off > postMatOff ? nameTab2Off : blockSize;
+            swap_u16_range(block, postMatOff, end);
+        }
+
+        /* Post-update SRT center: Vec (f32) */
+        u32 postCenterOff = *(u32*)(block + 0x4C);
+        if (postCenterOff != 0 && postCenterOff < blockSize) {
+            u32 end = blockSize;
+            u32 count = (end - postCenterOff) / 4;
+            if (count > 1024) count = 1024;
+            swap_u32_array(block, postCenterOff, count);
+        }
+    }
+}
+
 static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
     /* Common animation header: swap count fields */
     if (blockSize < 0x10) return;
+
+    /* Use specialized handlers for known block types with f32 data */
+    if (blockType == FCC('A','N','K','1') || blockType == FCC('A','N','F','1')) {
+        swap_ank1(block, blockSize);
+        return;
+    }
+    if (blockType == FCC('T','T','K','1')) {
+        swap_ttk1(block, blockSize);
+        return;
+    }
+    if (blockType == FCC('C','L','K','1') || blockType == FCC('C','L','F','1')) {
+        swap_clk1(block, blockSize);
+        return;
+    }
+    if (blockType == FCC('T','R','K','1') || blockType == FCC('T','R','F','1')) {
+        swap_trk1(block, blockSize);
+        return;
+    }
+
+    /* Generic handler for blocks with all-u16 or all-s16 data:
+     * CLK1/CLF1 (color), TRK1/TRF1 (TEV register), TPT1/TPF1 (tex pattern),
+     * PAK1/PAF1, VAK1/VAF1 */
 
     /* Loop mode (u8) and padding - no swap */
     swap_u16_array(block, 0x0A, 1); /* frameCount */
