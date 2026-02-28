@@ -108,12 +108,34 @@ int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
 #if PLATFORM_PC
     /* On PC, skip warning/progressive/dolby states — just show the Nintendo logo,
-     * then transition to the opening scene. */
+     * then transition to the opening scene once all DVD loads are complete. */
     if (mNintendoLogo) {
         dComIfGd_set2DOpa(mNintendoLogo);
     }
     if (mTimer == 0) {
-        nextSceneChange();
+        /* Wait for all async DVD loads to finish before scene transition.
+         * Without this, the destructor accesses command pointers that haven't
+         * finished loading, causing SIGSEGV. */
+        if (!dComIfG_syncAllObjectRes()) {
+            if (mpField0Command->sync() && mpAlAnmCommand->sync() &&
+                mpFmapResCommand->sync() && mpDmapResCommand->sync() &&
+                mpCollectResCommand->sync() && mpItemIconCommand->sync() &&
+                mpRingResCommand->sync() && mpPlayerNameCommand->sync() &&
+                mpItemInfResCommand->sync() && mpButtonCommand->sync() &&
+                mpCardIconCommand->sync() && mpBmgResCommand->sync() &&
+                mpMsgComCommand->sync() && mpMsgResCommand[0]->sync() &&
+                mpMsgResCommand[1]->sync() && mpMsgResCommand[2]->sync() &&
+                mpMsgResCommand[3]->sync() && mpMsgResCommand[4]->sync() &&
+                mpMsgResCommand[5]->sync() && mpMsgResCommand[6]->sync() &&
+                mpFontResCommand->sync() && mpMain2DCommand->sync() &&
+                mpRubyResCommand->sync() && mParticleCommand->sync() &&
+                mItemTableCommand->sync() && mEnemyItemCommand->sync())
+            {
+                mDoRst::setLogoScnFlag(0);
+                mDoRst::setProgChgFlag(0);
+                nextSceneChange();
+            }
+        }
         return 1;
     }
     return 1;

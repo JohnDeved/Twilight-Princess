@@ -2636,6 +2636,11 @@ void dStage_dt_c_stageLoader(void* i_data, dStage_dt_c* i_stage) {
         {"REVT", dStage_stEventInfoInit},   {"SOND", dStage_soundInfoInitCL},
     };
 
+#if PLATFORM_PC
+    /* On PC, stage.dzs is big-endian. Swap the file header (chunk count +
+     * node tags/offsets) before decode, same as roomLoader does. */
+    dStage_dt_c_offsetToPtr(i_data);
+#endif
     dStage_dt_c_decode(i_data, i_stage, l_funcTable, ARRAY_SIZEU(l_funcTable));
     layerTableLoader(i_data, i_stage, -1);
     layerActorLoader(i_data, i_stage, -1);
