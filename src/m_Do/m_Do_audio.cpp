@@ -18,6 +18,10 @@
 #include <revolution/sc.h>
 #endif
 
+#if PLATFORM_PC
+#include "pal/pal_audio.h"
+#endif
+
 u8 mDoAud_zelAudio_c::mInitFlag;
 
 u8 mDoAud_zelAudio_c::mResetFlag;
@@ -46,10 +50,11 @@ static void dummy() {
 
 static void mDoAud_Create() {
 #if PLATFORM_PC
-    /* Phase A: Skip audio initialization on PC.
+    /* Phase A: Skip J-Audio engine initialization on PC.
      * The BAA/BMS/etc data from disc is big-endian and the J-Audio engine
-     * can't parse it on little-endian yet. Just mark audio as initialized
-     * so the game loop continues. */
+     * can't parse it on little-endian yet. Initialize SDL3 audio (silence)
+     * and mark audio as initialized so the game loop continues. */
+    pal_audio_init();
     mDoAud_zelAudio_c::onInitFlag();
     mDoDvdThd::SyncWidthSound = true;
     return;

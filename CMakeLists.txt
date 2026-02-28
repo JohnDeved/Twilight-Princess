@@ -51,7 +51,7 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
-set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
+set(SDL_AUDIO ON CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
@@ -131,6 +131,8 @@ set(PAL_SOURCES
     src/pal/pal_profile_list.cpp
     src/pal/pal_window.cpp
     src/pal/pal_input.cpp
+    src/pal/pal_audio.cpp
+    src/pal/pal_save.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
     src/pal/gx/gx_bgfx.cpp

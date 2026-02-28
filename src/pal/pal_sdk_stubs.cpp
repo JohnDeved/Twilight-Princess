@@ -17,6 +17,7 @@
 
 #include "pal/pal_milestone.h"
 #include "pal/pal_input.h"
+#include "pal/pal_save.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
 
@@ -787,24 +788,54 @@ void __DSP_remove_task(DSPTaskInfo* task) { (void)task; }
 DSPTaskInfo* __DSPGetCurrentTask(void) { return NULL; }
 
 /* ================================================================ */
-/* NAND                                                             */
+/* NAND — redirected to host filesystem via pal_save                */
 /* ================================================================ */
 
-s32 NANDInit(void) { return 0; }
+#include "revolution/nand.h"
+
+s32 NANDInit(void) { pal_save_init(); return 0; }
 s32 NANDOpen(const char* path, NANDFileInfo* info, u8 accType) {
-    (void)path; (void)info; (void)accType;
-    return -128; /* NAND_RESULT_FATAL_ERROR - signals not available */
+    if (!info || !path) return -128;
+    int h = pal_save_open(path, accType);
+    if (h < 0) return -128;
+    info->fileDescriptor = h;
+    return 0; /* NAND_RESULT_OK */
 }
-s32 NANDClose(NANDFileInfo* info) { (void)info; return 0; }
-s32 NANDRead(NANDFileInfo* info, void* buf, u32 length) { (void)info; (void)buf; (void)length; return -1; }
-s32 NANDWrite(NANDFileInfo* info, void* buf, u32 length) { (void)info; (void)buf; (void)length; return -1; }
-s32 NANDSeek(NANDFileInfo* info, s32 offset, s32 whence) { (void)info; (void)offset; (void)whence; return -1; }
-s32 NANDCreate(const char* path, u8 perm, u8 attr) { (void)path; (void)perm; (void)attr; return -1; }
-s32 NANDDelete(const char* path) { (void)path; return -1; }
-s32 NANDGetLength(NANDFileInfo* info, u32* length) { (void)info; if (length) *length = 0; return -1; }
+s32 NANDClose(NANDFileInfo* info) {
+    if (!info) return -1;
+    return pal_save_close(info->fileDescriptor) == 0 ? 0 : -1;
+}
+s32 NANDRead(NANDFileInfo* info, void* buf, u32 length) {
+    if (!info) return -1;
+    return (s32)pal_save_read(info->fileDescriptor, buf, length);
+}
+s32 NANDWrite(NANDFileInfo* info, const void* buf, u32 length) {
+    if (!info) return -1;
+    return (s32)pal_save_write(info->fileDescriptor, buf, length);
+}
+s32 NANDSeek(NANDFileInfo* info, s32 offset, s32 whence) {
+    if (!info) return -1;
+    return (s32)pal_save_seek(info->fileDescriptor, offset, whence);
+}
+s32 NANDCreate(const char* path, u8 perm, u8 attr) {
+    (void)perm; (void)attr;
+    return pal_save_create(path) == 0 ? 0 : -1;
+}
+s32 NANDDelete(const char* path) {
+    return pal_save_delete(path) == 0 ? 0 : -1;
+}
+s32 NANDGetLength(NANDFileInfo* info, u32* length) {
+    if (!info) return -1;
+    return pal_save_get_length(info->fileDescriptor, length) == 0 ? 0 : -1;
+}
 s32 NANDGetStatus(const char* path, NANDStatus* stat) { (void)path; (void)stat; return -1; }
 s32 NANDCheck(u32 fsBlock, u32 inode, u32* answer) { (void)fsBlock; (void)inode; (void)answer; return 0; }
-s32 NANDCreateDir(const char* path, u8 perm, u8 attr) { (void)path; (void)perm; (void)attr; return -1; }
+s32 NANDCreateDir(const char* path, u8 perm, u8 attr) {
+    (void)perm; (void)attr;
+    /* Create directory in save path — not critical, return success */
+    (void)path;
+    return 0;
+}
 
 /* NAND Async */
 s32 NANDOpenAsync(const char* path, NANDFileInfo* info, u8 accType,
@@ -821,7 +852,7 @@ s32 NANDReadAsync(NANDFileInfo* info, void* buf, u32 length,
     (void)info; (void)buf; (void)length; (void)callback; (void)block;
     return -1;
 }
-s32 NANDWriteAsync(NANDFileInfo* info, void* buf, u32 length,
+s32 NANDWriteAsync(NANDFileInfo* info, const void* buf, u32 length,
                    NANDCallback callback, NANDCommandBlock* block) {
     (void)info; (void)buf; (void)length; (void)callback; (void)block;
     return -1;
