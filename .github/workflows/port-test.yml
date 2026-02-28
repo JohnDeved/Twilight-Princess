@@ -2,25 +2,25 @@ name: Port Test (PC Headless)
 
 on:
   push:
+    branches:
+      - port
     paths:
       - 'src/**'
       - 'include/**'
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
-      - 'tools/parse_milestones.py'
-      - 'tools/check_milestone_regression.py'
-      - 'tools/setup_game_data.py'
+      - 'tools/**'
       - 'milestone-baseline.json'
+      - 'tests/**'
   pull_request:
     paths:
       - 'src/**'
       - 'include/**'
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
-      - 'tools/parse_milestones.py'
-      - 'tools/check_milestone_regression.py'
-      - 'tools/setup_game_data.py'
+      - 'tools/**'
       - 'milestone-baseline.json'
+      - 'tests/**'
 
 jobs:
   test:
@@ -100,7 +100,7 @@ jobs:
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "30,60,120,300,600,1200,1800"
+          TP_VERIFY_CAPTURE_FRAMES: "1,5,10,15,20,25,30,60,90,120,180,240,300,600,900,1200,1500,1800"
         run: |
           set -o pipefail
           mkdir -p verify_output
@@ -145,12 +145,21 @@ jobs:
             echo "delta=$(python3 -c "import json; print(json.load(open('regression-report.json'))['delta'])")" >> $GITHUB_OUTPUT
           fi
 
+      - name: Convert screenshots and generate video
+        if: always()
+        run: |
+          python3 tools/convert_frames.py verify_output \
+            --png-dir verify_png \
+            --video verify_output/render_progress.mp4 \
+            --fps 4 || true
+
       - name: Post PR comment with results
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
 
             // Load milestone summary
             let summary = {};
@@ -174,6 +183,85 @@ jobs:
               verify = JSON.parse(fs.readFileSync('verify-report.json', 'utf8'));
             } catch (e) {
               // no verification data
+            }
+
+            // Upload PNG screenshots to the branch for embedding in the comment
+            const pngDir = 'verify_png';
+            const imageUrls = {};
+            const repoUrl = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}`;
+            if (fs.existsSync(pngDir)) {
+              const pngs = fs.readdirSync(pngDir).filter(f => f.endsWith('.png')).sort();
+              for (const png of pngs) {
+                const filePath = path.join(pngDir, png);
+                const content = fs.readFileSync(filePath);
+                const base64 = content.toString('base64');
+                const repoPath = `.ci-screenshots/${png}`;
+
+                try {
+                  // Check if file already exists
+                  let sha;
+                  try {
+                    const existing = await github.rest.repos.getContent({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      path: repoPath,
+                      ref: context.payload.pull_request.head.ref,
+                    });
+                    sha = existing.data.sha;
+                  } catch (e) {
+                    // File doesn't exist yet
+                  }
+
+                  await github.rest.repos.createOrUpdateFileContents({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    path: repoPath,
+                    message: `ci: update render screenshot ${png}`,
+                    content: base64,
+                    branch: context.payload.pull_request.head.ref,
+                    ...(sha ? { sha } : {}),
+                  });
+                  imageUrls[png] = `${repoUrl}/${context.payload.pull_request.head.ref}/${repoPath}`;
+                } catch (e) {
+                  console.log(`Failed to upload ${png}: ${e.message}`);
+                }
+              }
+            }
+
+            // Upload video if it exists
+            let videoUrl = null;
+            const videoPath = 'verify_output/render_progress.mp4';
+            if (fs.existsSync(videoPath)) {
+              const content = fs.readFileSync(videoPath);
+              if (content.length < 25 * 1024 * 1024) { // GitHub file size limit ~25MB
+                const base64 = content.toString('base64');
+                const repoPath = '.ci-screenshots/render_progress.mp4';
+                try {
+                  let sha;
+                  try {
+                    const existing = await github.rest.repos.getContent({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      path: repoPath,
+                      ref: context.payload.pull_request.head.ref,
+                    });
+                    sha = existing.data.sha;
+                  } catch (e) {}
+
+                  await github.rest.repos.createOrUpdateFileContents({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    path: repoPath,
+                    message: `ci: update render progress video`,
+                    content: base64,
+                    branch: context.payload.pull_request.head.ref,
+                    ...(sha ? { sha } : {}),
+                  });
+                  videoUrl = `${repoUrl}/${context.payload.pull_request.head.ref}/${repoPath}`;
+                } catch (e) {
+                  console.log(`Failed to upload video: ${e.message}`);
+                }
+              }
             }
 
             // Status emoji
@@ -271,6 +359,39 @@ jobs:
               }
             }
 
+            // Render screenshots
+            const sortedPngs = Object.keys(imageUrls).sort();
+            if (sortedPngs.length > 0) {
+              body += `\n### 📸 Render Screenshots\n`;
+              // Show key frames inline (first, middle, last)
+              const keyFrames = sortedPngs.length <= 6
+                ? sortedPngs
+                : [sortedPngs[0], ...sortedPngs.filter((_,i) => i > 0 && i < sortedPngs.length - 1).filter((_,i,a) => i % Math.ceil(a.length / 4) === 0), sortedPngs[sortedPngs.length - 1]];
+              for (const png of keyFrames) {
+                const frameNum = png.replace('frame_', '').replace('.png', '');
+                body += `\n**Frame ${frameNum}**\n\n`;
+                body += `![Frame ${frameNum}](${imageUrls[png]})\n`;
+              }
+              // Collapsible section with all frames
+              if (sortedPngs.length > 6) {
+                body += `\n<details><summary>All ${sortedPngs.length} captured frames</summary>\n\n`;
+                for (const png of sortedPngs) {
+                  const frameNum = png.replace('frame_', '').replace('.png', '');
+                  body += `**Frame ${frameNum}** · `;
+                  body += `![Frame ${frameNum}](${imageUrls[png]})\n\n`;
+                }
+                body += `</details>\n`;
+              }
+            }
+
+            // Render progress video
+            if (videoUrl) {
+              body += `\n### 🎬 Render Progress Video\n`;
+              body += `[▶️ Download render_progress.mp4](${videoUrl})\n\n`;
+              body += `> Video shows all captured frames in sequence at 4fps.\n`;
+              body += `> Download the MP4 from CI artifacts or click above.\n`;
+            }
+
             body += `\n---\n`;
             body += `<sub>🤖 Generated by port-test CI · `;
             body += `Commit: ${context.sha.substring(0, 7)}</sub>\n`;
@@ -314,4 +435,5 @@ jobs:
             regression-report.json
             verify-report.json
             verify_output/
+            verify_png/
             logo_render.bmp
