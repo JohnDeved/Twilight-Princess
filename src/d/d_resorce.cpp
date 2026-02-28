@@ -20,6 +20,40 @@
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #include "pal/pal_endian.h"
+#include <signal.h>
+#include <setjmp.h>
+static volatile sig_atomic_t s_j3d_crash = 0;
+static sigjmp_buf s_j3d_jmpbuf;
+static void j3d_sigsegv_handler(int sig) {
+    (void)sig;
+    s_j3d_crash = 1;
+    siglongjmp(s_j3d_jmpbuf, 1);
+}
+
+/* Wrap a J3D loader call with SIGSEGV protection.
+ * Returns the loader result, or NULL if the loader crashed. */
+template<typename Func>
+static void* j3d_safe_load(Func func) {
+    struct sigaction sa_new, sa_old;
+    memset(&sa_new, 0, sizeof(sa_new));
+    sa_new.sa_handler = j3d_sigsegv_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = 0;
+    sigaction(SIGSEGV, &sa_new, &sa_old);
+    s_j3d_crash = 0;
+
+    void* result = NULL;
+    if (sigsetjmp(s_j3d_jmpbuf, 1) == 0) {
+        result = func();
+    }
+    sigaction(SIGSEGV, &sa_old, NULL);
+
+    if (s_j3d_crash) {
+        fprintf(stderr, "{\"j3d_crash\":\"SIGSEGV in J3D loader, returning NULL\"}\n");
+        return NULL;
+    }
+    return result;
+}
 #endif
 
 dRes_info_c::dRes_info_c() {
@@ -232,7 +266,19 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
         flags ^= 0x60020;
     }
 
+#if PLATFORM_PC
+    /* On PC, J3D model loading may crash due to incomplete endian conversion
+     * or 64-bit struct layout differences. Catch SIGSEGV and return NULL. */
+    {
+        u32 f = flags;
+        void* d = i_data;
+        i_data = j3d_safe_load([&]() -> void* {
+            return J3DModelLoaderDataBase::load(d, f);
+        });
+    }
+#else
     i_data = J3DModelLoaderDataBase::load(i_data, flags);
+#endif
     if (i_data == NULL) {
         return NULL;
     }
@@ -362,7 +408,13 @@ int dRes_info_c::loadResource() {
 #if DEBUG
                     g_kankyoHIO.navy.field_0x22a |= u16(0x100);
 #endif
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020030);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020030);
+#endif
                     if (res == NULL) {
                         return -1;
                     }
@@ -396,7 +448,13 @@ int dRes_info_c::loadResource() {
                         return -1;
                     }
                 } else if (nodeType == 'BMDG') {
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020010);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
+#endif
                     if (res == NULL) {
                         return -1;
                     }
@@ -421,7 +479,13 @@ int dRes_info_c::loadResource() {
 #if DEBUG
                     g_kankyoHIO.navy.field_0x22a |= u16(0x800);
 #endif
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020010);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
+#endif
                     if (res == NULL) {
                         return -1;
                     }

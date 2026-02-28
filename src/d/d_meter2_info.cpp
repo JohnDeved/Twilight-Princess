@@ -350,6 +350,11 @@ void dMeter2Info_c::decMsgKeyWaitTimer() {
 void dMeter2Info_c::getString(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_msgEntry) {
     strcpy(o_string, "");
 
+#if PLATFORM_PC
+    /* BMG message data is big-endian; not yet endian-converted on PC */
+    return;
+#endif
+
     u8* msgRes;
     if (mMsgResource == NULL) {
         msgRes = (u8*)JKRGetTypeResource('ROOT', "zel_00.bmg", dComIfGp_getMsgDtArchive(0));
@@ -387,6 +392,11 @@ void dMeter2Info_c::getString(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_
 
 void dMeter2Info_c::getStringKana(u32 i_stringID, char* o_string, JMSMesgEntry_c* i_msgEntry) {
     strcpy(o_string, "");
+
+#if PLATFORM_PC
+    /* BMG message data is big-endian; not yet endian-converted on PC */
+    return;
+#endif
 
     u8* msgRes;
     if (mMsgResource == NULL) {

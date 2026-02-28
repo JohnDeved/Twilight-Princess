@@ -1164,6 +1164,9 @@ static void dungeonlight_init() {
 
 static void undwater_init() {
     J3DModelData* modelData2 = (J3DModelData*)dComIfG_getObjectRes("Always", 0x1D);
+#if PLATFORM_PC
+    if (modelData2 == NULL) return;
+#endif
     JUT_ASSERT(1867, modelData2 != NULL);
 
     g_env_light.undwater_ef_heap = mDoExt_createSolidHeapFromGameToCurrent(0x600, 0x20);

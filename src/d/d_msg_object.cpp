@@ -1601,7 +1601,11 @@ u8 dMsgObject_c::isSend() {
 }
 
 void dMsgObject_c::readMessageGroupLocal(mDoDvdThd_mountXArchive_c** p_arcMount) {
+#if PLATFORM_PC
+    static char arcName[64];
+#else
     static char arcName[22];
+#endif
 
     int msgGroup = dStage_stagInfo_GetMsgGroup(dComIfGp_getStage()->getStagInfo());
     #if REGION_PAL

@@ -547,7 +547,18 @@ dScnLogo_c::~dScnLogo_c() {
     dEnemyItem_c::setItemData((u8*)mEnemyItemCommand->getMemAddress());
     mEnemyItemCommand->destroy();
 
+#if PLATFORM_PC
+    /* Always.arc may fail to load on PC due to heap pressure;
+     * guard against NULL to prevent crash in setSimpleTex */
+    {
+        ResTIMG* shadowTex = (ResTIMG*)dComIfG_getObjectRes("Always", 0x4A);
+        if (shadowTex) {
+            dDlst_shadowControl_c::setSimpleTex(shadowTex);
+        }
+    }
+#else
     dDlst_shadowControl_c::setSimpleTex((ResTIMG*)dComIfG_getObjectRes("Always", 0x4A));
+#endif
     dTres_c::createWork();
     dMpath_c::createWork();
 
@@ -560,10 +571,20 @@ static int phase_0(dScnLogo_c* i_this) {
     mDoGph_gInf_c::setFadeColor(*(JUtility::TColor*)&g_blackColor);
     dComIfGp_particle_create();
 
+#if PLATFORM_PC
+    /* On PC, MOUNT_MEM puts Always.arc/Alink.arc on the game heap.
+     * Reduce the logo workspace to leave room for those archives.
+     * We only need space for the Nintendo logo texture (no warning/progressive screens). */
+    i_this->dummyGameAlloc = mDoExt_getGameHeap()->alloc(0x40000, -0x10);
+    JUT_ASSERT(1523, i_this->dummyGameAlloc != NULL);
+    i_this->field_0x1d0 = JKRExpHeap::create(i_this->dummyGameAlloc, 0x40000, NULL, false);
+    i_this->field_0x1d4 = JKRExpHeap::create(0x20000, i_this->field_0x1d0, false);
+#else
     i_this->dummyGameAlloc = mDoExt_getGameHeap()->alloc(0x340000, -0x10);
     JUT_ASSERT(1523, i_this->dummyGameAlloc != NULL);
     i_this->field_0x1d0 = JKRExpHeap::create(i_this->dummyGameAlloc, 0x340000, NULL, false);
     i_this->field_0x1d4 = JKRExpHeap::create(0x130000, i_this->field_0x1d0, false);
+#endif
 
     #if VERSION == VERSION_GCN_PAL
     switch (i_this->getPalLanguage()) {
