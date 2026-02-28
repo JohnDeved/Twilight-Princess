@@ -393,7 +393,7 @@ void pal_screenshot_blit(void) {
 
                 /* Apply TEV register lerp: lerp(C0, C1, texture_intensity) */
                 if (use_tev_lerp) {
-                    uint8_t t = r; /* intensity (IA8 has R=G=B=I) */
+                    uint8_t t = r; /* use red as intensity proxy (exact for IA8; approximate for RGB) */
                     r = (uint8_t)((c0r * (255 - t) + c1r * t) / 255);
                     g = (uint8_t)((c0g * (255 - t) + c1g * t) / 255);
                     b = (uint8_t)((c0b * (255 - t) + c1b * t) / 255);
