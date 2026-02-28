@@ -240,12 +240,12 @@ The regression report tells you the current status:
 
 The verification system (`TP_VERIFY=1`) provides automated health checks for three
 subsystems: rendering, input, and audio. It works alongside the milestone system to
-give agents concrete evidence of what's working.
+give agents concrete, actionable evidence of what's working and what to fix next.
 
 ### Rendering Verification
 
 The rendering verification is **fully automated and dependable without human review**.
-It uses five verification layers, any of which can independently detect regressions:
+It uses seven verification layers, any of which can independently detect regressions:
 
 #### Layer 1: Per-Frame Metrics
 Each frame reports draw calls, vertex count, stub count, and validity flag.
@@ -258,7 +258,9 @@ causes a different hash on a previously-stable frame, the rendering changed.
 
 The hash is logged per frame:
 ```json
-{"verify_frame":{"frame":30,"draw_calls":12,"verts":480,"fb_hash":"0xABCD1234","fb_has_draws":1}}
+{"verify_frame":{"frame":30,"draw_calls":12,"verts":480,"fb_hash":"0xABCD1234","fb_has_draws":1,
+  "textured_draws":10,"untextured_draws":2,"unique_textures":5,"shader_mask":7,
+  "depth_draws":11,"blend_draws":3,"prim_mask":400}}
 ```
 
 Expected hashes can be stored in `tests/render-baseline.json` — if the actual hash
@@ -301,6 +303,47 @@ run `tools/verify_port.py --update-golden` locally and commit the resulting BMPs
 ```
 
 Any metric that falls below the baseline is flagged as a regression.
+
+#### Layer 6: Render Pipeline Stage Health
+Checks each stage of the GX → bgfx rendering pipeline individually. If a stage
+is broken, the agent gets **actionable guidance** on exactly what to fix:
+
+| Stage | What It Checks | If Broken |
+|---|---|---|
+| **Geometry** | Are vertices submitted? | Fix GXBegin/GXPosition/GXEnd → pal_tev_flush_draw() |
+| **Textures** | Are GX textures decoded? | Fix GXLoadTexObj → pal_gx_decode_texture() |
+| **Shaders** | Are textured shaders used? | Fix TEV preset detection (REPLACE/MODULATE) |
+| **Depth** | Is z-buffering active? | Ensure GXSetZMode sets z_compare_enable |
+| **Blending** | Is alpha blending working? | Check GXSetBlendMode state |
+| **Primitives** | Are multiple prim types used? | Check GXBegin prim type conversion |
+
+Each stage can be gated in `tests/render-baseline.json` via the `pipeline` section:
+```json
+{
+  "pipeline": {
+    "require_geometry": true,
+    "require_textures": false,
+    "require_textured_shaders": false,
+    "require_depth": false
+  }
+}
+```
+
+As rendering progresses, enable requirements to prevent regressions. Once textures
+work, set `require_textures: true` so it can never regress.
+
+A **visual complexity score** (0-100) summarizes overall pipeline quality:
+- 0-25: Only basic geometry (no textures, no shaders)
+- 25-50: Textures loading, basic shaders
+- 50-75: Multiple shaders, depth testing, blending
+- 75-100: Full pipeline — multiple textures, shaders, depth, blend, primitive types
+
+#### Layer 7: Frame Progression
+Detects if the game is **stuck** or **frozen** by tracking framebuffer hash changes:
+- If the hash never changes across 60+ frames → game may be stuck in a loop
+- If all captured frames have identical hashes → scene content isn't progressing
+
+This catches bugs where the game renders but never advances past the clear color.
 
 #### How It Works in Headless CI
 The software framebuffer captures all GX shim draw calls at the CPU level,
