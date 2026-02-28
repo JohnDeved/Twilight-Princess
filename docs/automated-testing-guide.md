@@ -40,7 +40,7 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 │  └──────────────────────────────────────────────────────────┘   │
 │     ↓                                                           │
 │  5. Read PR comment (structured milestone results)              │
-│  6. Follow "Recommended Next Action" from the report            │
+│  6. Implement fix based on stubs / milestones → goto 4          │
 │  7. Implement fix → goto 4                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -119,19 +119,18 @@ The CI runs on every push or PR that touches:
 
 | Artifact | Purpose | Agent Use |
 |---|---|---|
-| `milestone-summary.json` | Parsed milestone results | Check `highest_milestone` and `stubs_hit` |
-| `regression-report.json` | Regression check result | Check `status` (improved/same/regressed) and `next_action` |
+| `milestone-summary.json` | Parsed milestone results | Check `milestones_reached_count` and `stubs_hit` |
+| `regression-report.json` | Regression check result | Check `status` (improved/same/regressed) |
 | `milestones.log` | Raw milestone log | Debug milestone timing |
 | `logo_render.bmp` | Screenshot capture | Visual verification |
 
 ### PR Comment
 
 On pull requests, the CI posts a structured comment with:
-- Current milestone vs baseline
+- Current milestone count vs baseline
 - Regression status (🎉 improved / ✅ same / 🚨 regressed)
 - Top unimplemented stubs
 - Frame validation stats
-- **Recommended next action** with specific files to edit
 
 The comment is updated on each push (not duplicated).
 
@@ -139,12 +138,12 @@ The comment is updated on each push (not duplicated).
 
 ### How It Works
 
-The file `milestone-baseline.json` stores the highest milestone ever achieved:
+The file `milestone-baseline.json` stores the milestone count ever achieved:
 
 ```json
 {
-  "highest_milestone": 6,
-  "highest_milestone_name": "LOGO_SCENE",
+  "milestones_reached_count": 8,
+  "milestones_reached": ["BOOT_START", "HEAP_INIT", "GFX_INIT", "PAD_INIT", "FRAMEWORK_INIT", "FIRST_FRAME", "LOGO_SCENE", "SCENE_CREATED"],
   "updated": "2026-02-27",
   "note": "All rendering-critical stubs implemented"
 }
@@ -174,8 +173,8 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 1. **Read `milestone-baseline.json`** — know the current best milestone
 2. **Read `docs/port-progress.md`** — check the step checklist and session log
 3. **Check the latest CI run** — read the PR comment or download `milestone-summary.json`
-4. **Decide what to work on** — use the decision table above or the `next_action` from the
-   regression report
+4. **Decide what to work on** — use the decision table above or the stubs list from
+   the milestone summary
 
 ### Making Changes
 
@@ -204,18 +203,14 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 
 ### Interpreting CI Results
 
-The regression report's `next_action` field tells you exactly what to do:
+The regression report tells you the current status:
 
 ```json
 {
   "status": "same",
-  "current_milestone": 6,
-  "baseline_milestone": 6,
-  "next_action": {
-    "action": "Logo loads — implement GX stubs and rendering for title scene",
-    "focus_files": ["src/pal/pal_gx_stubs.cpp", "src/pal/gx/gx_state.cpp"],
-    "docs": "docs/agent-port-workflow.md#step-5--gx-shim-tier-a-5000-loc"
-  }
+  "current_milestone_count": 8,
+  "baseline_milestone_count": 8,
+  "milestones_reached": ["BOOT_START", "HEAP_INIT", "GFX_INIT", "PAD_INIT", "FRAMEWORK_INIT", "FIRST_FRAME", "LOGO_SCENE", "SCENE_CREATED"]
 }
 ```
 
@@ -373,7 +368,7 @@ milestone-baseline.json              ← Current best milestone (regression base
 tests/render-baseline.json           ← Rendering metrics baseline (draw calls, hashes)
 tests/golden/                        ← Golden reference frame BMPs for image comparison
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
-tools/check_milestone_regression.py  ← Compare against baseline, recommend next action
+tools/check_milestone_regression.py  ← Compare against baseline, detect regressions
 tools/verify_port.py                 ← Subsystem verification (rendering/input/audio)
 tools/setup_game_data.py             ← Download + extract game data
 .github/workflows/port-test.yml      ← CI pipeline (build, test, verify, comment on PR)

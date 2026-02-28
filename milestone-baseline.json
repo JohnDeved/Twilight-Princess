@@ -1,6 +1,6 @@
 {
-  "highest_milestone": 6,
-  "highest_milestone_name": "LOGO_SCENE",
+  "milestones_reached_count": 8,
+  "milestones_reached": ["BOOT_START", "HEAP_INIT", "GFX_INIT", "PAD_INIT", "FRAMEWORK_INIT", "FIRST_FRAME", "LOGO_SCENE", "SCENE_CREATED"],
   "updated": "2026-02-27",
   "note": "All rendering-critical stubs implemented; RENDER_FRAME unblocked pending game data"
 }

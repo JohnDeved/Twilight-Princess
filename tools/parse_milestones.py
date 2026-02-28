@@ -2,7 +2,7 @@
 """Parse milestone JSON lines from port test output and produce summary for AI agent.
 
 The summary JSON is designed for machine consumption by AI agents:
-- highest_milestone: numeric milestone level reached
+- milestones_reached_count: number of distinct milestones reached
 - milestones_reached: list of all milestone names reached
 - stubs_hit: top unimplemented GX stubs by hit count (implement these first)
 - crash: crash info if any
@@ -124,13 +124,14 @@ def validate_integrity(milestones, frame_validation):
     if 10 in reached_ids:  # FRAMES_60
         first_frame_ms = seen_ids.get(5, {}).get("time_ms", 0)
         frames_60_ms = seen_ids.get(10, {}).get("time_ms", 0)
-        # 60 frames at 60fps = 1000ms minimum
+        # 60 frames at 60fps = 1000ms; use 500ms threshold to allow for
+        # variable frame timing and uncapped headless mode
         if frames_60_ms > 0 and first_frame_ms > 0:
             gap = frames_60_ms - first_frame_ms
-            if gap < 500:  # Less than 500ms for 60 frames is suspicious
+            if gap < 500:
                 issues.append(
                     f"FRAMES_60 reached only {gap}ms after FIRST_FRAME "
-                    f"(expected >=1000ms for 60 frames)"
+                    f"(expected >=500ms for 60 frames)"
                 )
 
     if 12 in reached_ids:  # FRAMES_1800
@@ -154,7 +155,7 @@ def main():
     parser.add_argument("--output", default="milestone-summary.json",
                         help="Output summary JSON file")
     parser.add_argument("--min-milestone", type=int, default=0,
-                        help="Fail if highest milestone < this value")
+                        help="Fail if milestone count < this value")
     args = parser.parse_args()
 
     milestones = []
@@ -180,14 +181,10 @@ def main():
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
 
-    # Exclude TEST_COMPLETE (99) and CRASH (-1) from highest calculation
-    real_ids = [m["id"] for m in milestones if 0 <= m["id"] < 99]
-    highest = max(real_ids, default=-1)
-    last = milestones[-1] if milestones else None
-
     # Build list of all reached milestone names (exclude TEST_COMPLETE for clarity)
     reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] < 99))
     milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in reached_ids]
+    milestone_count = len(reached_ids)
 
     # Build timing info
     timing = {}
@@ -199,22 +196,12 @@ def main():
     # Validate milestone integrity
     integrity_valid, integrity_issues = validate_integrity(milestones, frame_validation)
 
-    # If integrity fails, cap the milestone at the highest valid one
-    effective_highest = highest
-    if not integrity_valid:
-        print(f"\n⚠️  INTEGRITY CHECK FAILED:", file=sys.stderr)
-        for issue in integrity_issues:
-            print(f"   ❌ {issue}", file=sys.stderr)
-        # Don't trust the reported milestone — mark as suspicious
-        effective_highest = highest  # still report it, but flag it
-
     summary = {
-        "highest_milestone": effective_highest,
-        "highest_milestone_name": MILESTONE_NAMES.get(effective_highest, "UNKNOWN"),
+        "milestones_reached_count": milestone_count,
         "milestones_reached": milestones_reached,
-        "last_milestone": last,
+        "last_milestone": milestones[-1] if milestones else None,
         "crash": crash,
-        "total_milestones": len([m for m in milestones if 0 <= m["id"] < 99]),
+        "total_milestones": milestone_count,
         "stubs_hit": sorted(stubs, key=lambda s: -s.get("hits", 0))[:20],
         "frame_validation": frame_validation,
         "timing": timing,
@@ -222,7 +209,7 @@ def main():
             "valid": integrity_valid,
             "issues": integrity_issues,
         },
-        "pass": (highest >= args.min_milestone and crash is None
+        "pass": (milestone_count >= args.min_milestone and crash is None
                  and integrity_valid),
     }
 
@@ -233,11 +220,8 @@ def main():
     print(f"\n{'=' * 60}")
     print("PORT TEST SUMMARY")
     print(f"{'=' * 60}")
-    if last:
-        print(f"Highest milestone: {highest} ({MILESTONE_NAMES.get(highest, 'UNKNOWN')})")
-    else:
-        print(f"Highest milestone: {highest} (NONE)")
-    print(f"Milestones reached: {', '.join(milestones_reached)}")
+    print(f"Milestones reached: {milestone_count}/{len(MILESTONE_NAMES) - 1}")
+    print(f"Milestones: {', '.join(milestones_reached) if milestones_reached else 'NONE'}")
     if timing:
         print(f"Timing: {json.dumps(timing)}")
     if crash:

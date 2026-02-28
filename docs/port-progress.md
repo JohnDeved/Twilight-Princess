@@ -146,8 +146,8 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] Create `src/pal/pal_crash.cpp` — signal handler + backtrace (~20 LOC)
 - [x] Create GX stub coverage tracker `include/pal/gx/gx_stub_tracker.h` (~80 LOC)
 - [x] Create `milestone-baseline.json` — regression baseline tracking
-- [x] Create `tools/check_milestone_regression.py` — regression detection + next-action recommendations
-- [x] CI posts structured PR comment with milestone results, regression status, and next action
+- [x] Create `tools/check_milestone_regression.py` — regression detection
+- [x] CI posts structured PR comment with milestone count, regression status, and stubs
 - [x] Create `docs/automated-testing-guide.md` — single authoritative testing reference
 - [x] Create `include/pal/pal_verify.h` + `src/pal/pal_verify.cpp` — rendering/input/audio verification
 - [x] Create `tools/verify_port.py` — subsystem health analysis
@@ -252,7 +252,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `tools/setup_game_data.py` — Game data auto-download script (ROM + nodtool extract)
 - `.github/workflows/port-test.yml` — CI workflow for port testing
 - `tools/parse_milestones.py` — CI milestone parser
-- `tools/check_milestone_regression.py` — Milestone regression detection + next-action recommendations
+- `tools/check_milestone_regression.py` — Milestone regression detection
 - `milestone-baseline.json` — Milestone regression baseline tracking
 - `docs/automated-testing-guide.md` — Authoritative testing guide for AI agents
 - `include/pal/pal_verify.h` — Verification system header (rendering/input/audio)

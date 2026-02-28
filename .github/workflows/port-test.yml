@@ -139,8 +139,8 @@ jobs:
           # Extract key fields for the PR comment step
           if [ -f regression-report.json ]; then
             echo "status=$(python3 -c "import json; print(json.load(open('regression-report.json'))['status'])")" >> $GITHUB_OUTPUT
-            echo "current=$(python3 -c "import json; print(json.load(open('regression-report.json'))['current_milestone'])")" >> $GITHUB_OUTPUT
-            echo "baseline=$(python3 -c "import json; print(json.load(open('regression-report.json'))['baseline_milestone'])")" >> $GITHUB_OUTPUT
+            echo "current=$(python3 -c "import json; print(json.load(open('regression-report.json'))['current_milestone_count'])")" >> $GITHUB_OUTPUT
+            echo "baseline=$(python3 -c "import json; print(json.load(open('regression-report.json'))['baseline_milestone_count'])")" >> $GITHUB_OUTPUT
             echo "delta=$(python3 -c "import json; print(json.load(open('regression-report.json'))['delta'])")" >> $GITHUB_OUTPUT
           fi
 
@@ -164,7 +164,7 @@ jobs:
             try {
               summary = JSON.parse(fs.readFileSync('milestone-summary.json', 'utf8'));
             } catch (e) {
-              summary = { highest_milestone: -1, highest_milestone_name: 'BUILD_FAILED' };
+              summary = { milestones_reached_count: 0, milestones_reached: [] };
             }
 
             // Load regression report
@@ -285,14 +285,14 @@ jobs:
             };
 
             const emoji = statusEmoji[regression.status] || '❓';
-            const milestone = summary.highest_milestone ?? -1;
-            const milestoneName = summary.highest_milestone_name || 'NONE';
+            const milestoneCount = summary.milestones_reached_count ?? 0;
+            const totalMilestones = 16;
 
             // Build the comment body
             let body = `## ${emoji} Port Test Results\n\n`;
             body += `| Metric | Value |\n|---|---|\n`;
-            body += `| **Highest Milestone** | ${milestone} (${milestoneName}) |\n`;
-            body += `| **Baseline** | ${regression.baseline_milestone ?? 'N/A'} |\n`;
+            body += `| **Milestones Reached** | ${milestoneCount} / ${totalMilestones} |\n`;
+            body += `| **Baseline** | ${regression.baseline_milestone_count ?? 'N/A'} |\n`;
             body += `| **Status** | ${(regression.status || 'unknown').toUpperCase()} |\n`;
             body += `| **Delta** | ${regression.delta >= 0 ? '+' : ''}${regression.delta ?? 0} |\n`;
             body += `| **Integrity** | ${summary.integrity?.valid ? '✅ VALID' : '🚫 FAILED'} |\n`;
@@ -337,14 +337,6 @@ jobs:
               body += `| Draw calls | ${fv.draw_calls} |\n`;
               body += `| Valid verts | ${fv.valid_verts} |\n`;
               body += `| Valid frame | ${fv.valid ? '✅' : '❌'} |\n`;
-            }
-
-            // Next action recommendation
-            if (regression.next_action) {
-              body += `\n### 🎯 Recommended Next Action\n`;
-              body += `> ${regression.next_action.action}\n\n`;
-              body += `**Focus files:** ${regression.next_action.focus_files.map(f => '`' + f + '`').join(', ')}\n`;
-              body += `**Guide:** ${regression.next_action.docs}\n`;
             }
 
             // Timing
@@ -462,7 +454,7 @@ jobs:
 
             const botComment = comments.find(c =>
               c.user.type === 'Bot' &&
-              (c.body.includes('Port Test Results') && c.body.includes('Highest Milestone'))
+              (c.body.includes('Port Test Results') && c.body.includes('Milestones Reached'))
             );
 
             if (botComment) {

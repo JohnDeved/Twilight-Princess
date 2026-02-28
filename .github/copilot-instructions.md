@@ -59,9 +59,9 @@ it already solved most platform-abstraction problems.
 1. **Read `docs/port-progress.md` first** — check current status, step checklist, and session log.
 2. **Read `docs/automated-testing-guide.md`** — the authoritative guide for testing and CI.
 3. **Check `milestone-baseline.json`** — know the current best milestone before making changes.
-4. **Check the latest CI PR comment** — it contains the milestone summary, regression status,
-   top unimplemented stubs, and a recommended next action.
-5. **Use the milestone system**: After changes, verify that the highest boot milestone
+4. **Check the latest CI PR comment** — it contains the milestone count, regression status,
+   and top unimplemented stubs.
+5. **Use the milestone system**: After changes, verify that the milestone count
    hasn't regressed. Milestones are logged as JSON to stdout.
 6. **Always check for regressions** before pushing:
    ```bash
@@ -85,7 +85,7 @@ it already solved most platform-abstraction problems.
 ## CI Integration
 
 - **CI posts a PR comment** with structured test results on every push.
-- The comment includes: milestone reached, regression status, top stubs, and recommended action.
+- The comment includes: milestones reached, regression status, and top stubs.
 - **Read the PR comment** — it's the fastest way to understand what to do next.
 - **Regression detection**: CI compares against `milestone-baseline.json`. Regressions are
   flagged with 🚨. Do not merge PRs that regress the milestone.
