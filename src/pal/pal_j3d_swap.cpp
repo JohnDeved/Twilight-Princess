@@ -732,7 +732,8 @@ int pal_j3d_swap_model(void* data, u32 size) {
 
     /* Validate file size against buffer */
     if (fileSize > size) {
-        fprintf(stderr, "[pal_j3d] WARNING: header fileSize %u > buffer size %u\n", fileSize, size);
+        fprintf(stderr, "[pal_j3d] WARNING: header fileSize %u > buffer size %u, using buffer size\n", fileSize, size);
+        /* Use actual buffer size as the limit to prevent out-of-bounds access */
     }
 
     if (blockNum > 64) {
@@ -764,9 +765,11 @@ int pal_j3d_swap_model(void* data, u32 size) {
         }
         /* Block size must be 32-byte aligned in J3D format */
         if (blockSize & 0x1F) {
-            fprintf(stderr, "[pal_j3d] Block %u '%c%c%c%c': size %u not 32-byte aligned (non-fatal)\n",
-                    i, (char)(blockType>>24), (char)(blockType>>16),
+            char buf[80];
+            snprintf(buf, sizeof(buf), "block '%c%c%c%c' size %u not 32-byte aligned",
+                    (char)(blockType>>24), (char)(blockType>>16),
                     (char)(blockType>>8), (char)blockType, blockSize);
+            pal_error(PAL_ERR_J3D_ENDIAN, buf);
         }
 
         /* Dispatch by block type (big-endian FCC) */

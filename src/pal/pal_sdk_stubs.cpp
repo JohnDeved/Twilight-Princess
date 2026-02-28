@@ -20,6 +20,7 @@
 #include "pal/pal_milestone.h"
 #include "pal/pal_input.h"
 #include "pal/pal_save.h"
+#include "pal/pal_error.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
 #include "revolution/os/OSMessage.h"
@@ -603,7 +604,7 @@ BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
     }
     if (handle < 0) {
         fclose(fp);
-        fprintf(stderr, "[pal_dvd] WARNING: no free DVD handles (max=%d)\n", PAL_DVD_MAX_OPEN);
+        pal_error(PAL_ERR_RESOURCE, "DVD handle pool exhausted");
         return FALSE;
     }
     if (handle >= s_dvd_next_handle) s_dvd_next_handle = handle + 1;

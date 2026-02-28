@@ -74,13 +74,13 @@ void pal_swap_rarc(void* arcData, u32 loadedSize) {
 
     /* Validate node and file counts against reasonable bounds */
     if (info->num_nodes > 4096) {
-        fprintf(stderr, "pal_swap_rarc: suspicious num_nodes %u, clamping to 4096\n", info->num_nodes);
-        info->num_nodes = 4096;
+        fprintf(stderr, "pal_swap_rarc: invalid num_nodes %u, aborting\n", info->num_nodes);
+        return;
     }
     if (info->num_file_entries > 65536) {
-        fprintf(stderr, "pal_swap_rarc: suspicious num_file_entries %u, clamping to 65536\n",
+        fprintf(stderr, "pal_swap_rarc: invalid num_file_entries %u, aborting\n",
                 info->num_file_entries);
-        info->num_file_entries = 65536;
+        return;
     }
 
     /* Swap SDIDirEntry nodes (sizeof matches on 32/64-bit, no pointer fields) */

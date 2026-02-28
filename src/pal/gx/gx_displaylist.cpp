@@ -297,8 +297,7 @@ static void dl_handle_bp_reg(u32 value) {
     /* Alpha compare (register 0xF3) */
     if (addr == 0xF3) {
         /* BP_ALPHA_COMPARE bit layout:
-         * [7:0] = ref0, [10:8] = comp0, [15:11] = ref1 (top 5 bits)
-         * Actually: [7:0]=ref0, [10:8]=comp0, [13:11]=op, [16:14]=comp1, [23:17]=ref1(7 bits) */
+         * [7:0]=ref0, [10:8]=comp0, [12:11]=op, [15:13]=comp1, [23:16]=ref1 */
         u8 ref0 = (u8)(data & 0xFF);
         GXCompare comp0 = (GXCompare)((data >> 8) & 0x7);
         GXAlphaOp op = (GXAlphaOp)((data >> 11) & 0x3);

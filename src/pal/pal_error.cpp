@@ -62,7 +62,7 @@ void pal_error_init(void) {
 
     s_error_log = fopen("verify_output/error_log.txt", "w");
     if (!s_error_log) {
-        /* Try without directory */
+        /* Fall back to stderr if verify_output directory doesn't exist */
         s_error_log = stderr;
     }
     s_initialized = 1;
@@ -95,7 +95,7 @@ int pal_error(PalErrorCategory cat, const char* detail) {
     /* Look for existing entry */
     const char* d = detail ? detail : "";
     for (u32 i = 0; i < s_error_count; i++) {
-        if (s_errors[i].cat == cat && strncmp(s_errors[i].detail, d, PAL_ERR_DETAIL_LEN - 1) == 0) {
+        if (s_errors[i].cat == cat && strncmp(s_errors[i].detail, d, PAL_ERR_DETAIL_LEN) == 0) {
             s_errors[i].count++;
             return (int)s_errors[i].count;
         }
