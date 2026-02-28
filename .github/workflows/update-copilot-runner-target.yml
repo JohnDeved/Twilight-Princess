@@ -34,19 +34,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const name = "COPILOT_SETUP_RUNS_ON_JSON";
-
-            const runners = await github.paginate(
-              github.rest.actions.listSelfHostedRunnersForRepo,
-              { owner, repo, per_page: 100 }
-            );
-
-            const winRunnerOnline = runners.some(
-              (r) => r.name === "runner-win-amd" && r.status === "online" && !r.busy
-            );
-
-            const value = winRunnerOnline
-              ? '["self-hosted","Windows","X64","runner-win-amd"]'
-              : '"ubuntu-latest"';
+            const value = '"ubuntu-latest"';
 
             try {
               await github.rest.actions.updateRepoVariable({

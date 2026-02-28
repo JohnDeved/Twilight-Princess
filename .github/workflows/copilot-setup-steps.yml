@@ -11,7 +11,7 @@ on:
 
 jobs:
   copilot-setup-steps:
-    runs-on: ${{ fromJSON(vars.COPILOT_SETUP_RUNS_ON_JSON || '"ubuntu-latest"') }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 30
