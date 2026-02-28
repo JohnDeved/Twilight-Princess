@@ -135,11 +135,24 @@ int pal_render_init(void) {
     if (!headless)
         init.resolution.reset |= BGFX_RESET_VSYNC;
 
+    /* Check if capture is needed before bgfx::init so we can set CAPTURE flag */
+    {
+        const char* verify = getenv("TP_VERIFY");
+        const char* ss = getenv("TP_SCREENSHOT");
+        if ((verify && verify[0] == '1') || (ss && ss[0] != '\0')) {
+            if (!s_using_noop) {
+                init.resolution.reset |= BGFX_RESET_CAPTURE;
+                s_fb_capture_enabled = 1;
+            }
+        }
+    }
+
     if (!bgfx::init(init)) {
         if (!s_using_noop) {
             fprintf(stderr, "{\"render\":\"opengl_failed\",\"fallback\":\"Noop\"}\n");
             init.type = bgfx::RendererType::Noop;
             s_using_noop = 1;
+            s_fb_capture_enabled = 0;
             init.resolution.reset = 0; /* Noop needs neither VSYNC nor CAPTURE */
             if (!bgfx::init(init)) {
                 fprintf(stderr, "{\"render\":\"init_failed\"}\n");
@@ -165,13 +178,7 @@ int pal_render_init(void) {
     pal_capture_init();
     pal_verify_init();
 
-    /* Enable per-frame screenshot capture if TP_VERIFY or TP_SCREENSHOT is set */
-    {
-        const char* verify = getenv("TP_VERIFY");
-        const char* ss = getenv("TP_SCREENSHOT");
-        if ((verify && verify[0] == '1') || (ss && ss[0] != '\0'))
-            s_fb_capture_enabled = !s_using_noop;
-    }
+    /* s_fb_capture_enabled was already set before bgfx::init above */
 
     fprintf(stderr, "{\"render\":\"ready\",\"width\":%u,\"height\":%u,"
             "\"capture\":%d}\n", s_frame_width, s_frame_height, s_fb_capture_enabled);
@@ -194,7 +201,6 @@ void pal_render_begin_frame(void) {
         return;
 
     gx_stub_frame_reset();
-    pal_capture_clear_fb();
     pal_window_poll();
 
     GXColor cc = g_gx_state.clear_color;
@@ -248,16 +254,10 @@ void pal_render_end_frame(void) {
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
                      gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
-    /* Submit frame — triggers rendering */
+    /* Submit frame — triggers rendering and capture.
+     * With BGFX_RESET_CAPTURE enabled, bgfx calls captureFrame() callback
+     * with the rendered pixel data for every frame automatically. */
     bgfx::frame();
-
-    /* Request screenshot for next frame's readback.
-     * bgfx::requestScreenShot works more reliably than BGFX_RESET_CAPTURE
-     * on Mesa software renderers. The screenShot callback receives the
-     * rendered pixels and forwards them to gx_capture. */
-    if (s_fb_capture_enabled) {
-        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "frame");
-    }
 
     /* Save screenshot at frame 30 (logo should be visible) */
     if (s_frame_count == 30 && pal_capture_screenshot_active()) {

@@ -105,12 +105,15 @@ void pal_capture_init(void) {
 }
 
 void pal_capture_begin(uint32_t width, uint32_t height, uint32_t pitch, int yflip) {
+    /* Only log first time dimensions change */
+    if (s_cap_width != width || s_cap_height != height) {
+        fprintf(stderr, "{\"capture\":\"begin\",\"width\":%u,\"height\":%u,"
+                "\"pitch\":%u,\"yflip\":%d}\n", width, height, pitch, yflip);
+    }
     s_cap_width = width;
     s_cap_height = height;
     s_cap_pitch = pitch;
     s_cap_yflip = yflip;
-    fprintf(stderr, "{\"capture\":\"begin\",\"width\":%u,\"height\":%u,"
-            "\"pitch\":%u,\"yflip\":%d}\n", width, height, pitch, yflip);
 }
 
 void pal_capture_frame(const void* data, uint32_t size) {
@@ -148,6 +151,7 @@ void pal_capture_frame(const void* data, uint32_t size) {
     }
 
     s_has_data = 1;
+    s_frame_number++;
 
     /* Write every frame to raw video file for MP4 generation */
     if (s_raw_video) {
@@ -187,15 +191,19 @@ void pal_capture_readback_gl(uint32_t width, uint32_t height) {
     uint32_t read_w = (width < (uint32_t)FB_W) ? width : (uint32_t)FB_W;
     uint32_t read_h = (height < (uint32_t)FB_H) ? height : (uint32_t)FB_H;
 
-    /* Read back the OpenGL front buffer directly (bypasses bgfx capture) */
+    /* Read back the OpenGL front buffer directly.
+     * After bgfx::frame() swaps buffers, the rendered frame is in GL_FRONT.
+     * GL_BACK (default read buffer) is now empty/cleared. */
     static uint8_t* s_gl_buf = NULL;
     if (!s_gl_buf) {
         s_gl_buf = (uint8_t*)calloc(read_w * read_h * 4, 1);
         if (!s_gl_buf) return;
     }
 
+    glReadBuffer(GL_FRONT);
     glReadPixels(0, 0, (GLsizei)read_w, (GLsizei)read_h,
                  GL_RGBA, GL_UNSIGNED_BYTE, s_gl_buf);
+    glReadBuffer(GL_BACK);
 
     /* glReadPixels returns bottom-up, flip to top-down */
     for (uint32_t y = 0; y < read_h; y++) {
