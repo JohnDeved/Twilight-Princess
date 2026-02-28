@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
 extern "C" {
 #include "pal/gx/gx_screenshot.h"
