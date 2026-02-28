@@ -227,11 +227,6 @@ jobs:
             body += `Commit: ${context.sha.substring(0, 7)}</sub>\n`;
 
             // Find and update existing comment, or create new one
-            const marker = '## 🎉 Port Test Results\n\n';
-            const marker2 = '## ✅ Port Test Results\n\n';
-            const marker3 = '## 🚨 Port Test Results\n\n';
-            const marker4 = '## ❓ Port Test Results\n\n';
-
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,

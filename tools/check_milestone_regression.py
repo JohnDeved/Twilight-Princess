@@ -47,8 +47,9 @@ NEXT_ACTIONS = {
         "docs": "docs/agent-port-workflow.md#step-3--pal-bootstrap-1250-loc",
     },
     4: {
-        "action": "Fix process manager setup (fapGm_Create)",
-        "focus_files": ["src/f_pc/f_pc_manager.cpp", "src/pal/pal_game_stubs.cpp"],
+        "action": "Fix framework init — process manager or scene system not starting",
+        "focus_files": ["src/f_pc/f_pc_manager.cpp", "src/m_Do/m_Do_main.cpp",
+                        "src/pal/pal_game_stubs.cpp"],
         "docs": "docs/agent-port-workflow.md#step-3--pal-bootstrap-1250-loc",
     },
     5: {
