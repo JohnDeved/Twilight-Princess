@@ -2747,7 +2747,24 @@ void dStage_Create() {
                 stageRsrc = arc->getIdxResource((s32)(e - arc->mFiles));
             }
         }
-        if (!stageRsrc) return;
+        if (!stageRsrc) {
+            /* Can't load stage data — skip stage parsing but run
+             * environment/event init so the scene doesn't crash. */
+            *dStage_roomControl_c::getDemoArcName() = NULL;
+            dKankyo_create();
+            dComIfGp_evmng_create();
+            return;
+        }
+    }
+    /* Stage binary data uses 32-bit offsets cast to pointers via offsetToPtr,
+     * which is fundamentally broken on 64-bit. Skip stage data parsing on PC
+     * until a proper 64-bit-safe stage loader is implemented, but still
+     * initialise environment and event systems. */
+    {
+        *dStage_roomControl_c::getDemoArcName() = NULL;
+        dKankyo_create();
+        dComIfGp_evmng_create();
+        return;
     }
 #endif
 #if DEBUG
@@ -2784,7 +2801,15 @@ void dStage_Delete() {
         dComIfG_deleteObjectResMain(demoArcName);
     }
 
+#if PLATFORM_PC
+    /* Stage info may be NULL on PC (stage data parsing skipped due to
+     * big-endian binary + 32-bit offset-to-pointer incompatibility). */
+    if (dComIfGp_getStageStagInfo()) {
+        dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStageStagInfo()));
+    }
+#else
     dComIfGs_putSave(dStage_stagInfo_GetSaveTbl(dComIfGp_getStageStagInfo()));
+#endif
     dStage_roomControl_c::removeRoomDzs();
 
     if (mDoRst::isReset() || !dComIfGp_isEnableNextStage() ||
@@ -2792,7 +2817,13 @@ void dStage_Delete() {
     {
         dStage_roomControl_c::destroyMemoryBlock();
 
-        if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON) {
+#if PLATFORM_PC
+        /* getStagInfo may be NULL on PC (stage data parsing skipped) */
+        if (dComIfGp_getStage()->getStagInfo() &&
+            dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
+#else
+        if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
+#endif {
             dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
             JUT_ASSERT(4579, info != NULL);
             *info->getArchiveName() = 'X';
