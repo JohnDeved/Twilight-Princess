@@ -120,19 +120,22 @@ void pal_screenshot_blit(void) {
         return;  /* screenshot already captured */
 
     const GXDrawState* ds = &g_gx_state.draw;
-    if (ds->verts_written < 4 || ds->vtx_data_pos == 0)
+    if (ds->verts_written < 4 || ds->vtx_data_pos == 0) {
         return;
+    }
 
     /* Calculate vertex layout */
     uint32_t pos_off = 0, clr_off = 0, tc_off = 0;
     int has_pos = 0, has_clr = 0, has_tc = 0;
     uint32_t stride = calc_layout(&pos_off, &clr_off, &tc_off, &has_pos, &has_clr, &has_tc);
-    if (!has_pos || stride == 0)
+    if (!has_pos || stride == 0) {
         return;
+    }
 
     /* Verify vertex data is consistent */
-    if (stride * 4 > ds->vtx_data_pos)
+    if (stride * 4 > ds->vtx_data_pos) {
         return;
+    }
 
     /* Read first 4 vertices (quad corners) */
     float pos[4][3];
@@ -185,6 +188,18 @@ void pal_screenshot_blit(void) {
     float qw = x1 - x0, qh = y1 - y0;
     if (qw <= 0.0f || qh <= 0.0f)
         return;
+
+    /* Debug: log blit bounds once */
+    static int s_blit_debug_count = 0;
+    if (s_blit_debug_count < 20) {
+        int has_tex_binding = (g_gx_state.tev_stages[0].tex_map < GX_MAX_TEXMAP &&
+                               g_gx_state.tex_bindings[g_gx_state.tev_stages[0].tex_map].valid);
+        fprintf(stderr, "{\"screenshot_blit\":{\"ix\":[%d,%d],\"iy\":[%d,%d],\"verts\":%u,\"stride\":%u,\"vtx_pos\":%u,\"has_tc\":%d,\"has_tex\":%d,\"pos0\":[%.1f,%.1f,%.1f],\"clr0\":[%u,%u,%u,%u]}}\n",
+                ix0, ix1, iy0, iy1, ds->verts_written, stride, ds->vtx_data_pos, has_tc, has_tex_binding,
+                pos[0][0], pos[0][1], pos[0][2],
+                clr[0][0], clr[0][1], clr[0][2], clr[0][3]);
+        s_blit_debug_count++;
+    }
 
     /* Get texture for this draw (from TEV stage 0) */
     const GXTevStage* s0 = &g_gx_state.tev_stages[0];

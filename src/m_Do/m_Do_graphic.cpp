@@ -1543,6 +1543,10 @@ int mDoGph_Painter() {
         dComIfGd_draw2DXlu();
 
         mDoGph_gInf_c::endRender();
+
+        /* Submit frame to bgfx — required for any pixels to appear.
+         * On non-PC, this happens via GXCopyDisp in JFWDisplay::endFrame(). */
+        pal_gx_end_frame();
     }
     return 1;
 #else
