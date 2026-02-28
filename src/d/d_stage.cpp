@@ -15,6 +15,7 @@
 #include "d/d_bg_parts.h"
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
+#include "pal/pal_error.h"
 #endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
@@ -2747,7 +2748,7 @@ void dStage_infoCreate() {
                         idx, stageRsrc);
             }
         }
-        if (!stageRsrc) return;
+        if (!stageRsrc) { pal_error(PAL_ERR_STAGE_DATA, "dStage_infoCreate: stage.dzs not resolvable"); return; }
     }
 #endif
 
@@ -2763,6 +2764,7 @@ void dStage_Create() {
 #if PLATFORM_PC
     if (!stageRsrc) {
         /* No stage data available — init env and events with defaults */
+        pal_error(PAL_ERR_STAGE_DATA, "dStage_Create: stage.dzs not found");
         *dStage_roomControl_c::getDemoArcName() = NULL;
         dKankyo_create();
         dComIfGp_evmng_create();

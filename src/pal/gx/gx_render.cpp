@@ -259,6 +259,7 @@ void pal_render_end_frame(void) {
 
     static uint32_t s_frame_count = 0;
     s_frame_count++;
+    pal_error_set_frame(s_frame_count);
 
     /* Debug text overlay — visible on the live window via bgfx debug text */
     bgfx::dbgTextPrintf(1, 1, 0x0f,
