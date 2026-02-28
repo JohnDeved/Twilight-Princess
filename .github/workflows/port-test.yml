@@ -114,6 +114,8 @@ jobs:
       - name: Parse milestones
         if: always()
         run: |
+          # || true: Always produce the report JSON for the PR comment step.
+          # Failures are surfaced in the regression check, not here.
           python3 tools/parse_milestones.py milestones.log \
             --output milestone-summary.json \
             --min-milestone 5 || true
@@ -121,6 +123,8 @@ jobs:
       - name: Verify port subsystems
         if: always()
         run: |
+          # || true: Always produce the report JSON for the PR comment step.
+          # Rendering issues are surfaced in the PR comment, not as build failures.
           python3 tools/verify_port.py milestones.log \
             --output verify-report.json \
             --verify-dir verify_output \
@@ -134,7 +138,8 @@ jobs:
         run: |
           python3 tools/check_milestone_regression.py milestone-summary.json \
             --baseline milestone-baseline.json \
-            --output regression-report.json || true
+            --output regression-report.json \
+            --auto-update || true
 
           # Extract key fields for the PR comment step
           if [ -f regression-report.json ]; then
@@ -142,6 +147,20 @@ jobs:
             echo "current=$(python3 -c "import json; print(json.load(open('regression-report.json'))['current_milestone_count'])")" >> $GITHUB_OUTPUT
             echo "baseline=$(python3 -c "import json; print(json.load(open('regression-report.json'))['baseline_milestone_count'])")" >> $GITHUB_OUTPUT
             echo "delta=$(python3 -c "import json; print(json.load(open('regression-report.json'))['delta'])")" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit updated baseline
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+        run: |
+          if git diff --quiet milestone-baseline.json 2>/dev/null; then
+            echo "Baseline unchanged, nothing to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add milestone-baseline.json
+            git commit -m "ci: auto-update milestone baseline ($(python3 -c "import json; r=json.load(open('regression-report.json')); print(f\"{r['baseline_milestone_count']} → {r['current_milestone_count']}\")"))"
+            git push origin HEAD:${{ github.head_ref }}
+            echo "✅ Baseline committed and pushed"
           fi
 
       - name: Convert screenshots and generate video
@@ -244,7 +263,10 @@ jobs:
                       release_id: release.id,
                       name: png,
                       data: data,
-                      headers: { 'content-type': 'image/png' },
+                      headers: {
+                        'content-type': 'application/octet-stream',
+                        'content-length': data.length,
+                      },
                     });
                     imageUrls[png] = uploaded.data.browser_download_url;
                   } catch (e) {
@@ -262,7 +284,10 @@ jobs:
                       release_id: release.id,
                       name: 'render_progress.mp4',
                       data: videoData,
-                      headers: { 'content-type': 'video/mp4' },
+                      headers: {
+                        'content-type': 'application/octet-stream',
+                        'content-length': videoData.length,
+                      },
                     });
                     imageUrls['video'] = uploaded.data.browser_download_url;
                   } catch (e) {

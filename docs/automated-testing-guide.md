@@ -168,16 +168,21 @@ The file `milestone-baseline.json` stores the milestone count ever achieved:
 After each CI run, `tools/check_milestone_regression.py` compares the current run against
 this baseline:
 
-- **Improved**: Current > baseline → 🎉 (you must update the baseline manually; CI does **not** auto-update it, see below)
+- **Improved**: Current > baseline → 🎉 (baseline auto-updated and committed by CI)
 - **Same**: Current == baseline → ✅ (no change needed)
 - **Regressed**: Current < baseline → 🚨 (investigate and fix before merging)
 
 ### Updating the Baseline
 
-When your changes improve the milestone, update the baseline manually by editing
-`milestone-baseline.json` to reflect the new milestone count and milestones reached.
-Then commit the updated baseline alongside your code changes so the improvement is
-tracked in the PR diff.
+When milestones improve, CI automatically updates `milestone-baseline.json` and commits
+it to the PR branch. The auto-update only happens when:
+- The milestone count increased (improvement, not regression)
+- All milestones pass integrity checks (no disqualified milestones)
+- No crash was detected
+
+The updated baseline appears in the PR diff, so it's always reviewable. If you need to
+update the baseline manually (e.g., after a legitimate regression that was intentional),
+edit `milestone-baseline.json` directly and commit it alongside your code changes.
 
 ## Agent Development Workflow
 

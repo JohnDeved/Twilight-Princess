@@ -6,6 +6,10 @@ Usage:
     python3 tools/check_milestone_regression.py milestone-summary.json \\
         --baseline milestone-baseline.json
 
+    # Auto-update baseline when milestones improve:
+    python3 tools/check_milestone_regression.py milestone-summary.json \\
+        --baseline milestone-baseline.json --auto-update
+
 Exit codes:
     0 = pass (same or improved, integrity valid)
     1 = regression detected or integrity failure
@@ -14,6 +18,7 @@ Exit codes:
 import json
 import sys
 import argparse
+from datetime import date
 
 
 def load_json(path):
@@ -33,6 +38,8 @@ def main():
                         help="Path to baseline milestone file")
     parser.add_argument("--output", default=None,
                         help="Write regression report to this JSON file")
+    parser.add_argument("--auto-update", action="store_true",
+                        help="Update baseline file when milestones improve")
     args = parser.parse_args()
 
     summary = load_json(args.summary)
@@ -106,6 +113,26 @@ def main():
             print(f"   {s.get('stub', '?')}: {s.get('hits', 0)} hits")
 
     print(f"{'=' * 60}\n")
+
+    # Auto-update baseline when milestones improve
+    if args.auto_update and status == "improved" and integrity_valid and not summary.get("crash"):
+        new_baseline = {
+            "milestones_reached_count": current,
+            "milestones_reached": summary.get("milestones_reached", []),
+            "updated": date.today().isoformat(),
+            "note": f"Auto-updated by CI (was {baseline_count}, now {current})",
+        }
+        try:
+            with open(args.baseline, "w") as f:
+                json.dump(new_baseline, f, indent=2)
+                f.write("\n")
+            print(f"✅ Baseline auto-updated: {args.baseline} ({baseline_count} → {current})")
+            report["baseline_updated"] = True
+        except OSError as e:
+            print(f"⚠️  Could not auto-update baseline: {e}", file=sys.stderr)
+            report["baseline_updated"] = False
+    else:
+        report["baseline_updated"] = False
 
     # Write report JSON
     if args.output:

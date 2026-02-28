@@ -25,7 +25,10 @@ set -euo pipefail
 SKIP_BUILD=0
 FRAMES=2000
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tp-self-test.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tp-self-test.XXXXXX")" || {
+    echo "ERROR: Failed to create temporary directory" >&2
+    exit 2
+}
 
 # Clean up temp dir on exit
 cleanup_tmp() {
@@ -120,7 +123,8 @@ echo ""
 echo "━━━ Step 4/5: Check milestone regression ━━━"
 if ! python3 tools/check_milestone_regression.py "$TMP_DIR/milestone-summary.json" \
     --baseline milestone-baseline.json \
-    --output "$TMP_DIR/regression-report.json"; then
+    --output "$TMP_DIR/regression-report.json" \
+    --auto-update; then
     echo "  ⚠️  Regression detected or integrity failure"
     PASS=0
 fi
