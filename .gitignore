@@ -52,3 +52,6 @@ verify_png/
 verify-report.json
 milestone-summary.json
 regression-report.json
+
+# PC port save data
+/save

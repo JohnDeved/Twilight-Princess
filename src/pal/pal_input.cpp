@@ -123,10 +123,18 @@ static void gamepad_read(PADStatus* status) {
     s16 lt = SDL_GetGamepadAxis(s_gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
     s16 rt = SDL_GetGamepadAxis(s_gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
 
-    status->stickX    = (s8)(lx >> 8);
-    status->stickY    = (s8)(-(ly >> 8)); /* SDL Y is inverted vs GC */
-    status->substickX = (s8)(rx >> 8);
-    status->substickY = (s8)(-(ry >> 8));
+    /* Only override keyboard stick if gamepad axis is beyond deadzone.
+     * This prevents a connected-but-idle gamepad from zeroing keyboard input. */
+    #define GAMEPAD_DEADZONE 4096
+    if (lx > GAMEPAD_DEADZONE || lx < -GAMEPAD_DEADZONE)
+        status->stickX = (s8)(lx >> 8);
+    if (ly > GAMEPAD_DEADZONE || ly < -GAMEPAD_DEADZONE)
+        status->stickY = (s8)(-(ly >> 8)); /* SDL Y is inverted vs GC */
+    if (rx > GAMEPAD_DEADZONE || rx < -GAMEPAD_DEADZONE)
+        status->substickX = (s8)(rx >> 8);
+    if (ry > GAMEPAD_DEADZONE || ry < -GAMEPAD_DEADZONE)
+        status->substickY = (s8)(-(ry >> 8));
+    #undef GAMEPAD_DEADZONE
 
     /* Triggers: SDL range 0..32767 → GC range 0..255 */
     status->triggerLeft  = (u8)(lt >> 7);

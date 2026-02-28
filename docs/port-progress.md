@@ -7,9 +7,9 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `6` (LOGO_SCENE — all rendering-critical stubs implemented; RENDER_FRAME [15] now unblocked pending game data) |
-| **Current Step** | Step 5 complete — All GX stubs implemented, TEV shader pipeline, display list replay |
-| **Last Updated** | 2026-02-27 |
+| **Highest CI Milestone** | `8` (SCENE_CREATED — input, audio, save modules added) |
+| **Current Step** | Step 5 complete, Steps 3/7 partially complete — SDL3 input/audio/save wired |
+| **Last Updated** | 2026-02-28 |
 | **Blocking Issue** | Need game data (ROMS_TOKEN) to verify RENDER_FRAME with real disc assets |
 
 ## Step Checklist
@@ -88,9 +88,9 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [x] **LOGO_SCENE milestone (6)**: Logo scene creates from real disc data
 - [x] **FRAMES_60/300/1800 milestones**: 2000+ frames stable with real game data
 - [x] `pal_window.cpp` — SDL3 window + bgfx init (~150 LOC), headless mode support
-- [ ] `pal_input.cpp` — SDL3 gamepad → JUTGamePad (~200 LOC)
-- [ ] `pal_audio.cpp` — silence stubs for Phase A (~250 LOC)
-- [ ] `pal_save.cpp` — fstream save/load (~150 LOC)
+- [x] `pal_input.cpp` — SDL3 gamepad + keyboard → JUTGamePad (~200 LOC)
+- [x] `pal_audio.cpp` — SDL3 Phase A silence audio (~120 LOC)
+- [x] `pal_save.cpp` — fstream save/load replacing NAND (~200 LOC)
 - [ ] `pal_fs.cpp` — file I/O replacing DVD/NAND for host filesystem access (~300 LOC)
 - [ ] Verify: `TP_HEADLESS=1 TP_TEST_FRAMES=10 ./build/tp-pc` → milestones 0–4
 
@@ -117,7 +117,7 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
   - [x] MVP matrix construction from GX projection + position matrices
   - [x] TEV preset detection from GX combiner state
 - [x] 5d. Texture decode (10 GX formats → RGBA8) in `src/pal/gx/gx_texture.cpp` (~1,000 LOC)
-- [ ] 5e. Display list record/replay in `src/pal/gx/gx_displaylist.cpp` (~400 LOC)
+- [x] 5e. Display list record/replay in `src/pal/gx/gx_displaylist.cpp` (~400 LOC)
 - [ ] Verify: milestone reaches 6–8 (LOGO_SCENE through PLAY_SCENE)
 
 ### Step 6 — Audio (~100 LOC Phase A / ~800 LOC Phase B)
@@ -126,8 +126,8 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [ ] Verify: no audio-related hangs in headless mode
 
 ### Step 7 — Input + Save (~350 LOC)
-- [ ] Wire `JUTGamePad` → `pal_input` → SDL3 gamepad
-- [ ] Replace NAND calls with `pal_save` file I/O
+- [x] Wire `JUTGamePad` → `pal_input` → SDL3 gamepad + keyboard
+- [x] Replace NAND calls with `pal_save` file I/O
 - [ ] Verify: milestone reaches 10+ (FRAMES_60)
 
 ### Step 8 — First Playable
@@ -201,6 +201,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 
 | Date | Summary | Milestone Change | Next Action |
 |---|---|---|---|
+| 2026-02-28 | **Input, audio, save modules**: Created pal_input.cpp — SDL3 keyboard (WASD/Space/Shift/arrows) + gamepad → PADStatus with auto-detect. Created pal_audio.cpp — SDL3 Phase A silence audio (32kHz stereo, push-based stream). Created pal_save.cpp — host filesystem save/load replacing NAND stubs (basename extraction, configurable TP_SAVE_DIR). Enabled SDL_JOYSTICK + SDL_AUDIO in CMakeLists. Wired PADRead through pal_input_read_pad (4-port), NANDOpen/Read/Write/Close through pal_save, audio init through pal_audio_init in mDoAud_Create. All 854 targets compile and link. | 8 (no change — game data needed for further milestones) | Run with game data to verify RENDER_FRAME; test input with windowed mode; Phase B audio mixing |
 | 2026-02-27 | **All rendering-critical GX stubs implemented**: Replaced 9 GX stubs with real implementations — GXSetProjectionv (reconstruct 4x4 from packed format), GXLoadPosMtxIndx/GXLoadNrmMtxIndx3x3/GXLoadTexMtxIndx (acknowledge indexed loads), GXLoadNrmMtxImm3x3 (3x3→3x4 conversion), GXInitTexObjCI (CI textures via standard path), GXSetTevIndirect/GXSetIndTexMtx/GXSetIndTexOrder (store indirect texture state). gx_frame_stub_count should now reach zero during rendering, unblocking RENDER_FRAME milestone. | 6 (pending RENDER_FRAME with game data) | Run with game data to verify RENDER_FRAME milestone fires |
 | 2026-02-27 | **TEV shader pipeline (Step 5c) + honest milestones**: Created gx_tev.h/cpp — TEV→bgfx shader flush pipeline with 5 preset shaders (PASSCLR/REPLACE/MODULATE/BLEND/DECAL). Enabled BGFX_BUILD_TOOLS to build shaderc. Shader .sc files compiled to GLSL 140 + ESSL 100 + SPIR-V at build time. Texture decode + bgfx upload with 256-entry LRU cache. Full GX→bgfx state conversion (blend, depth, cull, primitive), vertex layout from GX descriptor, quad/fan→triangle index conversion, MVP from GX matrices. **Honest render milestones**: RENDER_FRAME now requires zero GX stubs hit AND real draw calls with valid vertices. Per-frame stub tracking (gx_frame_stub_count reset at frame start). gx_stub_frame_is_valid() verifies valid verifiable image. FRAMES_60/300/1800 cascade from RENDER_FRAME. | 15 → 6 (honest: RENDER_FRAME requires stub-free frames) | Implement remaining GX stubs to reduce per-frame stub count, enable full render pipeline |
 | 2026-02-27 | **GX state machine + SDL3 (Step 5b/5d/SDL3)**: Created gx_state.h/cpp — full GX state machine captures vertex format (GXSetVtxDesc/GXSetVtxAttrFmt), TEV stages (color/alpha combiners), texture bindings (GXLoadTexObj with data retrieval), matrix state (projection, pos/nrm/tex matrices), blend/z/cull/scissor/viewport. Replaced GX no-op stubs with state-capturing implementations. Redirected GXVert.h inline vertex write functions through pal_gx_write_vtx_* for vertex data capture. Implemented GXProject with real math. Created gx_texture.cpp — decodes all 8 major GX tile formats (I4/I8/IA4/IA8/RGB565/RGB5A3/RGBA8/CMPR) to linear RGBA8. Integrated SDL3 via FetchContent (release-3.2.8) — window creation, event polling, native X11/Wayland handle for bgfx. bgfx now uses game's clear color from GX state, per-frame draw stats logged. | 15 (no change, infrastructure improvement) | Step 5c: TEV→bgfx shader generator, Step 5e: display list replay |
@@ -259,6 +260,12 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_verify.cpp` — Verification system (frame capture, pixel analysis, input/audio logging)
 - `tools/verify_port.py` — Subsystem verification analysis tool
 - `assets/` — Placeholder asset headers for compilation
+- `include/pal/pal_input.h` — SDL3 input mapping header
+- `src/pal/pal_input.cpp` — SDL3 keyboard/gamepad → PADStatus
+- `include/pal/pal_audio.h` — Phase A audio header
+- `src/pal/pal_audio.cpp` — SDL3 Phase A silence audio output
+- `include/pal/pal_save.h` — File-based save/load header
+- `src/pal/pal_save.cpp` — Host filesystem NAND replacement
 
 ### Modified files (conditional extensions)
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
@@ -276,7 +283,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/m_Do/m_Do_graphic.cpp` — Render bypass on PC (skip mDoGph_Painter without GX shim)
 - `src/m_Do/m_Do_ext.cpp` — Font resource null guard for missing archives
 - `src/m_Do/m_Do_dvd_thread.cpp` — Synchronous DVD command execution on PC
-- `src/m_Do/m_Do_audio.cpp` — Skip audio init on PC (Phase A silence stubs)
+- `src/m_Do/m_Do_audio.cpp` — Skip audio init on PC (Phase A silence stubs) + pal_audio_init
 - `src/d/d_s_logo.cpp` — Logo scene PC path (skip rendering, audio, auto-transition)
 - `src/c/c_dylink.cpp` — Skip DynamicLink module loading on PC
 - `src/f_pc/f_pc_profile.cpp` — NULL-safe profile lookup

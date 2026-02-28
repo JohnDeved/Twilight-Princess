@@ -74,11 +74,16 @@ int pal_save_init(void) {
     }
 
     /* Create save directory if it doesn't exist */
+    int mkdir_ret;
 #ifdef _WIN32
-    _mkdir(s_save_dir);
+    mkdir_ret = _mkdir(s_save_dir);
 #else
-    mkdir(s_save_dir, 0755);
+    mkdir_ret = mkdir(s_save_dir, 0755);
 #endif
+    if (mkdir_ret != 0 && errno != EEXIST) {
+        fprintf(stderr, "{\"pal_save\":\"mkdir_warning\",\"dir\":\"%s\",\"errno\":%d}\n",
+                s_save_dir, errno);
+    }
 
     memset(s_save_files, 0, sizeof(s_save_files));
     s_save_initialized = 1;
