@@ -1299,7 +1299,7 @@ bool dPa_control_c::removeRoomScene(bool param_0) {
         return false;
     }
 
-    mEmitterMng->clearResourceManager(true);
+    if (mEmitterMng) mEmitterMng->clearResourceManager(true);
     mDoExt_destroySolidHeap(mSceneHeap);
     mSceneHeap = NULL;
     mSceneResMng = NULL;
@@ -1321,7 +1321,7 @@ void dPa_control_c::removeScene(bool param_0) {
         field_0x1c[i].removeEmitter();
     }
 
-    mEmitterMng->forceDeleteAllEmitter();
+    if (mEmitterMng) mEmitterMng->forceDeleteAllEmitter();
     dPa_modelEcallBack::remove();
 
     if (getEmitterNum()) {
@@ -1334,6 +1334,7 @@ void dPa_control_c::cleanup() {
 }
 
 void dPa_control_c::calc3D() {
+    if (mEmitterMng == NULL) return;
     if (isStatus(2)) {
         offStatus(2);
     } else {
@@ -1345,6 +1346,7 @@ void dPa_control_c::calc3D() {
 }
 
 void dPa_control_c::calc2D() {
+    if (mEmitterMng == NULL) return;
     for (u8 i = 14; i <= 16; i++) {
         mEmitterMng->calc(i);
     }
@@ -1473,6 +1475,7 @@ JPABaseEmitter* dPa_control_c::set(u8 param_0, u16 param_1, cXyz const* i_pos,
                                    cXyz const* i_scale, u8 i_alpha, dPa_levelEcallBack* param_7,
                                    s8 param_8, _GXColor const* param_9, _GXColor const* param_10,
                                    cXyz const* param_11, f32 param_12) {
+    if (mEmitterMng == NULL) return NULL;
     u8 local_e0 = getRM_ID(param_1);
     JPAResourceManager* local_a8 = mEmitterMng->getResourceManager(local_e0);
     if (local_a8 == NULL) {
