@@ -152,13 +152,21 @@ jobs:
       - name: Commit updated baseline
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
         run: |
-          if git diff --quiet milestone-baseline.json 2>/dev/null; then
+          if [ ! -f milestone-baseline.json ]; then
+            echo "No baseline file found, skipping"
+            exit 0
+          fi
+          if git diff --quiet milestone-baseline.json; then
             echo "Baseline unchanged, nothing to commit"
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add milestone-baseline.json
-            git commit -m "ci: auto-update milestone baseline ($(python3 -c "import json; r=json.load(open('regression-report.json')); print(f\"{r['baseline_milestone_count']} → {r['current_milestone_count']}\")"))"
+            COMMIT_MSG="ci: auto-update milestone baseline"
+            if [ -f regression-report.json ]; then
+              COMMIT_MSG="ci: auto-update milestone baseline ($(python3 -c "import json; r=json.load(open('regression-report.json')); print(f\"{r['baseline_milestone_count']} → {r['current_milestone_count']}\")" 2>/dev/null || echo "improved"))"
+            fi
+            git commit -m "$COMMIT_MSG"
             git push origin HEAD:${{ github.head_ref }}
             echo "✅ Baseline committed and pushed"
           fi
