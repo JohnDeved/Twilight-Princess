@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 #include "pal/pal_window.h"
+#include "pal/pal_input.h"
 
 static SDL_Window* s_window = NULL;
 static int s_headless = 0;
@@ -71,6 +72,9 @@ int pal_window_poll(void) {
         return !s_quit_requested;
 
     while (SDL_PollEvent(&event)) {
+        /* Forward all events to input handler */
+        pal_input_handle_event(&event);
+
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 s_quit_requested = 1;

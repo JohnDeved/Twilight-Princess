@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "pal/pal_milestone.h"
+#include "pal/pal_input.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
 
@@ -32,10 +33,10 @@ struct OSAlarm;
 struct OSStopwatch;
 
 #include "dolphin/dvd.h" /* DVDDiskID, DVDCommandBlock, DVDFileInfo, etc. */
+#include "dolphin/pad.h" /* PADStatus — needed for PADRead array indexing */
 
 struct GXRenderModeObj;
 
-struct PADStatus;
 struct PADClampRegion;
 
 struct NANDFileInfo;
@@ -652,8 +653,17 @@ VIRetraceCallback VISetPostRetraceCallback(VIRetraceCallback cb) { (void)cb; ret
 /* PAD (GameCube Controller)                                        */
 /* ================================================================ */
 
-BOOL PADInit(void) { return TRUE; }
-u32 PADRead(PADStatus* status) { if (status) memset(status, 0, 12 * 4); return 0; }
+BOOL PADInit(void) { pal_input_init(); return TRUE; }
+u32 PADRead(PADStatus* status) {
+    if (!status) return 0;
+    u32 connected = 0;
+    for (int i = 0; i < 4; i++) {
+        if (pal_input_read_pad(i, &status[i]) == 0) {
+            connected |= (0x80000000u >> i);
+        }
+    }
+    return connected;
+}
 int PADReset(u32 mask) { (void)mask; return 0; }
 void PADClamp(PADStatus* status) { (void)status; }
 void PADClampCircle(PADStatus* status) { (void)status; }
@@ -661,7 +671,7 @@ void PADSetSamplingRate(u32 msec) { (void)msec; }
 void PADControlMotor(s32 chan, u32 command) { (void)chan; (void)command; }
 void PADSetSpec(u32 spec) { (void)spec; }
 int PADGetType(s32 chan, u32* type) { (void)chan; if (type) *type = 0; return 0; }
-void PADRecalibrate(u32 mask) { (void)mask; }
+BOOL PADRecalibrate(u32 mask) { (void)mask; return TRUE; }
 
 /* ================================================================ */
 /* AI (Audio Interface)                                             */

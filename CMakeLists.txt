@@ -55,8 +55,8 @@ set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
-set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
-set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK ON CACHE BOOL "" FORCE)
+set(SDL_HAPTIC ON CACHE BOOL "" FORCE)
 set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
 set(SDL_POWER OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
@@ -130,6 +130,7 @@ set(PAL_SOURCES
     src/pal/pal_remaining_stubs.cpp
     src/pal/pal_profile_list.cpp
     src/pal/pal_window.cpp
+    src/pal/pal_input.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
     src/pal/gx/gx_bgfx.cpp
