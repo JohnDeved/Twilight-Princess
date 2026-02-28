@@ -23,6 +23,7 @@ extern "C" {
 #include "pal/gx/gx_screenshot.h"
 #include "pal/pal_window.h"
 #include "pal/pal_verify.h"
+#include "pal/pal_milestone.h"
 
 /* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
 extern int gx_shim_active;
@@ -150,6 +151,15 @@ void pal_gx_end_frame(void) {
 
     static uint32_t s_frame_count = 0;
     s_frame_count++;
+
+    /* Fire RENDER_FRAME milestone on first valid frame with real draw calls.
+     * This is the same check as GXCopyDisp but works for the PC render path
+     * which bypasses GXCopyDisp entirely. */
+    if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
+        && gx_stub_frame_is_valid()) {
+        pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME,
+                      "first stub-free frame with valid draw calls");
+    }
 
     /* In windowed mode, request a screenshot after the logo has rendered */
     if (!pal_window_is_headless() && s_frame_count == 30) {

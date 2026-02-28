@@ -368,22 +368,60 @@ static uint64_t convert_primitive_state(GXPrimitive prim) {
  *   GX_VA_TEX0   → bgfx::Attrib::TexCoord0 (2 floats)
  *   GX_VA_TEX1-7 → bgfx::Attrib::TexCoord1-7
  */
+/**
+ * Get the byte size of a GX component type.
+ */
+static uint32_t gx_comp_size(GXCompType t) {
+    switch (t) {
+    case GX_U8: case GX_S8: return 1;
+    case GX_U16: case GX_S16: return 2;
+    case GX_F32: return 4;
+    default: return 4; /* default to float */
+    }
+}
+
+/**
+ * Map GX component type to bgfx attribute type.
+ */
+static bgfx::AttribType::Enum gx_to_bgfx_type(GXCompType t) {
+    switch (t) {
+    case GX_U8:  return bgfx::AttribType::Uint8;
+    case GX_S8:  return bgfx::AttribType::Int16; /* closest match */
+    case GX_U16: return bgfx::AttribType::Int16;
+    case GX_S16: return bgfx::AttribType::Int16;
+    case GX_F32: return bgfx::AttribType::Float;
+    default:     return bgfx::AttribType::Float;
+    }
+}
+
 static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
     layout.begin();
 
     uint32_t stride = 0;
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    /* Use format 0 as default — matches GX_VTXFMT0 used by J2D */
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
-    /* Position — always 3 floats for direct mode */
+    /* PNMTXIDX — 1 byte matrix index */
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
+        stride += 1;
+    }
+
+    /* Position — check actual component type */
     if (desc[GX_VA_POS].type != GX_NONE) {
-        layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
-        stride += 12;
+        GXCompType pt = afmt[GX_VA_POS].comp_type;
+        uint32_t comp_sz = gx_comp_size(pt);
+        int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        layout.add(bgfx::Attrib::Position, (uint8_t)ncomps, gx_to_bgfx_type(pt));
+        stride += ncomps * comp_sz;
     }
 
     /* Normal */
     if (desc[GX_VA_NRM].type != GX_NONE) {
-        layout.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float);
-        stride += 12;
+        GXCompType nt = afmt[GX_VA_NRM].comp_type;
+        uint32_t comp_sz = gx_comp_size(nt);
+        layout.add(bgfx::Attrib::Normal, 3, gx_to_bgfx_type(nt));
+        stride += 3 * comp_sz;
     }
 
     /* Colors */
@@ -397,12 +435,15 @@ static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
         stride += 4;
     }
 
-    /* Texture coordinates */
+    /* Texture coordinates — use actual component type */
     for (int i = 0; i < 8; i++) {
         if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            GXCompType tt = afmt[GX_VA_TEX0 + i].comp_type;
+            uint32_t comp_sz = gx_comp_size(tt);
+            int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
             layout.add((bgfx::Attrib::Enum)(bgfx::Attrib::TexCoord0 + i),
-                       2, bgfx::AttribType::Float);
-            stride += 8;
+                       (uint8_t)ncomps, gx_to_bgfx_type(tt));
+            stride += ncomps * comp_sz;
         }
     }
 

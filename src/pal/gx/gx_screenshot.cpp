@@ -63,13 +63,28 @@ int pal_screenshot_active(void) {
 }
 
 /**
+ * Get byte size for a GX component type.
+ */
+static uint32_t gx_comp_bytes(GXCompType t) {
+    switch (t) {
+    case GX_U8: case GX_S8: return 1;
+    case GX_U16: case GX_S16: return 2;
+    case GX_F32: return 4;
+    default: return 4;
+    }
+}
+
+/**
  * Calculate per-vertex stride from active vertex descriptors.
  * Returns offsets for position, color, and texcoord within each vertex.
+ * Uses actual attribute format (vtx_attr_fmt) for correct component sizes.
  */
 static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_off,
                             int* has_pos, int* has_clr, int* has_tc) {
     uint32_t offset = 0;
     *has_pos = *has_clr = *has_tc = 0;
+
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
     if (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) {
         offset += 1; /* u8 matrix index */
@@ -78,11 +93,12 @@ static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_o
     if (g_gx_state.vtx_desc[GX_VA_POS].type != GX_NONE) {
         *pos_off = offset;
         *has_pos = 1;
-        offset += 12; /* 3 floats */
+        int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        offset += ncomps * gx_comp_bytes(afmt[GX_VA_POS].comp_type);
     }
 
     if (g_gx_state.vtx_desc[GX_VA_NRM].type != GX_NONE) {
-        offset += 12; /* 3 floats */
+        offset += 3 * gx_comp_bytes(afmt[GX_VA_NRM].comp_type);
     }
 
     if (g_gx_state.vtx_desc[GX_VA_CLR0].type != GX_NONE) {
@@ -98,13 +114,15 @@ static uint32_t calc_layout(uint32_t* pos_off, uint32_t* clr_off, uint32_t* tc_o
     if (g_gx_state.vtx_desc[GX_VA_TEX0].type != GX_NONE) {
         *tc_off = offset;
         *has_tc = 1;
-        offset += 8; /* 2 floats */
+        int ncomps = (afmt[GX_VA_TEX0].cnt == GX_TEX_S) ? 1 : 2;
+        offset += ncomps * gx_comp_bytes(afmt[GX_VA_TEX0].comp_type);
     }
 
     /* Skip remaining tex coords for stride calculation */
     for (int i = 1; i < 8; i++) {
         if (g_gx_state.vtx_desc[GX_VA_TEX0 + i].type != GX_NONE) {
-            offset += 8;
+            int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+            offset += ncomps * gx_comp_bytes(afmt[GX_VA_TEX0 + i].comp_type);
         }
     }
 
@@ -137,29 +155,77 @@ void pal_screenshot_blit(void) {
         return;
     }
 
+    s_has_draws = 1;
+
     /* Read first 4 vertices (quad corners) */
     float pos[4][3];
     uint8_t clr[4][4];
     float tc[4][2];
 
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+    GXCompType pos_type = afmt[GX_VA_POS].comp_type;
+    GXCompType tc_type = afmt[GX_VA_TEX0].comp_type;
+    uint8_t tc_frac = afmt[GX_VA_TEX0].frac;
+    float tc_scale = (tc_frac > 0) ? (float)(1 << tc_frac) : 1.0f;
+
     for (int v = 0; v < 4; v++) {
         const uint8_t* base = ds->vtx_data + v * stride;
-        memcpy(pos[v], base + pos_off, 12);
+
+        /* Read position — convert to float from actual type */
+        if (pos_type == GX_F32) {
+            memcpy(pos[v], base + pos_off, 12);
+        } else if (pos_type == GX_S16) {
+            int16_t tmp[3];
+            memcpy(tmp, base + pos_off, 6);
+            for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
+        } else if (pos_type == GX_S8) {
+            int8_t tmp[3];
+            memcpy(tmp, base + pos_off, 3);
+            for (int c = 0; c < 3; c++) pos[v][c] = (float)tmp[c];
+        } else {
+            memcpy(pos[v], base + pos_off, 12); /* fallback */
+        }
 
         if (has_clr) {
-            /* Color is stored as u32 RGBA (packed by GXColor1u32) */
-            uint32_t c;
-            memcpy(&c, base + clr_off, 4);
-            clr[v][0] = (c >> 24) & 0xFF; /* R */
-            clr[v][1] = (c >> 16) & 0xFF; /* G */
-            clr[v][2] = (c >> 8) & 0xFF;  /* B */
-            clr[v][3] = c & 0xFF;         /* A */
+            /* Color is stored as 4 consecutive bytes: R, G, B, A
+             * (written by GXColor4u8 or GXColor1u32 via TColor::toUInt32
+             *  which stores in struct byte order: r, g, b, a) */
+            const uint8_t* cp = base + clr_off;
+            clr[v][0] = cp[0]; /* R */
+            clr[v][1] = cp[1]; /* G */
+            clr[v][2] = cp[2]; /* B */
+            clr[v][3] = cp[3]; /* A */
         } else {
             clr[v][0] = clr[v][1] = clr[v][2] = clr[v][3] = 255;
         }
 
         if (has_tc) {
-            memcpy(tc[v], base + tc_off, 8);
+            /* Read texcoord — convert to float from actual type */
+            if (tc_type == GX_F32) {
+                memcpy(tc[v], base + tc_off, 8);
+            } else if (tc_type == GX_S16) {
+                int16_t tmp[2];
+                memcpy(tmp, base + tc_off, 4);
+                tc[v][0] = (float)tmp[0] / tc_scale;
+                tc[v][1] = (float)tmp[1] / tc_scale;
+            } else if (tc_type == GX_U16) {
+                uint16_t tmp[2];
+                memcpy(tmp, base + tc_off, 4);
+                tc[v][0] = (float)tmp[0] / tc_scale;
+                tc[v][1] = (float)tmp[1] / tc_scale;
+            } else if (tc_type == GX_S8) {
+                int8_t tmp[2];
+                memcpy(tmp, base + tc_off, 2);
+                tc[v][0] = (float)tmp[0] / tc_scale;
+                tc[v][1] = (float)tmp[1] / tc_scale;
+            } else if (tc_type == GX_U8) {
+                uint8_t tmp[2];
+                memcpy(tmp, base + tc_off, 2);
+                tc[v][0] = (float)tmp[0] / tc_scale;
+                tc[v][1] = (float)tmp[1] / tc_scale;
+            } else {
+                memcpy(tc[v], base + tc_off, 8); /* fallback */
+            }
         } else {
             tc[v][0] = (v == 1 || v == 2) ? 1.0f : 0.0f;
             tc[v][1] = (v == 2 || v == 3) ? 1.0f : 0.0f;
@@ -188,18 +254,6 @@ void pal_screenshot_blit(void) {
     float qw = x1 - x0, qh = y1 - y0;
     if (qw <= 0.0f || qh <= 0.0f)
         return;
-
-    /* Debug: log blit bounds once */
-    static int s_blit_debug_count = 0;
-    if (s_blit_debug_count < 20) {
-        int has_tex_binding = (g_gx_state.tev_stages[0].tex_map < GX_MAX_TEXMAP &&
-                               g_gx_state.tex_bindings[g_gx_state.tev_stages[0].tex_map].valid);
-        fprintf(stderr, "{\"screenshot_blit\":{\"ix\":[%d,%d],\"iy\":[%d,%d],\"verts\":%u,\"stride\":%u,\"vtx_pos\":%u,\"has_tc\":%d,\"has_tex\":%d,\"pos0\":[%.1f,%.1f,%.1f],\"clr0\":[%u,%u,%u,%u]}}\n",
-                ix0, ix1, iy0, iy1, ds->verts_written, stride, ds->vtx_data_pos, has_tc, has_tex_binding,
-                pos[0][0], pos[0][1], pos[0][2],
-                clr[0][0], clr[0][1], clr[0][2], clr[0][3]);
-        s_blit_debug_count++;
-    }
 
     /* Get texture for this draw (from TEV stage 0) */
     const GXTevStage* s0 = &g_gx_state.tev_stages[0];
