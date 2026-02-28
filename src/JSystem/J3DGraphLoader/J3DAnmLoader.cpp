@@ -103,6 +103,9 @@ void J3DAnmLoaderDataBase::setResource(J3DAnmBase* param_1, const void* i_data) 
     if (!i_data) {
         return;
     }
+#if PLATFORM_PC
+    pal_j3d_swap_anim(const_cast<void*>(i_data), 0x800000);
+#endif
     if (header->mMagic != 'J3D1') {
         return;
     }

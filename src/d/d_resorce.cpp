@@ -17,6 +17,10 @@
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include <cstdio>
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#include "pal/pal_endian.h"
+#endif
 
 dRes_info_c::dRes_info_c() {
     mCount = 0;
@@ -470,11 +474,15 @@ int dRes_info_c::loadResource() {
                         u8 unk_data[0x1C];
                         u32 some_data_offset;
                     };
+#if PLATFORM_PC
+                    /* Byte-swap the animation file before reading the offset field */
+                    pal_j3d_swap_anim(res, 0x800000);
+#endif
                     J3DUnkChunk* chunk = (J3DUnkChunk*)res;
                     void* bas;
 
                     if (chunk->some_data_offset != 0xFFFFFFFF) {
-                        bas = (void*)(chunk->some_data_offset + (u32)res);
+                        bas = (void*)((uintptr_t)chunk->some_data_offset + (uintptr_t)res);
                     } else {
                         bas = NULL;
                     }

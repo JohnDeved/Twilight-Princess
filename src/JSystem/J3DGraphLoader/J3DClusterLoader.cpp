@@ -10,9 +10,15 @@
 #include "JSystem/JKernel/JKRHeap.h"
 #include <dolphin/os.h>
 #include <string>
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
 
 void* J3DClusterLoaderDataBase::load(const void* i_data) {
     J3D_ASSERT_NULLPTR(41, i_data);
+#if PLATFORM_PC
+    pal_j3d_swap_anim(const_cast<void*>(i_data), 0x800000);
+#endif
     const JUTDataFileHeader* fileHeader = (JUTDataFileHeader*)i_data;
     if (fileHeader->mMagic == 'J3D1' && fileHeader->mType == 'bls1') {
         J3DClusterLoader_v15 loader;
