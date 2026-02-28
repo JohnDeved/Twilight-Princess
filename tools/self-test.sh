@@ -72,6 +72,24 @@ echo "  Skip build: $SKIP_BUILD"
 echo "  Output dir: $TMP_DIR"
 echo ""
 
+# --- Step 0: Game data ---
+if [ ! -d data/res ]; then
+    if [ -n "${ROMS_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+        echo "━━━ Step 0: Downloading game data ━━━"
+        python3 tools/setup_game_data.py \
+            --data-dir data \
+            --rom-dir orig/GZ2E01 \
+            --extract-dir build/extract/GZ2E01 \
+            --tools-dir build/tools
+        echo "  ✅ Game data ready"
+    else
+        echo "  ⚠  Game data not found (set ROMS_TOKEN + install gh CLI to auto-download)"
+    fi
+else
+    echo "  ✅ Game data found"
+fi
+echo ""
+
 # --- Step 1: Build ---
 if [ "$SKIP_BUILD" -eq 0 ]; then
     echo "━━━ Step 1/5: Build ━━━"

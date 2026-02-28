@@ -205,9 +205,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # --- Game data setup (auto-download if ROMS_TOKEN is available) ---
-# Creates a 'setup_game_data' target that downloads and extracts the disc image.
-# Run: cmake --build build --target setup_game_data
-# Or:  ninja -C build setup_game_data
+# Automatically downloads and extracts the disc image before building tp-pc.
+# Can also be run manually: ninja -C build setup_game_data
 find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(GH_CLI gh)
 if(Python3_FOUND AND GH_CLI AND DEFINED ENV{ROMS_TOKEN})
@@ -223,9 +222,10 @@ if(Python3_FOUND AND GH_CLI AND DEFINED ENV{ROMS_TOKEN})
         COMMENT "Downloading and extracting game data..."
         VERBATIM
     )
-    # Check if data/ exists; if not, remind the user
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/res")
-        message(STATUS "PC port: Game data not found in data/ — run 'ninja setup_game_data' to download")
+        # Auto-download: make tp-pc depend on game data setup
+        add_dependencies(tp-pc setup_game_data)
+        message(STATUS "PC port: Game data will be auto-downloaded before build (ROMS_TOKEN set)")
     else()
         message(STATUS "PC port: Game data found in data/")
     endif()
