@@ -32,6 +32,7 @@ extern "C" {
 #include "pal/gx/gx_tev.h"
 #include "pal/gx/gx_texture.h"
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/gx/gx_screenshot.h"
 #include "revolution/gx/GXEnum.h"
 }
 
@@ -662,6 +663,9 @@ void pal_tev_flush_draw(void) {
 
     /* 10. Submit draw call */
     bgfx::submit(0, s_programs[preset]);
+
+    /* 11. Blit to software framebuffer for screenshot capture */
+    pal_screenshot_blit();
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

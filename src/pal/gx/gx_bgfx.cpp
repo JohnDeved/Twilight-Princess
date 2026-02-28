@@ -20,6 +20,7 @@ extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_tev.h"
+#include "pal/gx/gx_screenshot.h"
 #include "pal/pal_window.h"
 
 /* Provided by pal_gx_stubs.cpp - set to 1 once bgfx is initialized */
@@ -84,6 +85,9 @@ int pal_gx_bgfx_init(void) {
     /* Initialize TEV shader system */
     pal_tev_init();
 
+    /* Initialize software framebuffer screenshot system */
+    pal_screenshot_init();
+
     fprintf(stderr, "{\"gx_bgfx\":\"ready\",\"width\":%u,\"height\":%u}\n",
             s_frame_width, s_frame_height);
     return 1;
@@ -144,6 +148,11 @@ void pal_gx_end_frame(void) {
     if (!pal_window_is_headless() && s_frame_count == 30) {
         bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "/tmp/logo_render.tga");
         fprintf(stderr, "{\"gx_bgfx\":\"screenshot_requested\",\"frame\":%u}\n", s_frame_count);
+    }
+
+    /* Save software framebuffer screenshot after logo has rendered */
+    if (s_frame_count == 30 && pal_screenshot_active()) {
+        pal_screenshot_save();
     }
 
     /* Log draw statistics every 60 frames */
