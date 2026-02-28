@@ -8,7 +8,9 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
       - 'tools/parse_milestones.py'
+      - 'tools/check_milestone_regression.py'
       - 'tools/setup_game_data.py'
+      - 'milestone-baseline.json'
   pull_request:
     paths:
       - 'src/**'
@@ -16,12 +18,17 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/port-test.yml'
       - 'tools/parse_milestones.py'
+      - 'tools/check_milestone_regression.py'
       - 'tools/setup_game_data.py'
+      - 'milestone-baseline.json'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,6 +114,151 @@ jobs:
             --output milestone-summary.json \
             --min-milestone 5 || true
 
+      - name: Check milestone regression
+        id: regression
+        if: always()
+        run: |
+          python3 tools/check_milestone_regression.py milestone-summary.json \
+            --baseline milestone-baseline.json \
+            --output regression-report.json || true
+
+          # Extract key fields for the PR comment step
+          if [ -f regression-report.json ]; then
+            echo "status=$(python3 -c "import json; print(json.load(open('regression-report.json'))['status'])")" >> $GITHUB_OUTPUT
+            echo "current=$(python3 -c "import json; print(json.load(open('regression-report.json'))['current_milestone'])")" >> $GITHUB_OUTPUT
+            echo "baseline=$(python3 -c "import json; print(json.load(open('regression-report.json'))['baseline_milestone'])")" >> $GITHUB_OUTPUT
+            echo "delta=$(python3 -c "import json; print(json.load(open('regression-report.json'))['delta'])")" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post PR comment with results
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Load milestone summary
+            let summary = {};
+            try {
+              summary = JSON.parse(fs.readFileSync('milestone-summary.json', 'utf8'));
+            } catch (e) {
+              summary = { highest_milestone: -1, highest_milestone_name: 'BUILD_FAILED' };
+            }
+
+            // Load regression report
+            let regression = {};
+            try {
+              regression = JSON.parse(fs.readFileSync('regression-report.json', 'utf8'));
+            } catch (e) {
+              regression = { status: 'unknown', current_milestone: -1, baseline_milestone: -1 };
+            }
+
+            // Status emoji
+            const statusEmoji = {
+              'improved': '🎉',
+              'same': '✅',
+              'regressed': '🚨',
+              'unknown': '❓'
+            };
+
+            const emoji = statusEmoji[regression.status] || '❓';
+            const milestone = summary.highest_milestone ?? -1;
+            const milestoneName = summary.highest_milestone_name || 'NONE';
+
+            // Build the comment body
+            let body = `## ${emoji} Port Test Results\n\n`;
+            body += `| Metric | Value |\n|---|---|\n`;
+            body += `| **Highest Milestone** | ${milestone} (${milestoneName}) |\n`;
+            body += `| **Baseline** | ${regression.baseline_milestone ?? 'N/A'} |\n`;
+            body += `| **Status** | ${(regression.status || 'unknown').toUpperCase()} |\n`;
+            body += `| **Delta** | ${regression.delta >= 0 ? '+' : ''}${regression.delta ?? 0} |\n`;
+
+            // Milestones reached
+            if (summary.milestones_reached && summary.milestones_reached.length > 0) {
+              body += `\n### Milestones Reached\n`;
+              body += summary.milestones_reached.map(m => `- ✅ ${m}`).join('\n') + '\n';
+            }
+
+            // Crash info
+            if (summary.crash) {
+              body += `\n### ⚠️ Crash Detected\n`;
+              body += `Signal: ${summary.crash.signal || 'unknown'}\n`;
+            }
+
+            // Top stubs
+            if (summary.stubs_hit && summary.stubs_hit.length > 0) {
+              body += `\n### 📊 Top Unimplemented Stubs\n`;
+              body += `| Stub | Hits |\n|---|---|\n`;
+              for (const s of summary.stubs_hit.slice(0, 10)) {
+                body += `| \`${s.stub}\` | ${s.hits} |\n`;
+              }
+            }
+
+            // Frame validation
+            if (summary.frame_validation) {
+              const fv = summary.frame_validation;
+              body += `\n### 🖼️ Frame Validation\n`;
+              body += `| Metric | Value |\n|---|---|\n`;
+              body += `| Stub count | ${fv.stub_count} |\n`;
+              body += `| Draw calls | ${fv.draw_calls} |\n`;
+              body += `| Valid verts | ${fv.valid_verts} |\n`;
+              body += `| Valid frame | ${fv.valid ? '✅' : '❌'} |\n`;
+            }
+
+            // Next action recommendation
+            if (regression.next_action) {
+              body += `\n### 🎯 Recommended Next Action\n`;
+              body += `> ${regression.next_action.action}\n\n`;
+              body += `**Focus files:** ${regression.next_action.focus_files.map(f => '`' + f + '`').join(', ')}\n`;
+              body += `**Guide:** ${regression.next_action.docs}\n`;
+            }
+
+            // Timing
+            if (summary.timing && Object.keys(summary.timing).length > 0) {
+              body += `\n### ⏱️ Timing\n`;
+              body += `| Milestone | Time (ms) |\n|---|---|\n`;
+              for (const [name, ms] of Object.entries(summary.timing)) {
+                body += `| ${name} | ${ms} |\n`;
+              }
+            }
+
+            body += `\n---\n`;
+            body += `<sub>🤖 Generated by port-test CI · `;
+            body += `Commit: ${context.sha.substring(0, 7)}</sub>\n`;
+
+            // Find and update existing comment, or create new one
+            const marker = '## 🎉 Port Test Results\n\n';
+            const marker2 = '## ✅ Port Test Results\n\n';
+            const marker3 = '## 🚨 Port Test Results\n\n';
+            const marker4 = '## ❓ Port Test Results\n\n';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              (c.body.includes('Port Test Results') && c.body.includes('Highest Milestone'))
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,4 +267,5 @@ jobs:
           path: |
             milestones.log
             milestone-summary.json
+            regression-report.json
             logo_render.bmp

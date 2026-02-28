@@ -141,10 +141,14 @@ Each step maps to the [Execution Plan](multiplatform-port-plan.md#execution-plan
 - [ ] Verify: builds and runs on NX homebrew hardware
 
 ## CI Infrastructure
-- [ ] Create `.github/workflows/port-test.yml` (~80 LOC YAML)
-- [ ] Create `tools/parse_milestones.py` (~100 LOC Python)
-- [ ] Create `src/pal/pal_crash.cpp` — signal handler + backtrace (~20 LOC)
-- [ ] Create GX stub coverage tracker `include/pal/gx/gx_stub_tracker.h` (~80 LOC)
+- [x] Create `.github/workflows/port-test.yml` (~80 LOC YAML)
+- [x] Create `tools/parse_milestones.py` (~100 LOC Python)
+- [x] Create `src/pal/pal_crash.cpp` — signal handler + backtrace (~20 LOC)
+- [x] Create GX stub coverage tracker `include/pal/gx/gx_stub_tracker.h` (~80 LOC)
+- [x] Create `milestone-baseline.json` — regression baseline tracking
+- [x] Create `tools/check_milestone_regression.py` — regression detection + next-action recommendations
+- [x] CI posts structured PR comment with milestone results, regression status, and next action
+- [x] Create `docs/automated-testing-guide.md` — single authoritative testing reference
 - [ ] Auto-input injection for scene progression (~60 LOC)
 
 ## Milestone Reference
@@ -242,6 +246,9 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `tools/setup_game_data.py` — Game data auto-download script (ROM + nodtool extract)
 - `.github/workflows/port-test.yml` — CI workflow for port testing
 - `tools/parse_milestones.py` — CI milestone parser
+- `tools/check_milestone_regression.py` — Milestone regression detection + next-action recommendations
+- `milestone-baseline.json` — Milestone regression baseline tracking
+- `docs/automated-testing-guide.md` — Authoritative testing guide for AI agents
 - `assets/` — Placeholder asset headers for compilation
 
 ### Modified files (conditional extensions)
