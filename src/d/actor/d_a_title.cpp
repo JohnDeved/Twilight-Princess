@@ -191,16 +191,34 @@ void daTitle_c::loadWait_proc() {
         text[6] = (J2DTextBox*)mTitle.Scr->search('t_o');
 
         for (int i = 0; i < 7; i++) {
+#if PLATFORM_PC
+            /* Font resources are big-endian binary; on PC mpFont may be NULL
+             * until proper endian conversion is implemented. Skip font/text
+             * setup to avoid crashes. */
+            if (text[i] && mpFont) {
+                text[i]->setFont(mpFont);
+                text[i]->setString(0x80, "");
+                fopMsgM_messageGet(text[i]->getStringPtr(), 100);
+            }
+#else
             text[i]->setFont(mpFont);
             text[i]->setString(0x80, "");
             fopMsgM_messageGet(text[i]->getStringPtr(), 100);
+#endif
         }
 
         field_0x600 = new CPaneMgrAlpha(mTitle.Scr, 'n_all', 2, NULL);
         field_0x600->setAlpha(0);
         J2DPane* pane = mTitle.Scr->search('n_all');
+#if PLATFORM_PC
+        if (pane) {
+            pane->translate(g_daTitHIO.mPSPosX, g_daTitHIO.mPSPosY);
+            pane->scale(g_daTitHIO.mPSScaleX, g_daTitHIO.mPSScaleY);
+        }
+#else
         pane->translate(g_daTitHIO.mPSPosX, g_daTitHIO.mPSPosY);
         pane->scale(g_daTitHIO.mPSScaleX, g_daTitHIO.mPSScaleY);
+#endif
         mpHeap->becomeCurrentHeap();
         logoDispWaitInit();
     }
