@@ -10,6 +10,7 @@
 #include "d/d_menu_fmap_map.h"
 #include "d/d_meter_map.h"
 #include "m_Do/m_Do_ext.h"
+#include <cstring>
 
 dMeter_menuHIO_c::dMeter_menuHIO_c() {
     mGameover = 70;
@@ -728,7 +729,7 @@ dMeter_drawEmpButtonHIO_c::dMeter_drawEmpButtonHIO_c() {
         mDebugDisplayButton[0] = 0;
     }
 
-    #if PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_SHIELD
     mDisplaySpace = 70.0f;
     #else
     mDisplaySpace = 35.0f;

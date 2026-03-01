@@ -32,23 +32,10 @@ compile_commands.json
 
 # Miscellaneous
 /*.txt
-!CMakeLists.txt
 *.exe
-
-# PC port game data (symlink to extracted disc files)
-/data
 
 # MacOS
 .DS_Store
 
 # ISOs
 *.iso
-crash.log
-milestones.log
-
-# CI-generated outputs
-verify_output/
-verify_png/
-verify-report.json
-milestone-summary.json
-regression-report.json

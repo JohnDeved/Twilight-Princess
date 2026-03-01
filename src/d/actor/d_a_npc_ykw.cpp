@@ -18,6 +18,7 @@
 #include "d/d_tresure.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_ext.h"
+#include <cstring>
 
 #if DEBUG
 class daNpc_ykW_HIO_c : public mDoHIO_entry_c {
@@ -461,7 +462,7 @@ int daNpc_ykW_c::createHeapCallBack(fopAc_ac_c* i_this) {
 }
 
 int daNpc_ykW_c::ctrlJointCallBack(J3DJoint* i_joint, int param_1) {
-    if (param_1 == NULL) {
+    if (param_1 == 0) {
         J3DModel* model = j3dSys.getModel();
         daNpc_ykW_c* ykw = (daNpc_ykW_c*)model->getUserArea();
         if (ykw != 0) {
@@ -1821,7 +1822,7 @@ BOOL daNpc_ykW_c::cutLv5DungeonClear(int param_0) {
             itemPos.y += 50.0f;
 
             unkActor1 = fopAcM_fastCreateItem(&itemPos, 0, fopAcM_GetRoomNo(this), &unkSxyz,
-                                             &unkXyz1, &unkFloat2, &unkFloat3, -1, NULL, NULL);
+                                             &unkXyz1, &unkFloat2, &unkFloat3, -1, 0, NULL);
             if (unkActor1 != NULL) {
                 mDoAud_seStart(Z2SE_OBJ_YO_HEART_S, &itemPos, 0, 0);
                 fopAcM_OnStatus(unkActor1, fopAcM_STATUS_UNK_0x4000);
@@ -2725,7 +2726,7 @@ int daNpc_ykW_c::race(void* param_0) {
             field_0xff0.z = mpPath->m_points[mpPath->m_num - 1].m_position.z;
             targetAngleY = cLib_targetAngleY(&field_0xff0, &daPy_getPlayerActorClass()->current.pos);
             if (field_0x104c < 0 ||
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
                 field_0x1044.field_0x0 >= 0 &&
 #endif
                     field_0xff0.abs2(daPy_getPlayerActorClass()->current.pos) < 640000.0f &&
@@ -2756,7 +2757,7 @@ int daNpc_ykW_c::race(void* param_0) {
                     mEvtNo = 9;
                 }
             }
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
             else {
 #else
             if (field_0x104c >= 0) {

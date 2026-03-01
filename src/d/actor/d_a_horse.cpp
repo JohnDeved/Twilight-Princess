@@ -18,6 +18,7 @@
 #include "Z2AudioLib/Z2Instances.h"
 #include "JSystem/JAudio2/JAUSectionHeap.h"
 #include <cmath>
+#include <cstring>
 
 #define ANM_HS_BACK_WALK           6
 #define ANM_HS_WALK_START          7
@@ -2188,7 +2189,7 @@ void daHorse_c::setMatrix() {
     mDoMtx_stack_c::transS(current.pos.x, current.pos.y, current.pos.z);
     mDoMtx_stack_c::ZXYrotM(shape_angle.x, shape_angle.y, shape_angle.z);
     m_model->setBaseTRMtx(mDoMtx_stack_c::get());
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
     m_model->setBaseScale(scale);
 #endif
 
@@ -2210,7 +2211,7 @@ void daHorse_c::setDashEffect(u32* i_emitterID) {
     f32 temp_f31 = (200.0f * std::abs(cM_ssin(var_r28))) + (700.0f * std::abs(cM_scos(var_r28)));
     f32 temp_f30 = temp_f31 * cM_scos(fopCamM_GetAngleX(camera_p));
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     Vec pos;
 #else
     Vec pos = {0.0f, 0.0f, 0.0f};
@@ -4240,7 +4241,7 @@ int daHorse_c::execute() {
 
     daAlink_c* player_p = daAlink_getAlinkActorClass();
 
-#if PLATFORM_SHIELD || PLATFORM_WII || PLATFORM_PC
+#if PLATFORM_SHIELD || PLATFORM_WII
     l_autoUpHeight = m_hio->m.m0D0;
     m_acchcir[0].SetWall(l_autoUpHeight + 0.1f, 60.0f);
     if (checkStateFlg0(FLG0_UNK_2000)) {

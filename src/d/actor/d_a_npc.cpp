@@ -12,6 +12,7 @@
 #include "f_op/f_op_camera_mng.h"
 #include "f_op/f_op_kankyo_mng.h"
 #include "m_Do/m_Do_lib.h"
+#include <cstring>
 
 #if DEBUG
 void daNpcT_cmnListenPropertyEvent(char* param_0, int* param_1, daNpcT_HIOParam* param_2) {
@@ -2046,7 +2047,7 @@ void daNpcT_c::evtOrder() {
         mEvtId = dComIfGp_getEventManager().getEventIdx(this, mpEvtData[mEvtNo].eventName, 0xFF);
         fopAcM_orderOtherEventId(this, mEvtId, 0xFF, 0xFFFF, 40, 1);
     } else if (
-#if !PLATFORM_SHIELD && !PLATFORM_PC
+#if !PLATFORM_SHIELD
         (!mTwilight || daPy_py_c::checkNowWolfEyeUp()) &&
 #endif
         ((attention_info.flags & fopAc_AttnFlag_SPEAK_e) || (attention_info.flags & fopAc_AttnFlag_TALK_e))) {

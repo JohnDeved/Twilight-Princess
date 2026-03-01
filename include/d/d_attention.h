@@ -271,10 +271,10 @@ public:
     }
     fopAc_ac_c* getCatghTarget() { return mCatghTarget.getCatghTarget(); }
     u8 getCatchChgItem() { return mCatghTarget.getChangeItem(); }
-    void CatchRequest(fopAc_ac_c* param_0, u8 param_1, f32 i_horizontalDist, f32 i_upDist,
+    int CatchRequest(fopAc_ac_c* param_0, u8 param_1, f32 i_horizontalDist, f32 i_upDist,
                       f32 i_downDist, s16 i_angle, int param_5) {
-        mCatghTarget.request(param_0, param_1, i_horizontalDist, i_upDist, i_downDist, i_angle,
-                             param_5);
+        return mCatghTarget.request(param_0, param_1, i_horizontalDist, i_upDist, i_downDist,
+                                    i_angle, param_5);
     }
     fopAc_ac_c* getLookTarget() {
         return mLookTarget.getLookTarget();
@@ -332,11 +332,11 @@ public:
     /* 0x49C */ dAttCatch_c mCatghTarget;
     /* 0x4B4 */ dAttLook_c mLookTarget;
     /* 0x4C4 */ int mAttnBlockTimer;
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     /* 0x4C8 */ u8 field_0x4c8[0x4D0 - 0x4C8];
 #endif
     /* 0x4C8 */ dAttParam_c mAttParam;
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     /* 0x51C */ u8 field_0x50c[0x520 - 0x51C];
 #else
     /* 0x50C */ u8 field_0x50c[0x514 - 0x50c];

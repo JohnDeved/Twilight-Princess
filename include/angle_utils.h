@@ -38,7 +38,7 @@
 #define ANGLE_MULT S16_MULT
 
 // There are some angles that weren't sign-extended until the shield version
-#if !PLATFORM_SHIELD && !PLATFORM_PC
+#if !PLATFORM_SHIELD
     #define S8_ADD_2   VAR_ADD
     #define U8_ADD_2   VAR_ADD
     #define S16_ADD_2  VAR_ADD

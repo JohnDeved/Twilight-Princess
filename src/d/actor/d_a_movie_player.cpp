@@ -20,6 +20,7 @@
 #include "d/actor/d_a_movie_player.h"
 #include "Z2AudioLib/Z2Instances.h"
 #include "f_op/f_op_overlap_mng.h"
+#include <cstring>
 
 inline s32 daMP_NEXT_READ_SIZE(daMP_THPReadBuffer* readBuf) {
     return *(s32*)readBuf->ptr;
@@ -3718,7 +3719,7 @@ BOOL daMP_WaitUntilPrepare() {
 }
 
 void daMP_PrepareReady(BOOL msg) {
-    OSSendMessage(&daMP_PrepareReadyQueue, (OSMessage)msg, 1);
+    OSSendMessage(&daMP_PrepareReadyQueue, (OSMessage)(uintptr_t)msg, 1);
 }
 
 static BOOL daMP_THPPlayerPrepare(s32 frame, s32 flag, s32 audioTrack) {
@@ -4164,7 +4165,7 @@ int daMP_c::daMP_c_Callback_Finish(daMP_c* i_this) {
 }
 
 int daMP_c::daMP_c_Callback_Main(daMP_c* i_this) {
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     mDoGph_gInf_c::resetDimming();
     #endif
 

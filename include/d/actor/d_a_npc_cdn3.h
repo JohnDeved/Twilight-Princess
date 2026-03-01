@@ -4,6 +4,7 @@
 #include "d/actor/d_a_npc.h"
 #include "d/actor/d_a_npc_cd2.h"
 #include "d/actor/d_a_tag_schedule.h"
+#include <cstring>
 
 /**
  * @ingroup actors-npcs
@@ -325,7 +326,7 @@ public:
     }
 
     int orderEvent() {
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
         if (mFlowNodeNum > 0)
 #else
         if ((!mIsDarkWorld || daPy_py_c::checkNowWolfEyeUp()) &&

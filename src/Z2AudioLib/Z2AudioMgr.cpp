@@ -14,7 +14,7 @@
 #include "Z2AudioLib/Z2Param.h"
 #include "Z2AudioLib/Z2SoundHandles.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 #include "Z2AudioCS/Z2AudioCS.h"
 #endif
 
@@ -63,7 +63,7 @@ void Z2AudioMgr::init(JKRSolidHeap* heap, u32 memSize, void* baaData, JKRArchive
     categoryArrangement.mItems[8].mMaxInactiveSe = 5;
     categoryArrangement.mItems[9].mMaxActiveSe = 8;
     categoryArrangement.mItems[9].mMaxInactiveSe = 4;
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     categoryArrangement.mItems[10].mMaxInactiveSe = 4;
     categoryArrangement.mItems[11].mMaxInactiveSe = 2;
     #endif
@@ -79,7 +79,7 @@ void Z2AudioMgr::init(JKRSolidHeap* heap, u32 memSize, void* baaData, JKRArchive
     seMgr->getCategory(7)->getParams()->moveVolume(Z2Param::VOL_SE_CHAR_VOICE_DEFAULT, 0);
     seMgr->getCategory(8)->getParams()->moveVolume(Z2Param::VOL_SE_OBJECT_DEFAULT, 0);
     seMgr->getCategory(9)->getParams()->moveVolume(Z2Param::VOL_SE_ATMOSPHERE_DEFAULT, 0);
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     seMgr->getCategory(10)->getParams()->moveVolume(1.0f, 0);
     #endif
 
@@ -98,7 +98,7 @@ void Z2AudioMgr::init(JKRSolidHeap* heap, u32 memSize, void* baaData, JKRArchive
     mSoundMgr.getSeMgr()->setAudience(&mAudience);
     mSoundMgr.getSeqMgr()->setAudience(&mAudience);
 
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     Z2AudioCS::newSpkSoundMemPool();
     #endif
 

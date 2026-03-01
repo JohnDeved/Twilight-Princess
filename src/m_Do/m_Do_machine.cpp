@@ -393,7 +393,7 @@ void myHeapCheckRecursive(JKRHeap* p_heap) {
 
 void mDoMch_HeapCheckAll() {
     myHeapCheckRecursive(JKRGetRootHeap());
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     myHeapCheckRecursive(JKRGetRootHeap2());
 #endif
 #if DEBUG
@@ -580,7 +580,7 @@ static void fault_callback_scroll(u16, OSContext* p_context, u32, u32) {
     JUTException* manager = JUTException::getManager();
     JUTConsole* exConsole = manager->getConsole();
 
-    u32 srr0 = p_context->srr0 & -4;
+    uintptr_t srr0 = p_context->srr0 & -4;
     if (srr0 >= 0x8000000C && srr0 < 0x82FFFFFF) {
         exConsole->print_f("(SRR0-3):%08X %08X %08X %08X\n", *(u32*)(srr0 - 0xC),
                            *(u32*)(srr0 - 0x8), *(u32*)(srr0 - 0x4), *(u32*)srr0);
@@ -751,11 +751,9 @@ int mDoMch_Create() {
     uintptr_t arenaHi = (uintptr_t)OSGetArenaHi();
     uintptr_t arenaLo = (uintptr_t)OSGetArenaLo();
 
-#if !PLATFORM_PC
     if (arenaHi > 0x81800000 && arenaHi - 0x1800000 > arenaLo) {
         OSSetArenaHi((void*)(arenaHi - 0x1800000));
     }
-#endif
     #endif
 
     u32 arenaSize = ((uintptr_t)OSGetArenaHi() - (uintptr_t)OSGetArenaLo()) - 0xF0;
@@ -832,11 +830,6 @@ int mDoMch_Create() {
     #if VERSION == VERSION_GCN_JPN
     arenaSize -= 0x6C00;
     arenaSize -= 0xC800;
-    #endif
-    #if PLATFORM_PC
-    /* On 64-bit, JKRExpHeap node headers are larger (8-byte pointers).
-     * Reduce system heap to leave room for sub-heap allocation overhead. */
-    arenaSize -= 0x10000;
     #endif
     JFWSystem::setSysHeapSize(arenaSize);
     my_PrintHeap("システムヒープ", arenaSize);

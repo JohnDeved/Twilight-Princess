@@ -11,6 +11,7 @@
 #include "f_op/f_op_draw_tag.h"
 #include "f_pc/f_pc_manager.h"
 #include "m_Do/m_Do_hostIO.h"
+#include "SSystem/SComponent/c_phase.h"
 
 #define fopAcM_ct(ptr, ClassName)                                           \
     if (!fopAcM_CheckCondition(ptr, fopAcCnd_INIT_e)) {                     \
@@ -422,7 +423,14 @@ inline BOOL fopAcM_CULLSIZE_IS_BOX(int i_culltype) {
            i_culltype == fopAc_CULLBOX_CUSTOM_e;
 }
 
-inline const cXyz& fopAcM_getCullSizeSphereCenter(const fopAc_ac_c* i_actor) {
+inline
+#ifdef __MWERKS__
+// In the original code, this constructs a temporary and returns a reference to it
+const cXyz&
+#else
+const Vec&
+#endif
+fopAcM_getCullSizeSphereCenter(const fopAc_ac_c* i_actor) {
     return i_actor->cull.sphere.center;
 }
 
@@ -838,6 +846,9 @@ void fopAcM_setWarningMessage_f(const fopAc_ac_c* i_actor, const char* i_filenam
 BOOL fopAcM_getNameString(const fopAc_ac_c*, char*);
 
 inline void fopAcM_SetStatusMap(fopAc_ac_c*, u32) {}
+
+extern cull_box l_cullSizeBox[fopAc_CULLBOX_MAX_e];
+extern cull_sphere l_cullSizeSphere[fopAc_CULLSPHERE_MAX_e];
 
 class fopAcM_lc_c {
 public:

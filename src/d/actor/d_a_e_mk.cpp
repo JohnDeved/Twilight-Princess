@@ -19,6 +19,7 @@
 #include "d/d_camera.h"
 #include "f_op/f_op_camera_mng.h"
 #include "Z2AudioLib/Z2Instances.h"
+#include <cstring>
 
 class daE_MK_HIO_c : public JORReflexible {
 public:
@@ -1957,7 +1958,7 @@ static void* s_brg_sub2(void* i_actor, void* i_data) {
     UNUSED(i_data);
 
     if (fopAcM_IsActor(i_actor) && fopAcM_GetName(i_actor) == PROC_OBJ_BRG) {
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
         static_cast<obj_brg_class*>(i_actor)->mType &= (u8)~4u;
 #else
         static_cast<obj_brg_class*>(i_actor)->mType &= ~4u;

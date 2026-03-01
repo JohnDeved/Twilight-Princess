@@ -19,6 +19,7 @@
 #include "d/d_model.h"
 #include "d/actor/d_a_grass.h"
 #include "d/d_tresure.h"
+#include <cstring>
 
 fapGm_HIO_c::fapGm_HIO_c() {
     mUsingHostIO = true;
@@ -383,7 +384,7 @@ int fapGm_dataMem::findParentHeap(void* i_object) {
         return HeapType_Archive_e;
     } else if (heap == mDoExt_getJ2dHeap()) {
         return HeapType_J2D_e;
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     } else if (heap == DynamicModuleControlBase::getHeap()) {
         return HeapType_Dynamic_e;
     #endif
@@ -408,7 +409,7 @@ void fapGm_dataMem::dumpTag() {
     printfTag(TagAtt_Variable_e, TagType_Heap_e, HeapType_Zelda_e, NULL, mDoExt_getZeldaHeap(), 0, NULL, NULL);
     printfTag(TagAtt_Fixed_e, TagType_Heap_e, HeapType_Archive_e, NULL, mDoExt_getArchiveHeap(), 0, NULL, NULL);
     printfTag(TagAtt_Fixed_e, TagType_Heap_e, HeapType_J2D_e, NULL, mDoExt_getJ2dHeap(), 0, NULL, NULL);
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     printfTag(TagAtt_Fixed_e, TagType_Heap_e, HeapType_Dynamic_e, NULL, DynamicModuleControlBase::getHeap(), 0, NULL, NULL);
     #endif
     printfTag(TagAtt_Fixed_e, TagType_Heap_e, HeapType_Game_e, NULL, mDoExt_getGameHeap(), 0, NULL, NULL);
@@ -419,7 +420,7 @@ void fapGm_dataMem::dumpTag() {
     printfTag(TagAtt_Fixed_e, TagType_Particle_e, 0, "パーティクル(常駐)", g_dComIfG_gameInfo.play.getParticle()->getHeap(), 0, NULL, NULL);
     printfTag(TagAtt_Variable_e, TagType_Particle_e, 0, "パーティクル(ステージ)", g_dComIfG_gameInfo.play.getParticle()->getSceneHeap(), 0, NULL, NULL);
     printfTag(TagAtt_Fixed_e, TagType_System_e, HeapType_System_e, "グラフィックFIFO", NULL, 0xA0000, 0, NULL);
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     printfTag(TagAtt_Fixed_e, TagType_System_e, 0, "グラフィック関係バッファ", mDoGph_gInf_c::getHeap(), 0, NULL, NULL);
     #endif
 

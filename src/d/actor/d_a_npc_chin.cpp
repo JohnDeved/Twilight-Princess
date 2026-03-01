@@ -362,7 +362,7 @@ int daNpcChin_c::CreateHeap() {
 
     setMotionAnm(motionAnmParam, 0.0f);
 
-    if (field_0xe24 != 0 && mSpotLight.loadModel() == NULL) {
+    if (field_0xe24 != 0 && mSpotLight.loadModel() == 0) {
         return 0;
     }
 
@@ -439,7 +439,7 @@ int daNpcChin_c::createHeapCallBack(fopAc_ac_c* i_this) {
 }
 
 int daNpcChin_c::ctrlJointCallBack(J3DJoint* i_joint, int param_1) {
-    if (param_1 == NULL) {
+    if (param_1 == 0) {
         J3DModel* model = j3dSys.getModel();
         daNpcChin_c* chin = (daNpcChin_c*)model->getUserArea();
         if (chin != NULL) {
@@ -1217,7 +1217,7 @@ bool daNpcChin_c::wait(void* param_0) {
             u16 eventMask = 0xffff;
             if (mOrderEvtNo == EVT_CHIN_APPEAR) {
                 // maybe fakematch? this still doesn't quite match for debug but it's closer
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
                 eventMask = eventMask & 0xff7f;
 #else
                 eventMask &= ~0x80;

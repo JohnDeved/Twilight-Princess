@@ -5,7 +5,7 @@
 
 #include "m_Do/m_Do_printf.h"
 #include <cstdio>
-#include <dolphin/base/PPCArch.h>
+#include <base/PPCArch.h>
 #include "m_Do/m_Do_ext.h"
 
 u8 __OSReport_disable;
@@ -156,11 +156,6 @@ void mDoPrintf_vprintf_Thread(char const* fmt, va_list args) {
 }
 
 void mDoPrintf_vprintf(char const* fmt, va_list args) {
-#if PLATFORM_PC
-    /* On PC, single-threaded mode — always use direct vprintf.
-     * The fiber/stack-check paths don't work with 64-bit pointers. */
-    mDoPrintf_vprintf_Thread(fmt, args);
-#else
     OSThread* currentThread = mDoExt_GetCurrentRunningThread();
     if (currentThread == NULL) {
         mDoPrintf_vprintf_Interrupt(fmt, args);
@@ -176,7 +171,6 @@ void mDoPrintf_vprintf(char const* fmt, va_list args) {
         }
         #endif
     }
-#endif
 }
 
 void mDoPrintf_VReport(const char* fmt, va_list args) {

@@ -9,6 +9,7 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_save.h"
 #include <cstdio>
+#include <cstring>
 
 #if VERSION == VERSION_GCN_JPN
 #define HEADER_TITLE   "ゼルダの伝説 ﾄﾜｲﾗｲﾄﾌﾟﾘﾝｾｽ"
@@ -30,7 +31,7 @@ struct data_s {
 
 static u8 sTmpBuf[SECTOR_SIZE * 2];
 
-#if !PLATFORM_SHIELD && !PLATFORM_PC
+#if !PLATFORM_SHIELD
 s32 mDoMemCdRWm_Store(CARDFileInfo* file, void* data, u32 length) {
     mDoMemCdRWm_BuildHeader((mDoMemCdRWm_HeaderData*)sTmpBuf);
 
@@ -158,7 +159,7 @@ s32 mDoMemCdRWm_Restore(CARDFileInfo* file, void* data, u32 length) {
 }
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 s32 mDoMemCdRWm_StoreNAND(NANDFileInfo* file, void* data, u32 length) {
     s32 ret;
 
@@ -278,7 +279,7 @@ s32 mDoMemCdRWm_RestoreNAND(NANDFileInfo* file, void* data, u32 length) {
 }
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 s32 mDoMemCdRWm_StoreBannerNAND(NANDFileInfo* file) {
     static NANDBanner info;
     static wchar_t titleTxt[] = L"The Legend of Zelda:";

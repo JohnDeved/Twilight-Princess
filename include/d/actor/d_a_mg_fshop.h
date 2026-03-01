@@ -111,7 +111,7 @@ public:
     /* 0x40B4 */ dBgS_ObjAcch ballAcch;
     /* 0x428C */ u8 field_0x428c;
     /* 0x428D */ u8 field_0x428d;
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
     u8 unk_dbg_padding[0x6];
     J3DModel* dbg_models[2];
 #endif

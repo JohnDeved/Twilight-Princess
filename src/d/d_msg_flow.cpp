@@ -13,6 +13,7 @@
 #include "d/actor/d_a_myna.h"
 #include "d/actor/d_a_obj_ss_base.h"
 #include "SSystem/SComponent/c_math.h"
+#include <cstring>
 
 dMsgFlow_c::dMsgFlow_c() {
     mNonStopJunpFlowFlag = 0;
@@ -1111,7 +1112,7 @@ u16 dMsgFlow_c::query021(mesg_flow_node_branch* i_flowNode_p, fopAc_ac_c* i_spea
         if (dComIfGs_getItem(dComIfGs_getSelectItemIndex(0), true) == prm0 ||
             dComIfGs_getItem(dComIfGs_getSelectItemIndex(1), true) == prm0 ||
             dComIfGs_getItem(dComIfGs_getSelectItemIndex(2), true) == prm0
-#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+#if (PLATFORM_WII || PLATFORM_SHIELD)
             || dComIfGs_getItem(dComIfGs_getSelectItemIndex(3), true) == prm0
 #endif
            )

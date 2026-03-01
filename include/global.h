@@ -15,21 +15,16 @@
 #define VERSION_SHIELD           10
 #define VERSION_SHIELD_PROD      11
 #define VERSION_SHIELD_DEBUG     12
-#define VERSION_PC               13
-#define VERSION_NX_HB            14
 
 #define PLATFORM_GCN    (VERSION >= VERSION_GCN_USA && VERSION <= VERSION_GCN_JPN)
 #define PLATFORM_WII    (VERSION >= VERSION_WII_USA_R0 && VERSION <= VERSION_WII_PAL_KIOSK)
 #define PLATFORM_SHIELD (VERSION >= VERSION_SHIELD && VERSION <= VERSION_SHIELD_DEBUG)
-#define PLATFORM_PC     (VERSION == VERSION_PC)
-#define PLATFORM_NX_HB  (VERSION == VERSION_NX_HB)
 
 #define REGION_USA (VERSION == VERSION_GCN_USA || VERSION == VERSION_WII_USA_R0 || VERSION == VERSION_WII_USA_R2 || VERSION == VERSION_WII_USA_KIOSK)
 #define REGION_PAL (VERSION == VERSION_GCN_PAL || VERSION == VERSION_WII_PAL || VERSION == VERSION_WII_PAL_KIOSK)
 #define REGION_JPN (VERSION == VERSION_GCN_JPN || VERSION == VERSION_WII_JPN)
 #define REGION_KOR (VERSION == VERSION_WII_KOR)
 #define REGION_CHN (VERSION == VERSION_SHIELD || VERSION == VERSION_SHIELD_PROD || VERSION == VERSION_SHIELD_DEBUG)
-#define REGION_PC  (VERSION == VERSION_PC || VERSION == VERSION_NX_HB)
 
 // define DEBUG if it isn't already so it can be used in conditions
 #ifndef DEBUG
@@ -78,19 +73,6 @@
 #endif
 
 #ifndef __MWERKS__
-#if PLATFORM_PC || PLATFORM_NX_HB
-/* Provide actual implementations for GCC/Clang on PC/NX */
-static inline int __cntlzw(unsigned int x) { return x ? __builtin_clz(x) : 32; }
-static inline int __rlwimi(int a, int b, int c, int d, int e) {
-    (void)c; (void)d; (void)e;
-    return (a & ~b) | b;
-}
-static inline void __dcbf(void* a, int b) { (void)a; (void)b; }
-static inline void __dcbz(void* a, int b) { (void)a; (void)b; }
-static inline void __sync() {}
-static inline int __abs(int x) { return x < 0 ? -x : x; }
-static inline void* __memcpy(void* d, const void* s, int n) { return memcpy(d, s, (size_t)n); }
-#else
 // Silence clangd errors about MWCC PPC intrinsics by declaring them here.
 extern int __cntlzw(unsigned int);
 extern int __rlwimi(int, int, int, int, int);
@@ -99,7 +81,6 @@ extern void __dcbz(void*, int);
 extern void __sync();
 extern int __abs(int);
 void* __memcpy(void*, const void*, int);
-#endif
 #endif
 
 #define FAST_DIV(x, n) (x >> (n / 2))
@@ -158,10 +139,29 @@ static const float INF = 2000000000.0f;
 #endif
 
 // potential fakematch?
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
     #define UNSET_FLAG(var, flag, type) (var) &= (type)~(flag)
 #else
     #define UNSET_FLAG(var, flag, type) (var) &= ~(flag)
+#endif
+
+// Macro for multi-character literals that exceed 4 bytes (e.g. 'ari_os').
+// CW encodes all characters in big-endian order into the full integer, but GCC/Clang
+// truncate multi-char constants to int (4 bytes). This macro produces matching u64
+// values on all compilers. For <=4-char literals, raw constants like 'ABCD' are fine.
+#ifdef __MWERKS__
+    #define MULTI_CHAR(x) (x)
+#else
+    template <int N>
+    inline constexpr unsigned long long MultiCharLiteral(const char (&buf)[N]) {
+        static_assert(N - 1 >= 3 && N - 1 <= 10, "MULTI_CHAR literal must be 1-8 characters");
+        unsigned long long out = 0;
+        for (int i = 1; i < N - 2; i++) {
+            out = (out << 8) | static_cast<unsigned char>(buf[i]);
+        }
+        return out;
+    }
+    #define MULTI_CHAR(x) MultiCharLiteral(#x)
 #endif
 
 // potential fakematch?
@@ -169,6 +169,11 @@ static const float INF = 2000000000.0f;
 #define FABSF fabsf
 #else
 #define FABSF std::fabsf
+#endif
+
+#ifndef __MWERKS__
+#include <cmath>
+using std::isnan;
 #endif
 
 #endif

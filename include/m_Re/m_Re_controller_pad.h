@@ -4,7 +4,7 @@
 #include <revolution/mtx.h>
 #include <revolution/kpad.h>
 
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
 #define RECPD_SAMPLING_BUF_COUNT 16
 #else
 #define RECPD_SAMPLING_BUF_COUNT 10
@@ -60,12 +60,12 @@ public:
         void calcDpdPlayBoxPos();
 
         /* 0x0000 */ int field_0x0;
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
         /* 0x0004 */ u8 unk_shield_0x04[0x8 - 0x4];
 #endif
         /* 0x0004 */ KPADStatus field_0x4[RECPD_SAMPLING_BUF_COUNT];
         /* 0x0554 */ int field_0x554;
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
         /* 0x0558 */ u8 unk_shield_0x558[0x55c - 0x558];
 #endif
         /* 0x0558 */ KPADStatus field_0x558;
@@ -186,6 +186,8 @@ public:
 
     static u32 getTrigUp(u32 i_pad) { return getTrig(i_pad) & WPAD_BUTTON_UP; }
     static u32 getTrigStart(u32 i_pad) { return getTrig(i_pad) & WPAD_BUTTON_PLUS; }
+
+    static f32 getStickX(u32 i_pad) { return getPad(i_pad).field_0x4[0].ex_status.fs.stick.x; }
 
     static WPADInfo m_pad_info[WPAD_MAX_CONTROLLERS];
     static Pad m_pad[WPAD_MAX_CONTROLLERS];
