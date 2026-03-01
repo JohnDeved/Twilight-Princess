@@ -1358,7 +1358,11 @@ void pal_tev_flush_draw(void) {
     }
 
     /* 9. Set render state */
-    uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+    uint64_t state = 0;
+    if (g_gx_state.color_update)
+        state |= BGFX_STATE_WRITE_RGB;
+    if (g_gx_state.alpha_update)
+        state |= BGFX_STATE_WRITE_A;
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
@@ -1374,6 +1378,13 @@ void pal_tev_flush_draw(void) {
     }
 
     bgfx::setState(state);
+
+    /* Apply scissor if set to a non-fullscreen region */
+    if (g_gx_state.sc_wd > 0 && g_gx_state.sc_ht > 0) {
+        bgfx::setScissor(
+            (uint16_t)g_gx_state.sc_left, (uint16_t)g_gx_state.sc_top,
+            (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
+    }
 
     /* 10. Submit draw call */
     bgfx::submit(0, s_programs[preset]);
