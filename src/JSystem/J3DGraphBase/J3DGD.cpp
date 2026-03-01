@@ -365,23 +365,16 @@ void J3DGDSetTexLookupMode(GXTexMapID id, GXTexWrapMode wrap_s,
                            f32 lod_bias, u8 bias_clamp, u8 do_edge_lod,
                            GXAnisotropy max_aniso) {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, directly set texture lookup mode in GX state.
-     * The BP TEX_MODE0/MODE1 commands go to FIFO which is never processed. */
+    /* On PC, set texture lookup mode in GX state AND write BP commands to DL.
+     * The BP commands are needed for per-material DL replay. */
     pal_gx_set_tex_lookup_mode(id, wrap_s, wrap_t, min_filt, mag_filt,
                                 min_lod, max_lod, lod_bias);
-    return;
 #endif
     J3DGDWriteBPCmd(BP_TEX_MODE0(wrap_s, wrap_t, mag_filt == TRUE, GX2HWFiltConv[min_filt], !do_edge_lod, (u8)(32.0f * lod_bias), max_aniso, bias_clamp, J3DGDTexMode0Ids[id]));
     J3DGDWriteBPCmd(BP_TEX_MODE1((u8)(16.0f * min_lod), (u8)(16.0f * max_lod), J3DGDTexMode1Ids[id]));
 }
 
 void J3DGDSetTexImgAttr(GXTexMapID id, u16 width, u16 height, GXTexFmt format) {
-#if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, write the BP command to the DL for replay, AND also set GX state.
-     * The format/width/height fit in 24 bits so the BP command works as-is. */
-    J3DGDWriteBPCmd(BP_IMAGE_ATTR(width - 1, height - 1, format, J3DGDTexImage0Ids[id]));
-    return;
-#endif
     J3DGDWriteBPCmd(BP_IMAGE_ATTR(width - 1, height - 1, format, J3DGDTexImage0Ids[id]));
 }
 
@@ -423,6 +416,13 @@ void J3DGDSetTexTlut(GXTexMapID id, u32 tmem_addr, GXTlutFmt format) {
 }
 
 void J3DGDLoadTlut(void* tlut_ptr, u32 tmem_addr, GXTlutSize size) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, palette texture (TLUT) loading is not yet supported.
+     * OSCachedToPhysical would truncate the 64-bit pointer.
+     * Indexed textures will fall back to decode without palette. */
+    (void)tlut_ptr; (void)tmem_addr; (void)size;
+    return;
+#endif
     ASSERTMSGLINE(735, !(tmem_addr & 0x1ff), "GDLoadTlut: invalid TMEM pointer");
     ASSERTMSGLINE(736, size <= 0x400, "GDLoadTlut: invalid TLUT size");
 

@@ -539,6 +539,22 @@ static void dl_handle_bp_reg(u32 value) {
             return;
         }
     }
+    /* BP TexMode0 (wrap/filter modes):
+     * Registers: 0x80-0x83 (texmap 0-3), 0xA0-0xA3 (texmap 4-7)
+     * Bit layout: [1:0]=wrap_s, [3:2]=wrap_t, [4]=mag_filt, [7:5]=min_filt,
+     * [8]=edge_lod, [15:9]=lod_bias, [17:16]=max_aniso, [18]=bias_clamp */
+    {
+        int texmap = -1;
+        if (addr >= 0x80 && addr <= 0x83) texmap = addr - 0x80;
+        else if (addr >= 0xA0 && addr <= 0xA3) texmap = addr - 0xA0 + 4;
+        if (texmap >= 0 && texmap < GX_MAX_TEXMAP) {
+            GXTexWrapMode ws = (GXTexWrapMode)(data & 0x3);
+            GXTexWrapMode wt = (GXTexWrapMode)((data >> 2) & 0x3);
+            g_gx_state.tex_bindings[texmap].wrap_s = ws;
+            g_gx_state.tex_bindings[texmap].wrap_t = wt;
+            return;
+        }
+    }
 }
 
 /* ================================================================ */
