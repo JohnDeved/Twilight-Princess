@@ -116,6 +116,8 @@ int dScnLogo_c::draw() {
         /* Wait for all async DVD loads to finish before scene transition.
          * Without this, the destructor accesses command pointers that haven't
          * finished loading, causing SIGSEGV. */
+        /* Timeout: some resources never finish on PC due to missing REL modules.
+         * After 120 draw frames (~2 seconds), force the scene transition. */
         static int s_sync_wait_frames = 0;
         s_sync_wait_frames++;
         int objSyncBusy = dComIfG_syncAllObjectRes();

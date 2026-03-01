@@ -9,6 +9,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include "pal/pal_milestone.h"
+#include "d/d_procname.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -51,13 +52,13 @@ void pal_milestone_frame(const char* name, int id, unsigned frame) {
 }
 
 void pal_milestone_check_scene(int profname) {
-    /* PROC_LOGO_SCENE = 9, PROC_PLAY_SCENE = 11, PROC_OPENING_SCENE = 12 from d_procname.h */
-    if (profname == 9 && !pal_milestone_was_reached(MILESTONE_LOGO_SCENE)) {
+    if (profname == PROC_LOGO_SCENE && !pal_milestone_was_reached(MILESTONE_LOGO_SCENE)) {
         pal_milestone("LOGO_SCENE", MILESTONE_LOGO_SCENE, "PROC_LOGO_SCENE created");
     }
-    if ((profname == 11 || profname == 12) && !pal_milestone_was_reached(MILESTONE_PLAY_SCENE)) {
+    /* PROC_OPENING_SCENE uses the same dScnPly_c class as PROC_PLAY_SCENE */
+    if ((profname == PROC_PLAY_SCENE || profname == PROC_OPENING_SCENE) && !pal_milestone_was_reached(MILESTONE_PLAY_SCENE)) {
         pal_milestone("PLAY_SCENE", MILESTONE_PLAY_SCENE,
-                      profname == 12 ? "PROC_OPENING_SCENE created" : "PROC_PLAY_SCENE created");
+                      profname == PROC_OPENING_SCENE ? "PROC_OPENING_SCENE created" : "PROC_PLAY_SCENE created");
     }
     /* PROC_TITLE = 0x2E1 = 737 */
     if (profname == 737 && !pal_milestone_was_reached(MILESTONE_TITLE_SCENE)) {

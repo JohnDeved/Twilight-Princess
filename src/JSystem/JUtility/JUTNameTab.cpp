@@ -3,6 +3,15 @@
 #include "JSystem/JUtility/JUTNameTab.h"
 #include <string>
 
+#if PLATFORM_PC
+/* Name tables in game assets have at most a few hundred entries.
+ * Values above this limit indicate un-swapped big-endian data. */
+#define MAX_NAMETAB_ENTRIES 4096
+/* Maximum reasonable byte offset within a name table string area.
+ * Offsets above this are likely un-swapped big-endian u16 values. */
+#define MAX_NAMETAB_OFFSET  0x8000
+#endif
+
 JUTNameTab::JUTNameTab() {
     setResource(NULL);
 }
@@ -20,9 +29,9 @@ void JUTNameTab::setResource(const ResNTAB* pNameTable) {
         /* On PC, name tables may be un-swapped big-endian data.
          * If mEntryNum looks like a swapped value, try byte-swapping it.
          * A name table with more than 4096 entries is almost certainly corrupt. */
-        if (mNameNum > 4096) {
+        if (mNameNum > MAX_NAMETAB_ENTRIES) {
             u16 swapped = (u16)(((mNameNum >> 8) & 0xFF) | ((mNameNum & 0xFF) << 8));
-            if (swapped <= 4096) {
+            if (swapped <= MAX_NAMETAB_ENTRIES) {
                 mNameNum = swapped;
             } else {
                 /* Both values are unreasonable — table is corrupt, disable it */
@@ -52,7 +61,7 @@ s32 JUTNameTab::getIndex(const char* pName) const {
     for (u16 i = 0; i < mNameNum; i++) {
 #if PLATFORM_PC
         u16 off = pEntry->mOffs;
-        if (off > 0x8000) { pEntry++; continue; }
+        if (off > MAX_NAMETAB_OFFSET) { pEntry++; continue; }
 #endif
         if (
             pEntry->mKeyCode == keyCode &&
@@ -76,7 +85,7 @@ const char* JUTNameTab::getName(u16 index) const {
         /* On PC, name table offsets may be corrupt from incomplete endian swap.
          * Validate the offset is within a reasonable range to prevent SIGSEGV. */
         u16 off = mNameTable->mEntries[index].mOffs;
-        if (off > 0x8000) return NULL;  /* offset too large → likely un-swapped big-endian */
+        if (off > MAX_NAMETAB_OFFSET) return NULL;
 #endif
         return ((const char*)mNameTable) + mNameTable->mEntries[index].mOffs;
     }
