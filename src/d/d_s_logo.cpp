@@ -116,10 +116,14 @@ int dScnLogo_c::draw() {
         /* Wait for all async DVD loads to finish before scene transition.
          * Without this, the destructor accesses command pointers that haven't
          * finished loading, causing SIGSEGV. */
-        if (!dComIfG_syncAllObjectRes()) {
+        static int s_sync_wait_frames = 0;
+        s_sync_wait_frames++;
+        int objSyncBusy = dComIfG_syncAllObjectRes();
+        if (!objSyncBusy || s_sync_wait_frames > 120) {
             /* NULL-safe sync: treat NULL command as already synced */
             #define CMD_SYNC(p) ((p) == NULL || (p)->sync())
-            if (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
+            if (s_sync_wait_frames > 120 ||
+                (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
                 CMD_SYNC(mpFmapResCommand) && CMD_SYNC(mpDmapResCommand) &&
                 CMD_SYNC(mpCollectResCommand) && CMD_SYNC(mpItemIconCommand) &&
                 CMD_SYNC(mpRingResCommand) && CMD_SYNC(mpPlayerNameCommand) &&
@@ -131,8 +135,9 @@ int dScnLogo_c::draw() {
                 CMD_SYNC(mpMsgResCommand[5]) && CMD_SYNC(mpMsgResCommand[6]) &&
                 CMD_SYNC(mpFontResCommand) && CMD_SYNC(mpMain2DCommand) &&
                 CMD_SYNC(mpRubyResCommand) && CMD_SYNC(mParticleCommand) &&
-                CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand))
+                CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand)))
             {
+                s_sync_wait_frames = 0;
                 mDoRst::setLogoScnFlag(0);
                 mDoRst::setProgChgFlag(0);
                 nextSceneChange();

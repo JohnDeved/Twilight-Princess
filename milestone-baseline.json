@@ -1,5 +1,5 @@
 {
-  "milestones_reached_count": 13,
+  "milestones_reached_count": 14,
   "milestones_reached": [
     "BOOT_START",
     "HEAP_INIT",
@@ -8,6 +8,7 @@
     "FRAMEWORK_INIT",
     "FIRST_FRAME",
     "LOGO_SCENE",
+    "PLAY_SCENE",
     "FRAMES_60",
     "FRAMES_300",
     "FRAMES_1800",
@@ -16,5 +17,5 @@
     "RENDER_FRAME"
   ],
   "updated": "2026-02-28",
-  "note": "Auto-updated by CI (was 12, now 13)"
+  "note": "PLAY_SCENE added — opening scene (F_SP102) creates via PROC_OPENING_SCENE"
 }
