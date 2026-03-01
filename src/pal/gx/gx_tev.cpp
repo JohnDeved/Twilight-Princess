@@ -493,6 +493,14 @@ static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
         stride += 1;
     }
 
+    /* TEXnMTXIDX — 1 byte each (not bgfx attributes, skip them) */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+            layout.skip(1);
+            stride += 1;
+        }
+    }
+
     /* Position — always Float in bgfx.
      * GX integer positions use frac bits (fixed-point) which bgfx
      * doesn't understand, so we always use float and convert data
@@ -544,6 +552,9 @@ static uint32_t calc_raw_vertex_stride(void) {
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
     if (desc[GX_VA_PNMTXIDX].type != GX_NONE) stride += 1;
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) stride += 1;
+    }
     if (desc[GX_VA_POS].type != GX_NONE) {
         int n = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
         stride += n * gx_comp_size(afmt[GX_VA_POS].comp_type);
@@ -645,6 +656,13 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     /* PNMTXIDX — copy 1 byte */
     if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
         dst[di++] = src[si++];
+    }
+
+    /* TEXnMTXIDX — copy 1 byte each (not used by bgfx, but must be in layout) */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+            dst[di++] = src[si++];
+        }
     }
 
     /* Position → Float */
@@ -995,6 +1013,9 @@ void pal_tev_flush_draw(void) {
 
         layout.begin();
         if (has_pnmtx) layout.skip(1);
+        for (int i = 0; i < 8; i++) {
+            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) layout.skip(1);
+        }
         layout.add(bgfx::Attrib::Position, (uint8_t)npos, bgfx::AttribType::Float);
         layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
         layout.end();
@@ -1016,9 +1037,12 @@ void pal_tev_flush_draw(void) {
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
         int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
         uint32_t pnmtx_sz = has_pnmtx ? 1 : 0;
-        uint32_t pos_raw_sz = npos * gx_comp_size(af[GX_VA_POS].comp_type);
+        int num_texmtx = 0;
+        for (int i = 0; i < 8; i++) {
+            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) num_texmtx++;
+        }
         uint32_t pos_float_sz = npos * 4;
-        uint32_t new_stride = pnmtx_sz + pos_float_sz + 4;
+        uint32_t new_stride = pnmtx_sz + (uint32_t)num_texmtx + pos_float_sz + 4;
 
         for (uint16_t vi = 0; vi < nverts; vi++) {
             uint8_t* dst = tvb.data + vi * new_stride;
@@ -1027,6 +1051,13 @@ void pal_tev_flush_draw(void) {
 
             /* PNMTXIDX */
             if (has_pnmtx) { dst[di++] = src[si++]; }
+
+            /* TEXnMTXIDX — skip in src, copy to dst layout */
+            for (int i = 0; i < 8; i++) {
+                if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+                    dst[di++] = src[si++];
+                }
+            }
 
             /* Position → Float with frac-bit scaling + index resolution */
             GXCompType pt = af[GX_VA_POS].comp_type;
