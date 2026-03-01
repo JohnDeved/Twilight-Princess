@@ -217,6 +217,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -fpermissive
         -fno-exceptions
         -fno-reorder-blocks-and-partition
+        -fstack-protector-all
     )
 endif()
 

@@ -13,6 +13,22 @@
 #include "m_Do/m_Do_lib.h"
 #include "m_Do/m_Do_mtx.h"
 
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+static thread_local sigjmp_buf s_draw_jmpbuf;
+static thread_local volatile sig_atomic_t s_draw_guard_active = 0;
+
+static void draw_signal_handler(int sig) {
+    if (s_draw_guard_active) {
+        siglongjmp(s_draw_jmpbuf, sig);
+    }
+    /* If not in guarded region, re-raise with default handler */
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
 class dDlst_2Dm_c {
 public:
     virtual void draw();
@@ -1829,8 +1845,40 @@ void dDlst_list_c::draw(dDlst_base_c** p_start, dDlst_base_c** p_end) {
         dDlst_base_c* dlst = *p_start;
 #if PLATFORM_PC
         if (dlst == NULL) continue;
-#endif
+        /* Validate vtable pointer before virtual call.
+         * Detect freed memory (0xDEDE... poison), NULL, -1, or low addresses. */
+        {
+            uintptr_t vtable = *(uintptr_t*)dlst;
+            if (vtable == 0 || vtable == (uintptr_t)-1 || vtable < 0x1000 ||
+                vtable == 0xDEDEDEDEDEDEDEDEULL) {
+                fprintf(stderr, "frame=? cat=CORRUPT_VTABLE detail=\"dDlst_list_c::draw: corrupt vtable %p at dlst=%p\"\n",
+                        (void*)vtable, (void*)dlst);
+                continue;
+            }
+        }
+        /* Guard against SIGSEGV/SIGBUS inside draw() from corrupted object data. */
+        {
+            struct sigaction sa, old_segv, old_bus;
+            sa.sa_handler = draw_signal_handler;
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = 0;
+            sigaction(SIGSEGV, &sa, &old_segv);
+            sigaction(SIGBUS, &sa, &old_bus);
+            s_draw_guard_active = 1;
+            int crash_sig = sigsetjmp(s_draw_jmpbuf, 1);
+            if (crash_sig == 0) {
+                dlst->draw();
+            } else {
+                fprintf(stderr, "frame=? cat=DRAW_CRASH detail=\"dDlst_list_c::draw: caught signal %d in draw() at dlst=%p, skipping\"\n",
+                        crash_sig, (void*)dlst);
+            }
+            s_draw_guard_active = 0;
+            sigaction(SIGSEGV, &old_segv, NULL);
+            sigaction(SIGBUS, &old_bus, NULL);
+        }
+#else
         dlst->draw();
+#endif
     }
 }
 

@@ -10,6 +10,7 @@
 #include "JSystem/JUtility/JUTConsole.h"
 #include "JSystem/JUtility/JUTException.h"
 #include <cstdlib>
+#include <cstring>
 
 JKRExpHeap* JKRExpHeap::createRoot(int maxHeaps, bool errorFlag) {
     JKRExpHeap* heap = NULL;
@@ -1034,6 +1035,17 @@ JKRExpHeap::CMemBlock* JKRExpHeap::CMemBlock::allocBack(u32 size1, u8 groupId1, 
 }
 
 int JKRExpHeap::CMemBlock::free(JKRExpHeap* heap) {
+#if PLATFORM_PC
+    /* Poison freed memory to catch use-after-free.
+     * Fill user data with 0xDE pattern before returning to free list.
+     * This makes corrupted reads produce obviously bogus values
+     * (vtable=0xDEDEDEDEDEDEDEDE, floats=NaN, pointers=invalid). */
+    u32 dataSize = size;
+    void* userData = getContent();
+    if (dataSize > 0 && dataSize < 0x1000000) {
+        memset(userData, 0xDE, dataSize);
+    }
+#endif
     heap->removeUsedBlock(this);
     heap->recycleFreeBlock(this);
     return 0;
