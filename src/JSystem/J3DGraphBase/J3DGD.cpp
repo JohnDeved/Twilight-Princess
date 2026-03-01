@@ -58,6 +58,22 @@ void J3DGDSetLightDir(GXLightID light, f32 nx, f32 ny, f32 nz) {
 }
 
 void J3DGDSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list, bool param_2) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly set vertex attribute formats in the GX state machine.
+     * The CP VAT register commands written by J3DGDWriteCPCmd go to the FIFO
+     * which is never processed. */
+    for (const GXVtxAttrFmtList* p = list; p->attr != GX_VA_NULL; ++p) {
+        GXCompCnt cnt = (GXCompCnt)p->cnt;
+        /* Handle NBT special case matching the else-path below */
+        if ((p->attr == GX_VA_NRM || p->attr == GX_VA_NBT) && cnt == GX_NRM_NBT3) {
+            cnt = GX_NRM_NBT;
+        } else if (p->attr == GX_VA_NRM && param_2) {
+            cnt = GX_NRM_NBT;
+        }
+        pal_gx_set_vtx_attr_fmt(vtxfmt, (GXAttr)p->attr, cnt, (GXCompType)p->type, p->frac);
+    }
+    return;
+#endif
     u32 posCnt = GX_POS_XYZ;
     u32 posType = GX_F32;
     u32 posFrac = 0;
