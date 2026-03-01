@@ -270,6 +270,43 @@ static u32 tev_arg_class(GXTevColorArg arg) {
 }
 
 /**
+ * Resolve the actual RGBA konst color for a given TEV stage's k_color_sel.
+ * Handles KCSEL_K0-K3 (full RGBA) and constant fractions (1, 7/8, etc.).
+ */
+static void resolve_konst_color(const GXTevStage* stage, uint8_t out[4]) {
+    GXTevKColorSel sel = stage->k_color_sel;
+    if (sel >= GX_TEV_KCSEL_K0 && sel <= GX_TEV_KCSEL_K3) {
+        int idx = sel - GX_TEV_KCSEL_K0;
+        out[0] = g_gx_state.tev_kregs[idx].r;
+        out[1] = g_gx_state.tev_kregs[idx].g;
+        out[2] = g_gx_state.tev_kregs[idx].b;
+        out[3] = g_gx_state.tev_kregs[idx].a;
+    } else if (sel >= GX_TEV_KCSEL_K0_R && sel <= GX_TEV_KCSEL_K3_R) {
+        int idx = sel - GX_TEV_KCSEL_K0_R;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].r;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_G && sel <= GX_TEV_KCSEL_K3_G) {
+        int idx = sel - GX_TEV_KCSEL_K0_G;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].g;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_B && sel <= GX_TEV_KCSEL_K3_B) {
+        int idx = sel - GX_TEV_KCSEL_K0_B;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].b;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_A && sel <= GX_TEV_KCSEL_K3_A) {
+        int idx = sel - GX_TEV_KCSEL_K0_A;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].a;
+        out[3] = 255;
+    } else {
+        /* Constant fraction: 1, 7/8, 3/4, 5/8, 1/2, 3/8, 1/4, 1/8 */
+        static const uint8_t fracs[] = {255, 223, 191, 159, 128, 96, 64, 32};
+        int fi = (sel <= GX_TEV_KCSEL_1_8) ? sel : 0;
+        out[0] = out[1] = out[2] = fracs[fi];
+        out[3] = 255;
+    }
+}
+
+/**
  * Generic TEV preset selection based on input class analysis.
  *
  * NOTE: This is an approximation, NOT full TEV emulation. The GX TEV unit
@@ -1034,6 +1071,8 @@ void pal_tev_flush_draw(void) {
                 const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
                 const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
                 const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
+            } else if (s0->color_d == GX_CC_KONST) {
+                resolve_konst_color(s0, const_clr);
             } else if (s0->color_d == GX_CC_RASC) {
                 const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
                 const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
@@ -1043,12 +1082,23 @@ void pal_tev_flush_draw(void) {
         } else if (preset == GX_TEV_SHADER_MODULATE ||
                    preset == GX_TEV_SHADER_BLEND ||
                    preset == GX_TEV_SHADER_DECAL) {
-            /* Use material color as rasterized color (what GCN hardware does) */
             inject_color = 1;
-            const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
-            const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
-            const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
-            const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            /* Check if TEV uses KONST color rather than rasterized color.
+             * When KONST is used, inject the selected konst register value. */
+            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+            int uses_konst = 0;
+            if (s0->color_a == GX_CC_KONST || s0->color_b == GX_CC_KONST ||
+                s0->color_c == GX_CC_KONST || s0->color_d == GX_CC_KONST) {
+                resolve_konst_color(s0, const_clr);
+                uses_konst = 1;
+            }
+            if (!uses_konst) {
+                /* Use material color as rasterized color (GCN hardware behavior) */
+                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
+                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
+                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
+                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            }
         }
     }
 
