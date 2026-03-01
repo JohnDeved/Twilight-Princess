@@ -157,9 +157,18 @@ inline void cMtx_inverse(const Mtx a, Mtx b) {
     mDoMtx_inverse(a, b);
 }
 
+#if PLATFORM_PC
+/* On PC (64-bit), callers pass Mtx44 (4×4) buffers for projMtx and projViewMtx.
+   mDoMtx_concatProjView writes row 3 (c[3][0..3]), which overflows the 48-byte
+   Mtx type. Use Mtx44 signature on PC to prevent stack corruption. */
+inline void cMtx_concatProjView(const Mtx44 a, const Mtx b, Mtx44 c) {
+    mDoMtx_concatProjView(a, b, c);
+}
+#else
 inline void cMtx_concatProjView(const Mtx a, const Mtx b, Mtx c) {
     mDoMtx_concatProjView(a, b, c);
 }
+#endif
 
 class mDoMtx_stack_c {
 public:
