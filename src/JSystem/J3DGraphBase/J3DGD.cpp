@@ -8,6 +8,8 @@
 #include "JSystem/J3DGraphBase/J3DGD.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
+#include "JSystem/J3DGraphBase/J3DSys.h"
+#include "JSystem/J3DGraphBase/J3DTexture.h"
 extern "C" {
 #include "pal/gx/gx_state.h"
 }
@@ -362,19 +364,56 @@ void J3DGDSetTexLookupMode(GXTexMapID id, GXTexWrapMode wrap_s,
                            GXTexFilter mag_filt, f32 min_lod, f32 max_lod,
                            f32 lod_bias, u8 bias_clamp, u8 do_edge_lod,
                            GXAnisotropy max_aniso) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly set texture lookup mode in GX state.
+     * The BP TEX_MODE0/MODE1 commands go to FIFO which is never processed. */
+    pal_gx_set_tex_lookup_mode(id, wrap_s, wrap_t, min_filt, mag_filt,
+                                min_lod, max_lod, lod_bias);
+    return;
+#endif
     J3DGDWriteBPCmd(BP_TEX_MODE0(wrap_s, wrap_t, mag_filt == TRUE, GX2HWFiltConv[min_filt], !do_edge_lod, (u8)(32.0f * lod_bias), max_aniso, bias_clamp, J3DGDTexMode0Ids[id]));
     J3DGDWriteBPCmd(BP_TEX_MODE1((u8)(16.0f * min_lod), (u8)(16.0f * max_lod), J3DGDTexMode1Ids[id]));
 }
 
 void J3DGDSetTexImgAttr(GXTexMapID id, u16 width, u16 height, GXTexFmt format) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly set texture image attributes in GX state.
+     * The BP commands go to FIFO which is never processed. */
+    pal_gx_set_tex_img(id, g_gx_state.tex_bindings[(unsigned)id < GX_MAX_TEXMAP ? id : 0].image_ptr,
+                        width, height, format);
+    return;
+#endif
     J3DGDWriteBPCmd(BP_IMAGE_ATTR(width - 1, height - 1, format, J3DGDTexImage0Ids[id]));
 }
 
 void J3DGDSetTexImgPtr(GXTexMapID id, void* image_ptr) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, store the actual memory pointer for later texture decode.
+     * GCN path converts to physical address >> 5 which is unresolvable on PC. */
+    if ((unsigned)id < GX_MAX_TEXMAP) {
+        g_gx_state.tex_bindings[id].image_ptr = image_ptr;
+        g_gx_state.tex_bindings[id].valid = 1;
+    }
+    return;
+#endif
     J3DGDWriteBPCmd(BP_IMAGE_PTR(OSCachedToPhysical(image_ptr) >> 5, J3DGDTexImage3Ids[id]));
 }
 
 void J3DGDSetTexImgPtrRaw(GXTexMapID id, u32 image_ptr_raw) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, resolve the texture index to an actual image pointer.
+     * patchTexNo_PtrToIdx passes the texture index here, which can be
+     * resolved via j3dSys.getTexture()->getResTIMG(). */
+    if ((unsigned)id < GX_MAX_TEXMAP && j3dSys.getTexture()) {
+        ResTIMG* timg = j3dSys.getTexture()->getResTIMG(image_ptr_raw);
+        if (timg) {
+            void* img = (u8*)timg + timg->imageOffset;
+            pal_gx_set_tex_img(id, img, timg->width, timg->height,
+                                (GXTexFmt)(timg->format & 0x0f));
+        }
+    }
+    return;
+#endif
     GDOverflowCheck(5);
     J3DGDWriteBPCmd(BP_IMAGE_PTR(image_ptr_raw, J3DGDTexImage3Ids[id]));
 }

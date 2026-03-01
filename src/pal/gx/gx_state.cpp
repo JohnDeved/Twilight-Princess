@@ -297,6 +297,30 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
     }
 }
 
+void pal_gx_set_tex_img(GXTexMapID id, void* image_ptr, u16 width, u16 height, GXTexFmt format) {
+    if ((unsigned)id >= GX_MAX_TEXMAP) return;
+    GXTexBinding* bind = &g_gx_state.tex_bindings[id];
+    bind->image_ptr = image_ptr;
+    bind->width = width;
+    bind->height = height;
+    bind->format = format;
+    bind->valid = 1;
+}
+
+void pal_gx_set_tex_lookup_mode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t,
+                                GXTexFilter min_filt, GXTexFilter mag_filt,
+                                f32 min_lod, f32 max_lod, f32 lod_bias) {
+    if ((unsigned)id >= GX_MAX_TEXMAP) return;
+    GXTexBinding* bind = &g_gx_state.tex_bindings[id];
+    bind->wrap_s = wrap_s;
+    bind->wrap_t = wrap_t;
+    bind->min_filt = min_filt;
+    bind->mag_filt = mag_filt;
+    bind->min_lod = min_lod;
+    bind->max_lod = max_lod;
+    bind->lod_bias = lod_bias;
+}
+
 void pal_gx_set_num_tex_gens(u8 n) {
     if (n <= GX_MAX_TEXCOORD) {
         g_gx_state.num_tex_gens = n;

@@ -302,6 +302,10 @@ void pal_gx_set_tev_swap_mode(GXTevStageID stage, GXTevSwapSel ras, GXTevSwapSel
 void pal_gx_init_tex_obj(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                          GXTexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, u8 mipmap);
 void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id);
+void pal_gx_set_tex_img(GXTexMapID id, void* image_ptr, u16 width, u16 height, GXTexFmt format);
+void pal_gx_set_tex_lookup_mode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t,
+                                GXTexFilter min_filt, GXTexFilter mag_filt,
+                                f32 min_lod, f32 max_lod, f32 lod_bias);
 void pal_gx_set_num_tex_gens(u8 n);
 void pal_gx_set_tex_coord_gen(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32 mtx, GXBool normalize, u32 pt_mtx);
 
