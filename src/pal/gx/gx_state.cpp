@@ -25,6 +25,36 @@ GXStateMachine g_gx_state;
 static u8 s_vtx_buf[GX_VTX_BUF_SIZE];
 
 /* ================================================================ */
+/* Texture pointer table                                            */
+/* ================================================================ */
+/* On PC, 64-bit pointers can't fit in BP command's 24-bit data field.
+ * This table maps compact IDs (used in BP commands) to actual pointers.
+ * Used by J3DGDSetTexImgPtr (register) and dl_handle_bp_reg (resolve). */
+#define TEX_PTR_TABLE_SIZE 4096
+static void* s_tex_ptr_table[TEX_PTR_TABLE_SIZE];
+static u32   s_tex_ptr_count = 0;
+
+u32 pal_gx_tex_ptr_register(void* ptr) {
+    /* Check if already registered */
+    for (u32 i = 0; i < s_tex_ptr_count; i++) {
+        if (s_tex_ptr_table[i] == ptr) return i;
+    }
+    /* Add new entry */
+    if (s_tex_ptr_count < TEX_PTR_TABLE_SIZE) {
+        u32 id = s_tex_ptr_count++;
+        s_tex_ptr_table[id] = ptr;
+        return id;
+    }
+    /* Table full — wrap around (shouldn't happen with 4096 slots) */
+    return 0;
+}
+
+void* pal_gx_tex_ptr_resolve(u32 id) {
+    if (id < s_tex_ptr_count) return s_tex_ptr_table[id];
+    return NULL;
+}
+
+/* ================================================================ */
 /* Initialize                                                       */
 /* ================================================================ */
 

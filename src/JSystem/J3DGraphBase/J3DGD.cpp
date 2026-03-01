@@ -377,10 +377,9 @@ void J3DGDSetTexLookupMode(GXTexMapID id, GXTexWrapMode wrap_s,
 
 void J3DGDSetTexImgAttr(GXTexMapID id, u16 width, u16 height, GXTexFmt format) {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, directly set texture image attributes in GX state.
-     * The BP commands go to FIFO which is never processed. */
-    pal_gx_set_tex_img(id, g_gx_state.tex_bindings[(unsigned)id < GX_MAX_TEXMAP ? id : 0].image_ptr,
-                        width, height, format);
+    /* On PC, write the BP command to the DL for replay, AND also set GX state.
+     * The format/width/height fit in 24 bits so the BP command works as-is. */
+    J3DGDWriteBPCmd(BP_IMAGE_ATTR(width - 1, height - 1, format, J3DGDTexImage0Ids[id]));
     return;
 #endif
     J3DGDWriteBPCmd(BP_IMAGE_ATTR(width - 1, height - 1, format, J3DGDTexImage0Ids[id]));
@@ -388,12 +387,13 @@ void J3DGDSetTexImgAttr(GXTexMapID id, u16 width, u16 height, GXTexFmt format) {
 
 void J3DGDSetTexImgPtr(GXTexMapID id, void* image_ptr) {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, store the actual memory pointer for later texture decode.
-     * GCN path converts to physical address >> 5 which is unresolvable on PC. */
-    if ((unsigned)id < GX_MAX_TEXMAP) {
-        g_gx_state.tex_bindings[id].image_ptr = image_ptr;
-        g_gx_state.tex_bindings[id].valid = 1;
-    }
+    /* On PC, the GCN physical address (OSCachedToPhysical >> 5) is meaningless.
+     * Instead, register the pointer in a lookup table and store the table index
+     * in the BP command's 24-bit data field. During DL replay, the display list
+     * parser resolves the index back to the actual pointer. */
+    extern u32 pal_gx_tex_ptr_register(void* ptr);
+    u32 ptr_id = pal_gx_tex_ptr_register(image_ptr);
+    J3DGDWriteBPCmd((u32)J3DGDTexImage3Ids[id] << 24 | (ptr_id & 0x00FFFFFF));
     return;
 #endif
     J3DGDWriteBPCmd(BP_IMAGE_PTR(OSCachedToPhysical(image_ptr) >> 5, J3DGDTexImage3Ids[id]));
@@ -401,15 +401,15 @@ void J3DGDSetTexImgPtr(GXTexMapID id, void* image_ptr) {
 
 void J3DGDSetTexImgPtrRaw(GXTexMapID id, u32 image_ptr_raw) {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, resolve the texture index to an actual image pointer.
-     * patchTexNo_PtrToIdx passes the texture index here, which can be
-     * resolved via j3dSys.getTexture()->getResTIMG(). */
+    /* On PC, resolve the texture index to an actual image pointer,
+     * register it in the pointer table, and write the BP command. */
     if ((unsigned)id < GX_MAX_TEXMAP && j3dSys.getTexture()) {
         ResTIMG* timg = j3dSys.getTexture()->getResTIMG(image_ptr_raw);
         if (timg) {
             void* img = (u8*)timg + timg->imageOffset;
-            pal_gx_set_tex_img(id, img, timg->width, timg->height,
-                                (GXTexFmt)(timg->format & 0x0f));
+            extern u32 pal_gx_tex_ptr_register(void* ptr);
+            u32 ptr_id = pal_gx_tex_ptr_register(img);
+            J3DGDWriteBPCmd((u32)J3DGDTexImage3Ids[id] << 24 | (ptr_id & 0x00FFFFFF));
         }
     }
     return;

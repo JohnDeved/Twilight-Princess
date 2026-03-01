@@ -309,6 +309,10 @@ void pal_gx_set_tex_lookup_mode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMo
 void pal_gx_set_num_tex_gens(u8 n);
 void pal_gx_set_tex_coord_gen(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32 mtx, GXBool normalize, u32 pt_mtx);
 
+/* Texture pointer table for DL replay (64-bit pointers can't fit in 24-bit BP data) */
+u32  pal_gx_tex_ptr_register(void* ptr);
+void* pal_gx_tex_ptr_resolve(u32 id);
+
 /* Transform */
 void pal_gx_set_projection(const f32 mtx[4][4], GXProjectionType type);
 void pal_gx_load_pos_mtx_imm(const f32 mtx[3][4], u32 id);

@@ -503,6 +503,42 @@ static void dl_handle_bp_reg(u32 value) {
         }
         return;
     }
+
+    /* BP TexImage0 (texture dimensions + format):
+     * Registers: 0x88-0x8B (texmap 0-3), 0xA8-0xAB (texmap 4-7)
+     * Bit layout: [9:0]=width-1, [19:10]=height-1, [23:20]=format */
+    {
+        int texmap = -1;
+        if (addr >= 0x88 && addr <= 0x8B) texmap = addr - 0x88;
+        else if (addr >= 0xA8 && addr <= 0xAB) texmap = addr - 0xA8 + 4;
+        if (texmap >= 0 && texmap < GX_MAX_TEXMAP) {
+            u16 w = (u16)((data & 0x3FF) + 1);
+            u16 h = (u16)(((data >> 10) & 0x3FF) + 1);
+            GXTexFmt fmt = (GXTexFmt)((data >> 20) & 0xF);
+            GXTexBinding* bind = &g_gx_state.tex_bindings[texmap];
+            bind->width = w;
+            bind->height = h;
+            bind->format = fmt;
+            return;
+        }
+    }
+
+    /* BP TexImage3 (texture image pointer):
+     * Registers: 0x94-0x97 (texmap 0-3), 0xB4-0xB7 (texmap 4-7)
+     * On PC: data field = pointer table index (from pal_gx_tex_ptr_register) */
+    {
+        int texmap = -1;
+        if (addr >= 0x94 && addr <= 0x97) texmap = addr - 0x94;
+        else if (addr >= 0xB4 && addr <= 0xB7) texmap = addr - 0xB4 + 4;
+        if (texmap >= 0 && texmap < GX_MAX_TEXMAP) {
+            void* ptr = pal_gx_tex_ptr_resolve(data);
+            if (ptr) {
+                g_gx_state.tex_bindings[texmap].image_ptr = ptr;
+                g_gx_state.tex_bindings[texmap].valid = 1;
+            }
+            return;
+        }
+    }
 }
 
 /* ================================================================ */
