@@ -329,17 +329,10 @@ static int detect_tev_preset(void) {
 /**
  * Override shader preset when vertex data is incompatible.
  * MODULATE requires vertex color (multiplies texture × color).
- * If no color attribute exists, fall back to REPLACE (texture only).
+ * If no color attribute exists, the draw path will inject material color,
+ * so we keep the preset as-is.
  */
 static int fixup_preset_for_vertex(int preset) {
-    if (preset == GX_TEV_SHADER_MODULATE || preset == GX_TEV_SHADER_DECAL ||
-        preset == GX_TEV_SHADER_BLEND) {
-        const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
-        if (desc[GX_VA_CLR0].type == GX_NONE) {
-            /* No vertex color — can't modulate. Use REPLACE to show texture. */
-            return GX_TEV_SHADER_REPLACE;
-        }
-    }
     return preset;
 }
 
@@ -985,27 +978,43 @@ void pal_tev_flush_draw(void) {
     uint32_t raw_stride = calc_raw_vertex_stride();
     if (raw_stride == 0) return;
 
-    /* 3. Check if we need to inject constant color for PASSCLR without vertex color */
+    /* 3. Check if we need to inject constant color when vertex color is missing.
+     * PASSCLR: inject from TEV registers or material color.
+     * MODULATE/BLEND/DECAL: inject from material color (GCN hardware uses
+     * material color as rasterized color when no vertex color attribute). */
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
-    int inject_color = (preset == GX_TEV_SHADER_PASSCLR &&
-                        desc[GX_VA_CLR0].type == GX_NONE);
+    int inject_color = 0;
     uint8_t const_clr[4] = {0, 0, 0, 255};
 
-    if (inject_color) {
-        /* Determine the constant color from TEV state */
-        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-        if (s0->color_d == GX_CC_C0 || s0->color_d == GX_CC_CPREV) {
-            const_clr[0] = g_gx_state.tev_regs[GX_TEVREG0].r;
-            const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
-            const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
-            const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
-        } else if (s0->color_d == GX_CC_RASC) {
+    if (desc[GX_VA_CLR0].type == GX_NONE) {
+        if (preset == GX_TEV_SHADER_PASSCLR) {
+            inject_color = 1;
+            /* Determine the constant color from TEV state */
+            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+            if (s0->color_d == GX_CC_C0 || s0->color_d == GX_CC_CPREV) {
+                const_clr[0] = g_gx_state.tev_regs[GX_TEVREG0].r;
+                const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
+                const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
+                const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
+            } else if (s0->color_d == GX_CC_RASC) {
+                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
+                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
+                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
+                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            }
+        } else if (preset == GX_TEV_SHADER_MODULATE ||
+                   preset == GX_TEV_SHADER_BLEND ||
+                   preset == GX_TEV_SHADER_DECAL) {
+            /* Use material color as rasterized color (what GCN hardware does) */
+            inject_color = 1;
             const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
             const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
             const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
             const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
         }
+    }
 
+    if (inject_color) {
         /* Rebuild layout with color attribute (position always Float) */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
