@@ -269,7 +269,13 @@ void mDoMtx_lookAt(Mtx mtx, Vec const* i_eye, Vec const* i_center, Vec const* i_
     }
 }
 
-void mDoMtx_concatProjView(const Mtx a, const Mtx b, Mtx c) {
+void mDoMtx_concatProjView(const Mtx a_, const Mtx b_, Mtx c_) {
+    /* Cast to unbounded pointers — callers pass Mtx44 buffers but the
+       function accesses row 3, which is UB on the Mtx (float[3][4]) type.
+       Using MtxP/CMtxP avoids the compiler treating a_[3]/c_[3] as UB. */
+    CMtxP a = (CMtxP)a_;
+    CMtxP b = (CMtxP)b_;
+    MtxP  c = (MtxP)c_;
 #if PLATFORM_PC
     if (!a || !b || !c) {
         return;

@@ -55,7 +55,8 @@ void PSMTXCopy(const Mtx src, Mtx dst) {
     memcpy(dst, src, sizeof(Mtx));
 }
 
-void PSMTXConcat(const Mtx a, const Mtx b, Mtx ab) {
+void __attribute__((force_align_arg_pointer)) PSMTXConcat(const Mtx a, const Mtx b, Mtx ab) {
+    if (!a || !b || !ab) return;
     Mtx tmp;
     int i;
     for (i = 0; i < 3; i++) {

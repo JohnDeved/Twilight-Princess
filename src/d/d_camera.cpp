@@ -10750,6 +10750,9 @@ static void view_setup(camera_process_class* i_this) {
     camera_class* a_this = (camera_class*)i_this;
     dDlst_window_c* window = get_window(a_this);
 
+#if PLATFORM_PC
+    if (!window) return;
+#endif
     view_port_class* viewport = window->getViewPort();
     view_class* view = (view_class*)i_this;
     mDoMtx_lookAt(view->viewMtx, &view->lookat.eye, &view->lookat.center, &view->lookat.up, view->bank);
