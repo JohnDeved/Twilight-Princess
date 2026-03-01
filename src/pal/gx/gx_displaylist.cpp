@@ -131,9 +131,107 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
         return;
     }
 
-    /* CP registers 0x70-0x9F: VAT (Vertex Attribute Table) groups 0-2
-     * These configure component counts, types, and frac bits for each vertex format.
-     * Skip for now — vertex format is typically set before the DL call. */
+    /* CP registers 0x70-0x77: VAT group A (Vertex Attribute Table)
+     * These set component counts, types, and frac bits per vtxfmt.
+     * Register address = 0x70 + vtxfmt (0-7).
+     *
+     * VAT_A bit layout:
+     * [0]     POS_CNT  (0=XY, 1=XYZ)
+     * [3:1]   POS_TYPE (0=u8, 1=s8, 2=u16, 3=s16, 4=f32)
+     * [8:4]   POS_FRAC
+     * [9]     NRM_CNT  (0=NRM, 1=NBT)
+     * [12:10] NRM_TYPE
+     * [13]    CLR0_CNT (0=RGB, 1=RGBA)
+     * [16:14] CLR0_TYPE
+     * [17]    CLR1_CNT
+     * [20:18] CLR1_TYPE
+     * [21]    TEX0_CNT (0=S, 1=ST)
+     * [24:22] TEX0_TYPE
+     * [29:25] TEX0_FRAC
+     * [30]    ByteDequant (always 1)
+     * [31]    NormalIndex3 */
+    if (addr >= 0x70 && addr <= 0x77) {
+        int fmt = addr - 0x70;
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_POS,
+            (GXCompCnt)((value >> 0) & 0x1),
+            (GXCompType)((value >> 1) & 0x7),
+            (u8)((value >> 4) & 0x1F));
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_NRM,
+            (GXCompCnt)((value >> 9) & 0x1),
+            (GXCompType)((value >> 10) & 0x7), 0);
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_CLR0,
+            (GXCompCnt)((value >> 13) & 0x1),
+            (GXCompType)((value >> 14) & 0x7), 0);
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_CLR1,
+            (GXCompCnt)((value >> 17) & 0x1),
+            (GXCompType)((value >> 18) & 0x7), 0);
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX0,
+            (GXCompCnt)((value >> 21) & 0x1),
+            (GXCompType)((value >> 22) & 0x7),
+            (u8)((value >> 25) & 0x1F));
+        return;
+    }
+
+    /* CP registers 0x80-0x87: VAT group B
+     * [4:0]   TEX1_FRAC
+     * [5]     TEX1_CNT
+     * [8:6]   TEX1_TYPE
+     * [13:9]  TEX2_FRAC
+     * [14]    TEX2_CNT
+     * [17:15] TEX2_TYPE
+     * [22:18] TEX3_FRAC
+     * [23]    TEX3_CNT
+     * [26:24] TEX3_TYPE
+     * [31:27] TEX4_FRAC */
+    if (addr >= 0x80 && addr <= 0x87) {
+        int fmt = addr - 0x80;
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX1,
+            (GXCompCnt)((value >> 5) & 0x1),
+            (GXCompType)((value >> 6) & 0x7),
+            (u8)((value >> 0) & 0x1F));
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX2,
+            (GXCompCnt)((value >> 14) & 0x1),
+            (GXCompType)((value >> 15) & 0x7),
+            (u8)((value >> 9) & 0x1F));
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX3,
+            (GXCompCnt)((value >> 23) & 0x1),
+            (GXCompType)((value >> 24) & 0x7),
+            (u8)((value >> 18) & 0x1F));
+        /* TEX4 frac stored here, cnt/type in VAT_C */
+        return;
+    }
+
+    /* CP registers 0x90-0x97: VAT group C
+     * [0]     TEX4_CNT
+     * [3:1]   TEX4_TYPE
+     * [8:4]   TEX5_FRAC
+     * [9]     TEX5_CNT
+     * [12:10] TEX5_TYPE
+     * [17:13] TEX6_FRAC
+     * [18]    TEX6_CNT
+     * [21:19] TEX6_TYPE
+     * [26:22] TEX7_FRAC
+     * [27]    TEX7_CNT
+     * [30:28] TEX7_TYPE */
+    if (addr >= 0x90 && addr <= 0x97) {
+        int fmt = addr - 0x90;
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX4,
+            (GXCompCnt)((value >> 0) & 0x1),
+            (GXCompType)((value >> 1) & 0x7), 0);
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX5,
+            (GXCompCnt)((value >> 9) & 0x1),
+            (GXCompType)((value >> 10) & 0x7),
+            (u8)((value >> 4) & 0x1F));
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX6,
+            (GXCompCnt)((value >> 18) & 0x1),
+            (GXCompType)((value >> 19) & 0x7),
+            (u8)((value >> 13) & 0x1F));
+        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX7,
+            (GXCompCnt)((value >> 27) & 0x1),
+            (GXCompType)((value >> 28) & 0x7),
+            (u8)((value >> 22) & 0x1F));
+        return;
+    }
 }
 
 /* ================================================================ */
@@ -601,10 +699,14 @@ void pal_gx_call_display_list(const void* list, u32 nbytes) {
         }
 
         if (opcode == GX_CMD_CALL_DL) {
-            /* Nested display list call — skip on PC
-             * (we'd need to resolve the 32-bit address) */
-            dl_read_u32(&reader); /* list addr */
-            dl_read_u32(&reader); /* size */
+            /* Nested display list call — the address is a physical GCN
+             * pointer that we cannot resolve on PC. J3D typically builds
+             * material and shape DLs as flat buffers, so nested calls are
+             * rare in practice. Log when encountered for diagnostics. */
+            u32 list_addr = dl_read_u32(&reader);
+            u32 list_size = dl_read_u32(&reader);
+            (void)list_addr; (void)list_size;
+            pal_error(PAL_ERR_DL_PARSE, "nested CALL_DL (unresolvable GCN address)");
             continue;
         }
 

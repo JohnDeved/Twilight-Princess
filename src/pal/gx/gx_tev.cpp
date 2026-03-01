@@ -234,15 +234,21 @@ static u32 tev_arg_class(GXTevColorArg arg) {
 /**
  * Generic TEV preset selection based on input class analysis.
  *
- * Analyzes the TEV combiner formula: out = (d + (1-c)*a + c*b) op bias << scale
- * to determine which shader to use. This replaces hardcoded pattern matching
- * with a classification approach:
+ * NOTE: This is an approximation, NOT full TEV emulation. The GX TEV unit
+ * computes: out = (d + (1-c)*a + c*b) op bias << scale per stage, with
+ * arbitrary routing of texture, rasterized, constant, and previous-stage
+ * values to a/b/c/d slots. Full emulation would require:
+ *   - Runtime shader generation (or a uber-shader with uniform-driven paths)
+ *   - Per-stage combiner formula evaluation
+ *   - Indirect texture lookups
+ *   - Alpha channel combiner (separate from color)
+ *   - Konst color/alpha register selection per stage
  *
- * - If no texture referenced anywhere → PASSCLR (vertex color only)
- * - If texture used but no rasterized/vertex color → REPLACE (texture only)
- * - If both texture and rasterized → MODULATE (tex * color)
- * - If multi-stage with register lerp → BLEND
- * - If texture and constant only → MODULATE (via konst)
+ * The classification approach maps the most common combiner patterns to
+ * a fixed set of precompiled shaders (PASSCLR, REPLACE, MODULATE, BLEND,
+ * DECAL). This covers ~90% of TP's TEV usage but will produce incorrect
+ * output for complex multi-stage setups with indirect texturing or
+ * non-standard combiner formulas.
  */
 static int classify_tev_config(void) {
     u32 all_tex = 0, all_ras = 0, all_konst = 0, all_prev = 0;

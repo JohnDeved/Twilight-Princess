@@ -30,6 +30,9 @@ private:
     /* 0x04 */  // JKRArchive
     /* 0x64 */ s32 mDataOffset;
     /* 0x68 */ JKRDvdFile* mDvdFile;
+#if PLATFORM_PC
+    void* mRepackedFiles; /* Repacked file entries for PC (disc entries are 20 bytes, native may differ) */
+#endif
 };
 
 #endif /* JKRDVDARCHIVE_H */

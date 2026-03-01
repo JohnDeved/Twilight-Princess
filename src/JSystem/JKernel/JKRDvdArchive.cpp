@@ -18,6 +18,9 @@
 
 JKRDvdArchive::JKRDvdArchive(s32 entryNum, JKRArchive::EMountDirection mountDirection)
     : JKRArchive(entryNum, MOUNT_DVD) {
+#if PLATFORM_PC
+    mRepackedFiles = NULL;
+#endif
     mMountDirection = mountDirection;
     if (!open(entryNum))
         return;
@@ -43,6 +46,13 @@ JKRDvdArchive::~JKRDvdArchive() {
             JKRFreeToHeap(mHeap, mArcInfoBlock);
             mArcInfoBlock = NULL;
         }
+
+#if PLATFORM_PC
+        if (mRepackedFiles) {
+            free(mRepackedFiles);
+            mRepackedFiles = NULL;
+        }
+#endif
 
         if (mExpandedSize) {
             JKRFree(mExpandedSize);
@@ -131,7 +141,10 @@ bool JKRDvdArchive::open(s32 entryNum) {
             node->first_file_index = pal_swap32(node->first_file_index);
         }
 
-        /* Repack file entries from 20-byte stride to native sizeof(SDIFileEntry) */
+        /* Repack file entries from 20-byte stride to native sizeof(SDIFileEntry).
+         * On 64-bit, sizeof(SDIFileEntry) is 24 due to the void* data pointer,
+         * so we CANNOT copy repacked entries back into the original buffer
+         * (that would overflow). Store them separately. */
         u8* filesBase = (u8*)&info->num_nodes + info->file_entry_offset;
         u32 numFiles = info->num_file_entries;
         if (sizeof(SDIFileEntry) != 20 && numFiles > 0) {
@@ -147,8 +160,7 @@ bool JKRDvdArchive::open(s32 entryNum) {
                     repacked[i].data_size                 = pal_swap32(d->dsz);
                     repacked[i].data                      = NULL;
                 }
-                memcpy(filesBase, repacked, numFiles * sizeof(SDIFileEntry));
-                free(repacked);
+                mRepackedFiles = repacked;
             }
         } else {
             for (u32 i = 0; i < numFiles; i++) {
@@ -165,6 +177,11 @@ bool JKRDvdArchive::open(s32 entryNum) {
 
     mNodes = (SDIDirEntry*)((intptr_t)&mArcInfoBlock->num_nodes + mArcInfoBlock->node_offset);
     mFiles = (SDIFileEntry*)((intptr_t)&mArcInfoBlock->num_nodes + mArcInfoBlock->file_entry_offset);
+#if PLATFORM_PC
+    if (mRepackedFiles) {
+        mFiles = (SDIFileEntry*)mRepackedFiles;
+    }
+#endif
     mStringTable = (char*)((intptr_t)&mArcInfoBlock->num_nodes + mArcInfoBlock->string_table_offset);
     mExpandedSize = NULL;
 
