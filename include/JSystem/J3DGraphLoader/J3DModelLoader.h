@@ -6,7 +6,7 @@
 
 class J3DModelData;
 class J3DMaterialTable;
-class J3DModelHierarchy;
+struct J3DModelHierarchy;
 
 /**
  * On 64-bit PC, the J3D binary format uses 4-byte offsets where the original

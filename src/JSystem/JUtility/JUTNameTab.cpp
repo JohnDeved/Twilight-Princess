@@ -1,7 +1,7 @@
 #include "JSystem/JSystem.h" // IWYU pragma: keep
 
 #include "JSystem/JUtility/JUTNameTab.h"
-#include <string>
+#include <cstring>
 
 #if PLATFORM_PC
 /* Name tables in game assets have at most a few hundred entries.

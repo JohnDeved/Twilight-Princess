@@ -11,6 +11,7 @@
 #include "d/d_meter_map.h"
 #include "d/d_msg_class.h"
 #include "d/d_msg_object.h"
+#include <cstring>
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
 #endif

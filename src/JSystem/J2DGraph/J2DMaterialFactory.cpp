@@ -5,7 +5,7 @@
 #include "JSystem/J2DGraph/J2DScreen.h"
 #include "JSystem/JSupport/JSupport.h"
 #include "JSystem/JUtility/JUTResource.h"
-#include <string>
+#include <cstring>
 #include <dolphin/types.h>
 
 J2DMaterialFactory::J2DMaterialFactory(J2DMaterialBlock const& param_0) {
@@ -244,7 +244,7 @@ u16 J2DMaterialFactory::newTexNo(int param_0, int param_1) const {
     if (iVar2->field_0x38[param_1] != 0xffff) {
         return field_0x28[iVar2->field_0x38[param_1]];
     }
-    return 0x1FFFF;
+    return 0xFFFF;
 }
 
 u16 J2DMaterialFactory::newFontNo(int param_0) const {
@@ -252,7 +252,7 @@ u16 J2DMaterialFactory::newFontNo(int param_0) const {
     if (iVar2->field_0x48 != 0xffff) {
         return field_0x2c[iVar2->field_0x48];
     }
-    return 0x1FFFF;
+    return 0xFFFF;
 }
 
 J2DTevOrder J2DMaterialFactory::newTevOrder(int param_0, int param_1) const {

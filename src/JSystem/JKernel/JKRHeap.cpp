@@ -9,8 +9,10 @@
 #include "JSystem/JUtility/JUTAssert.h"
 #include "JSystem/JUtility/JUTException.h"
 #include <stdint.h>
+#include <cstring>
+#if PLATFORM_PC
 #include <stdlib.h>
-#include <string>
+#endif
 
 #if DEBUG
 u8 JKRValue_DEBUGFILL_NOTUSE = 0xFD;
@@ -356,7 +358,7 @@ JKRHeap* JKRHeap::findAllHeap(void* ptr) const {
     return NULL;
 }
 
-void JKRHeap::dispose_subroutine(u32 begin, u32 end) {
+void JKRHeap::dispose_subroutine(uintptr_t begin, uintptr_t end) {
     JSUListIterator<JKRDisposer> next_iterator((JSULink<JKRDisposer>*)NULL);
     JSUListIterator<JKRDisposer> it = mDisposerList.getFirst();
     while (it != mDisposerList.getEnd()) {

@@ -16,6 +16,7 @@
 #include "d/d_cc_d.h"
 #include "d/d_s_play.h"
 #include "f_op/f_op_camera_mng.h"
+#include <cstring>
 
 class daNPC_TK_HIO_c : public JORReflexible {
 public:
@@ -1339,7 +1340,7 @@ void daNPC_TK_c::executeBack() {
                 if (current.pos.y > unkXyz1.y) {
                     cLib_chaseAngleS(&shape_angle.x, 0x2000, 0x400);
                 } else {
-                    cLib_chaseAngleS(&shape_angle.x, 0xffffe000, 0x400);
+                    cLib_chaseAngleS(&shape_angle.x, -8192, 0x400);
                 }
             } else {
                 cLib_chaseAngleS(&field_0x69c, 0x200, 0x10);
@@ -1378,7 +1379,7 @@ void daNPC_TK_c::executeBack() {
                 if (current.pos.y > unkXyz1.y) {
                     cLib_chaseAngleS(&shape_angle.x, 0x2000, 0x400);
                 } else {
-                    cLib_chaseAngleS(&shape_angle.x, 0xffffe000, 0x400);
+                    cLib_chaseAngleS(&shape_angle.x, -8192, 0x400);
                 }
             } else {
                 cLib_chaseAngleS(&field_0x69c, 0x200, 0x10);
@@ -2455,7 +2456,7 @@ void daNPC_TK_c::executeWolfPerch() {
 
 void daNPC_TK_c::executeResistanceDemo() {
     daNpcMoiR_c* npcMoiR;
-    if (fopAcM_SearchByName(PROC_NPC_MOIR, (fopAc_ac_c**)&npcMoiR) == NULL || npcMoiR == NULL) {
+    if (fopAcM_SearchByName(PROC_NPC_MOIR, (fopAc_ac_c**)&npcMoiR) == 0 || npcMoiR == NULL) {
         return;
     }
 
@@ -2622,7 +2623,7 @@ void daNPC_TK_c::executeResistanceDemo() {
     // fallthrough
 
     case 8: {
-        cLib_addCalcAngleS2(&field_0x6a2, 0xffffdc00, 8, 0x200);
+        cLib_addCalcAngleS2(&field_0x6a2, -9216, 8, 0x200);
         cLib_addCalcAngleS2(&field_0x6a0, 0x1000, 8, 0x200);
         cLib_addCalcAngleS2(&field_0x6aa, 0x2000, 8, 0x200);
 

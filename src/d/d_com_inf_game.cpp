@@ -26,6 +26,7 @@
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"
 #include <cstdio>
+#include <cstring>
 
 void dComIfG_play_c::ct() {
     mWindowNum = 0;
@@ -1116,7 +1117,7 @@ void dComIfG_inf_c::baseCsr_c::draw(f32 param_1, f32 param_2) {
         r28 = 0xFF;
     }
 
-    J2DPicture* picture = field_0x8.getPicture('cursor00');
+    J2DPicture* picture = field_0x8.getPicture(MULTI_CHAR('cursor00'));
     JUT_ASSERT(1450, picture != NULL);
     picture->scale(1.3f, 1.3f);
     JUtility::TColor color = picture->getWhite();
@@ -1150,7 +1151,7 @@ void dComIfG_inf_c::baseCsr_c::create() {
     int rt = field_0x8.create(resInfo->getArchive(), "zelda_pointing_cursor_navi.blo");
     JUT_ASSERT(1498, rt);
 
-    J2DPicture* picture = field_0x8.getPicture('cursor00');
+    J2DPicture* picture = field_0x8.getPicture(MULTI_CHAR('cursor00'));
     JUT_ASSERT(1500, picture != NULL);
     JUtility::TColor color = picture->getWhite();
     color.a = 0;
@@ -1174,7 +1175,7 @@ void dComIfG_inf_c::baseCsr_c::particleExecute() {
 }
 
 void dComIfG_inf_c::anmCsr_c::draw(f32 param_1, f32 param_2) {
-    field_0x8.setPos('lock_n', param_1, param_2);
+    field_0x8.setPos(MULTI_CHAR('lock_n'), param_1, param_2);
     dComIfGd_set2DXlu(&field_0x8);
 }
 #endif

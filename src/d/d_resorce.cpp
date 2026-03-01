@@ -17,6 +17,7 @@
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include <cstdio>
+#include <cstring>
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #include "pal/pal_endian.h"
@@ -94,7 +95,7 @@ int dRes_info_c::set(char const* i_arcName, char const* i_path, u8 i_mountDirect
     JUT_ASSERT(120, strlen(i_arcName) <= NAME_MAX);
 #endif
 
-    if (*i_path != NULL) {
+    if (*i_path != '\0') {
         char path[40];
         snprintf(path, sizeof(path), "%s%s.arc", i_path, i_arcName);
         mDMCommand = mDoDvdThd_mountArchive_c::create(path, i_mountDirection, i_heap);

@@ -13,6 +13,7 @@
 #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
 #include <revolution/nand.h>
 #include <revolution/sc.h>
+#include <cstring>
 #endif
 
 #define SLOT_A 0

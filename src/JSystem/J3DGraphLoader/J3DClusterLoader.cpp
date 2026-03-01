@@ -9,7 +9,7 @@
 #include "JSystem/JSupport/JSupport.h"
 #include "JSystem/JKernel/JKRHeap.h"
 #include <dolphin/os.h>
-#include <string>
+#include <cstring>
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #endif
