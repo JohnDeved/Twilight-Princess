@@ -431,6 +431,8 @@ void J3DGDLoadTlut(void* tlut_ptr, u32 tmem_addr, GXTlutSize size) {
         u32 texmap_id = (tmem_addr - 0xf0000) >> 13;
         /* size: GX_TLUT_16=1, GX_TLUT_256=16, entries = size * 16 */
         u16 n_entries = (u16)(size * 16);
+        /* Format is not known here — it's set later by J3DGDSetTexTlut.
+         * Store 0 as placeholder; tex_binding.tlut_fmt is updated separately. */
         pal_gx_load_tlut(tlut_ptr, 0, n_entries, texmap_id);
         /* Also set directly on the tex binding for DL replay path */
         if (texmap_id < GX_MAX_TEXMAP) {

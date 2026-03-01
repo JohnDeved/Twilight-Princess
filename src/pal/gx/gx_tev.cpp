@@ -299,7 +299,10 @@ static void resolve_konst_color(const GXTevStage* stage, uint8_t out[4]) {
         out[3] = 255;
     } else {
         /* Constant fraction: 1, 7/8, 3/4, 5/8, 1/2, 3/8, 1/4, 1/8 */
-        static const uint8_t fracs[] = {255, 223, 191, 159, 128, 96, 64, 32};
+        static const uint8_t fracs[] = {
+            255, /* 1   */ 223, /* 7/8 */ 191, /* 3/4 */ 159, /* 5/8 */
+            128, /* 1/2 */  96, /* 3/8 */  64, /* 1/4 */  32  /* 1/8 */
+        };
         int fi = (sel <= GX_TEV_KCSEL_1_8) ? sel : 0;
         out[0] = out[1] = out[2] = fracs[fi];
         out[3] = 255;

@@ -196,6 +196,8 @@ int daTitle_c::Execute() {
 
 void daTitle_c::KeyWaitAnm() {
 #if PLATFORM_PC
+    /* field_0x600 (CPaneMgrAlpha) is created in loadWait_proc().
+     * Can be NULL if 2D layout resources failed to load. */
     if (field_0x600 == NULL) return;
 #endif
     if (field_0x5f9 != 0) {
