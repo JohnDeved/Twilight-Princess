@@ -55,6 +55,24 @@ void* pal_gx_tex_ptr_resolve(u32 id) {
 }
 
 /* ================================================================ */
+/* TLUT (palette) tracking per texmap                               */
+/* ================================================================ */
+/* GXLoadTlut is called with texMapID, storing palette ptr per slot.
+ * When a CI texture is loaded to that slot, the palette is copied. */
+static struct {
+    void* ptr;
+    u32   fmt;
+    u16   num_entries;
+} s_tlut_state[GX_MAX_TEXMAP];
+
+void pal_gx_load_tlut(void* lut_data, u32 fmt, u16 n_entries, u32 texmap_id) {
+    if (texmap_id >= GX_MAX_TEXMAP) return;
+    s_tlut_state[texmap_id].ptr = lut_data;
+    s_tlut_state[texmap_id].fmt = fmt;
+    s_tlut_state[texmap_id].num_entries = n_entries;
+}
+
+/* ================================================================ */
 /* Initialize                                                       */
 /* ================================================================ */
 
@@ -323,6 +341,23 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         bind->wrap_s = (GXTexWrapMode)data[24];
         bind->wrap_t = (GXTexWrapMode)data[25];
         bind->mipmap = data[26];
+
+        /* Filter settings (set by GXInitTexObjLOD) */
+        if (data[29] == 0xAB) {
+            bind->min_filt = (GXTexFilter)data[27];
+            bind->mag_filt = (GXTexFilter)data[28];
+        }
+
+        /* For CI textures, copy TLUT data from the per-slot tracker */
+        GXTexFmt fmt = bind->format;
+        if (fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2) {
+            bind->tlut_ptr = s_tlut_state[id].ptr;
+            bind->tlut_fmt = s_tlut_state[id].fmt;
+        } else {
+            bind->tlut_ptr = NULL;
+            bind->tlut_fmt = 0;
+        }
+
         bind->valid = 1;
     }
 }

@@ -48,7 +48,7 @@ def parse_log(logfile):
     milestones = []
     stubs = []
 
-    with open(logfile) as f:
+    with open(logfile, errors='replace') as f:
         for line in f:
             line = _ANSI_ESCAPE.sub('', line.strip())
             if not line.startswith("{"):

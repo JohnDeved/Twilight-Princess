@@ -130,6 +130,8 @@ typedef struct {
     f32           min_lod;
     f32           max_lod;
     f32           lod_bias;
+    void*         tlut_ptr;   /* palette data for CI formats */
+    u32           tlut_fmt;   /* GX_TL_IA8, GX_TL_RGB565, GX_TL_RGB5A3 */
     u8            valid;      /* 1 if this slot has been loaded */
 } GXTexBinding;
 
@@ -308,6 +310,7 @@ void pal_gx_set_tex_lookup_mode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMo
                                 f32 min_lod, f32 max_lod, f32 lod_bias);
 void pal_gx_set_num_tex_gens(u8 n);
 void pal_gx_set_tex_coord_gen(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc src, u32 mtx, GXBool normalize, u32 pt_mtx);
+void pal_gx_load_tlut(void* lut_data, u32 fmt, u16 n_entries, u32 texmap_id);
 
 /* Texture pointer table for DL replay (64-bit pointers can't fit in 24-bit BP data) */
 u32  pal_gx_tex_ptr_register(void* ptr);

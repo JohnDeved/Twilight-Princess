@@ -310,8 +310,18 @@ void GXInitTexObjCI(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
 void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt,
                      f32 min_lod, f32 max_lod, f32 lod_bias, GXBool bias_clamp,
                      GXBool do_edge_lod, GXAnisotropy max_aniso) {
-    (void)obj; (void)min_filt; (void)mag_filt; (void)min_lod; (void)max_lod;
-    (void)lod_bias; (void)bias_clamp; (void)do_edge_lod; (void)max_aniso;
+    (void)bias_clamp; (void)do_edge_lod; (void)max_aniso;
+    if (!obj) return;
+    /* Store filter/LOD in the GXTexObj's reserved bytes (offset 27-31).
+     *   offset 27: min_filt (u8)
+     *   offset 28: mag_filt (u8)
+     *   offset 29: has_lod marker (0xAB) */
+    u8* data = (u8*)obj;
+    if (data[0] == 'T' && data[1] == 'P') {
+        data[27] = (u8)min_filt;
+        data[28] = (u8)mag_filt;
+        data[29] = 0xAB; /* marker: LOD data present */
+    }
 }
 void GXInitTexObjData(GXTexObj* obj, void* image_ptr) { (void)obj; (void)image_ptr; }
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) { (void)obj; (void)s; (void)t; }
@@ -321,10 +331,27 @@ void* GXGetTexObjUserData(const GXTexObj* obj) { (void)obj; return NULL; }
 void GXLoadTexObjPreLoaded(GXTexObj* obj, GXTexRegion* region, GXTexMapID id) { (void)obj; (void)region; (void)id; }
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) { pal_gx_load_tex_obj(obj, id); }
 void GXInitTlutObj(GXTlutObj* tlut_obj, void* lut, GXTlutFmt fmt, u16 n_entries) {
-    if (tlut_obj) memset(tlut_obj, 0, sizeof(GXTlutObj));
-    (void)lut; (void)fmt; (void)n_entries;
+    if (tlut_obj) {
+        memset(tlut_obj, 0, sizeof(GXTlutObj));
+        /* Store palette data in the GXTlutObj's 16-byte space:
+         *   offset 0-7: lut pointer (void*, 8 bytes on 64-bit)
+         *   offset 8-11: fmt (u32)
+         *   offset 12-13: n_entries (u16) */
+        memcpy((u8*)tlut_obj, &lut, sizeof(void*));
+        memcpy((u8*)tlut_obj + 8, &fmt, 4);
+        memcpy((u8*)tlut_obj + 12, &n_entries, 2);
+    }
 }
-void GXLoadTlut(GXTlutObj* tlut_obj, u32 tlut_name) { (void)tlut_obj; (void)tlut_name; }
+void GXLoadTlut(GXTlutObj* tlut_obj, u32 tlut_name) {
+    if (!tlut_obj) return;
+    void* lut_ptr;
+    u32 fmt;
+    u16 n_entries;
+    memcpy(&lut_ptr, (u8*)tlut_obj, sizeof(void*));
+    memcpy(&fmt, (u8*)tlut_obj + 8, 4);
+    memcpy(&n_entries, (u8*)tlut_obj + 12, 2);
+    pal_gx_load_tlut(lut_ptr, fmt, n_entries, tlut_name);
+}
 void GXInitTexCacheRegion(GXTexRegion* region, u8 is_32b_mipmap, u32 tmem_even,
                           GXTexCacheSize size_even, u32 tmem_odd, GXTexCacheSize size_odd) {
     if (region) memset(region, 0, sizeof(GXTexRegion));

@@ -162,6 +162,44 @@ static void tex_cache_put(void* ptr, uint16_t w, uint16_t h, GXTexFmt fmt, bgfx:
     s_tex_cache_next++;
 }
 
+/* Convert GX wrap mode + filter to bgfx sampler flags (per-draw) */
+static uint32_t gx_sampler_flags(const GXTexBinding* binding) {
+    uint32_t flags = 0;
+
+    /* Wrap modes */
+    switch (binding->wrap_s) {
+    case GX_REPEAT: break; /* bgfx default is repeat (0) */
+    case GX_CLAMP:  flags |= BGFX_SAMPLER_U_CLAMP;  break;
+    case GX_MIRROR: flags |= BGFX_SAMPLER_U_MIRROR; break;
+    default:        break;
+    }
+    switch (binding->wrap_t) {
+    case GX_REPEAT: break;
+    case GX_CLAMP:  flags |= BGFX_SAMPLER_V_CLAMP;  break;
+    case GX_MIRROR: flags |= BGFX_SAMPLER_V_MIRROR; break;
+    default:        break;
+    }
+
+    /* Minification filter */
+    switch (binding->min_filt) {
+    case GX_NEAR:
+    case GX_NEAR_MIP_NEAR:
+    case GX_NEAR_MIP_LIN:
+        flags |= BGFX_SAMPLER_MIN_POINT;
+        break;
+    default: /* GX_LINEAR, GX_LIN_MIP_NEAR, GX_LIN_MIP_LIN → bilinear */
+        break;
+    }
+
+    /* Magnification filter */
+    switch (binding->mag_filt) {
+    case GX_NEAR: flags |= BGFX_SAMPLER_MAG_POINT; break;
+    default:      break;
+    }
+
+    return flags;
+}
+
 /* Decode GX texture and upload to bgfx */
 static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
     if (!binding || !binding->valid || !binding->image_ptr)
@@ -183,7 +221,7 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         binding->image_ptr, rgba_data,
         binding->width, binding->height,
         binding->format,
-        NULL, 0);
+        binding->tlut_ptr, binding->tlut_fmt);
 
     if (decoded == 0) {
         free(rgba_data);
@@ -199,7 +237,7 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         false, /* hasMips */
         1,     /* numLayers */
         bgfx::TextureFormat::RGBA8,
-        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
+        BGFX_TEXTURE_NONE, /* sampler flags set per-draw */
         mem);
 
     if (bgfx::isValid(tex)) {
@@ -1221,7 +1259,7 @@ void pal_tev_flush_draw(void) {
             const GXTexBinding* binding = &g_gx_state.tex_bindings[s0->tex_map];
             bgfx::TextureHandle tex = upload_gx_texture(binding);
             if (bgfx::isValid(tex)) {
-                bgfx::setTexture(0, s_tex_uniform, tex);
+                bgfx::setTexture(0, s_tex_uniform, tex, gx_sampler_flags(binding));
             }
             /* Log first few textured draws for diagnostics */
             static int s_tex_log_count = 0;
