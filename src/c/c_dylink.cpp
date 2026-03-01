@@ -9,6 +9,11 @@
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_ext.h"
+#if PLATFORM_PC
+#include "f_pc/f_pc_profile.h"
+#include "d/d_procname.h"
+#include <cstdio>
+#endif
 
 #if DEBUG
 #include "f_pc/f_pc_debug_sv.h"
@@ -951,6 +956,20 @@ static int cDyl_InitCallback(void* param_0) {
      * from pal_profile_list.cpp and create the initial scene. */
     extern void pal_profile_list_init(void);
     pal_profile_list_init();
+
+    /* Statically-linked profiles don't need REL loading.
+     * Clear DMC entries so cDyl_LinkASync returns cPhs_COMPLEATE_e. */
+    {
+        int cleared = 0;
+        for (int i = 0; i < PROC_MAX_NUM; i++) {
+            if (DMC[i] != NULL && g_fpcPf_ProfileList_p[i] != NULL) {
+                DMC[i] = NULL;
+                cleared++;
+            }
+        }
+        fprintf(stdout, "[PAL] cDyl: cleared %d DMC entries for statically-linked profiles\n", cleared);
+    }
+
     cDyl_Initialized = true;
     fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
     return 1;

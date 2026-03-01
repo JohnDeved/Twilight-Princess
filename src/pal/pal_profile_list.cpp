@@ -259,7 +259,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_E_WB — REL module, not available */
     NULL, /* g_profile_OBJ_ITO — REL module, not available */
     NULL, /* g_profile_OBJ_SW — REL module, not available */
-    NULL, /* g_profile_SPINNER — REL module, not available */
+    &g_profile_SPINNER,
     NULL, /* g_profile_B_OB — REL module, not available */
     NULL, /* g_profile_KAGO — REL module, not available */
     NULL, /* g_profile_E_YC — REL module, not available */
@@ -271,8 +271,8 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_TBOX — REL module, not available */
     NULL, /* g_profile_TBOX2 — REL module, not available */
     &g_profile_ALINK,
-    NULL, /* g_profile_BOOMERANG — REL module, not available */
-    NULL, /* g_profile_MIDNA — REL module, not available */
+    &g_profile_BOOMERANG,
+    &g_profile_MIDNA,
     NULL, /* g_profile_NPC_TK — REL module, not available */
     NULL, /* g_profile_NPC_WORM — REL module, not available */
     NULL, /* g_profile_PPolamp — REL module, not available */
@@ -330,13 +330,13 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_MG_FISH — REL module, not available */
     NULL, /* g_profile_FSHOP — REL module, not available */
     NULL, /* g_profile_NPC_DU — REL module, not available */
-    NULL, /* g_profile_DISAPPEAR — REL module, not available */
+    &g_profile_DISAPPEAR,
     NULL, /* g_profile_Obj_Mato — REL module, not available */
     NULL, /* g_profile_Obj_Flag — REL module, not available */
     NULL, /* g_profile_Obj_Flag2 — REL module, not available */
     NULL, /* g_profile_Obj_Flag3 — REL module, not available */
     NULL, /* g_profile_Obj_GOMIKABE — REL module, not available */
-    NULL, /* g_profile_Obj_Yousei — REL module, not available */
+    &g_profile_Obj_Yousei,
     NULL, /* g_profile_Obj_Kabuto — REL module, not available */
     NULL, /* g_profile_Obj_Cho — REL module, not available */
     NULL, /* g_profile_Obj_Kuw — REL module, not available */
@@ -363,7 +363,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Izumi_Gate — REL module, not available */
     NULL, /* g_profile_Obj_Fchain — REL module, not available */
     NULL, /* g_profile_Obj_Wchain — REL module, not available */
-    NULL, /* g_profile_Tag_Attp — REL module, not available */
+    &g_profile_Tag_Attp,
     NULL, /* g_profile_Obj_Tornado — REL module, not available */
     NULL, /* g_profile_Obj_Tornado2 — REL module, not available */
     NULL, /* g_profile_Obj_FirePillar — REL module, not available */
@@ -556,13 +556,13 @@ static process_profile_definition* s_pc_profile_list[] = {
     &g_profile_ITEM,
     NULL, /* g_profile_Obj_SmallKey — REL module, not available */
     NULL, /* g_profile_Obj_Kantera — REL module, not available */
-    NULL, /* g_profile_Obj_LifeContainer — REL module, not available */
+    &g_profile_Obj_LifeContainer,
     NULL, /* g_profile_Obj_Shield — REL module, not available */
     NULL, /* g_profile_Demo_Item — REL module, not available */
     &g_profile_ShopItem,
     NULL, /* g_profile_Obj_Drop — REL module, not available */
     NULL, /* g_profile_OBJ_RW — REL module, not available */
-    NULL, /* g_profile_NBOMB — REL module, not available */
+    &g_profile_NBOMB,
     NULL, /* g_profile_TAG_CSW — REL module, not available */
     NULL, /* g_profile_TAG_QS — REL module, not available */
     NULL, /* g_profile_HOZELDA — REL module, not available */
@@ -735,7 +735,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_Tag_Lv8Gate — REL module, not available */
     NULL, /* g_profile_Tag_TheBHint — REL module, not available */
     NULL, /* g_profile_Tag_Assist — REL module, not available */
-    NULL, /* g_profile_DEMO00 — REL module, not available */
+    &g_profile_DEMO00,
     NULL, /* g_profile_TAG_CAMERA — REL module, not available */
     NULL, /* g_profile_TAG_CHKPOINT — REL module, not available */
     &g_profile_TAG_EVENT,
@@ -757,7 +757,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     &g_profile_TITLE,
     NULL, /* g_profile_FR — REL module, not available */
     NULL, /* g_profile_ECONT — REL module, not available */
-    NULL, /* g_profile_MG_ROD — REL module, not available */
+    &g_profile_MG_ROD,
     NULL, /* g_profile_E_ARROW — REL module, not available */
     NULL, /* g_profile_BULLET — REL module, not available */
     NULL, /* g_profile_SWHIT0 — REL module, not available */
@@ -773,7 +773,7 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_B_GOS — REL module, not available */
     NULL, /* g_profile_OBJ_YSTONE — REL module, not available */
     NULL, /* g_profile_MANT — REL module, not available */
-    NULL, /* g_profile_CROD — REL module, not available */
+    &g_profile_CROD,
     NULL, /* g_profile_OBJ_PLEAF — REL module, not available */
     NULL, /* g_profile_OBJ_KBACKET — REL module, not available */
     NULL, /* g_profile_OBJ_YBAG — REL module, not available */
@@ -793,14 +793,14 @@ static process_profile_definition* s_pc_profile_list[] = {
     NULL, /* g_profile_E_BI_LEAF — REL module, not available */
     NULL, /* g_profile_START_AND_GOAL — REL module, not available */
     NULL, /* g_profile_NPC_DF — REL module, not available */
-    NULL, /* g_profile_ARROW — REL module, not available */
+    &g_profile_ARROW,
     NULL, /* g_profile_PATH_LINE — REL module, not available */
     NULL, /* g_profile_TAG_ALLMATO — REL module, not available */
     NULL, /* g_profile_Obj_Timer — REL module, not available */
     NULL, /* g_profile_SCENE_EXIT — REL module, not available */
     &g_profile_CAMERA,
     &g_profile_CAMERA2,
-    NULL, /* g_profile_SUSPEND — REL module, not available */
+    &g_profile_SUSPEND,
     NULL, /* g_profile_GRASS — REL module, not available */
     &g_profile_KYEFF,
     &g_profile_KYEFF2,
@@ -814,7 +814,7 @@ static process_profile_definition* s_pc_profile_list[] = {
 
 void pal_profile_list_init(void) {
     g_fpcPf_ProfileList_p = s_pc_profile_list;
-    fprintf(stdout, "[PAL] Profile list initialized (792 entries, 45 available)\n");
+    fprintf(stdout, "[PAL] Profile list initialized (792 entries, 59 available)\n");
     fflush(stdout);
 }
 
