@@ -296,6 +296,84 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
         }
         return;
     }
+
+    /* Material ambient colors: XF 0x100A-0x100B (2 channels, RGBA8 packed) */
+    if (addr == 0x100A && count >= 1) {
+        for (u16 i = 0; i < count && i < 2; i++) {
+            GXColor c;
+            c.r = (u8)((values[i] >> 24) & 0xFF);
+            c.g = (u8)((values[i] >> 16) & 0xFF);
+            c.b = (u8)((values[i] >> 8) & 0xFF);
+            c.a = (u8)(values[i] & 0xFF);
+            pal_gx_set_chan_amb_color((GXChannelID)(GX_COLOR0A0 + i), c);
+        }
+        return;
+    }
+
+    /* Material diffuse colors: XF 0x100C-0x100D (2 channels, RGBA8 packed) */
+    if (addr == 0x100C && count >= 1) {
+        for (u16 i = 0; i < count && i < 2; i++) {
+            GXColor c;
+            c.r = (u8)((values[i] >> 24) & 0xFF);
+            c.g = (u8)((values[i] >> 16) & 0xFF);
+            c.b = (u8)((values[i] >> 8) & 0xFF);
+            c.a = (u8)(values[i] & 0xFF);
+            pal_gx_set_chan_mat_color((GXChannelID)(GX_COLOR0A0 + i), c);
+        }
+        return;
+    }
+
+    /* Number of color channels: XF 0x1009 */
+    if (addr == 0x1009 && count >= 1) {
+        u8 nChans = (u8)(values[0] & 0x3);
+        pal_gx_set_num_chans(nChans);
+        return;
+    }
+
+    /* Texture coordinate generators: XF 0x1040-0x1047 */
+    if (addr >= 0x1040 && addr <= 0x1047) {
+        u16 startCoord = addr - 0x1040;
+        for (u16 i = 0; i < count && startCoord + i < GX_MAX_TEXCOORD; i++) {
+            u32 v = values[i];
+            /* XF_REG_TEX bit layout:
+             * [1] = proj, [2] = form, [5:4] = tgType, [11:7] = row
+             * [14:12] = embossRow, [17:15] = embossLit */
+            int proj = (v >> 1) & 0x1;
+            int form = (v >> 2) & 0x1;
+            int tgType = (v >> 4) & 0x3;
+            int row = (v >> 7) & 0x1F;
+
+            /* Map XF row + tgType back to GXTexGenType + GXTexGenSrc */
+            GXTexGenType func = proj ? GX_TG_MTX3x4 : GX_TG_MTX2x4;
+            if (tgType == 1) func = GX_TG_BUMP0; /* emboss */
+            else if (tgType == 2) func = GX_TG_SRTG;
+            else if (tgType == 3) func = GX_TG_SRTG;
+
+            GXTexGenSrc src = GX_TG_TEX0;
+            if (form == 1) {
+                /* geometry source */
+                static const GXTexGenSrc geom_rows[] = {
+                    GX_TG_POS, GX_TG_NRM, GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT
+                };
+                if (row < 5) src = geom_rows[row];
+            } else {
+                /* texture coordinate source: row 5=TEX0, 6=TEX1, etc. */
+                if (row >= 5 && row <= 12) src = (GXTexGenSrc)(GX_TG_TEX0 + (row - 5));
+            }
+
+            pal_gx_set_tex_coord_gen(
+                (GXTexCoordID)(startCoord + i), func, src,
+                GX_IDENTITY, GX_FALSE, GX_PTIDENTITY);
+        }
+        return;
+    }
+
+    /* Number of texture generators: XF 0x103F */
+    if (addr == 0x103F && count >= 1) {
+        u8 nTexGens = (u8)(values[0] & 0xF);
+        pal_gx_set_num_tex_gens(nTexGens);
+        return;
+    }
 }
 
 /* ================================================================ */
