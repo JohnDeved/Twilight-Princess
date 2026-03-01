@@ -25,6 +25,9 @@ int fpcDw_Execute(base_process_class* i_proc) {
             draw_func = ((nodedraw_method_class*)i_proc->methods)->draw_method;
         }
     
+#if PLATFORM_PC
+        if (draw_func == NULL) return 0;
+#endif
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
         ret = draw_func(i_proc);
         fpcLy_SetCurrentLayer(save_layer);

@@ -10791,6 +10791,9 @@ static void store(camera_process_class* i_camera) {
     dCamera_c* dCamera = &((camera_class*)i_camera)->mCamera;
     int camera_id = get_camera_id(camera);
     dDlst_window_c* window = get_window(camera_id);
+#if PLATFORM_PC
+    if (!window) return;
+#endif
     view_port_class* viewport = window->getViewPort();
     bool error = false;
 
@@ -11263,7 +11266,7 @@ camera_process_profile_definition g_profile_CAMERA = {
     fpcPi_CURRENT_e,
     PROC_CAMERA,
     &g_fpcLf_Method.base,
-    sizeof(dCamera_c),
+    sizeof(camera_class),
     0,
     0,
     &g_fopVw_Method,
@@ -11284,7 +11287,7 @@ camera_process_profile_definition g_profile_CAMERA2 = {
     fpcPi_CURRENT_e,
     PROC_CAMERA2,
     &g_fpcLf_Method.base,
-    sizeof(dCamera_c),
+    sizeof(camera_class),
     0,
     0,
     &g_fopVw_Method,
