@@ -550,9 +550,23 @@ static int phase_1_0(dScnPly_c* i_this) {
 
 static int phase_2(dScnPly_c* i_this) {
     int tmp = dComIfG_syncAllObjectRes();
+#if PLATFORM_PC
+    /* On PC, some object resources may never finish loading (e.g. archives
+     * that depend on missing REL modules). After 120 frames, force progress
+     * to avoid getting stuck in phase_2 forever. */
+    static int s_phase2_wait = 0;
+    if (tmp >= 0 && tmp != 0) {
+        s_phase2_wait++;
+        if (s_phase2_wait <= 120) {
+            return cPhs_INIT_e;
+        }
+    }
+    s_phase2_wait = 0;
+#else
     if (tmp >= 0 && tmp != 0) {
         return cPhs_INIT_e;
     }
+#endif
 
     u8 particle_no = dStage_stagInfo_GetParticleNo(dComIfGp_getStage()->getStagInfo(),
                                                    dComIfG_play_c::getLayerNo(0));

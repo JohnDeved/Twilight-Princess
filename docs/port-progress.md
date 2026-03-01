@@ -7,10 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `13` (logo renders, scene progression works, title screen loads) |
-| **Current Step** | Step 5+ — Complete stage endian swap, PATH/RTBL repack, J3D animation crash fixes |
+| **Highest CI Milestone** | `14` (logo + opening scene, stage data loaded, actors spawning) |
+| **Current Step** | Step 5+ — Opening scene runs, stage chunks decoded, J3D models loading |
 | **Last Updated** | 2026-02-28 |
-| **Blocking Issue** | Title screen 3D model rendering needs runtime testing with J3D pipeline improvements |
+| **Blocking Issue** | J3D 3D model rendering needs texture binding to bgfx draw calls |
 
 ## Step Checklist
 
