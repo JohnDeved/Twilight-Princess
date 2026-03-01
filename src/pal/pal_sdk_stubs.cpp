@@ -178,7 +178,7 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
  * - Main game thread (main01) is dispatched directly in single-threaded mode
  * - Other threads (DVD, audio) are tracked but not started as real threads */
 
-static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
+static u8 s_main_thread_storage[sizeof(OSThread)] __attribute__((aligned(32)));
 /* Fake stack for the main thread — JKRThread constructor reads stackBase/stackEnd */
 static u8 s_fake_stack[0x10000];
 static OSThread* s_current_thread = NULL;
