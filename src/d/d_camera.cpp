@@ -11156,12 +11156,18 @@ static int init_phase2(camera_class* i_this) {
             fopCamM_SetFar(i_this, far_z);
             fopCamM_SetFovy(i_this, 30.0f);
             fopCamM_SetAspect(i_this, mDoGph_gInf_c::getAspect());
+            fopCamM_SetEye(i_this, 0.0f, 100.0f, 200.0f);
             fopCamM_SetCenter(i_this, 0.0f, 100.0f, 0.0f);
+            fopCamM_SetUp(i_this, 0.0f, 1.0f, 0.0f);
             fopCamM_SetBank(i_this, 0);
-            store(camera);
+            /* Skip store() — dCamera_c is uninitialized without a player actor.
+             * store() reads from dCamera_c::Center/Eye/Up which contain garbage,
+             * overwriting the safe defaults we just set. */
             view_setup(camera);
         }
 
+        /* Zero-init the field_0xb0c flag to prevent reads from uninitialized data.
+         * Cannot memset entire mCamera — it would destroy any vtable pointer. */
         camera->mCamera.field_0xb0c = 1;
         i_this->field_0x238 = 0;
         return cPhs_NEXT_e;
