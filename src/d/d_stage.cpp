@@ -2698,8 +2698,9 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
         return;
     }
 
-    /* Stage data from disc is big-endian; swap header fields on little-endian PC.
-     * Detect big-endian by checking if chunk tags look reversed (ASCII letters). */
+    /* Stage data from disc is big-endian; swap numerical header fields on
+     * little-endian PC. Tags are 4CC byte strings and never need swapping.
+     * Only m_chunkCount, m_entryNum, and m_offset are numerical. */
     {
         s32 raw = file->m_chunkCount;
         s32 swapped = pal_swap32s(raw);
@@ -2710,28 +2711,40 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
             file->m_chunkCount = swapped;
             needSwap = true;
         } else if (raw > 0 && raw < 256) {
-            /* chunkCount looks valid in both orders — check first tag.
-             * Tags are 4-char ASCII (e.g. "STAG"). In big-endian data on
-             * little-endian host, the first byte of m_tag would be the last
-             * character. Check if reversing produces a known tag. */
+            /* chunkCount looks valid in native order. Check first tag's m_offset
+             * to determine if numerical fields need swapping. Tags are 4CC byte
+             * strings and are always in the correct order.
+             * Check if first tag is a known stage chunk 4CC. If so, check if
+             * m_offset needs swapping by looking at its magnitude. */
             u32 tag = p_tno[0].m_tag;
-            u8* tb = (u8*)&tag;
-            /* ASCII 4CC is A-Z/a-z/0-9. If byte[3] (MSB on LE) is alpha but
-             * byte[0] (LSB on LE) is also alpha, check for known first tags */
-            u32 rev = ((tag >> 24) & 0xFF) | ((tag >> 8) & 0xFF00) |
-                      ((tag << 8) & 0xFF0000) | ((tag << 24) & 0xFF000000);
-            /* "STAG" in native LE = 0x47415453, in BE on LE host = 0x53544147 */
-            if (rev == *(u32*)"STAG" || rev == *(u32*)"PLYR" ||
-                rev == *(u32*)"CAMR" || rev == *(u32*)"ACTR" ||
-                rev == *(u32*)"SCLS" || rev == *(u32*)"FILI" ||
-                rev == *(u32*)"RTBL" || rev == *(u32*)"MULT") {
-                needSwap = true;
+            if (tag == *(u32*)"STAG" || tag == *(u32*)"PLYR" ||
+                tag == *(u32*)"CAMR" || tag == *(u32*)"ACTR" ||
+                tag == *(u32*)"SCLS" || tag == *(u32*)"FILI" ||
+                tag == *(u32*)"RTBL" || tag == *(u32*)"MULT") {
+                /* Tag is valid 4CC. Check if m_offset is reasonable in native
+                 * order or needs swapping. Stage files are typically < 64KB,
+                 * so valid offsets are < 0x10000. */
+                u32 off = p_tno[0].m_offset;
+                u32 off_sw = pal_swap32(off);
+                if (off > 0x100000 && off_sw < 0x100000 && off_sw > 0) {
+                    needSwap = true;
+                } else if (off == 0 && p_tno[0].m_entryNum == 0) {
+                    /* Both zero — no swap needed (or empty chunk) */
+                } else {
+                    /* Offset looks reasonable — check entryNum */
+                    s32 en = p_tno[0].m_entryNum;
+                    s32 en_sw = pal_swap32s(en);
+                    if ((en > 10000 || en < 0) && en_sw >= 0 && en_sw < 10000) {
+                        needSwap = true;
+                    }
+                }
             }
         }
 
         if (needSwap) {
             for (int i = 0; i < file->m_chunkCount; i++) {
-                p_tno[i].m_tag      = pal_swap32(p_tno[i].m_tag);
+                /* Tags are 4CC byte sequences — don't swap them.
+                 * Only swap numerical fields: entryNum and offset. */
                 p_tno[i].m_entryNum = pal_swap32s(p_tno[i].m_entryNum);
                 p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
             }
@@ -2764,6 +2777,12 @@ static int dStage_mapPathInit(dStage_dt_c* i_stage, void* i_data, int param_2, v
 
 static int dStage_mapPathInitCommonLayer(dStage_dt_c* i_stage, void* i_data, int param_2,
                                          void* param_3) {
+#if PLATFORM_PC
+    /* Map path data contains nested pointer fields (dDrawPath_c::room_class::mpFloor etc.)
+     * that are GCN 4-byte offsets. These haven't been resolved to 64-bit pointers.
+     * Skip map path init on PC until deep pointer resolution is implemented. */
+    return 1;
+#endif
     map_path_class* map_path = (map_path_class*)((int*)i_data + 1);
     dMpath_c::setPointer(i_stage->getRoomNo(), map_path, 1);
     return 1;
@@ -2771,6 +2790,10 @@ static int dStage_mapPathInitCommonLayer(dStage_dt_c* i_stage, void* i_data, int
 
 static int dStage_fieldMapMapPathInit(dStage_dt_c* i_stage, void* i_data, int param_2,
                                          void* param_3) {
+#if PLATFORM_PC
+    /* Same issue as dStage_mapPathInitCommonLayer — nested pointers not resolved. */
+    return 1;
+#endif
     map_path_class* map_path = (map_path_class*)((int*)i_data + 1);
     dDrawPath_c::room_class* room_p = (dDrawPath_c::room_class*)map_path->m_entries;
     if (room_p == NULL) {
