@@ -8,6 +8,9 @@
 #include "SSystem/SComponent/c_lib.h"
 #include "Z2AudioLib/Z2SoundMgr.h"
 #include "d/d_com_inf_game.h"
+#if PLATFORM_PC
+#include <cstdio>
+#endif
 #include "d/d_error_msg.h"
 #include "d/d_lib.h"
 #include "d/d_particle.h"
@@ -42,6 +45,24 @@ BOOL fpcM_IsCreating(fpc_ProcID i_id) {
 }
 
 void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_postExecuteFn) {
+#if PLATFORM_PC
+    /* Stack canary to detect which handler corrupts the stack frame.
+     * Place a known pattern on the stack and check after each handler. */
+    static int s_frame_counter = 0;
+    s_frame_counter++;
+    volatile u64 canary_top = 0xCAFEBABEDEADBEEFULL;
+    volatile u64 canary_bot = 0xFEEDFACE12345678ULL;
+    #define CHECK_CANARY(label) do { \
+        if (canary_top != 0xCAFEBABEDEADBEEFULL || canary_bot != 0xFEEDFACE12345678ULL) { \
+            fprintf(stderr, "[STACK-CORRUPT] frame=%d after %s: top=0x%llx bot=0x%llx\n", \
+                    s_frame_counter, label, \
+                    (unsigned long long)canary_top, (unsigned long long)canary_bot); \
+            canary_top = 0xCAFEBABEDEADBEEFULL; \
+            canary_bot = 0xFEEDFACE12345678ULL; \
+        } \
+    } while(0)
+#endif
+
     MtxInit();
     if (!fapGm_HIO_c::isCaptureScreen()) {
         dComIfGd_peekZdata();
@@ -58,36 +79,70 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
                 l_dvdError = false;
             }
 
+#if PLATFORM_PC
+            CHECK_CANARY("pre-Painter");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] entering cAPIGph_Painter\n", s_frame_counter);
+#endif
             cAPIGph_Painter();
+#if PLATFORM_PC
+            CHECK_CANARY("cAPIGph_Painter");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] cAPIGph_Painter done\n", s_frame_counter);
+#endif
 
             if (!dPa_control_c::isStatus(1)) {
                 fpcDt_Handler();
             } else {
                 dPa_control_c::offStatus(1);
             }
+#if PLATFORM_PC
+            CHECK_CANARY("fpcDt_Handler");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcDt_Handler done\n", s_frame_counter);
+#endif
 
             if (!fpcPi_Handler()) {
                 JUT_ASSERT(353, FALSE);
             }
+#if PLATFORM_PC
+            CHECK_CANARY("fpcPi_Handler");
+#endif
 
             if (!fpcCt_Handler()) {
                 JUT_ASSERT(357, FALSE);
             }
+#if PLATFORM_PC
+            CHECK_CANARY("fpcCt_Handler");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcCt_Handler done\n", s_frame_counter);
+#endif
 
             if (i_preExecuteFn != NULL) {
                 i_preExecuteFn();
             }
+#if PLATFORM_PC
+            CHECK_CANARY("preExecuteFn");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] preExecuteFn done\n", s_frame_counter);
+#endif
 
             if (!fapGm_HIO_c::isCaptureScreen()) {
                 fpcEx_Handler((fpcLnIt_QueueFunc)fpcM_Execute);
             }
+#if PLATFORM_PC
+            CHECK_CANARY("fpcEx_Handler");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcEx_Handler done\n", s_frame_counter);
+#endif
             if (!fapGm_HIO_c::isCaptureScreen() || fapGm_HIO_c::getCaptureScreenDivH() != 1) {
                 fpcDw_Handler((fpcDw_HandlerFuncFunc)fpcM_DrawIterater, (fpcDw_HandlerFunc)fpcM_Draw);
             }
+#if PLATFORM_PC
+            CHECK_CANARY("fpcDw_Handler");
+            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcDw_Handler done\n", s_frame_counter);
+#endif
 
             if (i_postExecuteFn != NULL) {
                 i_postExecuteFn();
             }
+#if PLATFORM_PC
+            CHECK_CANARY("postExecuteFn");
+#endif
 
             dComIfGp_drawSimpleModel();
         } else if (!l_dvdError) {

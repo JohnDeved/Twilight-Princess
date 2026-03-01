@@ -12,6 +12,10 @@
 #include "f_pc/f_pc_executor.h"
 #include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_debug_sv.h"
+#if PLATFORM_PC
+#include <cstdio>
+#include <cstdint>
+#endif
 
 BOOL fpcCtRq_isCreatingByID(create_tag* i_createTag, fpc_ProcID* i_id) {
     fpc_ProcID id = ((create_request*)i_createTag->base.mpTagData)->id;
@@ -59,6 +63,10 @@ BOOL fpcCtRq_Delete(create_request* i_request) {
 BOOL fpcCtRq_Cancel(create_request* i_request) {
     if (i_request != NULL && !i_request->is_cancel) {
         i_request->is_cancel = TRUE;
+#if PLATFORM_PC
+        fprintf(stderr, "[PROC-CANCEL] req=%p proc=%p\n",
+                (void*)i_request, (void*)i_request->process);
+#endif
 
         if (i_request->process != NULL && !fpcDt_Delete(i_request->process))
             return FALSE;
@@ -82,13 +90,29 @@ BOOL fpcCtRq_IsDoing(create_request* i_request) {
 BOOL fpcCtRq_Do(create_request* i_request) {
     int phase = cPhs_COMPLEATE_e;
 
+#if PLATFORM_PC
+    if (i_request == NULL) return 1;
+    if (i_request->process != NULL) {
+        fprintf(stderr, "[CT-DO] proc=%p profname=%d methods=%p\n",
+                (void*)i_request->process,
+                i_request->process->profname,
+                (void*)i_request->process->methods);
+    }
+#endif
+
     if (i_request->methods != NULL) {
         if (i_request->methods->phase_handler != NULL) {
             cPhs__Handler pHandler = i_request->methods->phase_handler;
 
+#if PLATFORM_PC
+            fprintf(stderr, "[CT-DO] calling phase_handler=%p\n", (void*)(uintptr_t)pHandler);
+#endif
             i_request->is_doing = TRUE;
             phase = pHandler(i_request);
             i_request->is_doing = FALSE;
+#if PLATFORM_PC
+            fprintf(stderr, "[CT-DO] phase_handler returned %d\n", phase);
+#endif
         }
     }
 

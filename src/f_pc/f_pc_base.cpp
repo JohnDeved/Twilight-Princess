@@ -17,6 +17,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
 #include "pal/pal_error.h"
+#include <cstdio>
 #endif
 
 BOOL fpcBs_Is_JustOfType(int i_typeA, int i_typeB) {
@@ -107,6 +108,10 @@ int fpcBs_Delete(base_process_class* i_proc) {
         result = fpcMtd_Delete(i_proc->methods, i_proc);
         if (result == 1) {
             s16 profname = i_proc->profname;
+#if PLATFORM_PC
+            fprintf(stderr, "[PROC-DELETE] profname=%d addr=%p\n",
+                    profname, (void*)i_proc);
+#endif
             fpcBs_DeleteAppend(i_proc);
             i_proc->type = 0;
             cMl::free(i_proc);
@@ -166,6 +171,10 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
     pprocess->profile = pprofile;
     pprocess->append = i_append;
     pprocess->parameters = pprofile->parameters;
+#if PLATFORM_PC
+    fprintf(stderr, "[PROC-CREATE] profname=%d size=%u addr=%p\n",
+            i_profname, size, (void*)pprocess);
+#endif
     return pprocess;
 }
 
