@@ -281,7 +281,13 @@ void J3DShape::loadPreDrawSetting() const {
 bool J3DShape::sEnvelopeFlag;
 
 void J3DShape::setArrayAndBindPipeline() const {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, force CPU matrix load pipeline (PNCPU=3). GPU-indexed matrix
+     * loads (PNGP=0) use J3DFifoLoadIndx which writes to FIFO, never processed. */
+    J3DShapeMtx::setCurrentPipeline(3);
+#else
     J3DShapeMtx::setCurrentPipeline((mFlags & 0x1C) >> 2);
+#endif
     loadVtxArray();
     j3dSys.setModelDrawMtx(mDrawMtx[*mCurrentViewNo]);
     j3dSys.setModelNrmMtx(mNrmMtx[*mCurrentViewNo]);
