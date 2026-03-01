@@ -654,23 +654,24 @@ static void swap_tex1(u8* block, u32 blockSize) {
         for (int i = 0; i < texNum; i++) {
             u8* tex = block + texResOff + i * 0x20;
             if ((u32)(tex - block) + 0x20 > blockSize) break;
-            /* ResTIMG layout:
+            /* ResTIMG layout (0x20 bytes per entry):
              * 0x00: u8 format, u8 alphaEnabled
-             * 0x02: u16 width, 0x04: u16 height
-             * 0x06: u8 wrapS, u8 wrapT, u8 paletteFormat
-             * 0x09: u8 paletteEntryCount (was numColors before fix)
-             * 0x0A: u16 paletteOffset
-             * 0x0C: u8 edgeLODEnable, u8 minFilterType, u8 magFilterType
-             * 0x0F: u8 pad
-             * 0x10: u8 minLOD, u8 maxLOD, u8 mipmapCount, u8 pad2
-             * 0x14: u16 lodBias
-             * 0x16: u16 pad3 (was part of paletteOffset on old struct)
-             * 0x18: u32 imageOffset
-             * 0x1C: u32 pad4 */
+             * 0x02: u16 width
+             * 0x04: u16 height
+             * 0x06: u8 wrapS, u8 wrapT
+             * 0x08: u8 indexTexture, u8 colorFormat
+             * 0x0A: u16 numColors
+             * 0x0C: u32 paletteOffset
+             * 0x10: u8 mipmapEnabled, u8 doEdgeLOD, u8 biasClamp, u8 maxAnisotropy
+             * 0x14: u8 minFilter, u8 magFilter, s8 minLOD, s8 maxLOD
+             * 0x18: u8 mipmapCount, u8 unknown
+             * 0x1A: s16 LODBias
+             * 0x1C: u32 imageOffset */
             swap_u16_array(tex, 0x02, 2); /* width, height */
-            swap_u16_array(tex, 0x0A, 1); /* paletteOffset */
-            swap_u16_array(tex, 0x14, 1); /* lodBias */
-            swap_u32_array(tex, 0x18, 1); /* imageOffset */
+            swap_u16_array(tex, 0x0A, 1); /* numColors */
+            swap_u32_array(tex, 0x0C, 1); /* paletteOffset */
+            swap_u16_array(tex, 0x1A, 1); /* LODBias */
+            swap_u32_array(tex, 0x1C, 1); /* imageOffset */
         }
     }
 
