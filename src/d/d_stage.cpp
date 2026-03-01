@@ -3360,7 +3360,13 @@ int dStage_changeScene(int i_exitId, f32 speed, u32 mode, s8 room_no, s16 angle,
         scls = dComIfGp_getStageSclsInfo();
     } else {
         JUT_ASSERT(4783, 0 <= room_no && room_no < 64);
+#if PLATFORM_PC
+        if (room_no < 0 || room_no >= 64) return 0;
+#endif
         dStage_roomDt_c* room = dComIfGp_roomControl_getStatusRoomDt(room_no);
+#if PLATFORM_PC
+        if (room == NULL) return 0;
+#endif
         scls = room->getSclsInfo();
     }
 
@@ -3369,6 +3375,9 @@ int dStage_changeScene(int i_exitId, f32 speed, u32 mode, s8 room_no, s16 angle,
     }
 
     JUT_ASSERT(4793, 0 <= i_exitId && i_exitId < scls->num);
+#if PLATFORM_PC
+    if (i_exitId < 0 || i_exitId >= scls->num) return 0;
+#endif
 
     stage_scls_info_class* scls_info = &scls->m_entries[i_exitId];
     s32 wipe = dStage_sclsInfo_getWipe(scls_info);
@@ -3406,7 +3415,13 @@ int dStage_changeScene4Event(int i_exitId, s8 room_no, int i_wipe, bool param_3,
         scls = dComIfGp_getStageSclsInfo();
     } else {
         JUT_ASSERT(4853, 0 <= room_no && room_no < 64);
+#if PLATFORM_PC
+        if (room_no < 0 || room_no >= 64) return 0;
+#endif
         dStage_roomDt_c* room = dComIfGp_roomControl_getStatusRoomDt(room_no);
+#if PLATFORM_PC
+        if (room == NULL) return 0;
+#endif
         scls = room->getSclsInfo();
     }
 
@@ -3417,6 +3432,9 @@ int dStage_changeScene4Event(int i_exitId, s8 room_no, int i_wipe, bool param_3,
     }
 
     JUT_ASSERT(4865, 0 <= i_exitId && i_exitId < scls->num);
+#if PLATFORM_PC
+    if (i_exitId < 0 || i_exitId >= scls->num) return 0;
+#endif
     stage_scls_info_class* scls_info = &scls->m_entries[i_exitId];
 
     s32 wipe = i_wipe == -1 ? dStage_sclsInfo_getWipe(scls_info) : i_wipe;
