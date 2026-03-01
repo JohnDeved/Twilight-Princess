@@ -10755,6 +10755,18 @@ static void view_setup(camera_process_class* i_this) {
 #endif
     view_port_class* viewport = window->getViewPort();
     view_class* view = (view_class*)i_this;
+#if PLATFORM_PC
+    /* Validate lookat data before mDoMtx_lookAt — corrupt up vector
+     * or NaN values cause stack corruption via C_MTXLookAt */
+    if (isnan(view->lookat.eye.x) || isnan(view->lookat.eye.y) || isnan(view->lookat.eye.z) ||
+        isnan(view->lookat.center.x) || isnan(view->lookat.center.y) || isnan(view->lookat.center.z) ||
+        isnan(view->lookat.up.x) || isnan(view->lookat.up.y) || isnan(view->lookat.up.z)) {
+        /* Set a safe default rather than crashing */
+        view->lookat.eye.set(0.0f, 100.0f, 200.0f);
+        view->lookat.center.set(0.0f, 100.0f, 0.0f);
+        view->lookat.up.set(0.0f, 1.0f, 0.0f);
+    }
+#endif
     mDoMtx_lookAt(view->viewMtx, &view->lookat.eye, &view->lookat.center, &view->lookat.up, view->bank);
     MTXCopy(view->viewMtx, view->viewMtxNoTrans);
 
@@ -10921,6 +10933,41 @@ static int camera_execute(camera_process_class* i_this) {
     // this variable is likely fake as it doesn't exist in debug,
     // but directly casting the parameter on each use breaks retail
     camera_class* camera = (camera_class*)i_this;
+#if PLATFORM_PC
+    /* On PC, the opening scene has no player actor. dCamera_c::Run()/NotRun()
+     * require the player (daAlink_getAlinkActorClass), ground collision, and
+     * fully-initialized CamParam data. Skip the body update and just refresh
+     * the view matrices from current lookat state. */
+    {
+        int camera_id = get_camera_id(camera);
+        dDlst_window_c* window = get_window(camera_id);
+        if (!window) return 1;  /* window not ready */
+
+        view_port_class* viewport = window->getViewPort();
+        f32 aspect = mDoGph_gInf_c::getAspect();
+        camera->mCamera.SetWindow(viewport->width, viewport->height);
+        fopCamM_SetAspect(camera, aspect);
+
+        fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(camera);
+        if (player != NULL) {
+            /* Player exists — safe to run full camera logic */
+            if (dDemo_c::getCamera() != NULL) {
+                camera->mCamera.ResetView();
+            }
+            dComIfGp_offCameraAttentionStatus(0, 0x40);
+            if (camera->mCamera.Active()) {
+                camera->mCamera.Run();
+            } else {
+                camera->mCamera.NotRun();
+            }
+            camera->mCamera.CalcTrimSize();
+            store(camera);
+        }
+
+        view_setup(camera);
+        return 1;
+    }
+#else
     preparation(camera);
 
     if (dDemo_c::getCamera() != NULL) {
@@ -10940,6 +10987,7 @@ static int camera_execute(camera_process_class* i_this) {
     store(camera);
     view_setup(camera);
     return 1;
+#endif
 }
 
 static int camera_draw(camera_process_class* i_this) {

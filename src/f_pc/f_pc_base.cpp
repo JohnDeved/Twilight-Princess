@@ -77,7 +77,12 @@ void fpcBs_DeleteAppend(base_process_class* i_proc) {
 int fpcBs_IsDelete(base_process_class* i_proc) {
     int result;
 #if PLATFORM_PC
-    if (i_proc == NULL || i_proc->methods == NULL) { pal_error(PAL_ERR_NULL_PTR, "fpcBs_IsDelete: proc/methods"); return 1; }
+    if (i_proc == NULL) { pal_error(PAL_ERR_NULL_PTR, "fpcBs_IsDelete: proc NULL"); return 0; }
+    if (i_proc->methods == NULL) {
+        fprintf(stderr, "frame=? cat=NULL_PTR detail=\"fpcBs_IsDelete: methods NULL, profname=%d id=%u type=%d\"\n",
+                i_proc->profname, i_proc->id, i_proc->type);
+        return 0;
+    }
 #endif
     layer_class* save_layer = fpcLy_CurrentLayer();
 
@@ -93,7 +98,8 @@ int fpcBs_Delete(base_process_class* i_proc) {
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) {
         pal_error(PAL_ERR_NULL_PTR, "fpcBs_Delete: proc/methods");
-        if (i_proc) { i_proc->type = 0; cMl::free(i_proc); }
+        /* Do NOT free — methods==NULL suggests already-freed or corrupt process.
+         * Freeing would be a double-free, corrupting the JKR heap. */
         return 1;
     }
 #endif
