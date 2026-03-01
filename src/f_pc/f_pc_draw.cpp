@@ -10,6 +10,9 @@
 #include "f_pc/f_pc_pause.h"
 
 int fpcDw_Execute(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) return 0;
+#endif
     if (!fpcPause_IsEnable(i_proc, 2)) {
         layer_class* save_layer;
         int ret;

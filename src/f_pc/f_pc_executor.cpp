@@ -30,6 +30,9 @@ BOOL fpcEx_IsExist(fpc_ProcID i_id) {
 }
 
 int fpcEx_Execute(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) return 0;
+#endif
     if (i_proc->state.init_state != 2 || fpcPause_IsEnable(i_proc, 1) == TRUE)
         return 0;
 

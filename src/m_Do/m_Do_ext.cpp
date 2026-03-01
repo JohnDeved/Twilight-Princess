@@ -185,8 +185,31 @@ int mDoExt_btpAnm::init(J3DMaterialTable* i_matTable, J3DAnmTexPattern* i_btp, i
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(420, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_btp != NULL);
 
+#if PLATFORM_PC
+    if (i_btp == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_btp;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "btpAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);
@@ -204,8 +227,31 @@ int mDoExt_btkAnm::init(J3DMaterialTable* i_matTable, J3DAnmTextureSRTKey* i_btk
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(468, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_btk != NULL);
 
+#if PLATFORM_PC
+    if (i_btk == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_btk;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "btkAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);
@@ -223,8 +269,31 @@ int mDoExt_brkAnm::init(J3DMaterialTable* i_matTable, J3DAnmTevRegKey* i_brk, in
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(516, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_brk != NULL);
 
+#if PLATFORM_PC
+    if (i_brk == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_brk;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "brkAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);

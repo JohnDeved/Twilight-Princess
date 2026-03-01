@@ -178,7 +178,7 @@ def main():
     # Pattern to strip ANSI escape codes (e.g. \x1b[m from terminal output)
     ansi_escape = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
 
-    with open(args.logfile) as f:
+    with open(args.logfile, errors='replace') as f:
         for line in f:
             line = ansi_escape.sub('', line.strip())
             if not line.startswith("{"):

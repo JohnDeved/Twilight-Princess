@@ -777,7 +777,11 @@ GXRenderModeObj GXNtsc480IntDf = {
 /* GD (Graphics Display List) functions                             */
 /* ================================================================ */
 
-void GDInitGDLObj(GDLObj* dl, void* start, u32 length) { (void)dl; (void)start; (void)length; }
+void GDInitGDLObj(GDLObj* dl, void* start, u32 length) {
+    dl->start = (u8*)start;
+    dl->ptr   = (u8*)start;
+    dl->top   = (u8*)start + length;
+}
 void GDFlushCurrToMem(void) {}
 void GDPadCurr32(void) {}
 void GDOverflowed(void) {}
