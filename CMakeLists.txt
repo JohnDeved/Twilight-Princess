@@ -226,6 +226,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(src/pal/pal_math_stubs.cpp PROPERTIES
         COMPILE_OPTIONS "-mincoming-stack-boundary=3"
     )
+    # GCC 13.3 has a code-generation bug in the 5-parameter mDoMtx_lookAt:
+    # it splits the function's epilogue into .text.unlikely, but with
+    # -fno-reorder-blocks-and-partition the section is emitted empty.
+    # The call to the empty section resolves to an unrelated function,
+    # and the epilogue (stack restore + ret) is lost, causing SIGSEGV.
+    # Compiling at -O0 prevents function splitting entirely.
+    set_source_files_properties(src/m_Do/m_Do_mtx.cpp PROPERTIES
+        COMPILE_OPTIONS "-O0"
+    )
 endif()
 
 # --- Game data setup (auto-download if ROMS_TOKEN is available) ---
