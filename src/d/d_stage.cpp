@@ -2666,15 +2666,42 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
 
 #if PLATFORM_PC
     /* Stage data from disc is big-endian; swap header fields on little-endian PC.
-     * Heuristic: if native value is unreasonable but swapped is valid, swap. */
-    s32 raw = file->m_chunkCount;
-    s32 swapped = pal_swap32s(raw);
-    if ((raw > 256 || raw < 0) && swapped > 0 && swapped < 256) {
-        file->m_chunkCount = swapped;
-        for (int i = 0; i < file->m_chunkCount; i++) {
-            p_tno[i].m_tag      = pal_swap32(p_tno[i].m_tag);
-            p_tno[i].m_entryNum = pal_swap32s(p_tno[i].m_entryNum);
-            p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
+     * Detect big-endian by checking if chunk tags look reversed (ASCII letters). */
+    {
+        s32 raw = file->m_chunkCount;
+        s32 swapped = pal_swap32s(raw);
+        bool needSwap = false;
+
+        /* If native chunkCount is unreasonable, must be big-endian */
+        if ((raw > 256 || raw < 0) && swapped > 0 && swapped < 256) {
+            file->m_chunkCount = swapped;
+            needSwap = true;
+        } else if (raw > 0 && raw < 256) {
+            /* chunkCount looks valid in both orders — check first tag.
+             * Tags are 4-char ASCII (e.g. "STAG"). In big-endian data on
+             * little-endian host, the first byte of m_tag would be the last
+             * character. Check if reversing produces a known tag. */
+            u32 tag = p_tno[0].m_tag;
+            u8* tb = (u8*)&tag;
+            /* ASCII 4CC is A-Z/a-z/0-9. If byte[3] (MSB on LE) is alpha but
+             * byte[0] (LSB on LE) is also alpha, check for known first tags */
+            u32 rev = ((tag >> 24) & 0xFF) | ((tag >> 8) & 0xFF00) |
+                      ((tag << 8) & 0xFF0000) | ((tag << 24) & 0xFF000000);
+            /* "STAG" in native LE = 0x47415453, in BE on LE host = 0x53544147 */
+            if (rev == *(u32*)"STAG" || rev == *(u32*)"PLYR" ||
+                rev == *(u32*)"CAMR" || rev == *(u32*)"ACTR" ||
+                rev == *(u32*)"SCLS" || rev == *(u32*)"FILI" ||
+                rev == *(u32*)"RTBL" || rev == *(u32*)"MULT") {
+                needSwap = true;
+            }
+        }
+
+        if (needSwap) {
+            for (int i = 0; i < file->m_chunkCount; i++) {
+                p_tno[i].m_tag      = pal_swap32(p_tno[i].m_tag);
+                p_tno[i].m_entryNum = pal_swap32s(p_tno[i].m_entryNum);
+                p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
+            }
         }
     }
 

@@ -163,19 +163,6 @@ set(REL_SOURCES
     src/d/actor/d_a_vrbox.cpp
     src/d/actor/d_a_vrbox2.cpp
     src/d/actor/d_a_alldie.cpp
-    src/d/actor/d_a_demo00.cpp
-    src/d/actor/d_a_arrow.cpp
-    src/d/actor/d_a_midna.cpp
-    src/d/actor/d_a_suspend.cpp
-    src/d/actor/d_a_disappear.cpp
-    src/d/actor/d_a_obj_life_container.cpp
-    src/d/actor/d_a_obj_yousei.cpp
-    src/d/actor/d_a_tag_attention.cpp
-    src/d/actor/d_a_spinner.cpp
-    src/d/actor/d_a_boomerang.cpp
-    src/d/actor/d_a_crod.cpp
-    src/d/actor/d_a_nbomb.cpp
-    src/d/actor/d_a_mg_rod.cpp
 )
 
 # --- Include directories ---
