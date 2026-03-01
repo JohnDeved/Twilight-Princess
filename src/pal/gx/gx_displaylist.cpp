@@ -153,7 +153,7 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
     if (addr >= 0x70 && addr <= 0x77) {
         int fmt = addr - 0x70;
         pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_POS,
-            (GXCompCnt)((value >> 0) & 0x1),
+            (GXCompCnt)((value) & 0x1),
             (GXCompType)((value >> 1) & 0x7),
             (u8)((value >> 4) & 0x1F));
         pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_NRM,
@@ -197,7 +197,15 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
             (GXCompCnt)((value >> 23) & 0x1),
             (GXCompType)((value >> 24) & 0x7),
             (u8)((value >> 18) & 0x1F));
-        /* TEX4 frac stored here, cnt/type in VAT_C */
+        /* TEX4 frac bits [31:27] — cnt/type are in VAT_C.
+         * Store frac now; cnt/type will be set when VAT_C is written.
+         * Read existing cnt/type from state to avoid overwriting them. */
+        {
+            GXVtxAttrFmtEntry* tex4 = &g_gx_state.vtx_attr_fmt[fmt][GX_VA_TEX4];
+            pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX4,
+                tex4->cnt, tex4->comp_type,
+                (u8)((value >> 27) & 0x1F));
+        }
         return;
     }
 
@@ -215,9 +223,14 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
      * [30:28] TEX7_TYPE */
     if (addr >= 0x90 && addr <= 0x97) {
         int fmt = addr - 0x90;
-        pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX4,
-            (GXCompCnt)((value >> 0) & 0x1),
-            (GXCompType)((value >> 1) & 0x7), 0);
+        /* TEX4 cnt/type from VAT_C — frac was set from VAT_B bits [31:27] */
+        {
+            GXVtxAttrFmtEntry* tex4 = &g_gx_state.vtx_attr_fmt[fmt][GX_VA_TEX4];
+            pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX4,
+                (GXCompCnt)((value >> 0) & 0x1),
+                (GXCompType)((value >> 1) & 0x7),
+                tex4->frac);
+        }
         pal_gx_set_vtx_attr_fmt((GXVtxFmt)fmt, GX_VA_TEX5,
             (GXCompCnt)((value >> 9) & 0x1),
             (GXCompType)((value >> 10) & 0x7),
