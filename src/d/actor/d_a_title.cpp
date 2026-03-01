@@ -195,6 +195,9 @@ int daTitle_c::Execute() {
 }
 
 void daTitle_c::KeyWaitAnm() {
+#if PLATFORM_PC
+    if (field_0x600 == NULL) return;
+#endif
     if (field_0x5f9 != 0) {
         if (field_0x604 == 0) {
             if (field_0x5fa != 0) {
@@ -235,6 +238,13 @@ void daTitle_c::loadWait_proc() {
         mpFont = mDoExt_getMesgFont();
         mTitle.Scr = new J2DScreen();
 
+#if PLATFORM_PC
+        if (mTitle.Scr == NULL) {
+            mpHeap->becomeCurrentHeap();
+            logoDispWaitInit();
+            return;
+        }
+#endif
         mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
 
         J2DTextBox* text[7];
@@ -264,6 +274,9 @@ void daTitle_c::loadWait_proc() {
         }
 
         field_0x600 = new CPaneMgrAlpha(mTitle.Scr, 'n_all', 2, NULL);
+#if PLATFORM_PC
+        if (field_0x600 != NULL)
+#endif
         field_0x600->setAlpha(0);
         J2DPane* pane = mTitle.Scr->search('n_all');
 #if PLATFORM_PC

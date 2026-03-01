@@ -3798,8 +3798,17 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
                 return NULL;
             }
 #endif
-            bool hasSharedDlistObj =
+            bool hasSharedDlistObj = false;
+#if PLATFORM_PC
+            /* Guard against NULL material node pointer from corrupt J3D data */
+            if (i_modelData->getMaterialNodePointer(0) != NULL) {
+                hasSharedDlistObj =
+                    i_modelData->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+            }
+#else
+            hasSharedDlistObj =
                 i_modelData->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+#endif
             // Update the modelFlag if the model data passed in has a shared dlist object
             if (hasSharedDlistObj != NULL) {
                 if (i_modelData->isLocked()) {
