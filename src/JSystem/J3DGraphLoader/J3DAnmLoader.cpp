@@ -21,7 +21,7 @@ J3DAnmBase* J3DAnmLoaderDataBase::load(const void* i_data, J3DAnmLoaderDataBaseF
 #if PLATFORM_PC
     pal_j3d_swap_anim(const_cast<void*>(i_data), 0x800000);
 #endif
-    if (header->mMagic == 'J3D1') {
+    if (header->mMagic == 'J3D1' || header->mMagic == 'J3D2') {
         switch (header->mType) {
         case 'bck1': {
             J3DAnmKeyLoader_v15 loader;

@@ -735,9 +735,9 @@ int pal_j3d_swap_model(void* data, u32 size) {
     u32 blockNum = *(u32*)(buf + 0x0C);
 
     /* Validate file size against buffer */
+    u32 effectiveSize = fileSize < size ? fileSize : size;
     if (fileSize > size) {
         fprintf(stderr, "[pal_j3d] WARNING: header fileSize %u > buffer size %u, using buffer size\n", fileSize, size);
-        /* Use actual buffer size as the limit to prevent out-of-bounds access */
     }
 
     if (blockNum > 64) {
@@ -748,7 +748,7 @@ int pal_j3d_swap_model(void* data, u32 size) {
     /* Walk blocks and swap each */
     u8* blockPtr = buf + 0x20;
     u32 blocks_swapped = 0;
-    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < size; i++) {
+    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < effectiveSize; i++) {
         /* Read block header in big-endian */
         u32 blockType = r32(blockPtr);
         u32 blockSize = r32(blockPtr + 4);
@@ -762,9 +762,9 @@ int pal_j3d_swap_model(void* data, u32 size) {
             fprintf(stderr, "[pal_j3d] Block %u: size %u too small, stopping\n", i, blockSize);
             break;
         }
-        if ((u32)(blockPtr - buf) + blockSize > size) {
+        if ((u32)(blockPtr - buf) + blockSize > effectiveSize) {
             fprintf(stderr, "[pal_j3d] Block %u: size %u exceeds buffer (offset %u + size %u > %u), stopping\n",
-                    i, blockSize, (u32)(blockPtr - buf), blockSize, size);
+                    i, blockSize, (u32)(blockPtr - buf), blockSize, effectiveSize);
             break;
         }
         /* Block size must be 32-byte aligned in J3D format */
@@ -918,7 +918,7 @@ static void swap_ank1(u8* block, u32 blockSize) {
  *   0x2C: u32 bValOffset (s16)
  *   0x30: u32 aValOffset (s16)
  */
-static void swap_clk1(u8* block, u32 blockSize) {
+static void swap_color_anm(u8* block, u32 blockSize) {
     swap_u16_array(block, 0x0C, 1); /* frameMax */
     swap_u16_array(block, 0x0E, 1); /* updateMaterialNum */
     swap_u16_array(block, 0x10, 2); /* rNum, gNum */
@@ -950,6 +950,36 @@ static void swap_clk1(u8* block, u32 blockSize) {
     if (gOff != 0 && gOff < blockSize) { u32 end = bOff > gOff ? bOff : blockSize; swap_u16_range(block, gOff, end); }
     if (bOff != 0 && bOff < blockSize) { u32 end = aOff > bOff ? aOff : blockSize; swap_u16_range(block, bOff, end); }
     if (aOff != 0 && aOff < blockSize) { swap_u16_range(block, aOff, blockSize); }
+}
+
+/*
+ * CLK1/CLF1 (cluster key/full) block layout:
+ *   0x08: u8 loopMode
+ *   0x0A: s16 frameMax
+ *   0x0C: s32 field_0xc
+ *   0x10: u32 mTableOffset
+ *   0x14: u32 mWeightOffset
+ *   Table data is u16, weight data is f32 (swap as u32)
+ */
+static void swap_cluster_anm(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u32_array(block, 0x0C, 1); /* field_0xc */
+    swap_u32_array(block, 0x10, 2); /* 2 offsets */
+
+    u32 tableOff  = *(u32*)(block + 0x10);
+    u32 weightOff = *(u32*)(block + 0x14);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = weightOff > tableOff ? weightOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+    /* Weights: f32 values → swap as u32 */
+    if (weightOff != 0 && weightOff < blockSize) {
+        u32 count = (blockSize - weightOff) / 4;
+        if (count > 1024) count = 1024;
+        swap_u32_array(block, weightOff, count);
+    }
 }
 
 /*
@@ -1127,8 +1157,14 @@ static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
         swap_ttk1(block, blockSize);
         return;
     }
+    /* PAK1/PAF1 = color animation (BPK/BPA files) */
+    if (blockType == FCC('P','A','K','1') || blockType == FCC('P','A','F','1')) {
+        swap_color_anm(block, blockSize);
+        return;
+    }
+    /* CLK1/CLF1 = cluster animation (BLK/BLA files) */
     if (blockType == FCC('C','L','K','1') || blockType == FCC('C','L','F','1')) {
-        swap_clk1(block, blockSize);
+        swap_cluster_anm(block, blockSize);
         return;
     }
     if (blockType == FCC('T','R','K','1') || blockType == FCC('T','R','F','1')) {
@@ -1137,8 +1173,7 @@ static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
     }
 
     /* Generic handler for blocks with all-u16 or all-s16 data:
-     * CLK1/CLF1 (color), TRK1/TRF1 (TEV register), TPT1/TPF1 (tex pattern),
-     * PAK1/PAF1, VAK1/VAF1 */
+     * TPT1/TPF1 (tex pattern), VAK1/VAF1 */
 
     /* Loop mode (u8) and padding - no swap */
     swap_u16_array(block, 0x0A, 1); /* frameCount */
@@ -1225,7 +1260,22 @@ int pal_j3d_swap_anim(void* data, u32 size) {
     u32 magic_be = r32(buf);
 
     if (magic_be != FCC('J','3','D','1') && magic_be != FCC('J','3','D','2')) {
-        return 0;
+        /* Check for 16-bit byte-swapped magic: bytes [0x33,0x4A,0x31,0x44] = '3J1D'
+         * are [J,3,D,1] with each u16 pair byte-swapped.
+         * Undo the swap to see if it's J3D data: swap pairs [0,1] and [2,3]. */
+        u32 magic_unswapped = ((u32)buf[1]<<24) | ((u32)buf[0]<<16) | ((u32)buf[3]<<8) | (u32)buf[2];
+        if (magic_unswapped == FCC('J','3','D','1') || magic_unswapped == FCC('J','3','D','2')) {
+            /* Un-swap the entire file as u16 to undo the damage */
+            u32 fileSize_u16 = ((u32)buf[9]<<24) | ((u32)buf[8]<<16) | ((u32)buf[11]<<8) | (u32)buf[10];
+            u32 fixSize = fileSize_u16 < size ? fileSize_u16 : size;
+            for (u32 off = 0; off + 1 < fixSize; off += 2) {
+                u8 tmp = buf[off]; buf[off] = buf[off+1]; buf[off+1] = tmp;
+            }
+            /* Now retry the normal big-endian read */
+            magic_be = r32(buf);
+        } else {
+            return 0;
+        }
     }
 
     u32 magic_native = *(u32*)buf;
@@ -1238,17 +1288,19 @@ int pal_j3d_swap_anim(void* data, u32 size) {
     swap_u32_array(buf, 0x08, 1);
     swap_u32_array(buf, 0x0C, 1);
 
+    u32 fileSize = *(u32*)(buf + 0x08);
     u32 blockNum = *(u32*)(buf + 0x0C);
     if (blockNum > 64) return 0;
+    u32 effectiveSize = fileSize < size ? fileSize : size;
 
     u8* blockPtr = buf + 0x20;
-    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < size; i++) {
+    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < effectiveSize; i++) {
         u32 blockType = r32(blockPtr);
         u32 blockSize = r32(blockPtr + 4);
         w32(blockPtr, blockType);
         w32(blockPtr + 4, blockSize);
 
-        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > size) break;
+        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > effectiveSize) break;
 
         swap_anm_block(blockPtr, blockSize, blockType);
         blockPtr += blockSize;

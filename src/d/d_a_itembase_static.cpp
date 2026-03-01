@@ -48,6 +48,9 @@ bool daItemBase_c::chkDead() {
 }
 
 int CheckItemCreateHeap(fopAc_ac_c* i_this) {
+#if PLATFORM_PC
+    if (i_this == NULL) return 0;
+#endif
     daItemBase_c* a_this = static_cast<daItemBase_c*>(i_this);
 
     u8 item_no = a_this->getItemNo();
