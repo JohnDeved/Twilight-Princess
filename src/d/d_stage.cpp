@@ -262,6 +262,31 @@ void dStage_pc_free_allocs(void) {
     }
     s_stage_alloc_count = 0;
 }
+
+/* Track which stage data buffers have already been endian-swapped to prevent
+ * double-swap corruption. dStage_infoCreate → dStage_dt_c_stageInitLoader
+ * swaps the headers first, then dStage_Create → dStage_dt_c_stageLoader
+ * would swap again without this guard. */
+#define SWAP_TRACK_MAX 16
+static void* s_swapped_ptrs[SWAP_TRACK_MAX];
+static int s_swapped_count = 0;
+
+static bool dStage_pc_already_swapped(void* ptr) {
+    for (int i = 0; i < s_swapped_count; i++) {
+        if (s_swapped_ptrs[i] == ptr) return true;
+    }
+    return false;
+}
+
+static void dStage_pc_mark_swapped(void* ptr) {
+    if (s_swapped_count < SWAP_TRACK_MAX) {
+        s_swapped_ptrs[s_swapped_count++] = ptr;
+    }
+}
+
+void dStage_pc_clear_swap_tracking(void) {
+    s_swapped_count = 0;
+}
 #endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
@@ -2665,6 +2690,14 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
     dStage_nodeHeader* p_tno = file->m_nodes;
 
 #if PLATFORM_PC
+    /* Guard against double-swap: dStage_infoCreate calls stageInitLoader (which
+     * calls offsetToPtr), then dStage_Create calls stageLoader (which calls
+     * offsetToPtr again). Without this guard, headers get swapped back to
+     * big-endian, causing SIGSEGV in entry swap functions. */
+    if (dStage_pc_already_swapped(i_data)) {
+        return;
+    }
+
     /* Stage data from disc is big-endian; swap header fields on little-endian PC.
      * Detect big-endian by checking if chunk tags look reversed (ASCII letters). */
     {
@@ -2703,6 +2736,8 @@ static void dStage_dt_c_offsetToPtr(void* i_data) {
                 p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
             }
         }
+
+        dStage_pc_mark_swapped(i_data);
     }
 
     /* On 64-bit PC, m_offset (u32) cannot hold a full pointer.
@@ -3206,6 +3241,7 @@ void dStage_Delete() {
 #if PLATFORM_PC
     /* Free native container struct allocations from dStage_dt_c_decode */
     dStage_pc_free_allocs();
+    dStage_pc_clear_swap_tracking();
 #endif
 
     char* demoArcName = dStage_roomControl_c::getDemoArcName();
