@@ -1313,6 +1313,16 @@ void pal_tev_flush_draw(void) {
     state |= convert_depth_state();
     state |= convert_cull_state();
     state |= convert_primitive_state(ds->prim_type);
+
+    /* Alpha test — apply GX alpha compare to bgfx alpha ref.
+     * Only the simple case (comp0 != ALWAYS with ref0 > 0) is handled;
+     * dual-compare with AND/OR/XOR is approximated by using the first ref. */
+    if (g_gx_state.alpha_comp0 != GX_ALWAYS && g_gx_state.alpha_ref0 > 0) {
+        state |= BGFX_STATE_ALPHA_REF(g_gx_state.alpha_ref0);
+    } else if (g_gx_state.alpha_comp1 != GX_ALWAYS && g_gx_state.alpha_ref1 > 0) {
+        state |= BGFX_STATE_ALPHA_REF(g_gx_state.alpha_ref1);
+    }
+
     bgfx::setState(state);
 
     /* 10. Submit draw call */

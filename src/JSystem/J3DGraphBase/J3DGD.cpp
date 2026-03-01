@@ -412,15 +412,32 @@ void J3DGDSetTexImgPtrRaw(GXTexMapID id, u32 image_ptr_raw) {
 }
 
 void J3DGDSetTexTlut(GXTexMapID id, u32 tmem_addr, GXTlutFmt format) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, store the palette format for CI texture decoding.
+     * The palette data pointer was already set by J3DGDLoadTlut. */
+    if ((unsigned)id < GX_MAX_TEXMAP) {
+        g_gx_state.tex_bindings[id].tlut_fmt = (u32)format;
+    }
+#endif
     J3DGDWriteBPCmd(BP_TEX_TLUT((tmem_addr - 0x80000) >> 9, format, J3DGDTexTlutIds[id]));
 }
 
 void J3DGDLoadTlut(void* tlut_ptr, u32 tmem_addr, GXTlutSize size) {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, palette texture (TLUT) loading is not yet supported.
-     * OSCachedToPhysical would truncate the 64-bit pointer.
-     * Indexed textures will fall back to decode without palette. */
-    (void)tlut_ptr; (void)tmem_addr; (void)size;
+    /* On PC, store the palette pointer for CI texture decoding.
+     * OSCachedToPhysical would truncate the 64-bit pointer, so skip BP commands.
+     * Derive texmap ID from TMEM address: tmem = (texmap << 13) + 0xf0000 */
+    if (tlut_ptr && tmem_addr >= 0xf0000) {
+        u32 texmap_id = (tmem_addr - 0xf0000) >> 13;
+        /* size: GX_TLUT_16=1, GX_TLUT_256=16, entries = size * 16 */
+        u16 n_entries = (u16)(size * 16);
+        pal_gx_load_tlut(tlut_ptr, 0, n_entries, texmap_id);
+        /* Also set directly on the tex binding for DL replay path */
+        if (texmap_id < GX_MAX_TEXMAP) {
+            g_gx_state.tex_bindings[texmap_id].tlut_ptr = tlut_ptr;
+        }
+    }
+    (void)size;
     return;
 #endif
     ASSERTMSGLINE(735, !(tmem_addr & 0x1ff), "GDLoadTlut: invalid TMEM pointer");
