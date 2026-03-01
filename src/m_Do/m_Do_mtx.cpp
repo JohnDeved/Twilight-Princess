@@ -270,6 +270,11 @@ void mDoMtx_lookAt(Mtx mtx, Vec const* i_eye, Vec const* i_center, Vec const* i_
 }
 
 void mDoMtx_concatProjView(const Mtx a, const Mtx b, Mtx c) {
+#if PLATFORM_PC
+    if (!a || !b || !c) {
+        return;
+    }
+#endif
     mDoMtx_concat(a, b, c);
     c[3][0] = a[3][0] * b[0][0] + a[3][1] * b[1][0] + a[3][2] * b[2][0];
     c[3][1] = a[3][0] * b[0][1] + a[3][1] * b[1][1] + a[3][2] * b[2][1];

@@ -10937,9 +10937,20 @@ static int camera_execute(camera_process_class* i_this) {
 }
 
 static int camera_draw(camera_process_class* i_this) {
+#if PLATFORM_PC
+    if (!i_this) {
+        return 0;
+    }
+#endif
     camera_class* a_this = (camera_class*)i_this;
     dCamera_c* body = &((camera_class*)i_this)->mCamera;
     dDlst_window_c* window = get_window(a_this);
+#if PLATFORM_PC
+    if (!window) {
+        fprintf(stderr, "[camera_draw] NULL window\n");
+        return 0;
+    }
+#endif
     view_port_class* viewport = window->getViewPort();
     camera_process_class* process = i_this;
     int camera_id = get_camera_id(a_this);
@@ -11001,6 +11012,10 @@ static int camera_draw(camera_process_class* i_this) {
     j3dSys.setViewMtx(process->viewMtx);
     cMtx_inverse(process->viewMtx, process->invViewMtx);
 
+#if PLATFORM_PC
+    /* Skip audio camera and ground check on PC — collision system
+     * not fully initialized, GroundCross can corrupt stack */
+#else
     Z2GetAudience()->setAudioCamera(process->viewMtx, process->lookat.eye, process->lookat.center,
                                     process->fovy, process->aspect, getComStat(0x80), camera_id,
                                     false);
@@ -11027,6 +11042,7 @@ static int camera_draw(camera_process_class* i_this) {
     } else {
         Z2AudioMgr::getInterface()->setCameraPolygonPos(NULL);
     }
+#endif
 
     MTXCopy(process->viewMtx, process->viewMtxNoTrans);
     process->viewMtxNoTrans[0][3] = 0.0f;
