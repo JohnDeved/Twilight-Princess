@@ -1,5 +1,5 @@
 {
-  "milestones_reached_count": 14,
+  "milestones_reached_count": 15,
   "milestones_reached": [
     "BOOT_START",
     "HEAP_INIT",
@@ -14,8 +14,9 @@
     "FRAMES_1800",
     "DVD_READ_OK",
     "SCENE_CREATED",
-    "RENDER_FRAME"
+    "RENDER_FRAME",
+    "TEST_COMPLETE"
   ],
-  "updated": "2026-02-28",
-  "note": "PLAY_SCENE added — opening scene (F_SP102) creates via PROC_OPENING_SCENE"
+  "updated": "2026-03-01",
+  "note": "TEST_COMPLETE milestone — all 2000 frames run crash-free; frame ~181 SIGSEGV fixed (GCC epilogue bug in mDoMtx_lookAt)"
 }
