@@ -369,12 +369,18 @@ static void dl_handle_bp_reg(u32 value) {
         int base_stage = (addr - 0x28) * 2;
         /* BP_TEV_ORDER bit layout:
          * [2:0] = map0, [5:3] = coord0, [6] = enable0, [9:7] = color0 (stage N)
-         * [14:12] = map1, [17:15] = coord1, [18] = enable1, [21:19] = color1 (stage N+1) */
+         * [14:12] = map1, [17:15] = coord1, [18] = enable1, [21:19] = color1 (stage N+1)
+         *
+         * BP color channel encoding (3 bits):
+         *   0=COLOR0A0, 1=COLOR1A1, 2..6=unused, 7=NULL
+         * (NOT the same as GXChannelID enum) */
         if (base_stage < GX_MAX_TEVSTAGE) {
             GXTexMapID map0 = (GXTexMapID)((data >> 0) & 0x7);
             GXTexCoordID coord0 = (GXTexCoordID)((data >> 3) & 0x7);
             int enable0 = (data >> 6) & 0x1;
-            GXChannelID color0 = (GXChannelID)((data >> 7) & 0x7);
+            u32 bp_chan0 = (data >> 7) & 0x7;
+            GXChannelID color0 = (bp_chan0 == 0) ? GX_COLOR0A0 :
+                                 (bp_chan0 == 1) ? GX_COLOR1A1 : GX_COLOR_NULL;
             if (!enable0) map0 = GX_TEXMAP_NULL;
             pal_gx_set_tev_order((GXTevStageID)base_stage, coord0, map0, color0);
         }
@@ -382,7 +388,9 @@ static void dl_handle_bp_reg(u32 value) {
             GXTexMapID map1 = (GXTexMapID)((data >> 12) & 0x7);
             GXTexCoordID coord1 = (GXTexCoordID)((data >> 15) & 0x7);
             int enable1 = (data >> 18) & 0x1;
-            GXChannelID color1 = (GXChannelID)((data >> 19) & 0x7);
+            u32 bp_chan1 = (data >> 19) & 0x7;
+            GXChannelID color1 = (bp_chan1 == 0) ? GX_COLOR0A0 :
+                                 (bp_chan1 == 1) ? GX_COLOR1A1 : GX_COLOR_NULL;
             if (!enable1) map1 = GX_TEXMAP_NULL;
             pal_gx_set_tev_order((GXTevStageID)(base_stage + 1), coord1, map1, color1);
         }
