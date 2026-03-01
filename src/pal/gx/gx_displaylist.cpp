@@ -262,12 +262,9 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
      * 0x0500-0x05FF: Texture matrix memory
      * 0x1000-0x10FF: Light parameter memory */
 
-    /* Position matrix memory: 0x0000 + mtxIdx*3 (mtxIdx in units of 4 floats) */
+    /* Position matrix memory: 0x0000 + slot*12 (each matrix = 12 f32 = 3 rows × 4 cols) */
     if (addr < 0x0400) {
-        /* Each matrix is stored as 3x4 f32 (12 values) at addr.
-         * Matrix index = addr / 3, slot = addr / 3 * 4 / 12 = addr / 9.
-         * GX matrix indices: 0, 3, 6, 9, ... for slots 0, 1, 2, 3, ... */
-        int mtxSlot = addr / 3;
+        int mtxSlot = addr / 12;
         if (mtxSlot < 10 && count >= 12) {
             /* Load 3x4 matrix (row-major, 12 floats) */
             f32 mtx[3][4];
@@ -285,7 +282,7 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
 
     /* Texture matrix memory: 0x0500 + mtxIdx*3 */
     if (addr >= 0x0500 && addr < 0x0600) {
-        int mtxSlot = (addr - 0x0500) / 3;
+        int mtxSlot = (addr - 0x0500) / 12;
         if (mtxSlot < 10 && count >= 12) {
             f32 mtx[3][4];
             for (int i = 0; i < 3; i++) {

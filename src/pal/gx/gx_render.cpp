@@ -23,6 +23,8 @@ extern "C" {
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_tev.h"
 #include "pal/gx/gx_capture.h"
+
+void gx_fifo_reset(void);
 #include "pal/pal_window.h"
 #include "pal/pal_verify.h"
 #include "pal/pal_milestone.h"
@@ -227,6 +229,7 @@ void pal_render_begin_frame(void) {
         return;
 
     gx_stub_frame_reset();
+    gx_fifo_reset();
     pal_window_poll();
 
     GXColor cc = g_gx_state.clear_color;
