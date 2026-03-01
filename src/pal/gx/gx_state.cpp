@@ -45,8 +45,8 @@ u32 pal_gx_tex_ptr_register(void* ptr) {
         s_tex_ptr_table[id] = ptr;
         return id;
     }
-    /* Table full — wrap around (shouldn't happen with 4096 slots) */
-    return 0;
+    /* Table full — return sentinel that will resolve to NULL */
+    return 0xFFFFFF;
 }
 
 void* pal_gx_tex_ptr_resolve(u32 id) {

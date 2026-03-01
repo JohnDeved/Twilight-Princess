@@ -325,36 +325,36 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
 
     /* Number of color channels: XF 0x1009 */
     if (addr == 0x1009 && count >= 1) {
-        u8 nChans = (u8)(values[0] & 0x3);
-        pal_gx_set_num_chans(nChans);
+        u8 n_chans = (u8)(values[0] & 0x3);
+        pal_gx_set_num_chans(n_chans);
         return;
     }
 
     /* Texture coordinate generators: XF 0x1040-0x1047 */
     if (addr >= 0x1040 && addr <= 0x1047) {
-        u16 startCoord = addr - 0x1040;
-        for (u16 i = 0; i < count && startCoord + i < GX_MAX_TEXCOORD; i++) {
+        static const GXTexGenSrc geom_rows[] = {
+            GX_TG_POS, GX_TG_NRM, GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT
+        };
+        u16 start_coord = addr - 0x1040;
+        for (u16 i = 0; i < count && start_coord + i < GX_MAX_TEXCOORD; i++) {
             u32 v = values[i];
             /* XF_REG_TEX bit layout:
-             * [1] = proj, [2] = form, [5:4] = tgType, [11:7] = row
+             * [1] = proj, [2] = form, [5:4] = tg_type, [11:7] = row
              * [14:12] = embossRow, [17:15] = embossLit */
             int proj = (v >> 1) & 0x1;
             int form = (v >> 2) & 0x1;
-            int tgType = (v >> 4) & 0x3;
+            int tg_type = (v >> 4) & 0x3;
             int row = (v >> 7) & 0x1F;
 
-            /* Map XF row + tgType back to GXTexGenType + GXTexGenSrc */
+            /* Map XF row + tg_type back to GXTexGenType + GXTexGenSrc */
             GXTexGenType func = proj ? GX_TG_MTX3x4 : GX_TG_MTX2x4;
-            if (tgType == 1) func = GX_TG_BUMP0; /* emboss */
-            else if (tgType == 2) func = GX_TG_SRTG;
-            else if (tgType == 3) func = GX_TG_SRTG;
+            if (tg_type == 1) func = GX_TG_BUMP0; /* emboss */
+            else if (tg_type == 2) func = GX_TG_SRTG;
+            else if (tg_type == 3) func = GX_TG_SRTG;
 
             GXTexGenSrc src = GX_TG_TEX0;
             if (form == 1) {
                 /* geometry source */
-                static const GXTexGenSrc geom_rows[] = {
-                    GX_TG_POS, GX_TG_NRM, GX_TG_COLOR0, GX_TG_BINRM, GX_TG_TANGENT
-                };
                 if (row < 5) src = geom_rows[row];
             } else {
                 /* texture coordinate source: row 5=TEX0, 6=TEX1, etc. */
@@ -362,7 +362,7 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
             }
 
             pal_gx_set_tex_coord_gen(
-                (GXTexCoordID)(startCoord + i), func, src,
+                (GXTexCoordID)(start_coord + i), func, src,
                 GX_IDENTITY, GX_FALSE, GX_PTIDENTITY);
         }
         return;
@@ -370,8 +370,8 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
 
     /* Number of texture generators: XF 0x103F */
     if (addr == 0x103F && count >= 1) {
-        u8 nTexGens = (u8)(values[0] & 0xF);
-        pal_gx_set_num_tex_gens(nTexGens);
+        u8 n_tex_gens = (u8)(values[0] & 0xF);
+        pal_gx_set_num_tex_gens(n_tex_gens);
         return;
     }
 }
