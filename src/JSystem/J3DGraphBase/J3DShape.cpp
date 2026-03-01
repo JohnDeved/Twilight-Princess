@@ -1,10 +1,16 @@
 #include "JSystem/JSystem.h" // IWYU pragma: keep
+#include "global.h"
 
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DVertex.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
 #include <dolphin/gd.h>
+#if PLATFORM_PC || PLATFORM_NX_HB
+extern "C" {
+#include "pal/gx/gx_state.h"
+}
+#endif
 
 void J3DGDSetVtxAttrFmtv(_GXVtxFmt, GXVtxAttrFmtList const*, bool);
 void J3DFifoLoadPosMtxImm(Mtx, u32);
@@ -129,8 +135,18 @@ void J3DLoadCPCmd(u8 addr, u32 val) {
 }
 
 static void J3DLoadArrayBasePtr(GXAttr attr, void* data) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On 64-bit, the pointer can't fit in the 32-bit FIFO write.
+     * Directly update the array base in the GX state machine.
+     * Use the stride already set by GDSetArray (makeVtxArrayCmd). */
+    extern GXStateMachine g_gx_state;
+    if ((unsigned)attr < GX_MAX_VTXATTR) {
+        g_gx_state.vtx_arrays[attr].base_ptr = data;
+    }
+#else
     u32 idx = (attr == GX_VA_NBT) ? 1 : (attr - GX_VA_POS);
     J3DLoadCPCmd(0xA0 + idx, ((uintptr_t)data & 0x7FFFFFFF));
+#endif
 }
 
 void J3DShape::loadVtxArray() const {

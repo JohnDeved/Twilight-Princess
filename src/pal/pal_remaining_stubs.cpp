@@ -11,6 +11,7 @@
 #include "dolphin/types.h"
 #include "revolution/gx/GXEnum.h"
 #include "revolution/gx/GXStruct.h"
+#include "revolution/gx/GXGeometry.h"
 #include "revolution/gd/GDBase.h"
 #include "revolution/os/OSModule.h"
 #include "dolphin/dvd.h"
@@ -30,12 +31,17 @@ void GXSetCoPlanar(u8 enable) { (void)enable; }
 GDLObj* __GDCurrentDL = NULL;
 
 void GDSetArray(GXAttr attr, void* base_ptr, u8 stride) {
-    (void)attr; (void)base_ptr; (void)stride;
+    /* Wire through to GX state so indexed vertex access works */
+    GXSetArray(attr, base_ptr, stride);
 }
 void GDSetArrayRaw(GXAttr attr, u32 base_ptr_raw, u8 stride) {
-    (void)attr; (void)base_ptr_raw; (void)stride;
+    /* Raw address — can't resolve on PC. Set NULL so callers detect it. */
+    GXSetArray(attr, NULL, stride);
 }
-void GDSetVtxDescv(const GXVtxDescList* attrPtr) { (void)attrPtr; }
+void GDSetVtxDescv(const GXVtxDescList* attrPtr) {
+    /* Wire through to GX state so display list parser knows vertex layout */
+    GXSetVtxDescv(attrPtr);
+}
 
 /* --- DVD extras --- */
 BOOL DVDCheckDiskAsync(DVDCommandBlock* block, DVDCBCallback callback) {

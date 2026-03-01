@@ -3,9 +3,15 @@
 //
 
 #include "JSystem/JSystem.h" // IWYU pragma: keep
+#include "global.h"
 
 #include "JSystem/J3DGraphBase/J3DGD.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
+#if PLATFORM_PC || PLATFORM_NX_HB
+extern "C" {
+#include "pal/gx/gx_state.h"
+}
+#endif
 
 void J3DGDSetGenMode(u8 nTexGens, u8 nChans, u8 nTevs, u8 nInds,
                      GXCullMode cm) {
@@ -608,6 +614,11 @@ void J3DGDSetFogRangeAdj(GXBool enable, u16 center, GXFogAdjTable* table) {
 }
 
 void J3DFifoLoadPosMtxImm(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly update the GX state matrix instead of writing to FIFO.
+     * The FIFO buffer is never processed, so matrix loads would be lost. */
+    pal_gx_load_pos_mtx_imm(mtx, id);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 12);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -621,9 +632,13 @@ void J3DFifoLoadPosMtxImm(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32ptr(&mtx[2][3]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxImm(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_gx_load_nrm_mtx_imm(mtx, id);
+#else
     J3DFifoWriteXFCmdHdr(id * 3 + 0x400, 9);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -634,9 +649,18 @@ void J3DFifoLoadNrmMtxImm(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][0]);
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxImm3x3(Mtx3P mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* Convert 3x3 to 3x4 for pal_gx_load_nrm_mtx_imm */
+    f32 mtx34[3][4];
+    mtx34[0][0] = mtx[0][0]; mtx34[0][1] = mtx[0][1]; mtx34[0][2] = mtx[0][2]; mtx34[0][3] = 0.0f;
+    mtx34[1][0] = mtx[1][0]; mtx34[1][1] = mtx[1][1]; mtx34[1][2] = mtx[1][2]; mtx34[1][3] = 0.0f;
+    mtx34[2][0] = mtx[2][0]; mtx34[2][1] = mtx[2][1]; mtx34[2][2] = mtx[2][2]; mtx34[2][3] = 0.0f;
+    pal_gx_load_nrm_mtx_imm(mtx34, id);
+#else
     J3DFifoWriteXFCmdHdr(id * 3 + 0x400, 9);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -647,9 +671,13 @@ void J3DFifoLoadNrmMtxImm3x3(Mtx3P mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][0]);
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxToTexMtx(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_gx_load_tex_mtx_imm(mtx, (u32)(GX_TEXMTX0 + id), GX_MTX3x4);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 12);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -663,9 +691,17 @@ void J3DFifoLoadNrmMtxToTexMtx(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32(0.0f);
+#endif
 }
 
 void J3DFifoLoadNrmMtxToTexMtx3x3(Mtx3P mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    f32 mtx34[3][4];
+    mtx34[0][0] = mtx[0][0]; mtx34[0][1] = mtx[0][1]; mtx34[0][2] = mtx[0][2]; mtx34[0][3] = 0.0f;
+    mtx34[1][0] = mtx[1][0]; mtx34[1][1] = mtx[1][1]; mtx34[1][2] = mtx[1][2]; mtx34[1][3] = 0.0f;
+    mtx34[2][0] = mtx[2][0]; mtx34[2][1] = mtx[2][1]; mtx34[2][2] = mtx[2][2]; mtx34[2][3] = 0.0f;
+    pal_gx_load_tex_mtx_imm(mtx34, (u32)(GX_TEXMTX0 + id), GX_MTX3x4);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 0xc);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -679,6 +715,7 @@ void J3DFifoLoadNrmMtxToTexMtx3x3(Mtx3P mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32(0.0f);
+#endif
 }
 
 static u8 J3DTexImage1Ids[8] = {
