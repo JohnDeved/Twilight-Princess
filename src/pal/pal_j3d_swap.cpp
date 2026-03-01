@@ -701,6 +701,9 @@ static void swap_mat2(u8* block, u32 blockSize) {
     }
 }
 
+/* Forward declaration */
+static void swap_anm_block(u8* block, u32 blockSize, u32 blockType);
+
 int pal_j3d_swap_model(void* data, u32 size) {
     if (!data || size < 0x20) return 0;
 
@@ -805,6 +808,23 @@ int pal_j3d_swap_model(void* data, u32 size) {
         case FCC('M','D','L','3'):
             /* MDL3 display list block - contains precompiled GX DLs.
              * Complex format, skip for now. */
+            break;
+        /* Animation blocks */
+        case FCC('A','N','K','1'):
+        case FCC('A','N','F','1'):
+        case FCC('C','L','K','1'):
+        case FCC('C','L','F','1'):
+        case FCC('T','R','K','1'):
+        case FCC('T','R','F','1'):
+        case FCC('T','T','K','1'):
+        case FCC('T','P','T','1'):
+        case FCC('T','P','F','1'):
+        case FCC('P','A','K','1'):
+        case FCC('P','A','F','1'):
+        case FCC('V','A','K','1'):
+        case FCC('V','A','F','1'):
+        case FCC('X','A','K','1'):
+            swap_anm_block(blockPtr, blockSize, blockType);
             break;
         default:
             fprintf(stderr, "[pal_j3d] Unknown block '%c%c%c%c' size=%u\n",

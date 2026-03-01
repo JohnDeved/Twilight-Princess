@@ -11062,6 +11062,39 @@ static int init_phase2(camera_class* i_this) {
 
     fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(i_this);
     if (player == NULL) {
+#if PLATFORM_PC
+        /* On PC, the opening scene may not have a player actor.
+         * After waiting long enough, proceed with a default camera
+         * so the 3D rendering pipeline can activate.
+         * Skip dCamera_c construction — it requires player + CamParam. */
+        if (i_this->field_0x238 < 60) {
+            return cPhs_INIT_e;
+        }
+        dComIfGp_setWindowNum(1);
+
+        f32 near_z = 1.0f;
+        f32 far_z = 160000.0f;
+        if (dComIfGp_getStage()->getStagInfo() != NULL) {
+            near_z = dComIfGp_getStage()->getStagInfo()->mNear;
+            far_z = dComIfGp_getStage()->getStagInfo()->mFar;
+        }
+
+        dDlst_window_c* window = get_window(camera_id);
+        if (window) {
+            fopCamM_SetNear(i_this, near_z);
+            fopCamM_SetFar(i_this, far_z);
+            fopCamM_SetFovy(i_this, 30.0f);
+            fopCamM_SetAspect(i_this, mDoGph_gInf_c::getAspect());
+            fopCamM_SetCenter(i_this, 0.0f, 100.0f, 0.0f);
+            fopCamM_SetBank(i_this, 0);
+            store(camera);
+            view_setup(camera);
+        }
+
+        camera->mCamera.field_0xb0c = 1;
+        i_this->field_0x238 = 0;
+        return cPhs_NEXT_e;
+#endif
         return cPhs_INIT_e;
     }
 

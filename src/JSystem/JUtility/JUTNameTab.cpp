@@ -10,6 +10,7 @@
 /* Maximum reasonable byte offset within a name table string area.
  * Offsets above this are likely un-swapped big-endian u16 values. */
 #define MAX_NAMETAB_OFFSET  0x8000
+#include <sys/mman.h>
 #endif
 
 JUTNameTab::JUTNameTab() {
@@ -24,6 +25,22 @@ void JUTNameTab::setResource(const ResNTAB* pNameTable) {
     mNameTable = pNameTable;
 
     if (pNameTable != NULL) {
+#if PLATFORM_PC
+        /* Validate the pointer is accessible. On PC, J3D data may have
+         * corrupt pointers from incomplete endian swap or 64-bit issues.
+         * Use msync() to probe whether the page is mapped. */
+        {
+            uintptr_t addr = (uintptr_t)pNameTable;
+            uintptr_t page = addr & ~(uintptr_t)0xFFF;
+            if (msync((void*)page, sizeof(ResNTAB), MS_ASYNC) != 0) {
+                /* Page not mapped — invalid pointer */
+                mNameTable = NULL;
+                mNameNum = 0;
+                mpStrData = 0;
+                return;
+            }
+        }
+#endif
         mNameNum = pNameTable->mEntryNum;
 #if PLATFORM_PC
         /* On PC, name tables may be un-swapped big-endian data.

@@ -40,7 +40,7 @@ static void* j3d_safe_load(Func func) {
     memset(&sa_segv_new, 0, sizeof(sa_segv_new));
     sa_segv_new.sa_handler = j3d_sigsegv_handler;
     sigemptyset(&sa_segv_new.sa_mask);
-    sa_segv_new.sa_flags = 0;
+    sa_segv_new.sa_flags = SA_NODEFER;  /* Allow re-delivery of SIGSEGV */
     sa_abrt_new = sa_segv_new;
     sigaction(SIGSEGV, &sa_segv_new, &sa_segv_old);
     sigaction(SIGABRT, &sa_abrt_new, &sa_abrt_old);
@@ -49,6 +49,9 @@ static void* j3d_safe_load(Func func) {
     void* result = NULL;
     if (sigsetjmp(s_j3d_jmpbuf, 1) == 0) {
         result = func();
+    } else {
+        /* Returned from siglongjmp — SIGSEGV/SIGABRT was caught */
+        result = NULL;
     }
     sigaction(SIGSEGV, &sa_segv_old, NULL);
     sigaction(SIGABRT, &sa_abrt_old, NULL);

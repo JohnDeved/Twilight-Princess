@@ -18,6 +18,9 @@
 #include "d/d_simple_model.h"
 #include "d/d_timer.h"
 #include "f_op/f_op_msg_mng.h"
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#endif
 #include "f_op/f_op_scene_mng.h"
 #include "m_Do/m_Do_Reset.h"
 #include "m_Do/m_Do_controller_pad.h"
@@ -2461,6 +2464,33 @@ void dComIfGp_calcNowRegion() {
     u8 buffer[0x800] ATTRIBUTE_ALIGN(32);
 
     dComIfGp_getFieldMapArchive2()->readResource(buffer, 0x800, "dat/field.dat");
+#if PLATFORM_PC
+    {
+        /* Validate the field.dat data before using it. The offset to entry
+         * count must be within the buffer, and entry count must be reasonable.
+         * field.dat is big-endian — swap the header fields. */
+        field_data_header* hdr = (field_data_header*)buffer;
+        u32 off = pal_swap32(hdr->field_0x4);
+        if (off >= 0x7F0 || off == 0) {
+            /* Try native byte order too */
+            off = hdr->field_0x4;
+            if (off >= 0x7F0 || off == 0) {
+                for (int i = 0; i < 64; i++) {
+                    dStage_roomControl_c::setRegionNo(i, 0xFF);
+                }
+                return;
+            }
+        } else {
+            /* Data is big-endian, swap header */
+            hdr->field_0x0 = pal_swap32(hdr->field_0x0);
+            hdr->field_0x4 = off;
+            hdr->field_0x8 = pal_swap32(hdr->field_0x8);
+            hdr->field_0xc = pal_swap32(hdr->field_0xc);
+            hdr->field_0x10 = pal_swap32(hdr->field_0x10);
+            hdr->field_0x14 = pal_swap32(hdr->field_0x14);
+        }
+    }
+#endif
     u8* entry_num_p = &buffer[((field_data_header*)buffer)->field_0x4];
     u8* entries_p = entry_num_p + 4;
 
@@ -2516,7 +2546,24 @@ void dComIfGp_calcNowRegion() {
 u8 dComIfG_getNowCalcRegion() {
     u8 buffer[0x800] ATTRIBUTE_ALIGN(32);
 
+#if PLATFORM_PC
+    if (dComIfGp_getFieldMapArchive2() == NULL) {
+        return 0xFF;
+    }
+#endif
     dComIfGp_getFieldMapArchive2()->readResource(buffer, 0x800, "dat/field.dat");
+#if PLATFORM_PC
+    {
+        field_data_header* hdr = (field_data_header*)buffer;
+        u32 off = pal_swap32(hdr->field_0x4);
+        if (off >= 0x7F0 || off == 0) {
+            off = hdr->field_0x4;
+            if (off >= 0x7F0 || off == 0) return 0xFF;
+        } else {
+            hdr->field_0x4 = off;
+        }
+    }
+#endif
     u8* entry_num_p = &buffer[((field_data_header*)buffer)->field_0x4];
     u8* entries_p = entry_num_p + 4;
 
