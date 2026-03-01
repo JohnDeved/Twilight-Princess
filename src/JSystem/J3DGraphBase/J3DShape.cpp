@@ -157,6 +157,21 @@ void J3DShape::loadVtxArray() const {
     }
 
     J3DLoadArrayBasePtr(GX_VA_CLR0, j3dSys.getVtxCol());
+
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, also load texcoord arrays per-frame.
+     * On GCN these are set via CP array commands in the VcdVat DL, but on PC
+     * those CP commands contain truncated 32-bit physical addresses.
+     * loadVtxArray is called every frame from drawFast, ensuring correct arrays. */
+    if (mVertexData) {
+        for (int i = 0; i < 8; i++) {
+            void* tcArr = mVertexData->getVtxTexCoordArray(i);
+            if (tcArr) {
+                J3DLoadArrayBasePtr((GXAttr)(GX_VA_TEX0 + i), tcArr);
+            }
+        }
+    }
+#endif
 }
 
 bool J3DShape::isSameVcdVatCmd(J3DShape* other) {
