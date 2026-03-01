@@ -3190,8 +3190,6 @@ void dStage_infoCreate() {
                  * Use the archive directly to get the resource. */
                 s32 idx = (s32)(e - arc->mFiles);
                 stageRsrc = arc->getIdxResource(idx);
-                fprintf(stderr, "{\"dStage_fix\":\"direct_lookup\",\"idx\":%d,\"ptr\":\"%p\"}\n",
-                        idx, stageRsrc);
             }
         }
         if (!stageRsrc) { pal_error(PAL_ERR_STAGE_DATA, "dStage_infoCreate: stage.dzs not resolvable"); return; }
@@ -3208,6 +3206,18 @@ void dStage_Create() {
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
 #if PLATFORM_PC
+    if (!stageRsrc) {
+        /* Try direct archive lookup as fallback */
+        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
+        if (info && info->getArchive()) {
+            JKRArchive* arc = info->getArchive();
+            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
+            if (e) {
+                s32 idx = (s32)(e - arc->mFiles);
+                stageRsrc = arc->getIdxResource(idx);
+            }
+        }
+    }
     if (!stageRsrc) {
         /* No stage data available — init env and events with defaults */
         pal_error(PAL_ERR_STAGE_DATA, "dStage_Create: stage.dzs not found");
