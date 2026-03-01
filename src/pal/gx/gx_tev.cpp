@@ -1015,7 +1015,7 @@ void pal_tev_flush_draw(void) {
     }
 
     if (inject_color) {
-        /* Rebuild layout with color attribute (position always Float) */
+        /* Rebuild layout with color attribute AND texture coords */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
         int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
@@ -1027,6 +1027,14 @@ void pal_tev_flush_draw(void) {
         }
         layout.add(bgfx::Attrib::Position, (uint8_t)npos, bgfx::AttribType::Float);
         layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+        /* Add texture coordinates (critical for MODULATE/BLEND/DECAL) */
+        for (int i = 0; i < 8; i++) {
+            if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+                int ntc = (af[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+                layout.add((bgfx::Attrib::Enum)(bgfx::Attrib::TexCoord0 + i),
+                           (uint8_t)ntc, bgfx::AttribType::Float);
+            }
+        }
         layout.end();
         bgfx_stride = layout.getStride();
     }
@@ -1041,20 +1049,13 @@ void pal_tev_flush_draw(void) {
 
     /* Copy vertex data — convert from raw GX format to bgfx float format */
     if (inject_color) {
-        /* Convert position to float, then append constant color */
+        /* Convert position to float, append constant color, then texture coords */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
         int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
-        uint32_t pnmtx_sz = has_pnmtx ? 1 : 0;
-        int num_texmtx = 0;
-        for (int i = 0; i < 8; i++) {
-            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) num_texmtx++;
-        }
-        uint32_t pos_float_sz = npos * 4;
-        uint32_t new_stride = pnmtx_sz + (uint32_t)num_texmtx + pos_float_sz + 4;
 
         for (uint16_t vi = 0; vi < nverts; vi++) {
-            uint8_t* dst = tvb.data + vi * new_stride;
+            uint8_t* dst = tvb.data + vi * bgfx_stride;
             const uint8_t* src = ds->vtx_data + vi * raw_stride;
             uint32_t si = 0, di = 0;
 
@@ -1090,6 +1091,51 @@ void pal_tev_flush_draw(void) {
 
             /* Append constant color */
             memcpy(dst + di, const_clr, 4);
+            di += 4;
+
+            /* Skip normal in source if present */
+            if (desc[GX_VA_NRM].type != GX_NONE) {
+                resolve_attr_data(GX_VA_NRM, src, &si);
+                int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
+                if (desc[GX_VA_NRM].type == GX_DIRECT) si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+            }
+
+            /* Skip CLR0/CLR1 in source if present (we're replacing with const_clr) */
+            for (int ci = 0; ci < 2; ci++) {
+                if (desc[GX_VA_CLR0 + ci].type != GX_NONE) {
+                    resolve_attr_data(GX_VA_CLR0 + ci, src, &si);
+                    if (desc[GX_VA_CLR0 + ci].type == GX_DIRECT) {
+                        int clr_sz = (af[GX_VA_CLR0 + ci].comp_type <= GX_RGB565) ? 2 :
+                                     (af[GX_VA_CLR0 + ci].comp_type == GX_RGB8) ? 3 : 4;
+                        si += clr_sz;
+                    }
+                }
+            }
+
+            /* Texture coordinates → Float */
+            for (int i = 0; i < 8; i++) {
+                if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+                    int ntc = (af[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+                    GXCompType tt = af[GX_VA_TEX0 + i].comp_type;
+                    uint8_t tf = af[GX_VA_TEX0 + i].frac;
+                    uint32_t tc_sz = gx_comp_size(tt);
+                    const uint8_t* tc_data = resolve_attr_data(GX_VA_TEX0 + i, src, &si);
+                    if (desc[GX_VA_TEX0 + i].type == GX_DIRECT) si += ntc * tc_sz;
+                    if (tc_data) {
+                        for (int c = 0; c < ntc; c++) {
+                            float v = read_gx_component(tc_data + c * tc_sz, tt, tf);
+                            memcpy(dst + di, &v, 4);
+                            di += 4;
+                        }
+                    } else {
+                        for (int c = 0; c < ntc; c++) {
+                            float v = 0.0f;
+                            memcpy(dst + di, &v, 4);
+                            di += 4;
+                        }
+                    }
+                }
+            }
         }
     } else {
         /* Full vertex conversion: raw GX → float */
