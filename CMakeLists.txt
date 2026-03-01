@@ -218,6 +218,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -fno-exceptions
         -fno-reorder-blocks-and-partition
     )
+    # GCC auto-vectorizes matrix ops with movaps/movdqa (aligned SSE stores).
+    # The x86-64 ABI guarantees 16-byte stack alignment, but some decompiled
+    # functions violate this through deep call chains.  Tell GCC that the
+    # incoming stack may only be 8-byte aligned so it generates safe code
+    # (movups/movdqu instead of movaps/movdqa).
+    set_source_files_properties(src/pal/pal_math_stubs.cpp PROPERTIES
+        COMPILE_OPTIONS "-mincoming-stack-boundary=3"
+    )
 endif()
 
 # --- Game data setup (auto-download if ROMS_TOKEN is available) ---
