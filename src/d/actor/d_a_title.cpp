@@ -259,7 +259,6 @@ void daTitle_c::loadWait_proc() {
         bool bloOk = mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
 
 #if PLATFORM_PC
-        fprintf(stderr, "{\"daTitle\":\"blo_load\",\"ok\":%d}\n", (int)bloOk);
         if (!bloOk) {
             /* BLO layout is big-endian binary — skip 2D overlay setup on PC
              * until endian conversion is implemented. The 3D model still renders. */
