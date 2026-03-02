@@ -963,6 +963,13 @@ void pal_tev_init(void) {
     memset(s_tex_cache, 0, sizeof(s_tex_cache));
 }
 
+int pal_tev_ready(void) { return s_tev_ready; }
+bgfx::ProgramHandle pal_tev_get_program(int preset) {
+    if (preset >= 0 && preset < GX_TEV_SHADER_COUNT)
+        return s_programs[preset];
+    return BGFX_INVALID_HANDLE;
+}
+
 void pal_tev_shutdown(void) {
     if (!s_tev_ready) return;
 
@@ -1313,6 +1320,35 @@ void pal_tev_flush_draw(void) {
         }
     }
 
+    /* One-time vertex dump for title scene debugging */
+    {
+        static int s_vtx_dump_count = 0;
+        if (s_vtx_dump_count < 2 && nverts >= 4 && preset == GX_TEV_SHADER_BLEND) {
+            s_vtx_dump_count++;
+            fprintf(stderr, "{\"vtx_dump\":{\"draw_id\":%u,\"nverts\":%u,\"stride\":%u,\"raw_stride\":%u,\"inject\":%d,\"verts\":[",
+                    s_total_draw_count, (unsigned)nverts, bgfx_stride, raw_stride, inject_color);
+            for (int vi = 0; vi < (int)nverts && vi < 4; vi++) {
+                const float* fv = (const float*)(tvb.data + vi * bgfx_stride);
+                int nf = bgfx_stride / 4;
+                if (vi > 0) fprintf(stderr, ",");
+                fprintf(stderr, "[");
+                for (int fi = 0; fi < nf && fi < 12; fi++) {
+                    if (fi > 0) fprintf(stderr, ",");
+                    /* Check if this looks like a color (4 bytes packed) or float */
+                    if (fi == 3) {
+                        /* Color0 is stored as 4 packed uint8 bytes */
+                        const uint8_t* cb = (const uint8_t*)(tvb.data + vi * bgfx_stride + fi * 4);
+                        fprintf(stderr, "\"c(%d,%d,%d,%d)\"", cb[0], cb[1], cb[2], cb[3]);
+                    } else {
+                        fprintf(stderr, "%.4f", fv[fi]);
+                    }
+                }
+                fprintf(stderr, "]");
+            }
+            fprintf(stderr, "]}}\n");
+        }
+    }
+
     /* 4. Handle primitive conversion */
     bgfx::TransientIndexBuffer tib;
     int use_index_buffer = 0;
@@ -1373,6 +1409,32 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
+
+    /* One-time MVP dump for title scene debugging */
+    {
+        static int s_mvp_dump = 0;
+        if (s_mvp_dump < 1 && preset == GX_TEV_SHADER_BLEND) {
+            s_mvp_dump++;
+            const float (*gp)[4] = g_gx_state.proj_mtx;
+            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f]}}\n",
+                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
+                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
+                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
+                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
+                    mvp[0],mvp[1],mvp[2],mvp[3],
+                    mvp[4],mvp[5],mvp[6],mvp[7],
+                    mvp[8],mvp[9],mvp[10],mvp[11],
+                    mvp[12],mvp[13],mvp[14],mvp[15]);
+        }
+    }
 
     /* 6. Set vertex buffer */
     bgfx::setVertexBuffer(0, &tvb);
@@ -1460,11 +1522,15 @@ void pal_tev_flush_draw(void) {
                     fprintf(stderr, ",\"tev1_cd\":[%d,%d,%d,%d]",
                             s1->color_a, s1->color_b, s1->color_c, s1->color_d);
                 }
-                fprintf(stderr, ",\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
+                fprintf(stderr, ",\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
                         g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
                         g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
                         g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
-                        g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a);
+                        g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a,
+                        g_gx_state.tev_regs[2].r, g_gx_state.tev_regs[2].g,
+                        g_gx_state.tev_regs[2].b, g_gx_state.tev_regs[2].a,
+                        g_gx_state.tev_regs[3].r, g_gx_state.tev_regs[3].g,
+                        g_gx_state.tev_regs[3].b, g_gx_state.tev_regs[3].a);
             }
         }
 
@@ -1515,6 +1581,28 @@ void pal_tev_flush_draw(void) {
     }
 
     bgfx::setState(state);
+
+    /* One-time state dump for title scene debugging */
+    {
+        static int s_state_dump = 0;
+        if (s_state_dump < 1 && preset == GX_TEV_SHADER_BLEND) {
+            s_state_dump++;
+            fprintf(stderr, "{\"state_dump\":{\"color_update\":%d,\"state\":\"0x%016llX\","
+                    "\"write_rgb\":%d,\"write_a\":%d,"
+                    "\"scissor\":[%d,%d,%d,%d],"
+                    "\"vp\":[%d,%d,%d,%d],"
+                    "\"alpha_comp0\":%d,\"alpha_ref0\":%d}}\n",
+                    g_gx_state.color_update,
+                    (unsigned long long)state,
+                    (int)((state & BGFX_STATE_WRITE_RGB) != 0),
+                    (int)((state & BGFX_STATE_WRITE_A) != 0),
+                    g_gx_state.sc_left, g_gx_state.sc_top,
+                    g_gx_state.sc_wd, g_gx_state.sc_ht,
+                    (int)g_gx_state.vp_left, (int)g_gx_state.vp_top,
+                    (int)g_gx_state.vp_wd, (int)g_gx_state.vp_ht,
+                    g_gx_state.alpha_comp0, g_gx_state.alpha_ref0);
+        }
+    }
 
     /* Apply scissor if set to a non-fullscreen region */
     if (g_gx_state.sc_wd > 0 && g_gx_state.sc_ht > 0) {
