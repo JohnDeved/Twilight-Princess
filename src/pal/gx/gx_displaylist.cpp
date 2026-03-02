@@ -297,28 +297,24 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
         return;
     }
 
-    /* Material ambient colors: XF 0x100A-0x100B (2 channels, RGBA8 packed) */
-    if (addr == 0x100A && count >= 1) {
-        for (u16 i = 0; i < count && i < 2; i++) {
+    /* Material/ambient color block: XF 0x100A-0x100D
+     * The J3D material DL often writes the entire block in one XF command
+     * starting at 0x100A with count=4 (ambient0, ambient1, material0, material1).
+     * Must handle contiguous writes that span multiple register types. */
+    if (addr >= 0x100A && addr <= 0x100D) {
+        for (u16 i = 0; i < count; i++) {
+            u16 cur_addr = addr + i;
+            if (cur_addr > 0x100D) break;
             GXColor c;
             c.r = (u8)((values[i] >> 24) & 0xFF);
             c.g = (u8)((values[i] >> 16) & 0xFF);
             c.b = (u8)((values[i] >> 8) & 0xFF);
             c.a = (u8)(values[i] & 0xFF);
-            pal_gx_set_chan_amb_color((GXChannelID)(GX_COLOR0A0 + i), c);
-        }
-        return;
-    }
-
-    /* Material diffuse colors: XF 0x100C-0x100D (2 channels, RGBA8 packed) */
-    if (addr == 0x100C && count >= 1) {
-        for (u16 i = 0; i < count && i < 2; i++) {
-            GXColor c;
-            c.r = (u8)((values[i] >> 24) & 0xFF);
-            c.g = (u8)((values[i] >> 16) & 0xFF);
-            c.b = (u8)((values[i] >> 8) & 0xFF);
-            c.a = (u8)(values[i] & 0xFF);
-            pal_gx_set_chan_mat_color((GXChannelID)(GX_COLOR0A0 + i), c);
+            if (cur_addr <= 0x100B) {
+                pal_gx_set_chan_amb_color((GXChannelID)(GX_COLOR0A0 + (cur_addr - 0x100A)), c);
+            } else {
+                pal_gx_set_chan_mat_color((GXChannelID)(GX_COLOR0A0 + (cur_addr - 0x100C)), c);
+            }
         }
         return;
     }

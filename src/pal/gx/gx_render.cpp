@@ -128,14 +128,20 @@ int pal_render_init(void) {
     void* native_display = pal_window_get_native_display();
 
     if (native_handle) {
-        /* Real window (physical or Xvfb) — let bgfx auto-select renderer.
-         * bgfx will pick OpenGL via EGL if available, or another backend. */
-        init.type = bgfx::RendererType::Count; /* auto */
+        /* Real window (physical or Xvfb).
+         * Force OpenGL on headless Xvfb — auto-select may try EGL which crashes
+         * in Mesa's software renderer (LLVM SIGSEGV before bgfx::init returns). */
+        if (headless) {
+            init.type = bgfx::RendererType::OpenGL;
+        } else {
+            init.type = bgfx::RendererType::Count; /* auto */
+        }
         init.platformData.nwh = native_handle;
         init.platformData.ndt = native_display;
         s_using_noop = 0;
-        fprintf(stderr, "{\"render\":\"init\",\"renderer\":\"auto\","
+        fprintf(stderr, "{\"render\":\"init\",\"renderer\":\"%s\","
                 "\"headless\":%s,\"nwh\":\"%p\"}\n",
+                headless ? "OpenGL" : "auto",
                 headless ? "true" : "false", native_handle);
     } else if (headless) {
         /* No display at all — Noop fallback */

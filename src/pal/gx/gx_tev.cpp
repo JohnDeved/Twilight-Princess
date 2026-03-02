@@ -1056,58 +1056,6 @@ void pal_tev_flush_draw(void) {
     uint32_t raw_stride = calc_raw_vertex_stride();
     if (raw_stride == 0) return;
 
-    /* One-shot diagnostic: dump vertex array state for first indexed draw */
-    {
-        static int s_arr_log = 0;
-        const GXVtxDescEntry* d = g_gx_state.vtx_desc;
-        if (s_arr_log < 3 && d[GX_VA_POS].type >= GX_INDEX8) {
-            s_arr_log++;
-            fprintf(stderr, "[VTX_ARRAY_DIAG] draw=%u raw_stride=%u bgfx_stride=%u nverts=%u\n",
-                    s_total_draw_count, raw_stride, bgfx_stride, ds->verts_written);
-            for (int a = GX_VA_PNMTXIDX; a < GX_MAX_VTXATTR; a++) {
-                if (d[a].type == GX_NONE) continue;
-                fprintf(stderr, "  attr[%d] type=%d arr_ptr=%p arr_stride=%u\n",
-                        a, d[a].type,
-                        g_gx_state.vtx_arrays[a].base_ptr,
-                        (unsigned)g_gx_state.vtx_arrays[a].stride);
-                if (d[a].type >= GX_INDEX8 && g_gx_state.vtx_arrays[a].base_ptr) {
-                    const uint8_t* p = (const uint8_t*)g_gx_state.vtx_arrays[a].base_ptr;
-                    fprintf(stderr, "    first bytes: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                            p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
-                }
-            }
-            /* Dump first few raw vertex bytes */
-            fprintf(stderr, "  raw vtx[0]: ");
-            for (uint32_t b = 0; b < raw_stride && b < 16; b++)
-                fprintf(stderr, "%02x ", ds->vtx_data[b]);
-            fprintf(stderr, "\n");
-            /* Resolve and show position for vertex 0 */
-            {
-                uint32_t si = 0;
-                const uint8_t* pos_data = resolve_attr_data(GX_VA_POS, ds->vtx_data, &si);
-                if (pos_data) {
-                    const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
-                    GXCompType pt = af[GX_VA_POS].comp_type;
-                    uint8_t frac = af[GX_VA_POS].frac;
-                    uint32_t csz = gx_comp_size(pt);
-                    fprintf(stderr, "  resolved pos[0]: raw=[%02x%02x %02x%02x %02x%02x] "
-                            "comp_type=%d frac=%d csz=%u -> ",
-                            pos_data[0], pos_data[1], pos_data[2], pos_data[3],
-                            pos_data[4], pos_data[5], pt, frac, csz);
-                    for (int c = 0; c < 3; c++) {
-                        float v = read_gx_component(pos_data + c * csz, pt, frac);
-                        fprintf(stderr, "%.4f ", v);
-                    }
-                    fprintf(stderr, "\n");
-                } else {
-                    fprintf(stderr, "  resolved pos[0]: NULL (base_ptr=%p stride=%u)\n",
-                            g_gx_state.vtx_arrays[GX_VA_POS].base_ptr,
-                            (unsigned)g_gx_state.vtx_arrays[GX_VA_POS].stride);
-                }
-            }
-        }
-    }
-
     /* 3. Check if we need to inject constant color when vertex color is missing.
      * PASSCLR: inject from TEV registers or material color.
      * MODULATE/BLEND/DECAL: inject from material color (GCN hardware uses
@@ -1368,23 +1316,16 @@ void pal_tev_flush_draw(void) {
             }
             /* Log first few textured draws for diagnostics */
             static int s_tex_log_count = 0;
-            if (s_tex_log_count < 20) {
+            if (s_tex_log_count < 10) {
                 s_tex_log_count++;
-                const GXTevStage* s1 = (g_gx_state.num_tev_stages > 1) ? &g_gx_state.tev_stages[1] : NULL;
                 fprintf(stderr, "{\"tev_tex_draw\":{\"n\":%d,\"draw_id\":%u,\"preset\":\"%s\","
                         "\"tex_valid\":%d,\"tex_map\":%d,"
                         "\"w\":%u,\"h\":%u,\"fmt\":%d,\"img_ptr\":\"%p\","
                         "\"nverts\":%u,\"stride\":%u,\"prim\":%d,"
                         "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
                         "\"z_enable\":%d,\"z_func\":%d,"
-                        "\"num_tev_stages\":%d,"
                         "\"mvp_diag\":[%.3f,%.3f,%.3f,%.3f],"
-                        "\"tev0\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]},"
-                        "\"tev1\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]},"
-                        "\"tev_reg0\":[%d,%d,%d,%d],\"tev_reg1\":[%d,%d,%d,%d],"
-                        "\"mat_color\":[%d,%d,%d,%d],"
-                        "\"inject_color\":%d,\"const_clr\":[%d,%d,%d,%d],"
-                        "\"vtx_pos0\":[%.3f,%.3f,%.3f]"
+                        "\"tev\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}"
                         "}}\n",
                         s_tex_log_count, s_total_draw_count, s_fs_names[preset],
                         bgfx::isValid(tex) ? 1 : 0,
@@ -1394,24 +1335,9 @@ void pal_tev_flush_draw(void) {
                         (unsigned)nverts, raw_stride, ds->prim_type,
                         g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
                         g_gx_state.z_compare_enable, g_gx_state.z_func,
-                        g_gx_state.num_tev_stages,
                         mvp[0], mvp[5], mvp[10], mvp[15],
                         s0->color_a, s0->color_b, s0->color_c, s0->color_d,
-                        s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d,
-                        s1 ? s1->color_a : -1, s1 ? s1->color_b : -1,
-                        s1 ? s1->color_c : -1, s1 ? s1->color_d : -1,
-                        s1 ? s1->alpha_a : -1, s1 ? s1->alpha_b : -1,
-                        s1 ? s1->alpha_c : -1, s1 ? s1->alpha_d : -1,
-                        g_gx_state.tev_regs[GX_TEVREG0].r, g_gx_state.tev_regs[GX_TEVREG0].g,
-                        g_gx_state.tev_regs[GX_TEVREG0].b, g_gx_state.tev_regs[GX_TEVREG0].a,
-                        g_gx_state.tev_regs[GX_TEVREG1].r, g_gx_state.tev_regs[GX_TEVREG1].g,
-                        g_gx_state.tev_regs[GX_TEVREG1].b, g_gx_state.tev_regs[GX_TEVREG1].a,
-                        g_gx_state.chan_ctrl[0].mat_color.r, g_gx_state.chan_ctrl[0].mat_color.g,
-                        g_gx_state.chan_ctrl[0].mat_color.b, g_gx_state.chan_ctrl[0].mat_color.a,
-                        inject_color, const_clr[0], const_clr[1], const_clr[2], const_clr[3],
-                        (nverts > 0 && bgfx_stride >= 12) ? *(float*)(tvb.data + 0) : 0.0f,
-                        (nverts > 0 && bgfx_stride >= 12) ? *(float*)(tvb.data + 4) : 0.0f,
-                        (nverts > 0 && bgfx_stride >= 12) ? *(float*)(tvb.data + 8) : 0.0f);
+                        s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d);
             }
         }
 

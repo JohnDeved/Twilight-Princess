@@ -6,7 +6,6 @@
 __pycache__
 .mypy_cache
 .cache/
-
 # Original files
 orig/*/*
 !orig/*/.gitkeep
@@ -16,44 +15,35 @@ orig/*/*
 *.o
 *.map
 *.MAP
-
 # Build files
 build/
 build-pc/
 .ninja_*
 build.ninja
-
 # decompctx output
 ctx.*
 *.ctx
-
 # Generated configs
 objdiff.json
 compile_commands.json
-
 # Miscellaneous
 /*.txt
 !CMakeLists.txt
 *.exe
-
 # PC port game data (symlink to extracted disc files)
 /data
-
 # MacOS
 .DS_Store
-
 # ISOs
 *.iso
 crash.log
 milestones.log
-
 # CI-generated outputs
 verify_output/
 verify_png/
 verify-report.json
 milestone-summary.json
 regression-report.json
-
 # PC port save data
 /save
 logo_render.bmp
@@ -61,4 +51,3 @@ logo_render.bmp
 /test_output2/
 build_pc/
 build-asan/
-verify_output/
