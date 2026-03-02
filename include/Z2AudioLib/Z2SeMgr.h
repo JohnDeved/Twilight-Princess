@@ -80,7 +80,7 @@ public:
     bool isSoundCulling(JAISoundID soundID);
     void resetCrowdSize() { mCrowdSize = 0; }
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     void homeMenuSeCallback(s32);    
 #endif
 

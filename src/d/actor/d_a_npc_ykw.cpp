@@ -2726,7 +2726,7 @@ int daNpc_ykW_c::race(void* param_0) {
             field_0xff0.z = mpPath->m_points[mpPath->m_num - 1].m_position.z;
             targetAngleY = cLib_targetAngleY(&field_0xff0, &daPy_getPlayerActorClass()->current.pos);
             if (field_0x104c < 0 ||
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
                 field_0x1044.field_0x0 >= 0 &&
 #endif
                     field_0xff0.abs2(daPy_getPlayerActorClass()->current.pos) < 640000.0f &&
@@ -2757,7 +2757,7 @@ int daNpc_ykW_c::race(void* param_0) {
                     mEvtNo = 9;
                 }
             }
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
             else {
 #else
             if (field_0x104c >= 0) {

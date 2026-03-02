@@ -3,7 +3,7 @@
 
 #include <cstring>
 #include "SSystem/SComponent/c_xyz.h"
-#include <dolphin/os.h>
+#include <os.h>
 #include "global.h"
 #include "f_pc/f_pc_name.h"
 #include "JSystem/JUtility/JUTAssert.h"
@@ -1026,7 +1026,7 @@ public:
 #if VERSION > VERSION_GCN_JPN
     const
 #endif
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
     s16
 #else
     u16

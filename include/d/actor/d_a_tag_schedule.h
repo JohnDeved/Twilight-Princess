@@ -15,7 +15,7 @@ public:
     u8 getStartEnd() { return (fopAcM_GetParam(this) >> 20) & 0xff; }
     int getGroupID() { return fopAcM_GetParam(this) & 0x3f; }
     int getWeekNum() { return mWeekNum; }
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
     void setWeekNum(u32 weekNum) { mWeekNum = weekNum % 7; }
 #else
     void setWeekNum(int weekNum) { mWeekNum = weekNum % (u32)7; }

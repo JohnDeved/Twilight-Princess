@@ -1,7 +1,7 @@
 #ifndef DYNAMICLINK_H
 #define DYNAMICLINK_H
 
-#include <dolphin/os.h>
+#include <os.h>
 #include "JSystem/JKernel/JKRHeap.h"
 #include "global.h"
 
@@ -54,7 +54,7 @@ struct DynamicModuleControlBase {
     static u8 verbose;
     #endif
 
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     static JKRHeap* getHeap() { return m_heap; }
 
     static JKRHeap* m_heap;

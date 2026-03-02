@@ -10,7 +10,11 @@
 #include "d/d_meter2_info.h"
 #include "d/d_meter_HIO.h"
 #include "d/d_msg_string.h"
+<<<<<<< HEAD
 #include <dolphin/types.h>
+=======
+#include <types.h>
+>>>>>>> port
 #include <cstring>
 #include "m_Do/m_Do_controller_pad.h"
 #include "m_Do/m_Do_graphic.h"

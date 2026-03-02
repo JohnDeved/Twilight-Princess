@@ -7,7 +7,11 @@
 
 #include "d/actor/d_a_npc_wrestler.h"
 #include "d/d_timer.h"
+<<<<<<< HEAD
 #include <dolphin/types.h>
+=======
+#include <types.h>
+>>>>>>> port
 #include <cstring>
 #include "d/actor/d_a_tag_arena.h"
 #include "d/actor/d_a_npc_gra.h"
@@ -5226,7 +5230,7 @@ actor_process_profile_definition g_profile_NPC_WRESTLER = {
   fpcPi_CURRENT_e,            // mListPrio
   PROC_NPC_WRESTLER,          // mProcName
   &g_fpcLf_Method.base,      // sub_method
-  0xEA0,                      // mSize (fix this)
+  sizeof(daNpcWrestler_c),                      // mSize
   0,                          // mSizeOther
   0,                          // mParameters
   &g_fopAc_Method.base,       // sub_method

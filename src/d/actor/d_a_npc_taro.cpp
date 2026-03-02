@@ -18,7 +18,11 @@
 #include "d/d_msg_object.h"
 #include "f_op/f_op_actor.h"
 #include "f_op/f_op_camera_mng.h"
+<<<<<<< HEAD
 #include <dolphin/types.h>
+=======
+#include <types.h>
+>>>>>>> port
 #include <cstring>
 
 daNpc_Maro_c::actionFunc dummy_lit_3931() {

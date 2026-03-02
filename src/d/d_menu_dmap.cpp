@@ -25,7 +25,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include <cstring>
 
-#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+#if (PLATFORM_WII || PLATFORM_SHIELD)
 #define POINTER_OPT dComIfGs_getOptPointer()
 #else
 #define POINTER_OPT 0
@@ -146,7 +146,11 @@ void dMenu_DmapBg_c::mapScreenInit() {
         dPaneClass_showNullPane(mMapScreen[i]);
     }
     
+<<<<<<< HEAD
     #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+=======
+    #if (PLATFORM_WII || PLATFORM_SHIELD)
+>>>>>>> port
     mpBlack = new CPaneMgrAlpha(mMapScreen[0], MULTI_CHAR('m_black'), 2, NULL);
     JUT_ASSERT(699, mpBlack != NULL);
     mpBlack->setAlphaRate(0.0f);
@@ -301,7 +305,7 @@ void dMenu_DmapBg_c::buttonIconScreenInit() {
     JUT_ASSERT(922, fg != false);
     dPaneClass_showNullPane(mButtonScreen);
 
-    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+    #if (PLATFORM_WII || PLATFORM_SHIELD)
     mDecorateScreen = new J2DScreen();
     JUT_ASSERT(926, mDecorateScreen != NULL);
 

@@ -18,7 +18,7 @@
 #include "d/d_camera.h"
 #include <cstring>
 
-#if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+#if (PLATFORM_WII || PLATFORM_SHIELD)
 dMeter_map_HIO_c g_meter_mapHIO;
 #endif
 
@@ -268,7 +268,7 @@ bool dMeterMap_c::isEnableDispMapAndMapDispSizeTypeNo() {
 }
 
 f32 dMeterMap_c::getMapDispEdgeBottomY_Layout() {
-    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+    #if (PLATFORM_WII || PLATFORM_SHIELD)
     if (dComIfGs_getOptPointer() == 0) {
         return g_meter_mapHIO.mGcY;
     }
@@ -300,7 +300,7 @@ bool dMeterMap_c::isEventRunCheck() {
 }
 
 f32 dMeterMap_c::getMapDispEdgeLeftX_Layout() {
-    #if (PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC)
+    #if (PLATFORM_WII || PLATFORM_SHIELD)
     if (mDoGph_gInf_c::isWide()) {
         return g_meter_mapHIO.mWideBottomLeftX + field_0x28;
     }

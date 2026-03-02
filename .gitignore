@@ -33,11 +33,7 @@ compile_commands.json
 
 # Miscellaneous
 /*.txt
-!CMakeLists.txt
 *.exe
-
-# PC port game data (symlink to extracted disc files)
-/data
 
 # MacOS
 .DS_Store

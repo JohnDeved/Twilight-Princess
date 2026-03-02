@@ -20,7 +20,7 @@
 #include "d/d_menu_collect.h"
 #include "d/d_jcam_editor.h"
 #include "d/d_jpreviewer.h"
-#include <dolphin/base/PPCArch.h>
+#include <base/PPCArch.h>
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
@@ -33,14 +33,17 @@
 #include "DynamicLink.h"
 #include <cstring>
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 #include <revolution/sc.h>
 #endif
 
+<<<<<<< HEAD
 #if PLATFORM_PC
 #include "pal/gx/gx_render.h"
 #endif
 
+=======
+>>>>>>> port
 #if PLATFORM_WII
 #include "d/d_cursor_mng.h"
 #endif
@@ -199,7 +202,7 @@ static void drawHeapMap() {
                 heap = mDoExt_getGameHeap();
                 OSReport_Error("ゲームヒープマップ表示\n");
             } else if (l_heapMapMode == 2) {
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
                 heap = (JKRExpHeap*)DynamicModuleControlBase::getHeap();
                 OSReport_Error("ダイナミックリンクヒープマップ表示\n");
 #endif
@@ -253,7 +256,7 @@ static ResTIMG* createTimg(u16 width, u16 height, u32 format) {
 
 JUTFader* mDoGph_gInf_c::mFader;
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 ResTIMG* mDoGph_gInf_c::m_fullFrameBufferTimg;
 void* mDoGph_gInf_c::m_fullFrameBufferTex;
 #endif
@@ -283,7 +286,7 @@ u8 mDoGph_gInf_c::mFade;
 bool mDoGph_gInf_c::mAutoForcus;
 
 void mDoGph_gInf_c::create() {
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     VISetTrapFilter(0);
     #endif
 
@@ -305,7 +308,7 @@ void mDoGph_gInf_c::create() {
     JUTProcBar::getManager()->setVisible(false);
     JUTDbPrint::getManager()->setVisible(false);
 
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     m_fullFrameBufferTimg = createTimg(FB_WIDTH, FB_HEIGHT, 6);
     JUT_ASSERT(366, m_fullFrameBufferTimg != NULL);
     m_fullFrameBufferTex = (char*)m_fullFrameBufferTimg + sizeof(ResTIMG);
@@ -326,7 +329,7 @@ void mDoGph_gInf_c::create() {
     mBackColor = g_clearColor;
     mFadeColor = g_clearColor;
 
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     if (SCGetAspectRatio() == 0) {
         offWide();
     } else {
@@ -340,7 +343,7 @@ void mDoGph_gInf_c::create() {
 static bool data_80450BE8;
 
 void mDoGph_gInf_c::beginRender() {
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     VISetTrapFilter(fapGmHIO_getTrapFilter() ? 1 : 0);
     VISetGamma((VIGamma)fapGmHIO_getGamma());
     #endif
@@ -351,12 +354,12 @@ void mDoGph_gInf_c::beginRender() {
 
     JFWDisplay::getManager()->beginRender();
 
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     VIEnableDimming(1);
     #endif
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 void mDoGph_gInf_c::resetDimming() {
     VIEnableDimming(0);
 }
@@ -380,7 +383,7 @@ void mDoGph_gInf_c::onBlure() {
     onBlure(cMtx_getIdentity());
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 GXTexObj mDoGph_gInf_c::m_fullFrameBufferTexObj;
 #endif
 
@@ -474,7 +477,7 @@ void mDoGph_gInf_c::calcFade() {
     }
 }
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 u32 mDoGph_gInf_c::csr_c::m_blurID;
 
 void mDoGph_gInf_c::csr_c::particleExecute() {
@@ -493,13 +496,13 @@ f32 mDoGph_gInf_c::m_minXF;
 
 f32 mDoGph_gInf_c::m_minYF;
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 mDoGph_gInf_c::csr_c* mDoGph_gInf_c::m_baseCsr;
 
 mDoGph_gInf_c::csr_c* mDoGph_gInf_c::m_csr;
 #endif
 
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
 JKRHeap* mDoGph_gInf_c::m_heap;
 #endif
 
@@ -669,7 +672,7 @@ void mDoGph_gInf_c::setWideZoomLightProjection(Mtx& m) {
 }
 #endif
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 void mDoGph_gInf_c::entryBaseCsr(mDoGph_gInf_c::csr_c* i_entry) {
     JUT_ASSERT(876, m_baseCsr == NULL);
     m_baseCsr = i_entry;
@@ -1524,6 +1527,7 @@ static void drawItem3D() {
 }
 
 int mDoGph_Painter() {
+<<<<<<< HEAD
 #if PLATFORM_PC
     /* On PC, use bgfx for rendering. Draw 3D scene + 2D overlays. */
     if (JFWDisplay::getManager() != NULL) {
@@ -1617,6 +1621,8 @@ int mDoGph_Painter() {
     }
     return 1;
 #else
+=======
+>>>>>>> port
     #if DEBUG
     drawHeapMap();
     #endif
@@ -2205,7 +2211,6 @@ int mDoGph_Painter() {
     mDoGph_gInf_c::offWideZoom();
     #endif
     return 1;
-#endif /* !PLATFORM_PC */
 }
 
 #if DEBUG
@@ -2224,7 +2229,7 @@ int mDoGph_Create() {
     mDoExt_restoreCurrentHeap();
 
     OS_REPORT("mDoGph_Create 使用ヒープサイズ=%08x\n", var_r30);
-    #if PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_SHIELD
     mDoGph_gInf_c::setHeap(heap);
     #endif
 

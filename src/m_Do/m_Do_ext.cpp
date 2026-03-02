@@ -5,8 +5,8 @@
 
 #include "d/dolzel.h" // IWYU pragma: keep
 
-#include <dolphin/gf/GFPixel.h>
-#include <dolphin/gx.h>
+#include <gf/GFPixel.h>
+#include <gx.h>
 #include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
@@ -24,6 +24,7 @@
 #include "m_Do/m_Do_mtx.h"
 #include <cstdio>
 #include <cstring>
+<<<<<<< HEAD
 #if PLATFORM_PC
 #include <signal.h>
 #include <setjmp.h>
@@ -39,6 +40,8 @@ static void mdl_sigsegv_handler(int sig) {
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #endif
+=======
+>>>>>>> port
 
 u8 mDoExt::CurrentHeapAdjustVerbose;
 u8 mDoExt::HeapAdjustVerbose;
@@ -3686,6 +3689,7 @@ static void mDoExt_initFontCommon(JUTFont** mDoExt_font_p, ResFONT** mDoExt_resf
     JUT_ASSERT_MSG(7141, *mDoExt_font == NULL, "mDoExt_font == 0");
     JUT_ASSERT_MSG(7142, *mDoExt_resfont == NULL, "mDoExt_resfont == 0");
     *mDoExt_resfont = (ResFONT*)JKRGetResource('ROOT', param_3, param_4);
+<<<<<<< HEAD
 #if PLATFORM_PC
     /* On PC, font resources are big-endian binary from the disc.
      * Byte-swap in-place before parsing. */
@@ -3698,6 +3702,8 @@ static void mDoExt_initFontCommon(JUTFont** mDoExt_font_p, ResFONT** mDoExt_resf
         return;
     }
 #endif
+=======
+>>>>>>> port
     JUT_ASSERT_MSG(7144, *mDoExt_resfont != NULL, "mDoExt_resfont != 0");
     if (param_5 == 0) {
         u32 cacheSize = JUTCacheFont::calcCacheSize(param_7, param_6);

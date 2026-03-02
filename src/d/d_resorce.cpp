@@ -18,6 +18,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include <cstdio>
 #include <cstring>
+<<<<<<< HEAD
 #if PLATFORM_PC
 #include "pal/pal_j3d_swap.h"
 #include "pal/pal_endian.h"
@@ -64,6 +65,8 @@ static void* j3d_safe_load(Func func) {
     return result;
 }
 #endif
+=======
+>>>>>>> port
 
 dRes_info_c::dRes_info_c() {
     mCount = 0;

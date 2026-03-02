@@ -1217,7 +1217,7 @@ bool daNpcChin_c::wait(void* param_0) {
             u16 eventMask = 0xffff;
             if (mOrderEvtNo == EVT_CHIN_APPEAR) {
                 // maybe fakematch? this still doesn't quite match for debug but it's closer
-#if PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_SHIELD
                 eventMask = eventMask & 0xff7f;
 #else
                 eventMask &= ~0x80;

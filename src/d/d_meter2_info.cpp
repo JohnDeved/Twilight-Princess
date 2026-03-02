@@ -12,9 +12,12 @@
 #include "d/d_msg_class.h"
 #include "d/d_msg_object.h"
 #include <cstring>
+<<<<<<< HEAD
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
 #endif
+=======
+>>>>>>> port
 
 enum ITEMICON_RES_FILE_ID {
     ITEMICON_BTI_ARI_MESU_00=0x3,

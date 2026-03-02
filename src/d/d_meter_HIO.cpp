@@ -729,7 +729,7 @@ dMeter_drawEmpButtonHIO_c::dMeter_drawEmpButtonHIO_c() {
         mDebugDisplayButton[0] = 0;
     }
 
-    #if PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_SHIELD
     mDisplaySpace = 70.0f;
     #else
     mDisplaySpace = 35.0f;

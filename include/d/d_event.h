@@ -145,7 +145,7 @@ public:
     void setDebugStb(u8 stb) { mDebugStb = stb; }
     u8 getMapToolId() { return mMapToolId; }
     BOOL chkTalkXY() {
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
         return mTalkXyType == 1 || mTalkXyType == 2 || mTalkXyType == 3 || mTalkXyType == 4;
 #else
         return mTalkXyType == 1 || mTalkXyType == 2;
@@ -200,7 +200,7 @@ public:
     /* 0x128 */ u8 mCompulsory;
     /* 0x129 */ bool mRoomInfoSet;
     /* 0x12C */ int mRoomNo;
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     /* 0x130 */ u8 field_0x130;
 #endif
 };

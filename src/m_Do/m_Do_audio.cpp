@@ -13,7 +13,7 @@
 #include "m_Do/m_Do_Reset.h"
 #include "m_Do/m_Do_dvd_thread.h"
 
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
 #include "Z2AudioCS/Z2AudioCS.h"
 #include <revolution/sc.h>
 #endif
@@ -26,7 +26,7 @@ u8 mDoAud_zelAudio_c::mInitFlag;
 
 u8 mDoAud_zelAudio_c::mResetFlag;
 
-bool mDoAud_zelAudio_c::mBgmSet;
+u8 mDoAud_zelAudio_c::mBgmSet;
 
 void mDoAud_zelAudio_c::reset() {
     mBgmSet = false;
@@ -49,6 +49,7 @@ static void dummy() {
 #endif
 
 static void mDoAud_Create() {
+<<<<<<< HEAD
 #if PLATFORM_PC
     /* Phase A: Skip J-Audio engine initialization on PC.
      * The BAA/BMS/etc data from disc is big-endian and the J-Audio engine
@@ -59,6 +60,8 @@ static void mDoAud_Create() {
     mDoDvdThd::SyncWidthSound = true;
     return;
 #endif
+=======
+>>>>>>> port
     if (l_affCommand == NULL) {
 #if DEBUG
         if (!mDoRst::getLogoScnFlag()) {
@@ -91,7 +94,7 @@ static void mDoAud_Create() {
         JUTReportConsole_f("mDoAud_Create loading Z2SoundSeqs.arc\n");
 #endif
     }
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
     if (l_CSarcCommand == NULL) {
 #if DEBUG
         if (!mDoRst::getLogoScnFlag()) {
@@ -111,7 +114,7 @@ static void mDoAud_Create() {
 #endif
     if (
         l_affCommand->sync()
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
         && l_CSarcCommand->sync()
 #endif
         && l_arcCommand->sync()
@@ -127,7 +130,7 @@ static void mDoAud_Create() {
             const int audioMemSize = 0xB00000;
 #endif
             g_mDoAud_zelAudio.init(g_mDoAud_audioHeap, audioMemSize, l_affCommand->getMemAddress(), l_arcCommand->getArchive());
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
             Z2AudioCS::init(mDoExt_getGameHeap(), l_CSarcCommand->getArchive(), 15, 1);
 #endif
             JKRGetCurrentHeap()->changeGroupID(groupID);
@@ -155,7 +158,7 @@ static void mDoAud_Create() {
         JKRFree(l_affCommand->getMemAddress());
         l_affCommand->destroy();
         l_arcCommand->destroy();
-#if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+#if PLATFORM_WII || PLATFORM_SHIELD
         l_CSarcCommand->destroy();
         mDoAud_loadStaticWaves();
 #endif
@@ -168,12 +171,6 @@ static void mDoAud_Create() {
 }
 
 void mDoAud_Execute() {
-#if PLATFORM_PC
-    if (!mDoAud_zelAudio_c::isInitFlag()) {
-        mDoAud_Create();
-    }
-    return;
-#endif
     if (!mDoAud_zelAudio_c::isInitFlag()) {
         if (!mDoRst::isShutdown() && !mDoRst::isReturnToMenu()) {
             mDoAud_Create();

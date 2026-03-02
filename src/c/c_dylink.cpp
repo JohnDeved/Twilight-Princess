@@ -10,11 +10,14 @@
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_ext.h"
 #include <cstring>
+<<<<<<< HEAD
 #if PLATFORM_PC
 #include "f_pc/f_pc_profile.h"
 #include "d/d_procname.h"
 #include <cstdio>
 #endif
+=======
+>>>>>>> port
 
 #if DEBUG
 #include "f_pc/f_pc_debug_sv.h"
@@ -27,7 +30,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_Obj_Swpush2, "d_a_obj_swpush2"},
     {PROC_Obj_Swpush5, "d_a_obj_swpush5"},
     {PROC_Tag_Gstart, "d_a_tag_gstart"},
-    #if PLATFORM_WII || PLATFORM_SHIELD || PLATFORM_PC
+    #if PLATFORM_WII || PLATFORM_SHIELD
     {PROC_NO_CHG_ROOM, "d_a_no_chg_room"},
     #endif
     {PROC_Obj_Lv6ElevtA, "d_a_obj_lv6elevta"},
@@ -104,7 +107,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_Obj_BkDoor, "d_a_obj_bkdoor"},
     {PROC_Obj_Cboard, "d_a_obj_cboard"},
     {PROC_Obj_MGate, "d_a_obj_mgate"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_Obj_Ikada, "d_a_obj_ikada"},
     #endif
     {PROC_Obj_Ice_l, "d_a_obj_ice_l"},
@@ -545,7 +548,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_Obj_LifeContainer, "d_a_obj_life_container"},
     {PROC_Obj_Shield, "d_a_obj_shield"},
     {PROC_Demo_Item, "d_a_demo_item"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_ShopItem, "d_a_shop_item"},
     #endif
     {PROC_Obj_Drop, "d_a_obj_drop"},
@@ -554,7 +557,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_TAG_CSW, "d_a_tag_csw"},
     {PROC_TAG_QS, "d_a_tag_qs"},
     {PROC_HOZELDA, "d_a_hozelda"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_SWC00, "d_a_swc00"},
     #endif
     {PROC_KNOB20, "d_a_door_knob00"},
@@ -568,7 +571,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_Tag_ChgRestart, "d_a_tag_chgrestart"},
     {PROC_Tag_Restart, "d_a_tag_setrestart"},
     {PROC_ANDSW, "d_a_andsw"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_ANDSW2, "d_a_andsw2"},
     #endif
     {PROC_MYNA, "d_a_myna"},
@@ -689,12 +692,12 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_NPC_CHIN, "d_a_npc_chin"},
     {PROC_NPC_INS, "d_a_npc_ins"},
     {PROC_NPC_SHOP0, "d_a_npc_shop0"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_NPC_MK, "d_a_npc_mk"},
     #endif
     {PROC_NPC_P2, "d_a_npc_p2"},
     {PROC_KYTAG00, "d_a_kytag00"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_KYTAG01, "d_a_kytag01"},
     #endif
     {PROC_KYTAG02, "d_a_kytag02"},
@@ -734,13 +737,13 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_DEMO00, "d_a_demo00"},
     {PROC_TAG_CAMERA, "d_a_tag_camera"},
     {PROC_TAG_CHKPOINT, "d_a_tag_chkpoint"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_TAG_EVENT, "d_a_tag_event"},
     #endif
     {PROC_TAG_EVT, "d_a_tag_evt"},
     {PROC_TAG_TELOP, "d_a_tag_telop"},
     {PROC_TAG_HOWL, "d_a_tag_howl"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_TAG_MSG, "d_a_tag_msg"},
     #endif
     {PROC_TAG_LANTERN, "d_a_tag_lantern"},
@@ -753,7 +756,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_BG_OBJ, "d_a_bg_obj"},
     {PROC_MIRROR, "d_a_mirror"},
     {PROC_MOVIE_PLAYER, "d_a_movie_player"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_TITLE, "d_a_title"},
     #endif
     {PROC_FR, "d_a_fr"},
@@ -798,7 +801,7 @@ static DynamicNameTableEntry const DynamicNameTable[] = {
     {PROC_Obj_Timer, "d_a_obj_timer"},
     {PROC_SCENE_EXIT, "d_a_scene_exit"},
     {PROC_SUSPEND, "d_a_suspend"},
-    #if !PLATFORM_SHIELD && !PLATFORM_PC
+    #if !PLATFORM_SHIELD
     {PROC_GRASS, "d_a_grass"},
     #endif
     {-1, NULL},
@@ -952,6 +955,7 @@ int cDyl_LinkASync(s16 i_ProfName) {
 static int cDyl_InitCallback(void* param_0) {
     JUT_ASSERT(335, !cDyl_Initialized);
 
+<<<<<<< HEAD
 #if PLATFORM_PC
     /* On PC, profiles are statically linked — populate the profile list
      * from pal_profile_list.cpp and create the initial scene. */
@@ -975,11 +979,14 @@ static int cDyl_InitCallback(void* param_0) {
     fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
     return 1;
 #else
+=======
+>>>>>>> port
     #if PLATFORM_GCN
     JKRHeap* parentHeap = mDoExt_getArchiveHeap();
     #else
     JKRHeap* parentHeap = DynamicModuleControlBase::getHeap();
     #endif
+
     JKRFileCache* loader = JKRMountDvdDrive("/", parentHeap, NULL);
     DynamicModuleControl::initialize();
 
@@ -1001,7 +1008,6 @@ static int cDyl_InitCallback(void* param_0) {
 
     fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
     return 1;
-#endif
 }
 
 static mDoDvdThd_callback_c* cDyl_DVD;
@@ -1050,7 +1056,7 @@ int cDylPhs::Link(request_of_phase_process_class* i_phase, s16 i_ProfName) {
         (request_of_phase_process_fn)cDylPhs::phase_03
     };
 
-    if (i_phase->id == cPhs_NEXT_e) {
+    if (i_phase->id == 2) {
         return cPhs_COMPLEATE_e;
     }
 
@@ -1058,11 +1064,11 @@ int cDylPhs::Link(request_of_phase_process_class* i_phase, s16 i_ProfName) {
 }
 
 int cDylPhs::Unlink(request_of_phase_process_class* i_phase, s16 i_ProfName) {
-    JUT_ASSERT(460, i_phase->id != cPhs_LOADING_e);
+    JUT_ASSERT(460, i_phase->id != 1);
 
-    if (i_phase->id == cPhs_NEXT_e) {
+    if (i_phase->id == 2) {
         int ret = cDyl_Unlink(i_ProfName);
-        i_phase->id = cPhs_INIT_e;
+        i_phase->id = 0;
         return ret;
     }
 
