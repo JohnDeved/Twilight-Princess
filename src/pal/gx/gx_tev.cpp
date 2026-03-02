@@ -228,6 +228,45 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         return BGFX_INVALID_HANDLE;
     }
 
+    /* Diagnostic: dump decoded texture stats to verify non-zero content */
+    {
+        static int s_tex_dump_count = 0;
+        if (s_tex_dump_count < 30) {
+            s_tex_dump_count++;
+            uint32_t nonzero = 0;
+            uint32_t nonzero_rgb = 0;
+            for (uint32_t i = 0; i < rgba_size; i++) {
+                if (rgba_data[i]) nonzero++;
+            }
+            for (uint32_t i = 0; i < rgba_size; i += 4) {
+                if (rgba_data[i] || rgba_data[i+1] || rgba_data[i+2]) nonzero_rgb++;
+            }
+            /* Check source data non-zero count (first 256 bytes) */
+            uint32_t src_nonzero = 0;
+            const u8* src_bytes = (const u8*)binding->image_ptr;
+            for (uint32_t i = 0; i < 256; i++) {
+                if (src_bytes[i]) src_nonzero++;
+            }
+            fprintf(stderr, "{\"tex_decode\":{\"ptr\":\"%p\",\"fmt\":%d,\"w\":%u,\"h\":%u,"
+                    "\"decoded\":%u,\"nonzero\":%u,\"nonzero_rgb\":%u,\"total\":%u,"
+                    "\"src_nz256\":%u,"
+                    "\"src16\":[",
+                    binding->image_ptr, (int)binding->format,
+                    (unsigned)binding->width, (unsigned)binding->height,
+                    decoded, nonzero, nonzero_rgb, rgba_size, src_nonzero);
+            for (int i = 0; i < 32; i++) {
+                if (i > 0) fprintf(stderr, ",");
+                fprintf(stderr, "%u", src_bytes[i]);
+            }
+            fprintf(stderr, "],\"rgba16\":[");
+            for (int i = 0; i < 64 && i < (int)rgba_size; i++) {
+                if (i > 0) fprintf(stderr, ",");
+                fprintf(stderr, "%u", rgba_data[i]);
+            }
+            fprintf(stderr, "]}}\n");
+        }
+    }
+
     /* Upload to bgfx */
     const bgfx::Memory* mem = bgfx::copy(rgba_data, rgba_size);
     free(rgba_data);
@@ -1068,39 +1107,24 @@ void pal_tev_flush_draw(void) {
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
 
-    /* Diagnostic: log ALL draws for draw_count window 7000-7100 (approx frame 82-83) */
-    if (s_total_draw_count >= 7000 && s_total_draw_count <= 7100) {
+    /* Diagnostic: log ALL draws for draw_count window 250-340 (title scene frame) */
+    if (s_total_draw_count >= 250 && s_total_draw_count <= 340) {
         const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-        const GXTevStage* s1 = (g_gx_state.num_tev_stages >= 2) ? &g_gx_state.tev_stages[1] : NULL;
         int tm = s0->tex_map;
         int tv = (tm >= 0 && tm < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[tm].valid : -1;
-        u16 tw = (tv == 1) ? g_gx_state.tex_bindings[tm].width : 0;
-        u16 th = (tv == 1) ? g_gx_state.tex_bindings[tm].height : 0;
-        int tf = (tv == 1) ? (int)g_gx_state.tex_bindings[tm].format : -1;
-        fprintf(stderr, "{\"all_draw\":{\"id\":%u,\"preset\":\"%s\",\"ns\":%d,"
-                "\"tev0\":[%d,%d,%d,%d]",
-                s_total_draw_count, s_fs_names[preset], g_gx_state.num_tev_stages,
-                s0->color_a, s0->color_b, s0->color_c, s0->color_d);
-        if (s1) {
-            fprintf(stderr, ",\"tev1\":[%d,%d,%d,%d]",
-                    s1->color_a, s1->color_b, s1->color_c, s1->color_d);
-        }
-        fprintf(stderr, ",\"tex_map\":%d,\"tex_valid\":%d,"
-                "\"tw\":%u,\"th\":%u,\"tf\":%d,"
-                "\"blend\":%d,\"z_en\":%d,"
+        uint32_t rs = calc_raw_vertex_stride();
+        fprintf(stderr, "{\"all_draw\":{\"id\":%u,\"preset\":\"%s\","
                 "\"nverts\":%u,\"prim\":%d,"
-                "\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
-                tm, tv, (unsigned)tw, (unsigned)th, tf,
-                g_gx_state.blend_mode, g_gx_state.z_compare_enable,
+                "\"color_upd\":%d,\"blend\":%d,\"z_en\":%d,"
+                "\"raw_stride\":%u,"
+                "\"tev0\":[%d,%d,%d,%d],"
+                "\"tex_map\":%d,\"tex_valid\":%d}}\n",
+                s_total_draw_count, s_fs_names[preset],
                 (unsigned)ds->verts_written, ds->prim_type,
-                g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
-                g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
-                g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
-                g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a,
-                g_gx_state.tev_regs[2].r, g_gx_state.tev_regs[2].g,
-                g_gx_state.tev_regs[2].b, g_gx_state.tev_regs[2].a,
-                g_gx_state.tev_regs[3].r, g_gx_state.tev_regs[3].g,
-                g_gx_state.tev_regs[3].b, g_gx_state.tev_regs[3].a);
+                g_gx_state.color_update, g_gx_state.blend_mode, g_gx_state.z_compare_enable,
+                rs,
+                s0->color_a, s0->color_b, s0->color_c, s0->color_d,
+                tm, tv);
     }
 
     preset = fixup_preset_for_vertex(preset);
@@ -1323,7 +1347,7 @@ void pal_tev_flush_draw(void) {
     /* One-time vertex dump for title scene debugging */
     {
         static int s_vtx_dump_count = 0;
-        if (s_vtx_dump_count < 2 && nverts >= 4 && preset == GX_TEV_SHADER_BLEND) {
+        if (s_vtx_dump_count < 4 && nverts >= 4 && s_total_draw_count > 250) {
             s_vtx_dump_count++;
             fprintf(stderr, "{\"vtx_dump\":{\"draw_id\":%u,\"nverts\":%u,\"stride\":%u,\"raw_stride\":%u,\"inject\":%d,\"verts\":[",
                     s_total_draw_count, (unsigned)nverts, bgfx_stride, raw_stride, inject_color);
@@ -1413,7 +1437,7 @@ void pal_tev_flush_draw(void) {
     /* One-time MVP dump for title scene debugging */
     {
         static int s_mvp_dump = 0;
-        if (s_mvp_dump < 1 && preset == GX_TEV_SHADER_BLEND) {
+        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
             s_mvp_dump++;
             const float (*gp)[4] = g_gx_state.proj_mtx;
             fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
@@ -1540,13 +1564,15 @@ void pal_tev_flush_draw(void) {
                 g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
-                g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f
+                1.0f /* GCN ignores framebuffer alpha — force opaque so
+                        SRC_ALPHA blending doesn't discard pixels with
+                        texture alpha=0 (common in IA8/J2D textures) */
             };
             float reg1[4] = {
                 g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
-                g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f
+                1.0f /* force opaque — see reg0 comment */
             };
             bgfx::setUniform(s_tev_reg0_uniform, reg0);
             bgfx::setUniform(s_tev_reg1_uniform, reg1);
@@ -1555,12 +1581,54 @@ void pal_tev_flush_draw(void) {
 
     /* 9. Set render state */
     uint64_t state = 0;
-    if (g_gx_state.color_update)
-        state |= BGFX_STATE_WRITE_RGB;
-    /* GX doesn't use framebuffer alpha for TV display output.
-     * On PC, always write alpha so the rendered content is visible
-     * in the window/capture (blending and compositing rely on FB alpha). */
-    state |= BGFX_STATE_WRITE_A;
+    if (g_gx_state.color_update) {
+        /* J2D pane depth-prime draws use TEV config [ZERO,ZERO,ZERO,C0] to
+         * output TEVREG0 with no blending and depth enabled.  On real GCN
+         * hardware, subsequent textured draws in the same pane overwrite
+         * these fills because GCN processes draws strictly in submission
+         * order.  bgfx may reorder draws within a view by internal sort
+         * key (program, texture, depth), so a depth-prime draw can end up
+         * AFTER the textured draw it was supposed to underlay, erasing the
+         * visible content.
+         *
+         * Detect this pattern and suppress color writes so only depth is
+         * updated.  The pattern is:
+         *   - PASSCLR preset (no texture sampling)
+         *   - TEV stage 0: color_d == GX_CC_C0 and a/b/c are all GX_CC_ZERO
+         *   - TEVREG0 RGB is black (r+g+b == 0)
+         *   - No blend (GX_BM_NONE) — direct framebuffer overwrite
+         *   - Depth test enabled
+         */
+        int suppress_color = 0;
+        if (preset == GX_TEV_SHADER_PASSCLR &&
+            g_gx_state.blend_mode == GX_BM_NONE &&
+            g_gx_state.z_compare_enable)
+        {
+            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+            if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+                s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
+            {
+                const GXColor* c0 = &g_gx_state.tev_regs[GX_TEVREG0];
+                static int s_suppress_log = 0;
+                if (s_suppress_log < 3) {
+                    s_suppress_log++;
+                    fprintf(stderr, "{\"suppress_check\":{\"id\":%u,\"c0\":[%d,%d,%d,%d]}}\n",
+                            s_total_draw_count, c0->r, c0->g, c0->b, c0->a);
+                }
+                if (c0->r == 0 && c0->g == 0 && c0->b == 0)
+                    suppress_color = 1;
+            }
+        }
+
+        if (!suppress_color) {
+            state |= BGFX_STATE_WRITE_RGB;
+            /* GX doesn't use framebuffer alpha for TV display output.
+             * On PC, write alpha alongside RGB so the rendered content is
+             * visible in the window/capture (blending and compositing rely
+             * on FB alpha). */
+            state |= BGFX_STATE_WRITE_A;
+        }
+    }
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
@@ -1585,13 +1653,21 @@ void pal_tev_flush_draw(void) {
     /* One-time state dump for title scene debugging */
     {
         static int s_state_dump = 0;
-        if (s_state_dump < 1 && preset == GX_TEV_SHADER_BLEND) {
+        if (s_state_dump < 3 && s_total_draw_count > 250) {
             s_state_dump++;
-            fprintf(stderr, "{\"state_dump\":{\"color_update\":%d,\"state\":\"0x%016llX\","
+            fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":%d,"
+                    "\"prog_valid\":%d,\"prog_idx\":%u,"
+                    "\"color_update\":%d,\"state\":\"0x%016llX\","
                     "\"write_rgb\":%d,\"write_a\":%d,"
                     "\"scissor\":[%d,%d,%d,%d],"
                     "\"vp\":[%d,%d,%d,%d],"
-                    "\"alpha_comp0\":%d,\"alpha_ref0\":%d}}\n",
+                    "\"cull\":%d,"
+                    "\"alpha_comp0\":%d,\"alpha_ref0\":%d,"
+                    "\"nverts\":%u,\"nidx\":%u,"
+                    "\"use_ib\":%d}}\n",
+                    s_total_draw_count, preset,
+                    bgfx::isValid(s_programs[preset]) ? 1 : 0,
+                    s_programs[preset].idx,
                     g_gx_state.color_update,
                     (unsigned long long)state,
                     (int)((state & BGFX_STATE_WRITE_RGB) != 0),
@@ -1600,7 +1676,10 @@ void pal_tev_flush_draw(void) {
                     g_gx_state.sc_wd, g_gx_state.sc_ht,
                     (int)g_gx_state.vp_left, (int)g_gx_state.vp_top,
                     (int)g_gx_state.vp_wd, (int)g_gx_state.vp_ht,
-                    g_gx_state.alpha_comp0, g_gx_state.alpha_ref0);
+                    g_gx_state.cull_mode,
+                    g_gx_state.alpha_comp0, g_gx_state.alpha_ref0,
+                    (unsigned)nverts, (unsigned)num_indices,
+                    use_index_buffer);
         }
     }
 
