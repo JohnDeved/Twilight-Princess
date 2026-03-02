@@ -1092,21 +1092,40 @@ void pal_tev_flush_draw(void) {
                    preset == GX_TEV_SHADER_BLEND ||
                    preset == GX_TEV_SHADER_DECAL) {
             inject_color = 1;
-            /* Check if TEV uses KONST color rather than rasterized color.
-             * When KONST is used, inject the selected konst register value. */
-            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+            /* Check if any TEV stage references rasterized color (RASC/RASA).
+             * If not, vertex/material color is irrelevant to the TEV formula
+             * and the injected color should be white (pass-through) so the
+             * shader's "* v_color0" multiplication doesn't darken the output. */
+            int uses_rasc = 0;
             int uses_konst = 0;
-            if (s0->color_a == GX_CC_KONST || s0->color_b == GX_CC_KONST ||
-                s0->color_c == GX_CC_KONST || s0->color_d == GX_CC_KONST) {
-                resolve_konst_color(s0, const_clr);
-                uses_konst = 1;
+            int num_stages = g_gx_state.num_tev_stages;
+            if (num_stages == 0) num_stages = 1;
+            for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+                const GXTevStage* st = &g_gx_state.tev_stages[s];
+                if (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
+                    st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
+                    st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
+                    st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA)
+                    uses_rasc = 1;
+                if (st->color_a == GX_CC_KONST || st->color_b == GX_CC_KONST ||
+                    st->color_c == GX_CC_KONST || st->color_d == GX_CC_KONST)
+                    uses_konst = 1;
             }
-            if (!uses_konst) {
+            if (uses_konst && !uses_rasc) {
+                resolve_konst_color(&g_gx_state.tev_stages[0], const_clr);
+            } else if (uses_rasc) {
                 /* Use material color as rasterized color (GCN hardware behavior) */
                 const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
                 const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
                 const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
                 const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            } else {
+                /* No RASC/KONST in any stage — vertex color is unused.
+                 * Inject white so the shader "* v_color0" is a no-op. */
+                const_clr[0] = 255;
+                const_clr[1] = 255;
+                const_clr[2] = 255;
+                const_clr[3] = 255;
             }
         }
     }
@@ -1253,6 +1272,7 @@ void pal_tev_flush_draw(void) {
     int use_index_buffer = 0;
     uint32_t num_indices = 0;
 
+
     if (ds->prim_type == GX_QUADS) {
         /* Convert quads to triangles */
         uint32_t max_idx = (uint32_t)(nverts / 4) * 6;
@@ -1308,6 +1328,49 @@ void pal_tev_flush_draw(void) {
     }
     bgfx::setTransform(mvp);
 
+    /* Log first few textured draws — full vertex + MVP diagnostic */
+    static int s_vtx_log = 0;
+    if (s_vtx_log < 2 && preset != GX_TEV_SHADER_PASSCLR && nverts >= 4) {
+        s_vtx_log++;
+        const GXVtxAttrFmtEntry* af_log = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+        int has_pn = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        int npos_log = (af_log[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        int skip_head = 0;
+        if (has_pn) skip_head += 1;
+        for (int i = 0; i < 8; i++)
+            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) skip_head += 1;
+
+        fprintf(stderr, "{\"vtx_diag\":{\"draw\":%d,\"npos\":%d,\"stride\":%u,\"raw_stride\":%u,"
+                "\"prim\":%d,\"inject\":%d,\"use_idx\":%d,\"n_idx\":%u,\"vertices\":[",
+                s_vtx_log, npos_log, bgfx_stride, raw_stride, ds->prim_type, inject_color,
+                use_index_buffer, (unsigned)num_indices);
+        int nv = (nverts > 4) ? 4 : nverts;
+        for (int vi = 0; vi < nv; vi++) {
+            uint32_t off = vi * bgfx_stride + skip_head;
+            float px = 0, py = 0, pz = 0;
+            memcpy(&px, tvb.data + off, 4); off += 4;
+            memcpy(&py, tvb.data + off, 4); off += 4;
+            if (npos_log == 3) { memcpy(&pz, tvb.data + off, 4); off += 4; }
+            uint8_t cr = tvb.data[off], cg = tvb.data[off+1], cb = tvb.data[off+2], ca = tvb.data[off+3];
+            off += 4;
+            float u0 = 0, v0f = 0;
+            if (desc[GX_VA_TEX0].type != GX_NONE) {
+                memcpy(&u0, tvb.data + off, 4); off += 4;
+                int ntc = (af_log[GX_VA_TEX0].cnt == GX_TEX_S) ? 1 : 2;
+                if (ntc >= 2) { memcpy(&v0f, tvb.data + off, 4); }
+            }
+            if (vi > 0) fprintf(stderr, ",");
+            fprintf(stderr, "{\"pos\":[%.2f,%.2f,%.2f],\"clr\":[%u,%u,%u,%u],\"uv\":[%.4f,%.4f]}",
+                    px, py, pz, cr, cg, cb, ca, u0, v0f);
+        }
+        fprintf(stderr, "],\"mvp\":[%.6f,%.6f,%.6f,%.6f, %.6f,%.6f,%.6f,%.6f, "
+                "%.6f,%.6f,%.6f,%.6f, %.6f,%.6f,%.6f,%.6f]}}\n",
+                mvp[0], mvp[1], mvp[2], mvp[3],
+                mvp[4], mvp[5], mvp[6], mvp[7],
+                mvp[8], mvp[9], mvp[10], mvp[11],
+                mvp[12], mvp[13], mvp[14], mvp[15]);
+    }
+
     /* 6. Set vertex buffer */
     bgfx::setVertexBuffer(0, &tvb);
 
@@ -1329,6 +1392,8 @@ void pal_tev_flush_draw(void) {
             static int s_tex_log_count = 0;
             if (s_tex_log_count < 10) {
                 s_tex_log_count++;
+                int ns = g_gx_state.num_tev_stages;
+                const GXTevStage* s1 = (ns >= 2) ? &g_gx_state.tev_stages[1] : NULL;
                 fprintf(stderr, "{\"tev_tex_draw\":{\"n\":%d,\"draw_id\":%u,\"preset\":\"%s\","
                         "\"tex_valid\":%d,\"tex_map\":%d,"
                         "\"w\":%u,\"h\":%u,\"fmt\":%d,\"img_ptr\":\"%p\","
@@ -1336,8 +1401,8 @@ void pal_tev_flush_draw(void) {
                         "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
                         "\"z_enable\":%d,\"z_func\":%d,"
                         "\"mvp_diag\":[%.3f,%.3f,%.3f,%.3f],"
-                        "\"tev\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}"
-                        "}}\n",
+                        "\"num_stages\":%d,"
+                        "\"tev0\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}",
                         s_tex_log_count, s_total_draw_count, s_fs_names[preset],
                         bgfx::isValid(tex) ? 1 : 0,
                         s0->tex_map,
@@ -1347,8 +1412,20 @@ void pal_tev_flush_draw(void) {
                         g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
                         g_gx_state.z_compare_enable, g_gx_state.z_func,
                         mvp[0], mvp[5], mvp[10], mvp[15],
+                        ns,
                         s0->color_a, s0->color_b, s0->color_c, s0->color_d,
                         s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d);
+                if (s1) {
+                    fprintf(stderr, ",\"tev1\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}",
+                            s1->color_a, s1->color_b, s1->color_c, s1->color_d,
+                            s1->alpha_a, s1->alpha_b, s1->alpha_c, s1->alpha_d);
+                }
+                fprintf(stderr, ",\"tev_reg0\":[%d,%d,%d,%d],\"tev_reg1\":[%d,%d,%d,%d]"
+                        "}}\n",
+                        g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
+                        g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
+                        g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
+                        g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a);
             }
         }
 

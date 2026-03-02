@@ -224,9 +224,6 @@ void pal_render_begin_frame(void) {
     pal_window_poll();
 
     GXColor cc = g_gx_state.clear_color;
-    /* GX doesn't use framebuffer alpha for display — the TV always shows
-     * RGB content regardless of alpha. On PC, force alpha=255 so the
-     * rendered content is visible in the capture/window. */
     cc.a = 255;
     uint32_t clear_rgba = ((uint32_t)cc.r << 24) | ((uint32_t)cc.g << 16) |
                           ((uint32_t)cc.b << 8) | (uint32_t)cc.a;
@@ -305,8 +302,11 @@ void pal_render_end_frame(void) {
     }
 
     /* Submit frame — triggers rendering and capture.
-     * bgfx calls captureFrame() on s_callback during frame(), which
-     * stores the rendered pixels. Debug info is in frame_metadata.txt. */
+     *
+     * bgfx uses multi-threaded rendering by default (BGFX_CONFIG_MULTITHREADED=1).
+     * The capture at frame N contains frame N-1's rendering (1-frame pipeline
+     * delay). This is acceptable for regression testing — we compare frame
+     * content rather than frame number. */
     bgfx::frame();
 
     /* Verify after bgfx::frame() so capture buffer is up-to-date */
