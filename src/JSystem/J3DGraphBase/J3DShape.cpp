@@ -6,6 +6,7 @@
 #include "JSystem/J3DGraphBase/J3DVertex.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
 #include <dolphin/gd.h>
+#include <dolphin/gx.h>
 #if PLATFORM_PC || PLATFORM_NX_HB
 extern "C" {
 #include "pal/gx/gx_state.h"
@@ -291,7 +292,24 @@ void J3DShape::loadCurrentMtx() const {
 
 void J3DShape::loadPreDrawSetting() const {
     if (sOldVcdVatCmd != mVcdVatCmd) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+        /* On PC, the VCD/VAT display list buffer is empty (GD write functions
+         * are stubs that don't write to the buffer). Instead of replaying
+         * the empty DL, directly set vertex descriptors and format from the
+         * shape's stored data — this is what the GCN DL would have done. */
+        if (mVtxDesc != NULL) {
+            GXClearVtxDesc();
+            GXSetVtxDescv(mVtxDesc);
+        }
+        if (mVertexData != NULL) {
+            GXVtxAttrFmtList* fmtList = mVertexData->getVtxAttrFmtList();
+            if (fmtList != NULL) {
+                GXSetVtxAttrFmtv(GX_VTXFMT0, fmtList);
+            }
+        }
+#else
         GXCallDisplayList(mVcdVatCmd, kVcdVatDLSize);
+#endif
         sOldVcdVatCmd = mVcdVatCmd;
     }
 
@@ -319,7 +337,22 @@ void J3DShape::setArrayAndBindPipeline() const {
 
 void J3DShape::drawFast() const {
     if (sOldVcdVatCmd != mVcdVatCmd) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+        /* On PC, directly set vertex descriptors from shape data
+         * (the VCD/VAT DL buffer is empty — GD writes are no-ops on PC) */
+        if (mVtxDesc != NULL) {
+            GXClearVtxDesc();
+            GXSetVtxDescv(mVtxDesc);
+        }
+        if (mVertexData != NULL) {
+            GXVtxAttrFmtList* fmtList = mVertexData->getVtxAttrFmtList();
+            if (fmtList != NULL) {
+                GXSetVtxAttrFmtv(GX_VTXFMT0, fmtList);
+            }
+        }
+#else
         GXCallDisplayList(mVcdVatCmd, kVcdVatDLSize);
+#endif
         sOldVcdVatCmd = mVcdVatCmd;
     }
 
