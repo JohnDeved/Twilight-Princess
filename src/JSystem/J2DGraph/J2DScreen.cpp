@@ -11,6 +11,10 @@
 #include "JSystem/JSupport/JSUMemoryStream.h"
 #include <dolphin/types.h>
 
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
+
 J2DScreen::J2DScreen()
     : J2DPane(NULL, true, 'root', JGeometry::TBox2<f32>(JGeometry::TVec2<f32>(0, 0), JGeometry::TVec2<f32>(640, 480))), mColor() {
     field_0x4 = -1;
@@ -51,6 +55,11 @@ bool J2DScreen::setPriority(char const* resName, u32 param_1, JKRArchive* p_arch
 
     void* res = JKRGetNameResource(resName, p_archive);
     if (res != NULL) {
+#if PLATFORM_PC
+        /* BLO layout data is big-endian from the GCN/Wii disc.
+         * Byte-swap in-place before the J2D parser reads it. */
+        pal_blo_swap(res, p_archive->getExpandedResSize(res));
+#endif
         JSUMemoryInputStream stream(res, p_archive->getExpandedResSize(res));
         return setPriority(&stream, param_1, p_archive);
     }

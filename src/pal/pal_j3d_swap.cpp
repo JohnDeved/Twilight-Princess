@@ -1410,4 +1410,230 @@ int pal_font_swap(void* data, u32 size) {
     return 1;
 }
 
+/* ================================================================ */
+/* BLO layout endian swap                                           */
+/* ================================================================ */
+
+/**
+ * Swap a BLO (J2D screen layout) file from big-endian to little-endian in-place.
+ *
+ * BLO file structure:
+ *   File header (0x20):
+ *     u32 tag='SCRN', u32 type='blo1'/'blo2', u32 fileSize, u32 blockNum, pad[0x10]
+ *   Blocks:
+ *     u32 tag, s32 size, then block-specific data
+ *
+ * Block types: INF1, PAN1/PAN2, PIC1/PIC2, TBX1/TBX2, WIN1/WIN2,
+ *              BGN1, END1, EXT1, TEX1, FNT1, MAT1
+ */
+int pal_blo_swap(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* p = (u8*)data;
+
+    /* Check if big-endian: first 4 bytes should be 'SCRN' = 0x5343524E in BE */
+    if (p[0] != 'S' || p[1] != 'C' || p[2] != 'R' || p[3] != 'N') {
+        return 0; /* not BLO or already swapped */
+    }
+
+    /* Swap file header (0x00-0x0F): tag, type, fileSize, blockNum */
+    swap_u32_array(p, 0, 4);
+
+    u32 blockNum = *(u32*)(p + 12);
+
+    /* Walk blocks starting at offset 0x20 */
+    u32 pos = 0x20;
+    for (u32 i = 0; i < blockNum && pos + 8 <= size; i++) {
+        /* Read block tag/size in big-endian BEFORE swapping */
+        u32 be_tag = r32(p + pos);
+        u32 be_size = r32(p + pos + 4);
+
+        /* Swap block header (tag + size) */
+        swap_u32_array(p, pos, 2);
+
+        if (be_size < 8 || pos + be_size > size) break;
+
+        u8* blk = p + pos;
+
+        /* INF1: screen info
+         *   +0x08: u16 width, u16 height, u32 color */
+        if (be_tag == FCC('I','N','F','1')) {
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 2);  /* width, height */
+                swap_u32_array(blk, 12, 1); /* color */
+            }
+        }
+
+        /* PAN1: basic pane (blo1 format)
+         * Fields after 8-byte header are read by makePaneStream() via
+         * individual readS16/readU16/readU32/readU8 stream calls.
+         * The header (tag+size) is read as raw struct, already swapped above.
+         * Data fields: u8, u8, 2 skip, u32 infoTag, 4×s16 bounds, u16 rotZ, ...
+         * Stream reads need the data to be in native order. */
+        if (be_tag == FCC('P','A','N','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1); /* infoTag at +0x0C */
+                /* 4 x s16 bounds at +0x10 */
+                swap_u16_array(blk, 16, 4);
+                /* Optional u16 rotZ at +0x18 */
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+
+        /* PAN2: extended pane (blo2 format)
+         * J2DPaneInfo struct: 0x48 bytes read as raw struct.
+         * Layout (from struct definition):
+         *   +0x00: u32 mKind (already swapped as block tag)
+         *   +0x04: u32 mSize (already swapped)
+         *   +0x08: u16 field_0x8, u16 field_0xa
+         *   +0x0C: u8 mVisible, u8 mBasePosition, 2 pad
+         *   +0x10: u64 mInfoTag (swap as 2×u32)
+         *   +0x18: u64 mUserInfoTag (swap as 2×u32)
+         *   +0x20: 9×f32 (rotOffX/Y, scaleX/Y, rotX/Y/Z, transX/Y) */
+        if (be_tag == FCC('P','A','N','2')) {
+            if (be_size >= 0x44) {
+                swap_u16_array(blk, 8, 2);   /* field_0x8, field_0xa */
+                swap_u32_array(blk, 0x10, 2); /* mInfoTag as 2×u32 */
+                swap_u32_array(blk, 0x18, 2); /* mUserInfoTag as 2×u32 */
+                swap_u32_array(blk, 0x20, 9); /* 9 f32 values */
+            }
+        }
+
+        /* PIC1: basic picture — PAN1 header then picture-specific data.
+         * After pane header (variable length), picture data is read via
+         * individual stream reads. We swap the pane portion as PAN1. */
+        if (be_tag == FCC('P','I','C','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1); /* infoTag */
+                swap_u16_array(blk, 16, 4); /* bounds s16×4 */
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1); /* rotZ */
+            }
+        }
+
+        /* PIC2: extended picture — PAN2 header (0x48) then J2DScrnBlockPictureParameter.
+         * PictureParameter (0x30 bytes at offset 0x48):
+         *   +0x00: u16 field_0x0, u16 mMaterialNum, u16 field_0x4, u16 field_0x6
+         *   +0x08: 4×u16 field_0x8
+         *   +0x10: 8×s16 (4 TVec2<s16>)
+         *   +0x20: 4×u32 corner colors */
+        if (be_tag == FCC('P','I','C','2')) {
+            /* PAN2 portion */
+            if (be_size >= 0x44) {
+                swap_u16_array(blk, 8, 2);
+                swap_u32_array(blk, 0x10, 2);
+                swap_u32_array(blk, 0x18, 2);
+                swap_u32_array(blk, 0x20, 9);
+            }
+            /* Picture parameter at +0x48 */
+            if (be_size >= 0x78) {
+                swap_u16_array(blk, 0x48, 12);  /* 12 u16s (0x48-0x5F) */
+                swap_u16_array(blk, 0x60, 8);   /* 8 s16s (4 TVec2<s16>) */
+                swap_u32_array(blk, 0x68, 4);   /* 4 corner colors */
+            }
+        }
+
+        /* TBX1: basic textbox — PAN1 header then textbox-specific data */
+        if (be_tag == FCC('T','B','X','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1);
+                swap_u16_array(blk, 16, 4);
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+
+        /* TBX2: extended textbox — PAN2 header (0x48) then J2DTextBoxInfo (0x20).
+         * TextBoxInfo:
+         *   +0x00: u16 field_0x0, u16 field_0x2, u16 mMaterialNum
+         *   +0x06: s16 mCharSpace, s16 mLineSpace
+         *   +0x0A: u16 mFontSizeX, u16 mFontSizeY
+         *   +0x0E: u8 mHBind, u8 mVBind
+         *   +0x10: u32 mCharColor, u32 mGradColor
+         *   +0x18: u8 mConnected, 3 pad
+         *   +0x1C: u16 field_0x1c, u16 field_0x1e
+         * Then string data (u16 length + chars). */
+        if (be_tag == FCC('T','B','X','2')) {
+            /* PAN2 portion */
+            if (be_size >= 0x44) {
+                swap_u16_array(blk, 8, 2);
+                swap_u32_array(blk, 0x10, 2);
+                swap_u32_array(blk, 0x18, 2);
+                swap_u32_array(blk, 0x20, 9);
+            }
+            /* TextBoxInfo at +0x48 */
+            if (be_size >= 0x68) {
+                u32 tbi = 0x48;
+                swap_u16_array(blk, tbi, 5);           /* 5 u16s (0-9) */
+                swap_u16_array(blk, tbi + 10, 2);      /* fontSizeX/Y */
+                swap_u32_array(blk, tbi + 0x10, 2);    /* charColor, gradColor */
+                swap_u16_array(blk, tbi + 0x1C, 2);    /* field_0x1c, field_0x1e */
+            }
+            /* String length u16 at +0x68 */
+            if (be_size >= 0x6A) {
+                swap_u16_array(blk, 0x68, 1);
+            }
+        }
+
+        /* WIN1/WIN2: window panes — similar structure to PAN/PIC */
+        if (be_tag == FCC('W','I','N','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1);
+                swap_u16_array(blk, 16, 4);
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+        if (be_tag == FCC('W','I','N','2')) {
+            /* PAN2 portion */
+            if (be_size >= 0x44) {
+                swap_u16_array(blk, 8, 2);
+                swap_u32_array(blk, 0x10, 2);
+                swap_u32_array(blk, 0x18, 2);
+                swap_u32_array(blk, 0x20, 9);
+            }
+        }
+
+        /* TEX1: texture resource list
+         *   +0x08: u16 count, 2 pad
+         *   +0x0C: count×J2DScrnResReference entries (u16 len + string) */
+        if (be_tag == FCC('T','E','X','1')) {
+            if (be_size >= 0x0C) {
+                swap_u16_array(blk, 8, 1); /* count */
+            }
+        }
+
+        /* FNT1: font resource list — same as TEX1 */
+        if (be_tag == FCC('F','N','T','1')) {
+            if (be_size >= 0x0C) {
+                swap_u16_array(blk, 8, 1);
+            }
+        }
+
+        /* MAT1: material block
+         *   +0x08: u16 count, 2 pad
+         *   +0x0C: count × u32 offsets
+         *   then material data at each offset */
+        if (be_tag == FCC('M','A','T','1')) {
+            if (be_size >= 0x0C) {
+                u16 matCount = r16(blk + 8);
+                swap_u16_array(blk, 8, 1); /* count */
+                /* Swap offset table */
+                u32 offTblEnd = 0x0C + matCount * 4;
+                if (offTblEnd <= be_size) {
+                    swap_u32_array(blk, 0x0C, matCount);
+                }
+            }
+        }
+
+        /* BGN1/END1/EXT1: hierarchy markers — only header (already swapped) */
+
+        pos += be_size;
+    }
+
+    fprintf(stderr, "{\"blo_swap\":\"done\",\"size\":%u,\"blocks\":%u}\n", size, blockNum);
+    return 1;
+}
+
 #endif /* PLATFORM_PC */

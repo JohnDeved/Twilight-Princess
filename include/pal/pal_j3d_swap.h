@@ -46,6 +46,13 @@ int pal_j3d_swap_anim(void* data, u32 size);
  */
 int pal_font_swap(void* data, u32 size);
 
+/**
+ * Byte-swap a BLO layout file (J2D screen layout) from big-endian to
+ * little-endian in-place.  Must be called before J2DScreen::setPriority().
+ * Returns 1 if the data was swapped, 0 if already little-endian or not BLO.
+ */
+int pal_blo_swap(void* data, u32 size);
+
 #ifdef __cplusplus
 }
 #endif
