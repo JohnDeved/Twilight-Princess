@@ -711,8 +711,11 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
                     u8 cg = dl_read_u8(r);
                     u8 cb = dl_read_u8(r);
                     u8 ca = (fmt[attr].comp_type == GX_RGBX8) ? dl_read_u8(r) : 0xFF;
-                    u32 color = ((u32)cr << 24) | ((u32)cg << 16) | ((u32)cb << 8) | ca;
-                    pal_gx_write_vtx_u32(color);
+                    /* Write bytes in RGBA order for bgfx Color0 attribute */
+                    pal_gx_write_vtx_u8(cr);
+                    pal_gx_write_vtx_u8(cg);
+                    pal_gx_write_vtx_u8(cb);
+                    pal_gx_write_vtx_u8(ca);
                     continue;
                 }
                 case GX_RGBA8: {
@@ -720,8 +723,11 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
                     u8 cg = dl_read_u8(r);
                     u8 cb = dl_read_u8(r);
                     u8 ca = dl_read_u8(r);
-                    u32 color = ((u32)cr << 24) | ((u32)cg << 16) | ((u32)cb << 8) | ca;
-                    pal_gx_write_vtx_u32(color);
+                    /* Write bytes in RGBA order for bgfx Color0 attribute */
+                    pal_gx_write_vtx_u8(cr);
+                    pal_gx_write_vtx_u8(cg);
+                    pal_gx_write_vtx_u8(cb);
+                    pal_gx_write_vtx_u8(ca);
                     continue;
                 }
                 case GX_RGB565: {
@@ -739,14 +745,24 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
                     u8 b0 = dl_read_u8(r);
                     u8 b1 = dl_read_u8(r);
                     u8 b2 = dl_read_u8(r);
-                    u32 color = ((u32)b0 << 16) | ((u32)b1 << 8) | b2;
-                    pal_gx_write_vtx_u32(color);
+                    /* Write bytes in RGBA order: expand 6-bit channels
+                     * b0[7:2]=R, b0[1:0]:b1[7:6]=G, b1[5:0]:b2[7:6]=B, b2[5:0]=A */
+                    pal_gx_write_vtx_u8(b0);
+                    pal_gx_write_vtx_u8(b1);
+                    pal_gx_write_vtx_u8(b2);
+                    pal_gx_write_vtx_u8(0xFF);
                     continue;
                 }
                 default: {
-                    /* Default: read 4 bytes as RGBA */
-                    u32 color = dl_read_u32(r);
-                    pal_gx_write_vtx_u32(color);
+                    /* Default: read 4 bytes as RGBA, write in byte order */
+                    u8 cr = dl_read_u8(r);
+                    u8 cg = dl_read_u8(r);
+                    u8 cb = dl_read_u8(r);
+                    u8 ca = dl_read_u8(r);
+                    pal_gx_write_vtx_u8(cr);
+                    pal_gx_write_vtx_u8(cg);
+                    pal_gx_write_vtx_u8(cb);
+                    pal_gx_write_vtx_u8(ca);
                     continue;
                 }
                 }

@@ -818,14 +818,28 @@ void GXNormal1x8(u8 index) { pal_gx_write_vtx_u8(index); }
 void GXNormal1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
 void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
-    u32 color = ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | a;
-    pal_gx_write_vtx_u32(color);
+    /* Write bytes in RGBA order (bgfx expects R at byte[0]).
+     * On GCN, u32 big-endian stores [R,G,B,A] which matches.
+     * On PC, we write bytes explicitly to avoid little-endian u32 reversal. */
+    pal_gx_write_vtx_u8(r);
+    pal_gx_write_vtx_u8(g);
+    pal_gx_write_vtx_u8(b);
+    pal_gx_write_vtx_u8(a);
 }
 void GXColor3u8(u8 r, u8 g, u8 b) {
-    u32 color = ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | 0xFF;
-    pal_gx_write_vtx_u32(color);
+    pal_gx_write_vtx_u8(r);
+    pal_gx_write_vtx_u8(g);
+    pal_gx_write_vtx_u8(b);
+    pal_gx_write_vtx_u8(0xFF);
 }
-void GXColor1u32(u32 clr) { pal_gx_write_vtx_u32(clr); }
+void GXColor1u32(u32 clr) {
+    /* GCN u32 color layout: 0xRRGGBBAA (R=high byte, A=low byte).
+     * Write bytes in RGBA order to match bgfx Color0 attribute layout. */
+    pal_gx_write_vtx_u8((u8)(clr >> 24));
+    pal_gx_write_vtx_u8((u8)(clr >> 16));
+    pal_gx_write_vtx_u8((u8)(clr >> 8));
+    pal_gx_write_vtx_u8((u8)(clr));
+}
 void GXColor1u16(u16 clr) { pal_gx_write_vtx_u16(clr); }
 void GXColor1x8(u8 index) { pal_gx_write_vtx_u8(index); }
 void GXColor1x16(u16 index) { pal_gx_write_vtx_u16(index); }
