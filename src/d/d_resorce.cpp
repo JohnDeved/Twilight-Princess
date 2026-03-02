@@ -655,7 +655,7 @@ void dRes_info_c::deleteArchiveRes() {
 
 #if PLATFORM_PC
     /* On PC, archive internal pointers (mNodes, mStringTable) may be stale
-       during exit-time destructor ordering.  Validate before traversing. */
+       during exit-time destructor ordering. Validate before traversing. */
     if (mArchive->mNodes == NULL || mArchive->mStringTable == NULL) {
         return;
     }
