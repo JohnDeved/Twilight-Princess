@@ -98,9 +98,16 @@ bool J2DScreen::checkSignature(JSURandomInputStream* p_stream) {
     p_stream->read(&header, sizeof(J2DScrnHeader));
 
     if (header.mTag != 'SCRN' || (header.mType != 'blo1' && header.mType != 'blo2')) {
+#if PLATFORM_PC
+        fprintf(stderr, "{\"blo_check\":\"fail\",\"tag\":\"0x%08X\",\"type\":\"0x%08X\"}\n",
+                (unsigned)header.mTag, (unsigned)header.mType);
+#endif
         JUT_WARN(257, "%s", "SCRN resource is broken.\n")
         return false;
     } else {
+#if PLATFORM_PC
+        fprintf(stderr, "{\"blo_check\":\"ok\"}\n");
+#endif
         return true;
     }
 }
@@ -110,9 +117,17 @@ bool J2DScreen::getScreenInformation(JSURandomInputStream* p_stream) {
     p_stream->read(&info, sizeof(J2DScrnInfoHeader));
 
     if (info.mTag != 'INF1') {
+#if PLATFORM_PC
+        fprintf(stderr, "{\"blo_info\":\"fail\",\"tag\":\"0x%08X\"}\n", (unsigned)info.mTag);
+#endif
         JUT_WARN(282, "%s", "SCRN resource is broken.\n")
         return false;
     }
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"blo_info\":\"ok\",\"width\":%d,\"height\":%d}\n",
+            (int)info.mWidth, (int)info.mHeight);
+#endif
 
     place(JGeometry::TBox2<f32>(0.0f, 0.0f, info.mWidth, info.mHeight));
 
@@ -132,6 +147,13 @@ s32 J2DScreen::makeHierarchyPanes(J2DPane* p_basePane, JSURandomInputStream* p_s
     while (true) {
         J2DScrnBlockHeader header;
         p_stream->peek(&header, sizeof(J2DScrnBlockHeader));
+
+#if PLATFORM_PC
+        fprintf(stderr, "{\"blo_block\":\"%c%c%c%c\",\"tag\":\"0x%08X\",\"size\":%d,\"pos\":%d}\n",
+                (char)(header.mTag >> 24), (char)(header.mTag >> 16),
+                (char)(header.mTag >> 8), (char)(header.mTag),
+                (unsigned)header.mTag, (int)header.mSize, (int)p_stream->getPosition());
+#endif
 
         switch (header.mTag) {
         case 'EXT1':
@@ -200,6 +222,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DPane(p_basePane, p_stream, 1);
         break;
     case 'WIN2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DWindowEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -207,6 +235,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DWindow(p_basePane, p_stream, mMaterials);
         break;
     case 'PIC2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DPictureEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -214,6 +248,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DPicture(p_basePane, p_stream, mMaterials);
         break;
     case 'TBX2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DTextBoxEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -324,6 +364,10 @@ J2DResReference* J2DScreen::getResReference(JSURandomInputStream* p_stream, u32 
     size1 = p_stream->readS32();
     p_stream->skip(4);
     size2 = p_stream->readS32();
+#if PLATFORM_PC
+    fprintf(stderr, "{\"blo_resref\":\"read\",\"pos\":%d,\"blockSize\":%d,\"dataOff\":%d}\n",
+            (int)position, (int)size1, (int)size2);
+#endif
     p_stream->seek(position + size2, JSUStreamSeekFrom_SET);
 
     size1 = size1 - size2;
@@ -348,6 +392,19 @@ bool J2DScreen::createMaterial(JSURandomInputStream* p_stream, u32 param_1, JKRA
     J2DScrnBlockHeader header;
     p_stream->read(&header, 8);
     mMaterialNum = p_stream->readU16();
+#if PLATFORM_PC
+    fprintf(stderr, "{\"blo_mat\":\"read\",\"pos\":%d,\"matNum\":%d,\"blockSize\":%d}\n",
+            (int)position, (int)mMaterialNum, (int)header.mSize);
+
+    /* On PC, the MAT1 block's internal data (J2DMaterialInitData, TEV stages,
+     * color channels, etc.) is still big-endian.  Full byte-swap is complex.
+     * Skip material factory and advance past the block.  Panes render with
+     * default materials (no textures/special blending). */
+    mMaterialNum = 0;
+    mMaterials = NULL;
+    p_stream->seek(position + header.mSize, JSUStreamSeekFrom_SET);
+    return true;
+#endif
 
     p_stream->skip(2);
 

@@ -53,12 +53,41 @@ static inline void w32(void* p, u32 v) {
     b[3] = (u8)(v >> 24);
 }
 
+/* Read a big-endian u64 from raw bytes */
+static inline u64 r64(const void* p) {
+    const u8* b = (const u8*)p;
+    return ((u64)b[0] << 56) | ((u64)b[1] << 48) | ((u64)b[2] << 40) | ((u64)b[3] << 32)
+         | ((u64)b[4] << 24) | ((u64)b[5] << 16) | ((u64)b[6] << 8) | (u64)b[7];
+}
+
+/* Write a native u64 in little-endian byte order */
+static inline void w64(void* p, u64 v) {
+    u8* b = (u8*)p;
+    b[0] = (u8)(v & 0xFF);
+    b[1] = (u8)((v >> 8) & 0xFF);
+    b[2] = (u8)((v >> 16) & 0xFF);
+    b[3] = (u8)((v >> 24) & 0xFF);
+    b[4] = (u8)((v >> 32) & 0xFF);
+    b[5] = (u8)((v >> 40) & 0xFF);
+    b[6] = (u8)((v >> 48) & 0xFF);
+    b[7] = (u8)(v >> 56);
+}
+
 /* Swap N consecutive u32 values starting at byte offset from base */
 static void swap_u32_array(u8* base, u32 offset, int count) {
     for (int i = 0; i < count; i++) {
         u8* p = base + offset + i * 4;
         u32 v = r32(p);
         w32(p, v);
+    }
+}
+
+/* Swap N consecutive u64 values starting at byte offset from base */
+static void swap_u64_array(u8* base, u32 offset, int count) {
+    for (int i = 0; i < count; i++) {
+        u8* p = base + offset + i * 8;
+        u64 v = r64(p);
+        w64(p, v);
     }
 }
 
@@ -1488,14 +1517,14 @@ int pal_blo_swap(void* data, u32 size) {
          *   +0x04: u32 mSize (already swapped)
          *   +0x08: u16 field_0x8, u16 field_0xa
          *   +0x0C: u8 mVisible, u8 mBasePosition, 2 pad
-         *   +0x10: u64 mInfoTag (swap as 2×u32)
-         *   +0x18: u64 mUserInfoTag (swap as 2×u32)
+         *   +0x10: u64 mInfoTag
+         *   +0x18: u64 mUserInfoTag
          *   +0x20: 9×f32 (rotOffX/Y, scaleX/Y, rotX/Y/Z, transX/Y) */
         if (be_tag == FCC('P','A','N','2')) {
             if (be_size >= 0x44) {
                 swap_u16_array(blk, 8, 2);   /* field_0x8, field_0xa */
-                swap_u32_array(blk, 0x10, 2); /* mInfoTag as 2×u32 */
-                swap_u32_array(blk, 0x18, 2); /* mUserInfoTag as 2×u32 */
+                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
+                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
                 swap_u32_array(blk, 0x20, 9); /* 9 f32 values */
             }
         }
@@ -1522,8 +1551,8 @@ int pal_blo_swap(void* data, u32 size) {
             /* PAN2 portion */
             if (be_size >= 0x44) {
                 swap_u16_array(blk, 8, 2);
-                swap_u32_array(blk, 0x10, 2);
-                swap_u32_array(blk, 0x18, 2);
+                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
+                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
                 swap_u32_array(blk, 0x20, 9);
             }
             /* Picture parameter at +0x48 */
@@ -1558,8 +1587,8 @@ int pal_blo_swap(void* data, u32 size) {
             /* PAN2 portion */
             if (be_size >= 0x44) {
                 swap_u16_array(blk, 8, 2);
-                swap_u32_array(blk, 0x10, 2);
-                swap_u32_array(blk, 0x18, 2);
+                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
+                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
                 swap_u32_array(blk, 0x20, 9);
             }
             /* TextBoxInfo at +0x48 */
@@ -1589,41 +1618,46 @@ int pal_blo_swap(void* data, u32 size) {
             /* PAN2 portion */
             if (be_size >= 0x44) {
                 swap_u16_array(blk, 8, 2);
-                swap_u32_array(blk, 0x10, 2);
-                swap_u32_array(blk, 0x18, 2);
+                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
+                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
                 swap_u32_array(blk, 0x20, 9);
             }
         }
 
         /* TEX1: texture resource list
          *   +0x08: u16 count, 2 pad
-         *   +0x0C: count×J2DScrnResReference entries (u16 len + string) */
+         *   +0x0C: u32 dataOffset (used by getResReference to seek to entries)
+         *   +dataOffset: resource reference entries (u8 type + u8 len + string) */
         if (be_tag == FCC('T','E','X','1')) {
-            if (be_size >= 0x0C) {
-                swap_u16_array(blk, 8, 1); /* count */
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 1);  /* count */
+                swap_u32_array(blk, 12, 1); /* dataOffset */
+            } else if (be_size >= 0x0C) {
+                swap_u16_array(blk, 8, 1);
             }
         }
 
-        /* FNT1: font resource list — same as TEX1 */
+        /* FNT1: font resource list — same layout as TEX1 */
         if (be_tag == FCC('F','N','T','1')) {
-            if (be_size >= 0x0C) {
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 1);
+                swap_u32_array(blk, 12, 1);
+            } else if (be_size >= 0x0C) {
                 swap_u16_array(blk, 8, 1);
             }
         }
 
         /* MAT1: material block
          *   +0x08: u16 count, 2 pad
-         *   +0x0C: count × u32 offsets
-         *   then material data at each offset */
+         *   +0x0C..+0x64: J2DMaterialBlock offset fields (23 u32s)
+         *   then material data at each offset.
+         * On PC: material factory parsing needs all internal structs
+         * byte-swapped (J2DMaterialInitData, J2DTevStageInfo, etc.).
+         * For now, swap the header so createMaterial can read matCount
+         * and blockSize, but skip material factory on PC. */
         if (be_tag == FCC('M','A','T','1')) {
             if (be_size >= 0x0C) {
-                u16 matCount = r16(blk + 8);
                 swap_u16_array(blk, 8, 1); /* count */
-                /* Swap offset table */
-                u32 offTblEnd = 0x0C + matCount * 4;
-                if (offTblEnd <= be_size) {
-                    swap_u32_array(blk, 0x0C, matCount);
-                }
             }
         }
 
