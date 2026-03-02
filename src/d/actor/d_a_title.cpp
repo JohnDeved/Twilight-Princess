@@ -431,11 +431,6 @@ int daTitle_c::getDemoPrm() {
 
 int daTitle_c::Draw() {
 #if PLATFORM_PC
-    static int s_draw_call_count = 0;
-    s_draw_call_count++;
-    if (s_draw_call_count <= 3) {
-        fprintf(stderr, "[TITLE-DRAW] called #%d mpModel=%p field_0x5f8=%d\n", s_draw_call_count, mpModel, field_0x5f8);
-    }
     if (mpModel == NULL) {
         if (field_0x5f8) {
             dComIfGd_set2DOpaTop(&mTitle);
@@ -494,11 +489,7 @@ static int daTitle_Delete(daTitle_c* i_this) {
 }
 
 static int daTitle_Create(fopAc_ac_c* i_this) {
-    int result = static_cast<daTitle_c*>(i_this)->create();
-#if PLATFORM_PC
-    fprintf(stderr, "[TITLE-CREATE] result=%d\n", result);
-#endif
-    return result;
+    return static_cast<daTitle_c*>(i_this)->create();
 }
 
 void dDlst_daTitle_c::draw() {
