@@ -798,6 +798,7 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
 /* Public API                                                       */
 /* ================================================================ */
 
+static int s_dl_call_count = 0;
 void pal_gx_call_display_list(const void* list, u32 nbytes) {
     if (!list || nbytes == 0) return;
 

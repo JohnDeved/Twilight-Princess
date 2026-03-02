@@ -12,6 +12,14 @@
 int fpcDw_Execute(base_process_class* i_proc) {
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
+    {
+        static int s_draw_dispatch_count = 0;
+        s_draw_dispatch_count++;
+        if (s_draw_dispatch_count <= 100 || (s_draw_dispatch_count % 1000 == 0)) {
+            fprintf(stderr, "[PAL] fpcDw_Execute #%d procname=%d id=%u subtype=%d\n",
+                    s_draw_dispatch_count, i_proc->profname, i_proc->id, i_proc->subtype);
+        }
+    }
 #endif
     if (!fpcPause_IsEnable(i_proc, 2)) {
         layer_class* save_layer;

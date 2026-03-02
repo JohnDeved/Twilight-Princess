@@ -108,12 +108,17 @@ int daTitle_c::CreateHeap() {
 #endif
     J3DModelData* modelData = (J3DModelData*)dComIfG_getObjectRes(l_arcName, 10);
 #if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: getObjectRes('%s', 10) = %p\n", l_arcName, modelData);
     if (modelData == NULL) {
+        fprintf(stderr, "[PAL] daTitle_c::CreateHeap: modelData is NULL, skipping 3D model\n");
         mpModel = NULL;
         return 1;
     }
 #endif
     mpModel = mDoExt_J3DModel__create(modelData, 0x80000, 0x11000285);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: J3DModel create = %p\n", mpModel);
+#endif
 
     if (mpModel == NULL) {
         return 0;
@@ -121,24 +126,28 @@ int daTitle_c::CreateHeap() {
 
     void* res = dComIfG_getObjectRes(l_arcName, 7);
 #if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BCK res(7) = %p\n", res);
     if (res == NULL) return 1;
 #endif
     mBck.init((J3DAnmTransform*)res, 1, 0, 2.0f, 0, -1, false);
 
     res = dComIfG_getObjectRes(l_arcName, 13);
 #if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BPK res(13) = %p\n", res);
     if (res == NULL) return 1;
 #endif
     mBpk.init(modelData, (J3DAnmColor*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 16);
 #if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BRK res(16) = %p\n", res);
     if (res == NULL) return 1;
 #endif
     mBrk.init(modelData, (J3DAnmTevRegKey*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 19);
 #if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BTK res(19) = %p\n", res);
     if (res == NULL) return 1;
 #endif
     mBtk.init(modelData, (J3DAnmTextureSRTKey*)res, 1, 0, 2.0f, 0, -1);
@@ -302,6 +311,15 @@ void daTitle_c::logoDispWaitInit() {
      * title animation.  Show the 2D overlay immediately so the title screen
      * has visible content instead of all-black. */
     field_0x5f8 = 1;
+    /* Start animations immediately — on GCN a demo actor triggers this,
+     * but on PC there's no demo system.  Set animations to their end frame
+     * so the title logo is fully visible. */
+    if (mpModel != NULL) {
+        mBck.setFrame(mBck.getEndFrame() - 1.0f);
+        mBpk.setFrame(mBpk.getEndFrame() - 1.0f);
+        mBrk.setFrame(mBrk.getEndFrame() - 1.0f);
+        mBtk.setFrame(mBtk.getEndFrame() - 1.0f);
+    }
 #endif
 }
 

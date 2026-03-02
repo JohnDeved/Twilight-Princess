@@ -100,6 +100,13 @@ void dScnPly_env_debugHIO_c::genMessage(JORMContext* ctx) {
 }
 
 static int dScnPly_Draw(dScnPly_c* i_this) {
+#if PLATFORM_PC
+    static int s_scnply_draw_count = 0;
+    s_scnply_draw_count++;
+    if (s_scnply_draw_count <= 3) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d\n", s_scnply_draw_count);
+    }
+#endif
     static s16 l_wipeType[] = {
         0x0000, 0x0000, 0x0011, 0x0002, 0x0002, 0x0001, 0x0003, 0x0001, 0x0004, 0x0004, 0x0005, 0x0005,
         0x0006, 0x0007, 0x0000, 0x0000, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0008, 0x0008,

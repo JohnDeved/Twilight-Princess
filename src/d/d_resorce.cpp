@@ -375,6 +375,18 @@ int dRes_info_c::loadResource() {
     for (int i = 0; i < mArchive->countDirectory(); i++) {
         u32 nodeType = node->type;
         u32 fileIndex = node->first_file_index;
+#if PLATFORM_PC
+        {
+            char t[5];
+            t[0] = (nodeType >> 24) & 0xFF;
+            t[1] = (nodeType >> 16) & 0xFF;
+            t[2] = (nodeType >> 8) & 0xFF;
+            t[3] = nodeType & 0xFF;
+            t[4] = 0;
+            fprintf(stderr, "[PAL] loadResource '%s' dir[%d] type='%s'(0x%08X) first=%u count=%u\n",
+                    mArchiveName, i, t, nodeType, fileIndex, node->num_entries);
+        }
+#endif
 
         for (int j = 0; j < node->num_entries; j++) {
             if (mArchive->isFileEntry(fileIndex)) {

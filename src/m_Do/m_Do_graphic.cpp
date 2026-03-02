@@ -1609,8 +1609,8 @@ int mDoGph_Painter() {
         dComIfGd_draw2DXlu();
         dComIfGd_draw2DOpaTop();
 
-        /* --- Item/3D model draw list --- */
-        dComIfGd_drawListItem3d();
+        /* --- Item/3D model draw list (with proper camera setup) --- */
+        drawItem3D();
 
         mDoGph_gInf_c::endRender();
         pal_render_end_frame();
