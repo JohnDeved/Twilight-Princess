@@ -62,6 +62,14 @@ static u32 s_distinct_hashes = 0;          /* number of distinct framebuffer has
 static u32 s_prev_fb_hash = 0;            /* previous frame's hash for change detection */
 static u32 s_hash_changes = 0;            /* number of times fb hash changed frame-to-frame */
 
+/* Regression assertion: per-capture-frame pixel coverage */
+#define REGRESS_MAX_CAPTURES 32
+static int s_regress_count = 0;
+static struct {
+    u32 frame;
+    int pct_nonblack;
+} s_regress_data[REGRESS_MAX_CAPTURES];
+
 static void parse_capture_frames(const char* spec) {
     if (!spec || spec[0] == '\0')
         return;
@@ -321,6 +329,13 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (pct_nonblack > 0)
         s_frames_nonblack++;
 
+    /* Store for regression assertion */
+    if (s_regress_count < REGRESS_MAX_CAPTURES) {
+        s_regress_data[s_regress_count].frame = frame_num;
+        s_regress_data[s_regress_count].pct_nonblack = pct_nonblack;
+        s_regress_count++;
+    }
+
     uint32_t fb_hash = pal_capture_hash_fb();
 
     fprintf(stdout,
@@ -430,6 +445,53 @@ void pal_verify_summary(void) {
     if (s_audio_frames_active > 0) {
         audio_health = (int)((s_audio_frames_nonsilent * 100) / s_audio_frames_active);
     }
+
+    /* Regression assertions: check pixel-coverage thresholds at key frames.
+     * Logo (frames 30-90): expect >2% non-black (red Nintendo logo).
+     * Title (frames 120-180): currently 0% (J2D overlay still rendering black).
+     * Thresholds are intentionally conservative to catch major regressions
+     * (e.g., logo disappears entirely) without false positives. */
+    int regress_pass = 1;
+    int regress_logo_found = 0;
+    int regress_checked = 0;
+
+    fprintf(stdout, "{\"verify_regression\":{\"checks\":[");
+    for (int i = 0; i < s_regress_count; i++) {
+        u32 f = s_regress_data[i].frame;
+        int pct = s_regress_data[i].pct_nonblack;
+        int threshold = 0;
+        const char* label = "unknown";
+
+        /* Logo scene: frames 40-90 should have visible content
+         * (fade-in takes ~30 frames, logo is fully visible from ~35) */
+        if (f >= 40 && f <= 90) {
+            threshold = 2;  /* >2% non-black expected (Nintendo logo ~4%) */
+            label = "logo";
+            regress_logo_found = 1;
+        }
+        /* Title scene: frames 120-200 — no threshold yet (still black) */
+        else if (f >= 120 && f <= 200) {
+            threshold = 0;  /* 0% = no assertion, just tracking */
+            label = "title";
+        }
+
+        int pass = (pct >= threshold) ? 1 : 0;
+        if (threshold > 0 && !pass)
+            regress_pass = 0;
+        if (threshold > 0)
+            regress_checked++;
+
+        if (i > 0) fprintf(stdout, ",");
+        fprintf(stdout,
+            "{\"frame\":%u,\"label\":\"%s\",\"pct_nonblack\":%d,"
+            "\"threshold\":%d,\"pass\":%d}",
+            f, label, pct, threshold, pass);
+    }
+    fprintf(stdout, "],\"logo_visible\":%d,\"checks_passed\":%d,"
+            "\"checks_total\":%d,\"regression\":%s}}\n",
+            regress_logo_found, regress_checked - (regress_pass ? 0 : 1),
+            regress_checked, regress_pass ? "false" : "true");
+    fflush(stdout);
 
     fprintf(stdout,
         "{\"verify_summary\":{"
