@@ -1380,7 +1380,15 @@ void pal_tev_flush_draw(void) {
     if (nverts == 0) return;
 
     bgfx::TransientVertexBuffer tvb;
-    if (!bgfx::getAvailTransientVertexBuffer(nverts, layout)) return;
+    if (!bgfx::getAvailTransientVertexBuffer(nverts, layout)) {
+        static int s_tvb_fail = 0;
+        if (s_tvb_fail < 10) {
+            fprintf(stderr, "[PAL] TVB alloc FAIL draw#%u nverts=%u stride=%u\n",
+                    s_total_draw_count, (unsigned)nverts, bgfx_stride);
+            s_tvb_fail++;
+        }
+        return;
+    }
     bgfx::allocTransientVertexBuffer(&tvb, nverts, layout);
 
     /* Copy vertex data — convert from raw GX format to bgfx float format */
@@ -1485,10 +1493,15 @@ void pal_tev_flush_draw(void) {
     /* One-time vertex dump for title scene debugging */
     {
         static int s_vtx_dump_count = 0;
-        if (s_vtx_dump_count < 4 && nverts >= 4 && s_total_draw_count > 250) {
+        /* Dump vertex data for title scene draws (frame ~130+, draw_count > 1000) */
+        if (s_vtx_dump_count < 8 && nverts >= 4 && s_total_draw_count > 1000 &&
+            preset == GX_TEV_SHADER_BLEND) {
             s_vtx_dump_count++;
-            fprintf(stderr, "{\"vtx_dump\":{\"draw_id\":%u,\"nverts\":%u,\"stride\":%u,\"raw_stride\":%u,\"inject\":%d,\"verts\":[",
-                    s_total_draw_count, (unsigned)nverts, bgfx_stride, raw_stride, inject_color);
+            fprintf(stderr, "{\"vtx_dump\":{\"draw_id\":%u,\"frame_est\":%u,\"nverts\":%u,"
+                    "\"stride\":%u,\"raw_stride\":%u,\"inject\":%d,\"preset\":\"%s\",\"verts\":[",
+                    s_total_draw_count, s_total_draw_count / 86, (unsigned)nverts,
+                    bgfx_stride, raw_stride, inject_color,
+                    (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?");
             for (int vi = 0; vi < (int)nverts && vi < 4; vi++) {
                 const float* fv = (const float*)(tvb.data + vi * bgfx_stride);
                 int nf = bgfx_stride / 4;
@@ -1593,6 +1606,38 @@ void pal_tev_flush_draw(void) {
                     mvp[4],mvp[5],mvp[6],mvp[7],
                     mvp[8],mvp[9],mvp[10],mvp[11],
                     mvp[12],mvp[13],mvp[14],mvp[15]);
+        }
+    }
+
+    /* Screen-space bounding box diagnostic for title scene BLEND draws */
+    {
+        static int s_ss_dump = 0;
+        if (s_ss_dump < 100 && s_total_draw_count > 1000 && preset == GX_TEV_SHADER_BLEND) {
+            s_ss_dump++;
+            /* Compute screen-space bounds from first 4 verts */
+            float ss_min_x = 99999, ss_max_x = -99999;
+            float ss_min_y = 99999, ss_max_y = -99999;
+            for (int vi = 0; vi < (int)nverts && vi < 4; vi++) {
+                const float* fv = (const float*)(tvb.data + vi * bgfx_stride);
+                float x = fv[0], y = fv[1], z = fv[2];
+                /* col-major MVP: clip = mvp * (x,y,z,1) */
+                float cx = mvp[0]*x + mvp[4]*y + mvp[8]*z + mvp[12];
+                float cy = mvp[1]*x + mvp[5]*y + mvp[9]*z + mvp[13];
+                float cw = mvp[3]*x + mvp[7]*y + mvp[11]*z + mvp[15];
+                if (cw != 0.0f) { cx /= cw; cy /= cw; }
+                float sx = (cx + 1.0f) * 320.0f;
+                float sy = (1.0f - cy) * 240.0f;
+                if (sx < ss_min_x) ss_min_x = sx;
+                if (sx > ss_max_x) ss_max_x = sx;
+                if (sy < ss_min_y) ss_min_y = sy;
+                if (sy > ss_max_y) ss_max_y = sy;
+            }
+            fprintf(stderr, "{\"ss_box\":{\"draw\":%u,\"screen\":[%.0f,%.0f,%.0f,%.0f],"
+                    "\"vert0\":[%.1f,%.1f],\"mvp_tx\":%.6f,\"mvp_ty\":%.6f}}\n",
+                    s_total_draw_count,
+                    ss_min_x, ss_min_y, ss_max_x, ss_max_y,
+                    ((const float*)(tvb.data))[0], ((const float*)(tvb.data))[1],
+                    mvp[12], mvp[13]);
         }
     }
 
@@ -1710,6 +1755,23 @@ void pal_tev_flush_draw(void) {
                 g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
                 1.0f /* force opaque — see reg0 comment */
             };
+
+            /* DIAGNOSTIC: When TP_BLEND_RED is set, force both TEV regs to
+             * red to confirm whether BLEND draws reach the screen at all.
+             * If title scene shows red, the issue is in the shader formula
+             * or uniform values, not in draw submission. */
+            {
+                static int s_blend_red = -1;
+                if (s_blend_red < 0) {
+                    const char* br = getenv("TP_BLEND_RED");
+                    s_blend_red = (br && br[0] == '1') ? 1 : 0;
+                }
+                if (s_blend_red) {
+                    reg0[0] = 1.0f; reg0[1] = 0.0f; reg0[2] = 0.0f; reg0[3] = 1.0f;
+                    reg1[0] = 1.0f; reg1[1] = 0.0f; reg1[2] = 0.0f; reg1[3] = 1.0f;
+                }
+            }
+
             bgfx::setUniform(s_tev_reg0_uniform, reg0);
             bgfx::setUniform(s_tev_reg1_uniform, reg1);
         }
@@ -1728,6 +1790,20 @@ void pal_tev_flush_draw(void) {
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
+
+    /* DIAGNOSTIC: When TP_NO_BLEND is set, disable blending for BLEND draws
+     * to test whether alpha is the issue. */
+    {
+        static int s_no_blend = -1;
+        if (s_no_blend < 0) {
+            const char* nb = getenv("TP_NO_BLEND");
+            s_no_blend = (nb && nb[0] == '1') ? 1 : 0;
+        }
+        if (s_no_blend && preset == GX_TEV_SHADER_BLEND) {
+            state &= ~BGFX_STATE_BLEND_MASK;
+            state &= ~BGFX_STATE_BLEND_EQUATION_MASK;
+        }
+    }
     /* When using index buffer conversion (quads→tris, fans→tris),
      * the primitive state must be triangle list (0), not the original GX type. */
     if (use_index_buffer && num_indices > 0)
