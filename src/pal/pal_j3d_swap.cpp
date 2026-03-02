@@ -1541,25 +1541,28 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
 
-        /* PIC2: extended picture — PAN2 header (0x48) then J2DScrnBlockPictureParameter.
-         * PictureParameter (0x30 bytes at offset 0x48):
+        /* PIC2: extended picture — PAN2 sub-block (0x48) then J2DScrnBlockPictureParameter.
+         * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
+         * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
+         * PictureParameter (0x30 bytes at offset 0x50):
          *   +0x00: u16 field_0x0, u16 mMaterialNum, u16 field_0x4, u16 field_0x6
          *   +0x08: 4×u16 field_0x8
          *   +0x10: 8×s16 (4 TVec2<s16>)
          *   +0x20: 4×u32 corner colors */
         if (be_tag == FCC('P','I','C','2')) {
-            /* PAN2 portion */
-            if (be_size >= 0x44) {
-                swap_u16_array(blk, 8, 2);
-                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
-                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
-                swap_u32_array(blk, 0x20, 9);
+            /* PAN2 sub-block header at blk+8 (tag + size — needed for seek) */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
             }
-            /* Picture parameter at +0x48 */
-            if (be_size >= 0x78) {
-                swap_u16_array(blk, 0x48, 12);  /* 12 u16s (0x48-0x5F) */
-                swap_u16_array(blk, 0x60, 8);   /* 8 s16s (4 TVec2<s16>) */
-                /* +0x68: 4×GXColor corner colors — byte arrays, no swap */
+            /* Picture parameter at +0x50 */
+            if (be_size >= 0x80) {
+                swap_u16_array(blk, 0x50, 12);  /* 12 u16s */
+                swap_u16_array(blk, 0x68, 8);   /* 8 s16s (4 TVec2<s16>) */
+                /* +0x78: 4×GXColor corner colors — byte arrays, no swap */
             }
         }
 
@@ -1573,8 +1576,10 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
 
-        /* TBX2: extended textbox — PAN2 header (0x48) then J2DTextBoxInfo (0x20).
-         * TextBoxInfo:
+        /* TBX2: extended textbox — PAN2 sub-block (0x48) then J2DTextBoxInfo (0x20).
+         * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
+         * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
+         * J2DTextBoxInfo at blk+0x50 (after PAN2 sub-block ends):
          *   +0x00: u16 field_0x0, u16 field_0x2, u16 mMaterialNum
          *   +0x06: s16 mCharSpace, s16 mLineSpace
          *   +0x0A: u16 mFontSizeX, u16 mFontSizeY
@@ -1584,24 +1589,26 @@ int pal_blo_swap(void* data, u32 size) {
          *   +0x1C: u16 field_0x1c, u16 field_0x1e
          * Then string data (u16 length + chars). */
         if (be_tag == FCC('T','B','X','2')) {
-            /* PAN2 portion */
-            if (be_size >= 0x44) {
-                swap_u16_array(blk, 8, 2);
-                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
-                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
-                swap_u32_array(blk, 0x20, 9);
+            /* PAN2 sub-block header + fields */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
             }
-            /* TextBoxInfo at +0x48 */
-            if (be_size >= 0x68) {
-                u32 tbi = 0x48;
-                swap_u16_array(blk, tbi, 5);           /* 5 u16s (0-9) */
+            /* TextBoxInfo at +0x50 */
+            if (be_size >= 0x70) {
+                u32 tbi = 0x50;
+                swap_u16_array(blk, tbi, 5);           /* 5 u16s (field_0x0 through mLineSpace) */
                 swap_u16_array(blk, tbi + 10, 2);      /* fontSizeX/Y */
+                /* +0x0E: u8 mHBind, u8 mVBind — byte values, no swap */
                 /* +0x10: GXColor charColor, GXColor gradColor — byte arrays, no swap */
                 swap_u16_array(blk, tbi + 0x1C, 2);    /* field_0x1c, field_0x1e */
             }
-            /* String length u16 at +0x68 */
-            if (be_size >= 0x6A) {
-                swap_u16_array(blk, 0x68, 1);
+            /* String length u16 at +0x70 */
+            if (be_size >= 0x72) {
+                swap_u16_array(blk, 0x70, 1);
             }
         }
 
@@ -1615,12 +1622,13 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
         if (be_tag == FCC('W','I','N','2')) {
-            /* PAN2 portion */
-            if (be_size >= 0x44) {
-                swap_u16_array(blk, 8, 2);
-                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
-                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
-                swap_u32_array(blk, 0x20, 9);
+            /* PAN2 sub-block header + fields */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
             }
         }
 
