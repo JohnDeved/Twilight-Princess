@@ -1541,14 +1541,11 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
 
-        /* PIC2: extended picture — PAN2 sub-block (0x48) then J2DScrnBlockPictureParameter.
+        /* PIC2: extended picture — PAN2 sub-block then J2DScrnBlockPictureParameter.
          * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
          * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
-         * PictureParameter (0x30 bytes at offset 0x50):
-         *   +0x00: u16 field_0x0, u16 mMaterialNum, u16 field_0x4, u16 field_0x6
-         *   +0x08: 4×u16 field_0x8
-         *   +0x10: 8×s16 (4 TVec2<s16>)
-         *   +0x20: 4×u32 corner colors */
+         * After PAN2 swap, derive PictureParameter offset from panHeader.mSize
+         * to handle variable-size PAN2 sub-blocks. */
         if (be_tag == FCC('P','I','C','2')) {
             /* PAN2 sub-block header at blk+8 (tag + size — needed for seek) */
             if (be_size >= 0x50) {
@@ -1558,11 +1555,13 @@ int pal_blo_swap(void* data, u32 size) {
                 swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
                 swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
             }
-            /* Picture parameter at +0x50 */
-            if (be_size >= 0x80) {
-                swap_u16_array(blk, 0x50, 12);  /* 12 u16s */
-                swap_u16_array(blk, 0x68, 8);   /* 8 s16s (4 TVec2<s16>) */
-                /* +0x78: 4×GXColor corner colors — byte arrays, no swap */
+            /* PictureParameter offset derived from swapped PAN2 sub-block size */
+            u32 pan2_size = *(u32*)(blk + 0x0C);  /* already swapped above */
+            u32 pic_off = 0x08 + pan2_size;        /* PAN2 sub-block starts at +0x08 */
+            if (pan2_size >= 0x48 && pic_off + 0x30 <= be_size) {
+                swap_u16_array(blk, pic_off, 12);  /* 12 u16s */
+                swap_u16_array(blk, pic_off + 0x18, 8);   /* 8 s16s (4 TVec2<s16>) */
+                /* +0x28: 4×GXColor corner colors — byte arrays, no swap */
             }
         }
 
@@ -1576,18 +1575,10 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
 
-        /* TBX2: extended textbox — PAN2 sub-block (0x48) then J2DTextBoxInfo (0x20).
+        /* TBX2: extended textbox — PAN2 sub-block then J2DTextBoxInfo.
          * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
          * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
-         * J2DTextBoxInfo at blk+0x50 (after PAN2 sub-block ends):
-         *   +0x00: u16 field_0x0, u16 field_0x2, u16 mMaterialNum
-         *   +0x06: s16 mCharSpace, s16 mLineSpace
-         *   +0x0A: u16 mFontSizeX, u16 mFontSizeY
-         *   +0x0E: u8 mHBind, u8 mVBind
-         *   +0x10: u32 mCharColor, u32 mGradColor
-         *   +0x18: u8 mConnected, 3 pad
-         *   +0x1C: u16 field_0x1c, u16 field_0x1e
-         * Then string data (u16 length + chars). */
+         * After PAN2 swap, derive TextBoxInfo offset from panHeader.mSize. */
         if (be_tag == FCC('T','B','X','2')) {
             /* PAN2 sub-block header + fields */
             if (be_size >= 0x50) {
@@ -1597,18 +1588,20 @@ int pal_blo_swap(void* data, u32 size) {
                 swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
                 swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
             }
-            /* TextBoxInfo at +0x50 */
-            if (be_size >= 0x70) {
-                u32 tbi = 0x50;
+            /* TextBoxInfo offset derived from swapped PAN2 sub-block size */
+            u32 pan2_size = *(u32*)(blk + 0x0C);  /* already swapped above */
+            u32 tbi = 0x08 + pan2_size;            /* PAN2 sub-block starts at +0x08 */
+            if (pan2_size >= 0x48 && tbi + 0x20 <= be_size) {
                 swap_u16_array(blk, tbi, 5);           /* 5 u16s (field_0x0 through mLineSpace) */
                 swap_u16_array(blk, tbi + 10, 2);      /* fontSizeX/Y */
                 /* +0x0E: u8 mHBind, u8 mVBind — byte values, no swap */
                 /* +0x10: GXColor charColor, GXColor gradColor — byte arrays, no swap */
                 swap_u16_array(blk, tbi + 0x1C, 2);    /* field_0x1c, field_0x1e */
             }
-            /* String length u16 at +0x70 */
-            if (be_size >= 0x72) {
-                swap_u16_array(blk, 0x70, 1);
+            /* String length u16 after TextBoxInfo */
+            u32 str_off = tbi + 0x20;
+            if (str_off + 2 <= be_size) {
+                swap_u16_array(blk, str_off, 1);
             }
         }
 
