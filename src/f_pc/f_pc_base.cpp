@@ -171,10 +171,6 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
     pprocess->profile = pprofile;
     pprocess->append = i_append;
     pprocess->parameters = pprofile->parameters;
-#if PLATFORM_PC
-    fprintf(stderr, "[PROC-CREATE] profname=%d size=%u addr=%p\n",
-            i_profname, size, (void*)pprocess);
-#endif
     return pprocess;
 }
 
