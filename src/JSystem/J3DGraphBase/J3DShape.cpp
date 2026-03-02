@@ -138,8 +138,7 @@ void J3DLoadCPCmd(u8 addr, u32 val) {
 static void J3DLoadArrayBasePtr(GXAttr attr, void* data) {
 #if PLATFORM_PC || PLATFORM_NX_HB
     /* On 64-bit, the pointer can't fit in the 32-bit FIFO write.
-     * Directly update the array base in the GX state machine.
-     * Use the stride already set by GDSetArray (makeVtxArrayCmd). */
+     * Directly update the array base in the GX state machine. */
     extern GXStateMachine g_gx_state;
     if ((unsigned)attr < GX_MAX_VTXATTR) {
         g_gx_state.vtx_arrays[attr].base_ptr = data;
@@ -150,7 +149,68 @@ static void J3DLoadArrayBasePtr(GXAttr attr, void* data) {
 #endif
 }
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+static void J3DLoadArrayBasePtrWithStride(GXAttr attr, void* data, u8 stride) {
+    extern GXStateMachine g_gx_state;
+    if ((unsigned)attr < GX_MAX_VTXATTR) {
+        g_gx_state.vtx_arrays[attr].base_ptr = data;
+        g_gx_state.vtx_arrays[attr].stride = stride;
+    }
+}
+#endif
+
 void J3DShape::loadVtxArray() const {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, GDSetArray (called during makeVtxArrayCmd) is a no-op, so vertex
+     * array strides in g_gx_state are never set. We must set both base_ptr AND
+     * stride here. Compute strides from the vertex format list, matching the
+     * logic in makeVtxArrayCmd(). */
+    J3DLoadArrayBasePtr(GX_VA_POS, j3dSys.getVtxPos());
+    if (!mHasNBT) {
+        J3DLoadArrayBasePtr(GX_VA_NRM, j3dSys.getVtxNrm());
+    }
+    J3DLoadArrayBasePtr(GX_VA_CLR0, j3dSys.getVtxCol());
+
+    if (mVertexData) {
+        GXVtxAttrFmtList* vtxAttr = mVertexData->getVtxAttrFmtList();
+        for (; vtxAttr && vtxAttr->attr != GX_VA_NULL; vtxAttr++) {
+            u8 s = 0;
+            switch (vtxAttr->attr) {
+            case GX_VA_POS:
+                s = (vtxAttr->type == GX_F32) ? 12 : 6;
+                J3DLoadArrayBasePtrWithStride(GX_VA_POS, j3dSys.getVtxPos(), s);
+                break;
+            case GX_VA_NRM:
+                s = (vtxAttr->type == GX_F32) ? 12 : 6;
+                if (mHasNBT) s *= 3;
+                if (!mHasNBT) {
+                    J3DLoadArrayBasePtrWithStride(GX_VA_NRM, j3dSys.getVtxNrm(), s);
+                } else {
+                    J3DLoadArrayBasePtrWithStride(GX_VA_NRM,
+                        (void*)mVertexData->getVtxNBTArray(), s);
+                }
+                break;
+            case GX_VA_CLR0:
+                J3DLoadArrayBasePtrWithStride(GX_VA_CLR0, j3dSys.getVtxCol(), 4);
+                break;
+            case GX_VA_CLR1:
+                J3DLoadArrayBasePtrWithStride(GX_VA_CLR1,
+                    mVertexData->getVtxColorArray(1), 4);
+                break;
+            case GX_VA_TEX0: case GX_VA_TEX1: case GX_VA_TEX2: case GX_VA_TEX3:
+            case GX_VA_TEX4: case GX_VA_TEX5: case GX_VA_TEX6: case GX_VA_TEX7: {
+                s = (vtxAttr->type == GX_F32) ? 8 : 4;
+                void* tcArr = mVertexData->getVtxTexCoordArray(vtxAttr->attr - GX_VA_TEX0);
+                if (tcArr) {
+                    J3DLoadArrayBasePtrWithStride((GXAttr)vtxAttr->attr, tcArr, s);
+                }
+            } break;
+            default:
+                break;
+            }
+        }
+    }
+#else
     J3DLoadArrayBasePtr(GX_VA_POS, j3dSys.getVtxPos());
 
     if (!mHasNBT) {
@@ -158,25 +218,6 @@ void J3DShape::loadVtxArray() const {
     }
 
     J3DLoadArrayBasePtr(GX_VA_CLR0, j3dSys.getVtxCol());
-
-#if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, also load texcoord and color arrays per-frame.
-     * On GCN these are set via CP array commands in the VcdVat DL, but on PC
-     * those CP commands contain truncated 32-bit physical addresses.
-     * loadVtxArray is called every frame from drawFast, ensuring correct arrays. */
-    if (mVertexData) {
-        for (int i = 0; i < 8; i++) {
-            void* tcArr = mVertexData->getVtxTexCoordArray(i);
-            if (tcArr) {
-                J3DLoadArrayBasePtr((GXAttr)(GX_VA_TEX0 + i), tcArr);
-            }
-        }
-        /* CLR1 if present */
-        GXColor* clr1 = mVertexData->getVtxColorArray(1);
-        if (clr1) {
-            J3DLoadArrayBasePtr(GX_VA_CLR1, clr1);
-        }
-    }
 #endif
 }
 
