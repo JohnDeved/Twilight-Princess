@@ -8,6 +8,9 @@
 #include "JSystem/J2DGraph/J2DPrint.h"
 #include "JSystem/JSupport/JSURandomInputStream.h"
 #include "JSystem/JUtility/JUTResFont.h"
+#if PLATFORM_PC
+#include <dolphin/gx.h>
+#endif
 
 J2DTextBoxEx::J2DTextBoxEx(J2DPane* p_pane, JSURandomInputStream* p_stream, u32 param_2,
                                J2DMaterial* p_material) {
@@ -106,6 +109,10 @@ void J2DTextBoxEx::drawSelf(f32 param_0, f32 param_1, Mtx* p_mtx) {
 
     if (mMaterial != NULL) {
         mMaterial->setGX();
+#if PLATFORM_PC
+        GXSetTevColor(GX_TEVREG0, mBlackColor);
+        GXSetTevColor(GX_TEVREG1, mWhiteColor);
+#endif
         MTXConcat(*p_mtx, mGlobalMtx, m);
 
         GXLoadPosMtxImm(m, GX_PNMTX0);
@@ -149,6 +156,10 @@ void J2DTextBoxEx::draw(f32 posX, f32 posY) {
 
         if (mMaterial != NULL) {
             mMaterial->setGX();
+#if PLATFORM_PC
+            GXSetTevColor(GX_TEVREG0, mBlackColor);
+            GXSetTevColor(GX_TEVREG1, mWhiteColor);
+#endif
             makeMatrix(posX, posY, 0.0f, 0.0f);
 
             GXLoadPosMtxImm(mPositionMtx, GX_PNMTX0);
@@ -204,6 +215,10 @@ void J2DTextBoxEx::draw(f32 posX, f32 posY, f32 param_2, J2DTextBoxHBinding hBin
 
         if (mMaterial != NULL) {
             mMaterial->setGX();
+#if PLATFORM_PC
+            GXSetTevColor(GX_TEVREG0, mBlackColor);
+            GXSetTevColor(GX_TEVREG1, mWhiteColor);
+#endif
             makeMatrix(posX, posY, 0.0f, 0.0f);
 
             GXLoadPosMtxImm(mPositionMtx, GX_PNMTX0);
