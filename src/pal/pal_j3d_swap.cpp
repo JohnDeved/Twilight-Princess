@@ -1627,7 +1627,7 @@ int pal_blo_swap(void* data, u32 size) {
         /* TEX1: texture resource list
          *   +0x08: u16 count, 2 pad
          *   +0x0C: u32 dataOffset (used by getResReference to seek to entries)
-         *   +dataOffset: resource reference entries (u8 type + u8 len + string) */
+         *   +dataOffset: JUTResReference entries (u8 type + u8 nameLen + string) */
         if (be_tag == FCC('T','E','X','1')) {
             if (be_size >= 0x10) {
                 swap_u16_array(blk, 8, 1);  /* count */

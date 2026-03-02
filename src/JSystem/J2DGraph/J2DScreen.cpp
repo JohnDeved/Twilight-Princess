@@ -369,8 +369,9 @@ bool J2DScreen::createMaterial(JSURandomInputStream* p_stream, u32 param_1, JKRA
 #if PLATFORM_PC
     /* On PC, the MAT1 block's internal data (J2DMaterialInitData, TEV stages,
      * color channels, etc.) is still big-endian.  Full byte-swap is complex.
-     * Skip material factory and advance past the block.  Panes render with
-     * default materials (no textures/special blending). */
+     * Skip material factory and advance past the block.  Specialized pane types
+     * (J2DPictureEx, J2DTextBoxEx, J2DWindowEx) fall back to basic J2DPane
+     * construction when mMaterials is NULL. */
     mMaterialNum = 0;
     mMaterials = NULL;
     p_stream->seek(position + header.mSize, JSUStreamSeekFrom_SET);
