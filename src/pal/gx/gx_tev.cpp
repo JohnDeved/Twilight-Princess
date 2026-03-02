@@ -1595,9 +1595,12 @@ void pal_tev_flush_draw(void) {
          * updated.  The pattern is:
          *   - PASSCLR preset (no texture sampling)
          *   - TEV stage 0: color_d == GX_CC_C0 and a/b/c are all GX_CC_ZERO
-         *   - TEVREG0 RGB is black (r+g+b == 0)
          *   - No blend (GX_BM_NONE) — direct framebuffer overwrite
          *   - Depth test enabled
+         *
+         * Note: TEVREG0 value is NOT checked — mBlack/mWhite application
+         * timing can set non-zero values in the title scene.  The TEV
+         * pattern itself is sufficient to identify depth-prime fills.
          */
         int suppress_color = 0;
         if (preset == GX_TEV_SHADER_PASSCLR &&
@@ -1608,15 +1611,7 @@ void pal_tev_flush_draw(void) {
             if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
                 s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
             {
-                const GXColor* c0 = &g_gx_state.tev_regs[GX_TEVREG0];
-                static int s_suppress_log = 0;
-                if (s_suppress_log < 3) {
-                    s_suppress_log++;
-                    fprintf(stderr, "{\"suppress_check\":{\"id\":%u,\"c0\":[%d,%d,%d,%d]}}\n",
-                            s_total_draw_count, c0->r, c0->g, c0->b, c0->a);
-                }
-                if (c0->r == 0 && c0->g == 0 && c0->b == 0)
-                    suppress_color = 1;
+                suppress_color = 1;
             }
         }
 
