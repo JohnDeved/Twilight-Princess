@@ -1328,49 +1328,6 @@ void pal_tev_flush_draw(void) {
     }
     bgfx::setTransform(mvp);
 
-    /* Log first few textured draws — full vertex + MVP diagnostic */
-    static int s_vtx_log = 0;
-    if (s_vtx_log < 2 && preset != GX_TEV_SHADER_PASSCLR && nverts >= 4) {
-        s_vtx_log++;
-        const GXVtxAttrFmtEntry* af_log = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
-        int has_pn = desc[GX_VA_PNMTXIDX].type != GX_NONE;
-        int npos_log = (af_log[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
-        int skip_head = 0;
-        if (has_pn) skip_head += 1;
-        for (int i = 0; i < 8; i++)
-            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) skip_head += 1;
-
-        fprintf(stderr, "{\"vtx_diag\":{\"draw\":%d,\"npos\":%d,\"stride\":%u,\"raw_stride\":%u,"
-                "\"prim\":%d,\"inject\":%d,\"use_idx\":%d,\"n_idx\":%u,\"vertices\":[",
-                s_vtx_log, npos_log, bgfx_stride, raw_stride, ds->prim_type, inject_color,
-                use_index_buffer, (unsigned)num_indices);
-        int nv = (nverts > 4) ? 4 : nverts;
-        for (int vi = 0; vi < nv; vi++) {
-            uint32_t off = vi * bgfx_stride + skip_head;
-            float px = 0, py = 0, pz = 0;
-            memcpy(&px, tvb.data + off, 4); off += 4;
-            memcpy(&py, tvb.data + off, 4); off += 4;
-            if (npos_log == 3) { memcpy(&pz, tvb.data + off, 4); off += 4; }
-            uint8_t cr = tvb.data[off], cg = tvb.data[off+1], cb = tvb.data[off+2], ca = tvb.data[off+3];
-            off += 4;
-            float u0 = 0, v0f = 0;
-            if (desc[GX_VA_TEX0].type != GX_NONE) {
-                memcpy(&u0, tvb.data + off, 4); off += 4;
-                int ntc = (af_log[GX_VA_TEX0].cnt == GX_TEX_S) ? 1 : 2;
-                if (ntc >= 2) { memcpy(&v0f, tvb.data + off, 4); }
-            }
-            if (vi > 0) fprintf(stderr, ",");
-            fprintf(stderr, "{\"pos\":[%.2f,%.2f,%.2f],\"clr\":[%u,%u,%u,%u],\"uv\":[%.4f,%.4f]}",
-                    px, py, pz, cr, cg, cb, ca, u0, v0f);
-        }
-        fprintf(stderr, "],\"mvp\":[%.6f,%.6f,%.6f,%.6f, %.6f,%.6f,%.6f,%.6f, "
-                "%.6f,%.6f,%.6f,%.6f, %.6f,%.6f,%.6f,%.6f]}}\n",
-                mvp[0], mvp[1], mvp[2], mvp[3],
-                mvp[4], mvp[5], mvp[6], mvp[7],
-                mvp[8], mvp[9], mvp[10], mvp[11],
-                mvp[12], mvp[13], mvp[14], mvp[15]);
-    }
-
     /* 6. Set vertex buffer */
     bgfx::setVertexBuffer(0, &tvb);
 
