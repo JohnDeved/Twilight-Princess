@@ -359,6 +359,16 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         }
 
         bind->valid = 1;
+    } else {
+        /* Log when GXLoadTexObj is called without PC-initialized texobj */
+        static int s_no_tp_count = 0;
+        if (s_no_tp_count < 5) {
+            s_no_tp_count++;
+            fprintf(stderr, "{\"gx_load_tex_obj_no_tp\":{\"id\":%d,\"data0\":%d,\"data1\":%d,"
+                    "\"w\":%u,\"h\":%u,\"ptr\":\"%p\"}}\n",
+                    (int)id, data[0], data[1],
+                    (unsigned)bind->width, (unsigned)bind->height, bind->image_ptr);
+        }
     }
 }
 

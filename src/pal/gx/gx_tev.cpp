@@ -1050,6 +1050,42 @@ void pal_tev_flush_draw(void) {
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
+
+    /* Diagnostic: log ALL draws for draw_count window 7000-7100 (approx frame 82-83) */
+    if (s_total_draw_count >= 7000 && s_total_draw_count <= 7100) {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        const GXTevStage* s1 = (g_gx_state.num_tev_stages >= 2) ? &g_gx_state.tev_stages[1] : NULL;
+        int tm = s0->tex_map;
+        int tv = (tm >= 0 && tm < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[tm].valid : -1;
+        u16 tw = (tv == 1) ? g_gx_state.tex_bindings[tm].width : 0;
+        u16 th = (tv == 1) ? g_gx_state.tex_bindings[tm].height : 0;
+        int tf = (tv == 1) ? (int)g_gx_state.tex_bindings[tm].format : -1;
+        fprintf(stderr, "{\"all_draw\":{\"id\":%u,\"preset\":\"%s\",\"ns\":%d,"
+                "\"tev0\":[%d,%d,%d,%d]",
+                s_total_draw_count, s_fs_names[preset], g_gx_state.num_tev_stages,
+                s0->color_a, s0->color_b, s0->color_c, s0->color_d);
+        if (s1) {
+            fprintf(stderr, ",\"tev1\":[%d,%d,%d,%d]",
+                    s1->color_a, s1->color_b, s1->color_c, s1->color_d);
+        }
+        fprintf(stderr, ",\"tex_map\":%d,\"tex_valid\":%d,"
+                "\"tw\":%u,\"th\":%u,\"tf\":%d,"
+                "\"blend\":%d,\"z_en\":%d,"
+                "\"nverts\":%u,\"prim\":%d,"
+                "\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
+                tm, tv, (unsigned)tw, (unsigned)th, tf,
+                g_gx_state.blend_mode, g_gx_state.z_compare_enable,
+                (unsigned)ds->verts_written, ds->prim_type,
+                g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
+                g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
+                g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
+                g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a,
+                g_gx_state.tev_regs[2].r, g_gx_state.tev_regs[2].g,
+                g_gx_state.tev_regs[2].b, g_gx_state.tev_regs[2].a,
+                g_gx_state.tev_regs[3].r, g_gx_state.tev_regs[3].g,
+                g_gx_state.tev_regs[3].b, g_gx_state.tev_regs[3].a);
+    }
+
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
@@ -1345,40 +1381,76 @@ void pal_tev_flush_draw(void) {
             if (bgfx::isValid(tex)) {
                 bgfx::setTexture(0, s_tex_uniform, tex, gx_sampler_flags(binding));
             }
-            /* Log first few textured draws for diagnostics */
+            /* Per-draw texture diagnostic:
+             * Log first 5 draws AND any draw with invalid texture handle.
+             * Also log first 5 draws after draw_id exceeds 50 (title scene). */
             static int s_tex_log_count = 0;
-            if (s_tex_log_count < 10) {
-                s_tex_log_count++;
+            static int s_title_log_count = 0;
+            int should_log = (s_tex_log_count < 5);
+            if (!bgfx::isValid(tex)) should_log = 1;
+            if (s_total_draw_count > 50 && s_title_log_count < 10) {
+                should_log = 1;
+                s_title_log_count++;
+            }
+            if (should_log) {
+                if (s_tex_log_count < 5) s_tex_log_count++;
                 int ns = g_gx_state.num_tev_stages;
                 const GXTevStage* s1 = (ns >= 2) ? &g_gx_state.tev_stages[1] : NULL;
-                fprintf(stderr, "{\"tev_tex_draw\":{\"n\":%d,\"draw_id\":%u,\"preset\":\"%s\","
+                /* First 2 texcoord values for UV debugging */
+                float tc0_u = 0, tc0_v = 0, tc1_u = 0, tc1_v = 0;
+                if (nverts >= 1 && raw_stride > 0) {
+                    const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+                    for (int tci = 0; tci < 8; tci++) {
+                        if (desc[GX_VA_TEX0 + tci].type != GX_NONE) {
+                            GXCompType tt = af[GX_VA_TEX0 + tci].comp_type;
+                            uint8_t tf = af[GX_VA_TEX0 + tci].frac;
+                            uint32_t tc_off = 0;
+                            /* Compute offset to first texcoord in raw vertex */
+                            for (int ai = 0; ai < GX_VA_TEX0 + tci; ai++) {
+                                if (desc[ai].type != GX_NONE) {
+                                    tc_off += raw_attr_size(ai);
+                                }
+                            }
+                            /* Read first vertex texcoord */
+                            if (desc[GX_VA_TEX0 + tci].type == GX_DIRECT && tc_off + 4 <= raw_stride) {
+                                tc0_u = read_gx_component(ds->vtx_data + tc_off, tt, tf);
+                                tc0_v = read_gx_component(ds->vtx_data + tc_off + gx_comp_size(tt), tt, tf);
+                                if (nverts >= 2) {
+                                    tc1_u = read_gx_component(ds->vtx_data + raw_stride + tc_off, tt, tf);
+                                    tc1_v = read_gx_component(ds->vtx_data + raw_stride + tc_off + gx_comp_size(tt), tt, tf);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                fprintf(stderr, "{\"tev_draw\":{\"draw_id\":%u,\"preset\":\"%s\","
                         "\"tex_valid\":%d,\"tex_map\":%d,"
                         "\"w\":%u,\"h\":%u,\"fmt\":%d,\"img_ptr\":\"%p\","
-                        "\"nverts\":%u,\"stride\":%u,\"prim\":%d,"
+                        "\"bind_valid\":%d,"
+                        "\"nverts\":%u,\"prim\":%d,"
                         "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
-                        "\"z_enable\":%d,\"z_func\":%d,"
-                        "\"mvp_diag\":[%.3f,%.3f,%.3f,%.3f],"
+                        "\"z_enable\":%d,"
+                        "\"tc\":[%.3f,%.3f,%.3f,%.3f],"
                         "\"num_stages\":%d,"
-                        "\"tev0\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}",
-                        s_tex_log_count, s_total_draw_count, s_fs_names[preset],
+                        "\"tev0_cd\":[%d,%d,%d,%d]",
+                        s_total_draw_count, s_fs_names[preset],
                         bgfx::isValid(tex) ? 1 : 0,
                         s0->tex_map,
                         (unsigned)binding->width, (unsigned)binding->height,
                         (int)binding->format, binding->image_ptr,
-                        (unsigned)nverts, raw_stride, ds->prim_type,
+                        binding->valid,
+                        (unsigned)nverts, ds->prim_type,
                         g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
-                        g_gx_state.z_compare_enable, g_gx_state.z_func,
-                        mvp[0], mvp[5], mvp[10], mvp[15],
+                        g_gx_state.z_compare_enable,
+                        tc0_u, tc0_v, tc1_u, tc1_v,
                         ns,
-                        s0->color_a, s0->color_b, s0->color_c, s0->color_d,
-                        s0->alpha_a, s0->alpha_b, s0->alpha_c, s0->alpha_d);
+                        s0->color_a, s0->color_b, s0->color_c, s0->color_d);
                 if (s1) {
-                    fprintf(stderr, ",\"tev1\":{\"color_abcd\":[%d,%d,%d,%d],\"alpha_abcd\":[%d,%d,%d,%d]}",
-                            s1->color_a, s1->color_b, s1->color_c, s1->color_d,
-                            s1->alpha_a, s1->alpha_b, s1->alpha_c, s1->alpha_d);
+                    fprintf(stderr, ",\"tev1_cd\":[%d,%d,%d,%d]",
+                            s1->color_a, s1->color_b, s1->color_c, s1->color_d);
                 }
-                fprintf(stderr, ",\"tev_reg0\":[%d,%d,%d,%d],\"tev_reg1\":[%d,%d,%d,%d]"
-                        "}}\n",
+                fprintf(stderr, ",\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
                         g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
                         g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
                         g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,

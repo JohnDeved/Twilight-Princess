@@ -494,7 +494,15 @@ void GXSetTevAlphaOp(GXTevStageID stage, GXTevOp op, GXTevBias bias,
                      GXTevScale scale, GXBool clamp, GXTevRegID out_reg) {
     pal_gx_set_tev_alpha_op(stage, op, bias, scale, clamp, out_reg);
 }
-void GXSetTevColor(GXTevRegID id, GXColor color) { pal_gx_set_tev_color(id, color); }
+void GXSetTevColor(GXTevRegID id, GXColor color) {
+    static int s_tc_log = 0;
+    if (s_tc_log < 10) {
+        s_tc_log++;
+        fprintf(stderr, "{\"GXSetTevColor\":{\"id\":%d,\"rgba\":[%d,%d,%d,%d]}}\n",
+                (int)id, (int)color.r, (int)color.g, (int)color.b, (int)color.a);
+    }
+    pal_gx_set_tev_color(id, color);
+}
 void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
     GXColor c;
     c.r = (u8)(color.r < 0 ? 0 : (color.r > 255 ? 255 : color.r));
