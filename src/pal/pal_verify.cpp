@@ -454,6 +454,7 @@ void pal_verify_summary(void) {
     int regress_pass = 1;
     int regress_logo_found = 0;
     int regress_checked = 0;
+    int regress_passed = 0;
 
     fprintf(stdout, "{\"verify_regression\":{\"checks\":[");
     for (int i = 0; i < s_regress_count; i++) {
@@ -465,7 +466,7 @@ void pal_verify_summary(void) {
         /* Logo scene: frames 40-90 should have visible content
          * (fade-in takes ~30 frames, logo is fully visible from ~35) */
         if (f >= 40 && f <= 90) {
-            threshold = 2;  /* >2% non-black expected (Nintendo logo ~4%) */
+            threshold = 2;  /* >=2% non-black expected (Nintendo logo ~4%) */
             label = "logo";
             regress_logo_found = 1;
         }
@@ -476,10 +477,13 @@ void pal_verify_summary(void) {
         }
 
         int pass = (pct >= threshold) ? 1 : 0;
-        if (threshold > 0 && !pass)
-            regress_pass = 0;
-        if (threshold > 0)
+        if (threshold > 0) {
             regress_checked++;
+            if (pass)
+                regress_passed++;
+            else
+                regress_pass = 0;
+        }
 
         if (i > 0) fprintf(stdout, ",");
         fprintf(stdout,
@@ -489,7 +493,7 @@ void pal_verify_summary(void) {
     }
     fprintf(stdout, "],\"logo_visible\":%d,\"checks_passed\":%d,"
             "\"checks_total\":%d,\"regression\":%s}}\n",
-            regress_logo_found, regress_checked - (regress_pass ? 0 : 1),
+            regress_logo_found, regress_passed,
             regress_checked, regress_pass ? "false" : "true");
     fflush(stdout);
 
