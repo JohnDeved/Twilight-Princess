@@ -1647,17 +1647,143 @@ int pal_blo_swap(void* data, u32 size) {
             }
         }
 
-        /* MAT1: material block
-         *   +0x08: u16 count, 2 pad
-         *   +0x0C..+0x64: J2DMaterialBlock offset fields (23 u32s)
-         *   then material data at each offset.
-         * On PC: material factory parsing needs all internal structs
-         * byte-swapped (J2DMaterialInitData, J2DTevStageInfo, etc.).
-         * For now, swap the header so createMaterial can read matCount
-         * and blockSize, but skip material factory on PC. */
+        /* MAT1: material block — full struct-aware endian swap.
+         *   +0x08: u16 count, u16 pad
+         *   +0x0C..+0x64: 23 u32 offset fields (J2DMaterialBlock)
+         *   Then sub-arrays at each offset containing material data. */
         if (be_tag == FCC('M','A','T','1')) {
-            if (be_size >= 0x0C) {
-                swap_u16_array(blk, 8, 1); /* count */
+            if (be_size < 0x68) {
+                /* Too small for full header, just swap count */
+                if (be_size >= 0x0C)
+                    swap_u16_array(blk, 8, 1);
+            } else {
+                /* Swap count at +0x08 */
+                swap_u16_array(blk, 8, 1);
+
+                /* Swap 23 u32 offset fields at +0x0C..+0x64 */
+                swap_u32_array(blk, 0x0C, 23);
+
+                u16 matCount = *(u16*)(blk + 8);
+
+                /* Read all 23 offsets (now in native endian) */
+                u32 moff[23];
+                for (int j = 0; j < 23; j++)
+                    moff[j] = *(u32*)(blk + 0x0C + j * 4);
+
+                /* Find next offset boundary after o (for computing array sizes) */
+                auto next_bound = [&](u32 o) -> u32 {
+                    u32 next = be_size;
+                    for (int j = 0; j < 23; j++)
+                        if (moff[j] > o && moff[j] < next) next = moff[j];
+                    return next;
+                };
+
+                /* moff[0] (field_0x0C) → J2DMaterialInitData (0xE8 bytes each)
+                 * Contains many u16 index fields, u8 fields (no swap). */
+                if (moff[0] && moff[0] < be_size) {
+                    u32 cnt = (next_bound(moff[0]) - moff[0]) / 0xE8;
+                    for (u32 m = 0; m < cnt; m++) {
+                        u32 b = moff[0] + m * 0xE8;
+                        if (b + 0xE8 > be_size) break;
+                        /* u8 at 0x00-0x07: no swap */
+                        swap_u16_array(blk, b + 0x08, 2);    /* field_0x8[2] */
+                        swap_u16_array(blk, b + 0x0C, 4);    /* field_0xc[4] */
+                        swap_u16_array(blk, b + 0x14, 8);    /* field_0x14[8] */
+                        swap_u16_array(blk, b + 0x24, 0xA);  /* field_0x24[10] */
+                        swap_u16_array(blk, b + 0x38, 8);    /* field_0x38[8] */
+                        swap_u16_array(blk, b + 0x48, 1);    /* field_0x48 */
+                        swap_u16_array(blk, b + 0x4A, 4);    /* field_0x4a[4] */
+                        /* u8 at 0x52-0x71: no swap */
+                        swap_u16_array(blk, b + 0x72, 0x10); /* field_0x72[16] */
+                        swap_u16_array(blk, b + 0x92, 0x4);  /* field_0x92[4] */
+                        swap_u16_array(blk, b + 0x9A, 0x10); /* field_0x9a[16] */
+                        swap_u16_array(blk, b + 0xBA, 0x10); /* field_0xba[16] */
+                        swap_u16_array(blk, b + 0xDA, 0x4);  /* field_0xda[4] */
+                        swap_u16_array(blk, b + 0xE2, 1);    /* field_0xe2 */
+                        swap_u16_array(blk, b + 0xE4, 1);    /* field_0xe4 */
+                        swap_u16_array(blk, b + 0xE6, 1);    /* field_0xe6 */
+                    }
+                }
+
+                /* moff[1] (field_0x10) → u16 material index array */
+                if (moff[1] && moff[1] < be_size && matCount > 0) {
+                    u32 cnt = matCount;
+                    if (moff[1] + cnt * 2 > be_size)
+                        cnt = (be_size - moff[1]) / 2;
+                    swap_u16_array(blk, moff[1], cnt);
+                }
+
+                /* moff[2] (field_0x14) → ResNTAB name table
+                 * u16 entryNum, u16 pad, then Entry[]{u16 hash, u16 offs} */
+                if (moff[2] && moff[2] + 4 <= be_size) {
+                    swap_u16_array(blk, moff[2], 2); /* entryNum + pad */
+                    u16 entryNum = *(u16*)(blk + moff[2]);
+                    if (entryNum > 0 && moff[2] + 4 + entryNum * 4 <= be_size)
+                        swap_u16_array(blk, moff[2] + 4, entryNum * 2);
+                }
+
+                /* moff[3] (field_0x18) → J2DIndInitData (if present)
+                 * Contains Mtx23 (f32[2][3]) at +0x0C, 3 entries of 0x1C */
+                if (moff[3] && moff[3] < be_size) {
+                    for (int k = 0; k < 3; k++) {
+                        u32 mtxBase = moff[3] + 0x0C + k * 0x1C;
+                        if (mtxBase + 0x18 <= be_size)
+                            swap_u32_array(blk, mtxBase, 6); /* Mtx23 = 6 f32 */
+                    }
+                }
+
+                /* moff[4] (field_0x1C) → _GXCullMode (u32 each) */
+                if (moff[4] && moff[4] < be_size) {
+                    u32 cnt = (next_bound(moff[4]) - moff[4]) / 4;
+                    if (cnt > 0) swap_u32_array(blk, moff[4], cnt);
+                }
+
+                /* moff[5] (field_0x20) → GXColor: {u8,u8,u8,u8} no swap */
+                /* moff[6] (field_0x24) → u8 color chan counts: no swap */
+                /* moff[7] (field_0x28) → J2DColorChanInfo: all u8, no swap */
+                /* moff[8] (field_0x2C) → u8 tex gen counts: no swap */
+                /* moff[9] (field_0x30) → J2DTexCoordInfo: all u8, no swap */
+
+                /* moff[10] (field_0x34) → J2DTexMtxInfo (0x24 bytes each)
+                 * Contains Vec (3 f32) at +0x04, J2DTextureSRTInfo (5 f32) at +0x10 */
+                if (moff[10] && moff[10] < be_size) {
+                    u32 cnt = (next_bound(moff[10]) - moff[10]) / 0x24;
+                    for (u32 t = 0; t < cnt; t++) {
+                        u32 b = moff[10] + t * 0x24;
+                        if (b + 0x24 > be_size) break;
+                        swap_u32_array(blk, b + 0x04, 3); /* Vec center */
+                        swap_u32_array(blk, b + 0x10, 5); /* SRT info */
+                    }
+                }
+
+                /* moff[11] (field_0x38) → u16 texture numbers */
+                if (moff[11] && moff[11] < be_size) {
+                    u32 cnt = (next_bound(moff[11]) - moff[11]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[11], cnt);
+                }
+
+                /* moff[12] (field_0x3C) → u16 font numbers */
+                if (moff[12] && moff[12] < be_size) {
+                    u32 cnt = (next_bound(moff[12]) - moff[12]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[12], cnt);
+                }
+
+                /* moff[13] (field_0x40) → J2DTevOrderInfo: all u8, no swap */
+
+                /* moff[14] (field_0x44) → _GXColorS10 (4 × s16 = 8 bytes each) */
+                if (moff[14] && moff[14] < be_size) {
+                    u32 cnt = (next_bound(moff[14]) - moff[14]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[14], cnt);
+                }
+
+                /* moff[15] (field_0x48) → GXColor K-colors: {u8} no swap */
+                /* moff[16] (field_0x4C) → u8 TEV stage counts: no swap */
+                /* moff[17] (field_0x50) → J2DTevStageInfo: all u8, no swap */
+                /* moff[18] (field_0x54) → J2DTevSwapModeInfo: all u8, no swap */
+                /* moff[19] (field_0x58) → J2DTevSwapModeTableInfo: all u8, no swap */
+                /* moff[20] (field_0x5C) → J2DAlphaCompInfo: all u8, no swap */
+                /* moff[21] (field_0x60) → J2DBlendInfo: all u8, no swap */
+                /* moff[22] (field_0x64) → u8 dither: no swap */
             }
         }
 

@@ -366,17 +366,6 @@ bool J2DScreen::createMaterial(JSURandomInputStream* p_stream, u32 param_1, JKRA
     J2DScrnBlockHeader header;
     p_stream->read(&header, 8);
     mMaterialNum = p_stream->readU16();
-#if PLATFORM_PC
-    /* On PC, the MAT1 block's internal data (J2DMaterialInitData, TEV stages,
-     * color channels, etc.) is still big-endian.  Full byte-swap is complex.
-     * Skip material factory and advance past the block.  Specialized pane types
-     * (J2DPictureEx, J2DTextBoxEx, J2DWindowEx) fall back to basic J2DPane
-     * construction when mMaterials is NULL. */
-    mMaterialNum = 0;
-    mMaterials = NULL;
-    p_stream->seek(position + header.mSize, JSUStreamSeekFrom_SET);
-    return true;
-#endif
 
     p_stream->skip(2);
 
@@ -398,8 +387,13 @@ bool J2DScreen::createMaterial(JSURandomInputStream* p_stream, u32 param_1, JKRA
         }
 
         if (param_1 & 0x1F0000) {
+#if PLATFORM_PC
+            /* On PC, pal_blo_swap already converted offsets to native endian */
+            u32 offset = *(u32*)(buffer + 0x14);
+#else
             u32 offset =
                 buffer[0x14] << 0x18 | buffer[0x15] << 0x10 | buffer[0x16] << 8 | buffer[0x17];
+#endif
             ResNTAB* sec_s = (ResNTAB*)(buffer + offset);
             u16 entryNum = sec_s->mEntryNum;
             u16 lastOffset = sec_s->mEntries[entryNum - 1].mOffs;
