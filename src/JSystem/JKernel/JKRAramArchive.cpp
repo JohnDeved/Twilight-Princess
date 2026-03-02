@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #endif
-#include <string>
+#include <cstring>
 
 JKRAramArchive::JKRAramArchive() {}
 
@@ -264,7 +264,7 @@ void* JKRAramArchive::fetchResource(SDIFileEntry* pEntry, u32* pOutSize) {
             &outBuf);
 
         *pOutSize = size;
-        if (size == NULL) {
+        if (size == 0) {
             return NULL;
         }
 
@@ -299,7 +299,7 @@ void* JKRAramArchive::fetchResource(void* buffer, u32 bufferSize, SDIFileEntry* 
     } else {
         if (compression == COMPRESSION_YAZ0) {
             u32 expandSize = this->getExpandSize(pEntry);
-            if (expandSize != NULL) {
+            if (expandSize != 0) {
                 size = expandSize;
             }
         }

@@ -21,6 +21,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
 #include <cmath>
+#include <cstring>
 
 #if DEBUG
 #include "d/d_debug_pad.h"
@@ -10130,7 +10131,7 @@ bool dCamera_c::eventCamera(s32 param_0) {
         }
 
         int* sp90_i;
-        if (getEvStringData(sp90, "Trim", "DEFAULT") != NULL) {
+        if (getEvStringData(sp90, "Trim", "DEFAULT") != false) {
             sp90_i = (int*)sp90;
             if (*sp90_i == 'STAN') {
                 mEventData.field_0x1c = 0;

@@ -14,6 +14,7 @@
 #if DEBUG
 #include "JSystem/JHostIO/JORFile.h"
 #include "d/d_debug_viewer.h"
+#include <cstring>
 #endif
 
 dCcD_SrcCyl daNpc_Kn_c::mCcDCyl = {
@@ -4964,7 +4965,7 @@ int daNpc_Kn_c::setPrtcl() {
                                                   mParticleMngr[i].mpModel == true ? &mParticleMngr[i].mAngle : NULL,
                                                   0, fopAcM_GetRoomNo(this), 0.0f, speedF);
 
-        if (mParticleMngr[i].mpModel != NULL) {
+        if (mParticleMngr[i].mpModel != false) {
             emitter = mParticleMngr[i].mManager.getCenterEmitter(0, 0);
             if (emitter != NULL) {
                 switch (i) {
