@@ -64,8 +64,10 @@ BOOL fpcCtRq_Cancel(create_request* i_request) {
     if (i_request != NULL && !i_request->is_cancel) {
         i_request->is_cancel = TRUE;
 #if PLATFORM_PC
-        fprintf(stderr, "[PROC-CANCEL] req=%p proc=%p\n",
-                (void*)i_request, (void*)i_request->process);
+        fprintf(stderr, "[PROC-CANCEL] req=%p proc=%p layer=%p layer_id=%d\n",
+                (void*)i_request, (void*)i_request->process,
+                (void*)i_request->layer,
+                i_request->layer ? i_request->layer->layer_id : -999);
 #endif
 
         if (i_request->process != NULL && !fpcDt_Delete(i_request->process))

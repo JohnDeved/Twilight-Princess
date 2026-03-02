@@ -427,7 +427,13 @@ f32 daPy_py_c::getAttentionOffsetY() {
 }
 
 int daPy_py_c::checkNowWolfEyeUp() {
+#if PLATFORM_PC
+    daAlink_c* player = daAlink_getAlinkActorClass();
+    if (player == NULL) return 0;
+    return player->checkWolfEyeUp();
+#else
     return daAlink_getAlinkActorClass()->checkWolfEyeUp();
+#endif
 }
 
 void daAlink_c::startRestartRoomFromOut(int i_dmgAmount, u32 i_mode, int param_2) {

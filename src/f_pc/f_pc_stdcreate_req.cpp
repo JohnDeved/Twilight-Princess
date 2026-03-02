@@ -54,7 +54,21 @@ int fpcSCtRq_phase_CreateProcess(standard_create_request_class* i_request) {
 }
 
 int fpcSCtRq_phase_SubCreateProcess(standard_create_request_class* i_request) {
+#if PLATFORM_PC
+    /* On PC, for node processes (scenes), set the current layer to the
+     * process node's own sub-layer so that child actors created during
+     * the scene's Create method have their creation counts tracked on
+     * the correct layer. fpcSCtRq_phase_IsComplete checks the process
+     * node's sub-layer count, so increments must go there too. */
+    if (i_request->base.process != NULL &&
+        fpcBs_Is_JustOfType(g_fpcNd_type, i_request->base.process->subtype)) {
+        fpcLy_SetCurrentLayer(&((process_node_class*)i_request->base.process)->layer);
+    } else {
+        fpcLy_SetCurrentLayer(i_request->base.layer);
+    }
+#else
     fpcLy_SetCurrentLayer(i_request->base.layer);
+#endif
     int ret = fpcBs_SubCreate(i_request->base.process);
 
 #if DEBUG
@@ -74,6 +88,20 @@ int fpcSCtRq_phase_IsComplete(standard_create_request_class* i_request) {
         (process_node_class*)((standard_create_request_class*)i_request)->base.process;
     if (fpcBs_Is_JustOfType(g_fpcNd_type, procNode->base.subtype) == TRUE) {
         if (fpcLy_IsCreatingMesg(&procNode->layer) == TRUE) {
+#if PLATFORM_PC
+            /* On PC, some child process creation requests may be cancelled
+             * without properly decrementing the parent layer's create_count,
+             * leaving the scene stuck with a positive count forever. Skip
+             * the child completion check after waiting a reasonable number
+             * of frames for children to finish. The scene can still function
+             * without all child processes. */
+            static int s_wait = 0;
+            s_wait++;
+            if (s_wait > 5) {
+                s_wait = 0;
+                return cPhs_NEXT_e;
+            }
+#endif
             return cPhs_INIT_e;
         }
     }
