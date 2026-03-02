@@ -1196,6 +1196,61 @@ void pal_tev_flush_draw(void) {
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
+    /* J2D depth-prime fill detection — skip the entire draw.
+     *
+     * J2D pane depth-prime draws use TEV config [ZERO,ZERO,ZERO,C0] to output
+     * TEVREG0 with no blending and depth enabled.  On real GCN hardware,
+     * subsequent textured draws overwrite these fills because GCN processes
+     * draws strictly in submission order.  bgfx does not guarantee strict
+     * draw ordering within a view, and the softpipe/Mesa GL driver does not
+     * correctly honor glColorMask(GL_FALSE) when transitioning from color-
+     * write draws to depth-only draws, causing these fills to overwrite
+     * visible content with black.
+     *
+     * J2D textured draws have z_en=0 (no depth test), so the depth prime
+     * from these fills is unnecessary.  Skip them entirely.
+     */
+    if (preset == GX_TEV_SHADER_PASSCLR &&
+        g_gx_state.blend_mode == GX_BM_NONE &&
+        g_gx_state.z_compare_enable)
+    {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
+        {
+            return;
+        }
+    }
+
+    /* PASSCLR draws with TEV [ZERO,ZERO,ZERO,RASC] + SRC_ALPHA blending are
+     * transparent fills on GCN (vertex alpha = 0 → SRC_ALPHA makes them
+     * invisible).  On PC we force vertex alpha to 255 which makes them
+     * opaque black, overwriting J2D textured content.  Skip them. */
+    if (preset == GX_TEV_SHADER_PASSCLR &&
+        g_gx_state.blend_mode == GX_BM_BLEND)
+    {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_RASC)
+        {
+            return;
+        }
+    }
+
+    /* SHADER TEST: When TP_SKIP_PASSCLR is set, skip ALL PASSCLR draws
+     * for title scene.  Diagnostic only — not needed in production. */
+    {
+        static int s_skip_passclr = -1;
+        if (s_skip_passclr < 0) {
+            const char* bt = getenv("TP_SKIP_PASSCLR");
+            s_skip_passclr = (bt && bt[0] == '1') ? 1 : 0;
+        }
+        if (s_skip_passclr && preset == GX_TEV_SHADER_PASSCLR &&
+            s_total_draw_count > 200) {
+            return;
+        }
+    }
+
     /* 2. Build vertex layout (always Float for pos/texcoord) */
     bgfx::VertexLayout layout;
     uint32_t bgfx_stride = build_vertex_layout(layout);
@@ -1516,8 +1571,6 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
-
-    /* One-time MVP dump for title scene debugging */
     {
         static int s_mvp_dump = 0;
         if (s_mvp_dump < 2 && s_total_draw_count > 250) {
@@ -1664,67 +1717,17 @@ void pal_tev_flush_draw(void) {
 
     /* 9. Set render state */
     uint64_t state = 0;
-    int suppress_color = 0;
     if (g_gx_state.color_update) {
-        /* J2D pane depth-prime draws use TEV config [ZERO,ZERO,ZERO,C0] to
-         * output TEVREG0 with no blending and depth enabled.  On real GCN
-         * hardware, subsequent textured draws in the same pane overwrite
-         * these fills because GCN processes draws strictly in submission
-         * order.  bgfx may reorder draws within a view by internal sort
-         * key (program, texture, depth), so a depth-prime draw can end up
-         * AFTER the textured draw it was supposed to underlay, erasing the
-         * visible content.
-         *
-         * Detect this pattern and suppress color writes so only depth is
-         * updated.  The pattern is:
-         *   - PASSCLR preset (no texture sampling)
-         *   - TEV stage 0: color_d == GX_CC_C0 and a/b/c are all GX_CC_ZERO
-         *   - No blend (GX_BM_NONE) — direct framebuffer overwrite
-         *   - Depth test enabled
-         *
-         * Note: TEVREG0 value is NOT checked — mBlack/mWhite application
-         * timing can set non-zero values in the title scene.  The TEV
-         * pattern itself is sufficient to identify depth-prime fills.
-         */
-        suppress_color = 0;
-        if (preset == GX_TEV_SHADER_PASSCLR &&
-            g_gx_state.blend_mode == GX_BM_NONE &&
-            g_gx_state.z_compare_enable)
-        {
-            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-            if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
-                s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
-            {
-                suppress_color = 1;
-            }
-        }
-
-        if (!suppress_color) {
-            state |= BGFX_STATE_WRITE_RGB;
-            /* GX doesn't use framebuffer alpha for TV display output.
-             * On PC, write alpha alongside RGB so the rendered content is
-             * visible in the window/capture (blending and compositing rely
-             * on FB alpha). */
-            state |= BGFX_STATE_WRITE_A;
-        }
+        state |= BGFX_STATE_WRITE_RGB;
+        /* GX doesn't use framebuffer alpha for TV display output.
+         * On PC, write alpha alongside RGB so the rendered content is
+         * visible in the window/capture (blending and compositing rely
+         * on FB alpha). */
+        state |= BGFX_STATE_WRITE_A;
     }
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
-
-    /* SHADER TEST: When TP_BLEND_TEST is set, strip blending from BLEND
-     * draws to match the test quad's state (WRITE_RGB|WRITE_A only).
-     * This isolates whether the blend function itself causes invisible output. */
-    {
-        static int s_blend_test_state = -1;
-        if (s_blend_test_state < 0) {
-            const char* bt = getenv("TP_BLEND_TEST");
-            s_blend_test_state = (bt && bt[0] == '1') ? 1 : 0;
-        }
-        if (s_blend_test_state && preset == GX_TEV_SHADER_BLEND) {
-            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
-        }
-    }
     /* When using index buffer conversion (quads→tris, fans→tris),
      * the primitive state must be triangle list (0), not the original GX type. */
     if (use_index_buffer && num_indices > 0)
@@ -1769,7 +1772,7 @@ void pal_tev_flush_draw(void) {
                         (unsigned long long)state,
                         (int)((state & BGFX_STATE_WRITE_RGB) != 0),
                         (int)((state & BGFX_STATE_WRITE_A) != 0),
-                        suppress_color,
+                        0 /* suppress_color — depth-prime draws now skipped early */,
                         g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
                         g_gx_state.z_compare_enable, g_gx_state.z_func, g_gx_state.z_update_enable,
                         g_gx_state.alpha_comp0, g_gx_state.alpha_ref0,
@@ -1789,24 +1792,8 @@ void pal_tev_flush_draw(void) {
             (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
     }
 
-    /* 10. Submit draw call
-     *
-     * SHADER TEST: When TP_BLEND_TEST is set, swap BLEND→PASSCLR to verify
-     * that BLEND draws reach the screen.  If red appears, the BLEND shader
-     * or uniform wiring is wrong.  If still black, the vertex/transform/state
-     * prevents the draw from producing visible fragments. */
-    int submit_preset = preset;
-    {
-        static int s_blend_test = -1;
-        if (s_blend_test < 0) {
-            const char* bt = getenv("TP_BLEND_TEST");
-            s_blend_test = (bt && bt[0] == '1') ? 1 : 0;
-        }
-        if (s_blend_test && preset == GX_TEV_SHADER_BLEND) {
-            submit_preset = GX_TEV_SHADER_PASSCLR;
-        }
-    }
-    bgfx::submit(0, s_programs[submit_preset]);
+    /* 10. Submit draw call */
+    bgfx::submit(0, s_programs[preset]);
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

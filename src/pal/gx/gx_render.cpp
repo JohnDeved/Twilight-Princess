@@ -301,21 +301,6 @@ void pal_render_end_frame(void) {
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
 
-    /* Submit test quad during title scene frames to confirm bgfx pipeline
-     * is operational — controlled by TP_BLEND_TEST=1.  If the test quad's
-     * green pixels appear but game draws don't, the issue is specific to the
-     * game's vertex/state, not the rendering pipeline. */
-    {
-        static int s_test_quad = -1;
-        if (s_test_quad < 0) {
-            const char* bt = getenv("TP_BLEND_TEST");
-            s_test_quad = (bt && bt[0] == '1') ? 1 : 0;
-        }
-        if (s_test_quad && s_frame_count >= 120 && s_frame_count <= 180) {
-            pal_tev_submit_test_quad();
-        }
-    }
-
     /* Submit frame — triggers rendering and capture.
      *
      * bgfx uses multi-threaded rendering by default (BGFX_CONFIG_MULTITHREADED=1).
@@ -323,6 +308,23 @@ void pal_render_end_frame(void) {
      * delay). This is acceptable for regression testing — we compare frame
      * content rather than frame number. */
     bgfx::frame();
+
+    /* Log bgfx stats for title scene frames to see actual GPU draw counts */
+    if (s_frame_count >= 120 && s_frame_count <= 125) {
+        const bgfx::Stats* stats = bgfx::getStats();
+        if (stats) {
+            fprintf(stderr, "{\"bgfx_stats\":{\"frame\":%u,"
+                    "\"numDraw\":%u,\"numCompute\":%u,"
+                    "\"maxGpuLatency\":%d,"
+                    "\"numViews\":%u,"
+                    "\"width\":%d,\"height\":%d}}\n",
+                    s_frame_count,
+                    stats->numDraw, stats->numCompute,
+                    stats->maxGpuLatency,
+                    stats->numViews,
+                    stats->width, stats->height);
+        }
+    }
 
     /* Verify after bgfx::frame() so capture buffer is up-to-date */
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
