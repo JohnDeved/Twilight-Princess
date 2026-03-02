@@ -256,7 +256,17 @@ void daTitle_c::loadWait_proc() {
             return;
         }
 #endif
-        mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
+        bool bloOk = mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
+
+#if PLATFORM_PC
+        if (!bloOk) {
+            /* BLO layout is big-endian binary — skip 2D overlay setup on PC
+             * until endian conversion is implemented. The 3D model still renders. */
+            mpHeap->becomeCurrentHeap();
+            logoDispWaitInit();
+            return;
+        }
+#endif
 
         J2DTextBox* text[7];
         text[0] = (J2DTextBox*)mTitle.Scr->search(MULTI_CHAR('t_s_00'));
