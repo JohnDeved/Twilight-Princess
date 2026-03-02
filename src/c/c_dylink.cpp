@@ -10,6 +10,14 @@
 #include "d/d_com_inf_game.h"
 #include "m_Do/m_Do_ext.h"
 #include <cstring>
+<<<<<<< HEAD
+#if PLATFORM_PC
+#include "f_pc/f_pc_profile.h"
+#include "d/d_procname.h"
+#include <cstdio>
+#endif
+=======
+>>>>>>> port
 
 #if DEBUG
 #include "f_pc/f_pc_debug_sv.h"
@@ -846,7 +854,7 @@ int cCc_Init() {
     JKRSetCurrentHeap(prevHeap);
 
     #if DEBUG
-    FixedMemoryCheck* check = FixedMemoryCheck::easyCreate(DMC, sizeof(DMC));
+    FixedMemoryCheck* check = FixedMemoryCheck::easyCreate(DMC, (u32)sizeof(DMC));
     #endif
 
     DMC_initialized = true;
@@ -947,6 +955,32 @@ int cDyl_LinkASync(s16 i_ProfName) {
 static int cDyl_InitCallback(void* param_0) {
     JUT_ASSERT(335, !cDyl_Initialized);
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, profiles are statically linked — populate the profile list
+     * from pal_profile_list.cpp and create the initial scene. */
+    extern void pal_profile_list_init(void);
+    pal_profile_list_init();
+
+    /* Statically-linked profiles don't need REL loading.
+     * Clear DMC entries so cDyl_LinkASync returns cPhs_COMPLEATE_e. */
+    {
+        int cleared = 0;
+        for (int i = 0; i < PROC_MAX_NUM; i++) {
+            if (DMC[i] != NULL && g_fpcPf_ProfileList_p[i] != NULL) {
+                DMC[i] = NULL;
+                cleared++;
+            }
+        }
+        fprintf(stdout, "[PAL] cDyl: cleared %d DMC entries for statically-linked profiles\n", cleared);
+    }
+
+    cDyl_Initialized = true;
+    fopScnM_CreateReq(PROC_LOGO_SCENE, 0x7FFF, 0, 0);
+    return 1;
+#else
+=======
+>>>>>>> port
     #if PLATFORM_GCN
     JKRHeap* parentHeap = mDoExt_getArchiveHeap();
     #else

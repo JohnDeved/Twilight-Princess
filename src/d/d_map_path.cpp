@@ -23,6 +23,9 @@ void dMpath_n::dTexObjAggregate_c::create() {
         mp_texObj[lp1] = new GXTexObj();
         JUT_ASSERT(70, mp_texObj[lp1] != NULL);
         ResTIMG* image = (ResTIMG*)dComIfG_getObjectRes("Always", data[lp1]);
+#if PLATFORM_PC
+        if (image == NULL) continue;
+#endif
         JUT_ASSERT(72, image != NULL);
         JUT_ASSERT(73, image->minFilter == GX_NEAR);
         JUT_ASSERT(74, image->magFilter == GX_NEAR);

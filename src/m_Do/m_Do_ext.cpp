@@ -24,6 +24,24 @@
 #include "m_Do/m_Do_mtx.h"
 #include <cstdio>
 #include <cstring>
+<<<<<<< HEAD
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+#include "pal/pal_error.h"
+static volatile sig_atomic_t s_mdl_crash = 0;
+static sigjmp_buf s_mdl_jmpbuf;
+static void mdl_sigsegv_handler(int sig) {
+    (void)sig;
+    s_mdl_crash = 1;
+    siglongjmp(s_mdl_jmpbuf, 1);
+}
+#endif
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
+=======
+>>>>>>> port
 
 u8 mDoExt::CurrentHeapAdjustVerbose;
 u8 mDoExt::HeapAdjustVerbose;
@@ -130,7 +148,29 @@ int mDoExt_bpkAnm::init(J3DMaterialTable* i_matTable, J3DAnmColor* i_bpk, int i_
     JUT_ASSERT(371, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_bpk != NULL);
 
     mpAnm = i_bpk;
+#if PLATFORM_PC
+    /* searchUpdateMaterialID accesses name tables that may have corrupt
+     * endian data from incomplete J3D swap.  Catch signals to prevent crash. */
+    struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+    memset(&sa_new, 0, sizeof(sa_new));
+    sa_new.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = 0;
+    sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+    sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+    s_mdl_crash = 0;
+    if (sigsetjmp(s_mdl_jmpbuf, 1) != 0) {
+        sigaction(SIGSEGV, &sa_old_segv, NULL);
+        sigaction(SIGABRT, &sa_old_abrt, NULL);
+        pal_error(PAL_ERR_J3D_LOAD, "signal in bpkAnm searchUpdateMaterialID");
+        return 0;
+    }
+#endif
     mpAnm->searchUpdateMaterialID(i_matTable);
+#if PLATFORM_PC
+    sigaction(SIGSEGV, &sa_old_segv, NULL);
+    sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute,
@@ -149,8 +189,31 @@ int mDoExt_btpAnm::init(J3DMaterialTable* i_matTable, J3DAnmTexPattern* i_btp, i
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(420, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_btp != NULL);
 
+#if PLATFORM_PC
+    if (i_btp == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_btp;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "btpAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);
@@ -168,8 +231,31 @@ int mDoExt_btkAnm::init(J3DMaterialTable* i_matTable, J3DAnmTextureSRTKey* i_btk
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(468, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_btk != NULL);
 
+#if PLATFORM_PC
+    if (i_btk == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_btk;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "btkAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);
@@ -187,8 +273,31 @@ int mDoExt_brkAnm::init(J3DMaterialTable* i_matTable, J3DAnmTevRegKey* i_brk, in
                         int i_attribute, f32 i_rate, s16 i_startF, s16 i_endF) {
     JUT_ASSERT(516, (i_anmPlay == FALSE || getFrameCtrl() != NULL || isCurrentSolidHeap()) && i_matTable != NULL && i_brk != NULL);
 
+#if PLATFORM_PC
+    if (i_brk == NULL || i_matTable == NULL) return 0;
+#endif
     mpAnm = i_brk;
+#if PLATFORM_PC
+    s_mdl_crash = 0;
+    struct sigaction sa, old_sa, old_abrt;
+    sa.sa_handler = mdl_sigsegv_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_sa);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_mdl_jmpbuf, 1) == 0) {
+        mpAnm->searchUpdateMaterialID(i_matTable);
+    } else {
+        pal_error(PAL_ERR_J3D_LOAD, "brkAnm::init searchUpdateMaterialID crash");
+        sigaction(SIGSEGV, &old_sa, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        return 0;
+    }
+    sigaction(SIGSEGV, &old_sa, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#else
     mpAnm->searchUpdateMaterialID(i_matTable);
+#endif
 
     if (i_anmPlay) {
         return initPlay(mpAnm->getFrameMax(), i_attribute < 0 ? mpAnm->getAttribute() : i_attribute, i_rate, i_startF, i_endF);
@@ -311,9 +420,16 @@ static void mDoExt_modelDiff(J3DModel* i_model) {
 }
 
 void mDoExt_modelUpdate(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: model"); return; }
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: material"); return; }
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
@@ -329,9 +445,16 @@ void mDoExt_modelUpdate(J3DModel* i_model) {
 }
 
 void mDoExt_modelUpdateDL(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: model"); return; }
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: material"); return; }
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
@@ -348,9 +471,16 @@ void mDoExt_modelUpdateDL(J3DModel* i_model) {
 }
 
 void mDoExt_modelEntryDL(J3DModel* i_model) {
+#if PLATFORM_PC
+    if (i_model == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: model"); return; }
+#endif
     modelMtxErrorCheck(i_model);
 
     J3DModelData* model_data = i_model->getModelData();
+#if PLATFORM_PC
+    if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: model_data"); return; }
+    if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: material"); return; }
+#endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
         !model_data->isLocked())
@@ -3559,6 +3689,21 @@ static void mDoExt_initFontCommon(JUTFont** mDoExt_font_p, ResFONT** mDoExt_resf
     JUT_ASSERT_MSG(7141, *mDoExt_font == NULL, "mDoExt_font == 0");
     JUT_ASSERT_MSG(7142, *mDoExt_resfont == NULL, "mDoExt_resfont == 0");
     *mDoExt_resfont = (ResFONT*)JKRGetResource('ROOT', param_3, param_4);
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, font resources are big-endian binary from the disc.
+     * Byte-swap in-place before parsing. */
+    if (*mDoExt_resfont != NULL) {
+        pal_font_swap(*mDoExt_resfont, 0x100000);
+    }
+    /* On PC without game assets, font resources may not be available.
+     * Return gracefully instead of crashing. */
+    if (*mDoExt_resfont == NULL) {
+        return;
+    }
+#endif
+=======
+>>>>>>> port
     JUT_ASSERT_MSG(7144, *mDoExt_resfont != NULL, "mDoExt_resfont != 0");
     if (param_5 == 0) {
         u32 cacheSize = JUTCacheFont::calcCacheSize(param_7, param_6);
@@ -3710,8 +3855,36 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
 #if DEBUG
             model->getBaseTRMtx()[0][0] = MAXFLOAT;
 #endif
-            bool hasSharedDlistObj =
+#if PLATFORM_PC
+            /* On PC, J3D model data may have corrupt materials from incomplete endian swap.
+             * Wrap entire model creation with signal handler to catch crashes. */
+            struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+            memset(&sa_new, 0, sizeof(sa_new));
+            sa_new.sa_handler = mdl_sigsegv_handler;
+            sigemptyset(&sa_new.sa_mask);
+            sa_new.sa_flags = 0;
+            sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+            sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+            s_mdl_crash = 0;
+
+            if (sigsetjmp(s_mdl_jmpbuf, 1) != 0) {
+                sigaction(SIGSEGV, &sa_old_segv, NULL);
+                sigaction(SIGABRT, &sa_old_abrt, NULL);
+                pal_error(PAL_ERR_J3D_LOAD, "signal in mDoExt_J3DModel__create");
+                return NULL;
+            }
+#endif
+            bool hasSharedDlistObj = false;
+#if PLATFORM_PC
+            /* Guard against NULL material node pointer from corrupt J3D data */
+            if (i_modelData->getMaterialNodePointer(0) != NULL) {
+                hasSharedDlistObj =
+                    i_modelData->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+            }
+#else
+            hasSharedDlistObj =
                 i_modelData->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+#endif
             // Update the modelFlag if the model data passed in has a shared dlist object
             if (hasSharedDlistObj != false) {
                 if (i_modelData->isLocked()) {
@@ -3729,12 +3902,24 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
                 if (i_modelFlag == J3DMdlFlag_DifferedDLBuffer &&
                     model->newDifferedDisplayList(i_differedDlistFlag) != kJ3DError_Success)
                 {
+#if PLATFORM_PC
+                    sigaction(SIGSEGV, &sa_old_segv, NULL);
+                    sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
                     return NULL;
                 }
 
                 model->lock();
+#if PLATFORM_PC
+                sigaction(SIGSEGV, &sa_old_segv, NULL);
+                sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
                 return model;
             }
+#if PLATFORM_PC
+            sigaction(SIGSEGV, &sa_old_segv, NULL);
+            sigaction(SIGABRT, &sa_old_abrt, NULL);
+#endif
         }
     }
 

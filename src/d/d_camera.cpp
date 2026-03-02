@@ -10751,9 +10751,33 @@ static void view_setup(camera_process_class* i_this) {
     camera_class* a_this = (camera_class*)i_this;
     dDlst_window_c* window = get_window(a_this);
 
+#if PLATFORM_PC
+    if (!window) return;
+    fprintf(stderr, "[VIEW-SETUP] enter: window=%p\n", (void*)window);
+#endif
     view_port_class* viewport = window->getViewPort();
     view_class* view = (view_class*)i_this;
+#if PLATFORM_PC
+    fprintf(stderr, "[VIEW-SETUP] viewport=%p view=%p\n", (void*)viewport, (void*)view);
+    /* Validate lookat data before mDoMtx_lookAt — corrupt up vector
+     * or NaN values cause stack corruption via C_MTXLookAt */
+    if (isnan(view->lookat.eye.x) || isnan(view->lookat.eye.y) || isnan(view->lookat.eye.z) ||
+        isnan(view->lookat.center.x) || isnan(view->lookat.center.y) || isnan(view->lookat.center.z) ||
+        isnan(view->lookat.up.x) || isnan(view->lookat.up.y) || isnan(view->lookat.up.z)) {
+        /* Set a safe default rather than crashing */
+        view->lookat.eye.set(0.0f, 100.0f, 200.0f);
+        view->lookat.center.set(0.0f, 100.0f, 0.0f);
+        view->lookat.up.set(0.0f, 1.0f, 0.0f);
+    }
+    fprintf(stderr, "[VIEW-SETUP] eye=(%f,%f,%f) center=(%f,%f,%f) up=(%f,%f,%f) bank=%d\n",
+            view->lookat.eye.x, view->lookat.eye.y, view->lookat.eye.z,
+            view->lookat.center.x, view->lookat.center.y, view->lookat.center.z,
+            view->lookat.up.x, view->lookat.up.y, view->lookat.up.z, view->bank);
+#endif
     mDoMtx_lookAt(view->viewMtx, &view->lookat.eye, &view->lookat.center, &view->lookat.up, view->bank);
+#if PLATFORM_PC
+    fprintf(stderr, "[VIEW-SETUP] mDoMtx_lookAt done\n");
+#endif
     MTXCopy(view->viewMtx, view->viewMtxNoTrans);
 
     view->viewMtxNoTrans[0][3] = 0.0f;
@@ -10763,6 +10787,9 @@ static void view_setup(camera_process_class* i_this) {
     dComIfGd_setWindow(window);
     dComIfGd_setViewport(viewport);
     dComIfGd_setView(view);
+#if PLATFORM_PC
+    fprintf(stderr, "[VIEW-SETUP] set window/viewport/view done\n");
+#endif
 
     f32 far;
     f32 var_f30;
@@ -10779,8 +10806,14 @@ static void view_setup(camera_process_class* i_this) {
         }
         far = var_f30;
     }
-
+#if PLATFORM_PC
+    fprintf(stderr, "[VIEW-SETUP] calling mDoLib_clipper::setup fovy=%f aspect=%f near=%f far=%f\n",
+            view->fovy, view->aspect, view->near, far);
+#endif
     mDoLib_clipper::setup(view->fovy, view->aspect, view->near, far);
+#if PLATFORM_PC
+    fprintf(stderr, "[VIEW-SETUP] done\n");
+#endif
 }
 
 static void store(camera_process_class* i_camera) {
@@ -10789,6 +10822,9 @@ static void store(camera_process_class* i_camera) {
     dCamera_c* dCamera = &((camera_class*)i_camera)->mCamera;
     int camera_id = get_camera_id(camera);
     dDlst_window_c* window = get_window(camera_id);
+#if PLATFORM_PC
+    if (!window) return;
+#endif
     view_port_class* viewport = window->getViewPort();
     bool error = false;
 
@@ -10916,6 +10952,41 @@ static int camera_execute(camera_process_class* i_this) {
     // this variable is likely fake as it doesn't exist in debug,
     // but directly casting the parameter on each use breaks retail
     camera_class* camera = (camera_class*)i_this;
+#if PLATFORM_PC
+    /* On PC, the opening scene has no player actor. dCamera_c::Run()/NotRun()
+     * require the player (daAlink_getAlinkActorClass), ground collision, and
+     * fully-initialized CamParam data. Skip the body update and just refresh
+     * the view matrices from current lookat state. */
+    {
+        int camera_id = get_camera_id(camera);
+        dDlst_window_c* window = get_window(camera_id);
+        if (!window) return 1;  /* window not ready */
+
+        view_port_class* viewport = window->getViewPort();
+        f32 aspect = mDoGph_gInf_c::getAspect();
+        camera->mCamera.SetWindow(viewport->width, viewport->height);
+        fopCamM_SetAspect(camera, aspect);
+
+        fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(camera);
+        if (player != NULL) {
+            /* Player exists — safe to run full camera logic */
+            if (dDemo_c::getCamera() != NULL) {
+                camera->mCamera.ResetView();
+            }
+            dComIfGp_offCameraAttentionStatus(0, 0x40);
+            if (camera->mCamera.Active()) {
+                camera->mCamera.Run();
+            } else {
+                camera->mCamera.NotRun();
+            }
+            camera->mCamera.CalcTrimSize();
+            store(camera);
+        }
+
+        view_setup(camera);
+        return 1;
+    }
+#else
     preparation(camera);
 
     if (dDemo_c::getCamera() != NULL) {
@@ -10935,12 +11006,24 @@ static int camera_execute(camera_process_class* i_this) {
     store(camera);
     view_setup(camera);
     return 1;
+#endif
 }
 
 static int camera_draw(camera_process_class* i_this) {
+#if PLATFORM_PC
+    if (!i_this) {
+        return 0;
+    }
+#endif
     camera_class* a_this = (camera_class*)i_this;
     dCamera_c* body = &((camera_class*)i_this)->mCamera;
     dDlst_window_c* window = get_window(a_this);
+#if PLATFORM_PC
+    if (!window) {
+        fprintf(stderr, "[camera_draw] NULL window\n");
+        return 0;
+    }
+#endif
     view_port_class* viewport = window->getViewPort();
     camera_process_class* process = i_this;
     int camera_id = get_camera_id(a_this);
@@ -11002,6 +11085,10 @@ static int camera_draw(camera_process_class* i_this) {
     j3dSys.setViewMtx(process->viewMtx);
     cMtx_inverse(process->viewMtx, process->invViewMtx);
 
+#if PLATFORM_PC
+    /* Skip audio camera and ground check on PC — collision system
+     * not fully initialized, GroundCross can corrupt stack */
+#else
     Z2GetAudience()->setAudioCamera(process->viewMtx, process->lookat.eye, process->lookat.center,
                                     process->fovy, process->aspect, getComStat(0x80), camera_id,
                                     false);
@@ -11028,6 +11115,7 @@ static int camera_draw(camera_process_class* i_this) {
     } else {
         Z2AudioMgr::getInterface()->setCameraPolygonPos(NULL);
     }
+#endif
 
     MTXCopy(process->viewMtx, process->viewMtxNoTrans);
     process->viewMtxNoTrans[0][3] = 0.0f;
@@ -11063,6 +11151,54 @@ static int init_phase2(camera_class* i_this) {
 
     fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(i_this);
     if (player == NULL) {
+#if PLATFORM_PC
+        /* On PC, the opening scene may not have a player actor.
+         * After waiting long enough, proceed with a default camera
+         * so the 3D rendering pipeline can activate.
+         * Skip dCamera_c construction — it requires player + CamParam. */
+        if (i_this->field_0x238 < 60) {
+            return cPhs_INIT_e;
+        }
+        fprintf(stderr, "[CAMERA-INIT2] field_0x238=%d, proceeding with real init\n", i_this->field_0x238);
+        dComIfGp_setWindowNum(1);
+        fprintf(stderr, "[CAMERA-INIT2] setWindowNum done\n");
+
+        f32 near_z = 1.0f;
+        f32 far_z = 160000.0f;
+        if (dComIfGp_getStage()->getStagInfo() != NULL) {
+            fprintf(stderr, "[CAMERA-INIT2] stagInfo=%p mNear=%f mFar=%f\n",
+                    (void*)dComIfGp_getStage()->getStagInfo(),
+                    dComIfGp_getStage()->getStagInfo()->mNear,
+                    dComIfGp_getStage()->getStagInfo()->mFar);
+            near_z = dComIfGp_getStage()->getStagInfo()->mNear;
+            far_z = dComIfGp_getStage()->getStagInfo()->mFar;
+        }
+
+        dDlst_window_c* window = get_window(camera_id);
+        fprintf(stderr, "[CAMERA-INIT2] window=%p camera_id=%d\n", (void*)window, camera_id);
+        if (window) {
+            fopCamM_SetNear(i_this, near_z);
+            fopCamM_SetFar(i_this, far_z);
+            fopCamM_SetFovy(i_this, 30.0f);
+            fopCamM_SetAspect(i_this, mDoGph_gInf_c::getAspect());
+            fopCamM_SetEye(i_this, 0.0f, 100.0f, 200.0f);
+            fopCamM_SetCenter(i_this, 0.0f, 100.0f, 0.0f);
+            fopCamM_SetUp(i_this, 0.0f, 1.0f, 0.0f);
+            fopCamM_SetBank(i_this, 0);
+            fprintf(stderr, "[CAMERA-INIT2] camera params set, calling view_setup\n");
+            /* Skip store() — dCamera_c is uninitialized without a player actor.
+             * store() reads from dCamera_c::Center/Eye/Up which contain garbage,
+             * overwriting the safe defaults we just set. */
+            view_setup(camera);
+            fprintf(stderr, "[CAMERA-INIT2] view_setup done\n");
+        }
+
+        /* Zero-init the field_0xb0c flag to prevent reads from uninitialized data.
+         * Cannot memset entire mCamera — it would destroy any vtable pointer. */
+        camera->mCamera.field_0xb0c = 1;
+        i_this->field_0x238 = 0;
+        return cPhs_NEXT_e;
+#endif
         return cPhs_INIT_e;
     }
 
@@ -11137,6 +11273,25 @@ static int camera_create(camera_class* i_this) {
         (request_of_phase_process_fn)init_phase2,
         (request_of_phase_process_fn)NULL,
     };
+
+#if PLATFORM_PC
+    static bool s_printed_sizes = false;
+    if (!s_printed_sizes) {
+        s_printed_sizes = true;
+        fprintf(stderr, "[CAMERA-SIZES] sizeof(camera_class)=%zu sizeof(camera_process_class)=%zu "
+                "sizeof(dCamera_c)=%zu sizeof(view_class)=%zu "
+                "offsetof(phase_request)=%zu offsetof(mCamera)=%zu\n",
+                sizeof(camera_class), sizeof(camera_process_class),
+                sizeof(dCamera_c), sizeof(view_class),
+                offsetof(camera_class, phase_request),
+                offsetof(camera_class, mCamera));
+    }
+    fprintf(stderr, "[CAMERA-CREATE] this=%p phase_req=%p id=%d handler_table=%p field_0x238=%d\n",
+            (void*)i_this, (void*)&i_this->phase_request,
+            i_this->phase_request.id,
+            (void*)i_this->phase_request.mpHandlerTable,
+            i_this->field_0x238);
+#endif
 
     camera_class* camera = i_this;
     return dComLbG_PhaseHandler(&camera->phase_request, l_method, i_this);

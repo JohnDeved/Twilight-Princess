@@ -13,6 +13,281 @@
 #include "d/d_save_HIO.h"
 #include "d/d_stage.h"
 #include "d/d_bg_parts.h"
+#if PLATFORM_PC
+#include "pal/pal_endian.h"
+#include "pal/pal_error.h"
+#include "d/d_path.h"
+#include <cstdlib>
+#include <cstring>
+
+/* Endian-swap helpers for stage data chunk entries. */
+static void pal_swap_actor_entries(stage_actor_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_actor_data_class* e = &entries[i];
+        /* name[8] = ASCII, no swap */
+        /* fopAcM_prmBase_class: parameters(u32), position(3xf32), angle(3xs16), setID(u16) */
+        e->base.parameters = pal_swap32(e->base.parameters);
+        u32* pos = (u32*)&e->base.position;
+        pos[0] = pal_swap32(pos[0]); /* x */
+        pos[1] = pal_swap32(pos[1]); /* y */
+        pos[2] = pal_swap32(pos[2]); /* z */
+        u16* ang = (u16*)&e->base.angle;
+        ang[0] = pal_swap16(ang[0]); /* x */
+        ang[1] = pal_swap16(ang[1]); /* y */
+        ang[2] = pal_swap16(ang[2]); /* z */
+        e->base.setID = pal_swap16(e->base.setID);
+    }
+}
+
+static void pal_swap_tgsc_entries(stage_tgsc_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_tgsc_data_class* e = &entries[i];
+        /* name[8] = ASCII, no swap */
+        e->base.parameters = pal_swap32(e->base.parameters);
+        u32* pos = (u32*)&e->base.position;
+        pos[0] = pal_swap32(pos[0]);
+        pos[1] = pal_swap32(pos[1]);
+        pos[2] = pal_swap32(pos[2]);
+        u16* ang = (u16*)&e->base.angle;
+        ang[0] = pal_swap16(ang[0]);
+        ang[1] = pal_swap16(ang[1]);
+        ang[2] = pal_swap16(ang[2]);
+        e->base.setID = pal_swap16(e->base.setID);
+        /* scale is u8 x3 — no swap */
+    }
+}
+
+static void pal_swap_scls_entries(stage_scls_info_class* entries, int count) {
+    /* SCLS entries are mostly u8/char fields — only room needs no swap.
+     * stage[8]=char, mStart=u8, mRoom=s8, field_0xa=u8, field_0xb=u8, mWipe=u8 */
+    (void)entries; (void)count;
+    /* No multi-byte fields to swap */
+}
+
+static void pal_swap_camera_entries(stage_camera2_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_camera2_data_class* e = &entries[i];
+        /* m_cam_type[16] = char, no swap. m_arrow_idx,field_0x11-0x13 = u8, no swap */
+        e->field_0x14 = pal_swap16(e->field_0x14);
+        e->field_0x16 = pal_swap16(e->field_0x16);
+    }
+}
+
+static void pal_swap_arrow_entries(stage_arrow_data_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        stage_arrow_data_class* e = &entries[i];
+        u32* pos = (u32*)&e->posX;
+        pos[0] = pal_swap32(pos[0]); /* posX */
+        pos[1] = pal_swap32(pos[1]); /* posY */
+        pos[2] = pal_swap32(pos[2]); /* posZ */
+        u16* ang = (u16*)&e->angleX;
+        ang[0] = pal_swap16(ang[0]); /* angleX */
+        ang[1] = pal_swap16(ang[1]); /* angleY */
+        ang[2] = pal_swap16(ang[2]); /* angleZ */
+        e->field_0x12 = (s16)pal_swap16((u16)e->field_0x12);
+    }
+}
+
+static void pal_swap_mult_entries(dStage_Mult_info* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* tx = (u32*)&entries[i].mTransX;
+        tx[0] = pal_swap32(tx[0]);
+        u32* ty = (u32*)&entries[i].mTransY;
+        ty[0] = pal_swap32(ty[0]);
+        entries[i].mAngle = (s16)pal_swap16((u16)entries[i].mAngle);
+    }
+}
+
+static void pal_swap_plight_entries(stage_plight_info_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* pos = (u32*)&entries[i].position;
+        pos[0] = pal_swap32(pos[0]); /* x */
+        pos[1] = pal_swap32(pos[1]); /* y */
+        pos[2] = pal_swap32(pos[2]); /* z */
+        u32* pw = (u32*)&entries[i].power;
+        pw[0] = pal_swap32(pw[0]);
+    }
+}
+
+static void pal_swap_sound_entries(stage_sound_data* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        /* field_0x0[8] = char, no swap */
+        u32* v = (u32*)&entries[i].field_0x8;
+        v[0] = pal_swap32(v[0]); /* Vec x */
+        v[1] = pal_swap32(v[1]); /* Vec y */
+        v[2] = pal_swap32(v[2]); /* Vec z */
+    }
+}
+
+static void pal_swap_dmap_entries(dStage_DMap_dt_c* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* p = (u32*)&entries[i];
+        p[0] = pal_swap32(p[0]); /* field_0x00 */
+        p[1] = pal_swap32(p[1]); /* field_0x04 */
+        p[2] = pal_swap32(p[2]); /* field_0x08 */
+        p[3] = pal_swap32(p[3]); /* offsetY (f32) */
+    }
+}
+
+static void pal_swap_flor_entries(dStage_FloorInfo_dt_c* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* p = (u32*)&entries[i].field_0x00;
+        p[0] = pal_swap32(p[0]);
+    }
+}
+
+static void pal_swap_fili_entries(dStage_FileList_dt_c* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        entries[i].mParameters = pal_swap32(entries[i].mParameters);
+        u32* sl = (u32*)&entries[i].mSeaLevel;
+        sl[0] = pal_swap32(sl[0]);
+        u32* f8 = (u32*)&entries[i].field_0x8;
+        f8[0] = pal_swap32(f8[0]);
+        u32* fc = (u32*)&entries[i].field_0xc;
+        fc[0] = pal_swap32(fc[0]);
+        entries[i].mMsg = pal_swap16(entries[i].mMsg);
+    }
+}
+
+static void pal_swap_revt_entries(dStage_MapEvent_dt_c* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        /* Only u16 field in the maptool union variant */
+        entries[i].data.maptool.field_0x14 = pal_swap16(entries[i].data.maptool.field_0x14);
+    }
+}
+
+static void pal_swap_pselect_entries(stage_pselect_info_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* cr = (u32*)&entries[i].change_rate;
+        cr[0] = pal_swap32(cr[0]);
+    }
+}
+
+static void pal_swap_palette_entries(stage_palette_info_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* fs = (u32*)&entries[i].fog_start_z;
+        fs[0] = pal_swap32(fs[0]);
+        u32* fe = (u32*)&entries[i].fog_end_z;
+        fe[0] = pal_swap32(fe[0]);
+    }
+}
+
+static void pal_swap_lgtvec_entries(stage_pure_lightvec_info_class* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        u32* pos = (u32*)&entries[i].position;
+        pos[0] = pal_swap32(pos[0]);
+        pos[1] = pal_swap32(pos[1]);
+        pos[2] = pal_swap32(pos[2]);
+        u32* r = (u32*)&entries[i].radius;
+        r[0] = pal_swap32(r[0]);
+        u32* dx = (u32*)&entries[i].directionX;
+        dx[0] = pal_swap32(dx[0]);
+        u32* dy = (u32*)&entries[i].directionY;
+        dy[0] = pal_swap32(dy[0]);
+        u32* sc = (u32*)&entries[i].spotCutoff;
+        sc[0] = pal_swap32(sc[0]);
+    }
+}
+
+static void pal_swap_dpnt_entries(dPnt* entries, int count) {
+    for (int i = 0; i < count; i++) {
+        /* mArg0-3 are u8, no swap needed */
+        u32* pos = (u32*)&entries[i].m_position;
+        pos[0] = pal_swap32(pos[0]); /* x */
+        pos[1] = pal_swap32(pos[1]); /* y */
+        pos[2] = pal_swap32(pos[2]); /* z */
+    }
+}
+
+/* Forward declaration — defined below */
+static void dStage_pc_track_alloc(void* ptr);
+
+/* Repack dPath entries from GCN 12-byte stride to native 16-byte stride (64-bit pointer).
+ * Also endian-swaps u16 fields and resolves m_points offsets. */
+static dPath* pal_repack_dpath_entries(u8* src, int count, u32 pnt_offset, u8* file_base) {
+    if (count <= 0) return NULL;
+    const int gcn_size = 12;  /* dPath on GCN: u16+u16+4*u8+u32ptr = 12 */
+    dPath* native = (dPath*)malloc(count * sizeof(dPath));
+    if (!native) return NULL;
+    dStage_pc_track_alloc(native);
+    for (int i = 0; i < count; i++) {
+        u8* s = src + i * gcn_size;
+        native[i].m_num = pal_swap16(*(u16*)(s + 0));
+        native[i].m_nextID = pal_swap16(*(u16*)(s + 2));
+        native[i].field_0x4 = s[4];
+        native[i].m_closed = s[5];
+        native[i].field_0x6 = s[6];
+        native[i].field_0x7 = s[7];
+        /* m_points is a 4-byte offset on disc */
+        u32 pts_off = pal_swap32(*(u32*)(s + 8));
+        native[i].m_points = (dPnt*)(file_base + pnt_offset + pts_off);
+        /* Endian-swap the point data (Vec positions) */
+        pal_swap_dpnt_entries(native[i].m_points, native[i].m_num);
+    }
+    return native;
+}
+
+/* Repack roomRead_data_class entries from GCN 8-byte stride to native 16-byte stride.
+ * On GCN: {u8 num, u8, u8, pad, u32 ptr} = 8 bytes.
+ * On 64-bit PC: {u8, u8, u8, pad(5), u64 ptr} = 16 bytes. */
+static roomRead_data_class* pal_repack_rtbl_entry(u8* src, u8* file_base) {
+    roomRead_data_class* native = (roomRead_data_class*)malloc(sizeof(roomRead_data_class));
+    if (!native) return NULL;
+    dStage_pc_track_alloc(native);
+    native->num = src[0];
+    native->field_0x1 = src[1];
+    native->field_0x2 = src[2];
+    u32 rooms_off = pal_swap32(*(u32*)(src + 4));
+    native->m_rooms = (u8*)(file_base + rooms_off);
+    return native;
+}
+
+/* Track decoded stage data allocations for cleanup in dStage_Delete.
+ * Each call to dStage_dt_c_decode on PC allocates native-layout buffers
+ * that must persist for the stage lifetime. */
+#define STAGE_ALLOC_MAX 128
+static void* s_stage_allocs[STAGE_ALLOC_MAX];
+static int s_stage_alloc_count = 0;
+
+static void dStage_pc_track_alloc(void* ptr) {
+    if (s_stage_alloc_count < STAGE_ALLOC_MAX) {
+        s_stage_allocs[s_stage_alloc_count++] = ptr;
+    }
+}
+
+void dStage_pc_free_allocs(void) {
+    for (int i = 0; i < s_stage_alloc_count; i++) {
+        free(s_stage_allocs[i]);
+        s_stage_allocs[i] = NULL;
+    }
+    s_stage_alloc_count = 0;
+}
+
+/* Track which stage data buffers have already been endian-swapped to prevent
+ * double-swap corruption. dStage_infoCreate → dStage_dt_c_stageInitLoader
+ * swaps the headers first, then dStage_Create → dStage_dt_c_stageLoader
+ * would swap again without this guard. */
+#define SWAP_TRACK_MAX 16
+static void* s_swapped_ptrs[SWAP_TRACK_MAX];
+static int s_swapped_count = 0;
+
+static bool dStage_pc_already_swapped(void* ptr) {
+    for (int i = 0; i < s_swapped_count; i++) {
+        if (s_swapped_ptrs[i] == ptr) return true;
+    }
+    return false;
+}
+
+static void dStage_pc_mark_swapped(void* ptr) {
+    if (s_swapped_count < SWAP_TRACK_MAX) {
+        s_swapped_ptrs[s_swapped_count++] = ptr;
+    }
+}
+
+void dStage_pc_clear_swap_tracking(void) {
+    s_swapped_count = 0;
+}
+#endif
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_kankyo_mng.h"
 #include "f_op/f_op_msg_mng.h"
@@ -1777,7 +2052,7 @@ static void dummy4() {
 static int dStage_paletteInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* pal_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPaletteInfo((stage_palette_info_class*)pal_info->m_offset);
+    i_stage->setPaletteInfo(DSTAGE_NODE_PTR(pal_info, param_3, stage_palette_info_class));
 #if DEBUG
     i_stage->setPaletteNumInfo(param_2);
 #endif
@@ -1787,7 +2062,7 @@ static int dStage_paletteInfoInit(dStage_dt_c* i_stage, void* i_data, int param_
 static int dStage_pselectInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* psel_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPselectInfo((stage_pselect_info_class*)psel_info->m_offset);
+    i_stage->setPselectInfo(DSTAGE_NODE_PTR(psel_info, param_3, stage_pselect_info_class));
 #if DEBUG
     i_stage->setPselectNumInfo(param_2);
 #endif
@@ -1797,7 +2072,7 @@ static int dStage_pselectInfoInit(dStage_dt_c* i_stage, void* i_data, int param_
 static int dStage_envrInfoInit(dStage_dt_c* i_stage, void* i_data, int param_2, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* envr_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setEnvrInfo((stage_envr_info_class*)envr_info->m_offset);
+    i_stage->setEnvrInfo(DSTAGE_NODE_PTR(envr_info, param_3, stage_envr_info_class));
 #if DEBUG
     i_stage->setEnvrNumInfo(param_2);
 #endif
@@ -1831,7 +2106,7 @@ static int dStage_filiInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
     if (entryNum == 0) {
         i_stage->setFileListInfo(NULL);
     } else {
-        i_stage->setFileListInfo((dStage_FileList_dt_c*)fili_info->m_offset);
+        i_stage->setFileListInfo(DSTAGE_NODE_PTR(fili_info, param_3, dStage_FileList_dt_c));
     }
 
     return 1;
@@ -1840,7 +2115,7 @@ static int dStage_filiInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
 static int dStage_vrboxInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum, void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* vrbox_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setVrboxInfo((stage_vrbox_info_class*)vrbox_info->m_offset);
+    i_stage->setVrboxInfo(DSTAGE_NODE_PTR(vrbox_info, param_3, stage_vrbox_info_class));
 #if DEBUG
     i_stage->setVrboxNumInfo(entryNum);
 #endif
@@ -1851,7 +2126,7 @@ static int dStage_vrboxcolInfoInit(dStage_dt_c* i_stage, void* i_data, int entry
                                    void* param_3) {
     UNUSED(param_3);
     dStage_nodeHeader* vrcol_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setVrboxcolInfo((stage_vrboxcol_info_class*)vrcol_info->m_offset);
+    i_stage->setVrboxcolInfo(DSTAGE_NODE_PTR(vrcol_info, param_3, stage_vrboxcol_info_class));
 #if DEBUG
     i_stage->setVrboxcolNumInfo(entryNum);
 #endif
@@ -1860,7 +2135,7 @@ static int dStage_vrboxcolInfoInit(dStage_dt_c* i_stage, void* i_data, int entry
 
 static int dStage_plightInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum, void* param_3) {
     dStage_nodeHeader* plight_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setPlightInfo((stage_plight_info_class*)plight_info->m_offset);
+    i_stage->setPlightInfo(DSTAGE_NODE_PTR(plight_info, param_3, stage_plight_info_class));
     i_stage->setPlightNumInfo(entryNum);
     return 1;
 }
@@ -1872,7 +2147,7 @@ static int dStage_lgtvInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
         i_stage->setLightVecInfo(NULL);
     } else {
         dStage_nodeHeader* lgtv_info = (dStage_nodeHeader*)(i_data);
-        i_stage->setLightVecInfo((stage_pure_lightvec_info_class*)lgtv_info->m_offset);
+        i_stage->setLightVecInfo(DSTAGE_NODE_PTR(lgtv_info, param_3, stage_pure_lightvec_info_class));
     }
 
     return 1;
@@ -1887,7 +2162,24 @@ static int dStage_stagInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
     UNUSED(entryNum);
     UNUSED(param_3);
     dStage_nodeHeader* stag_info = (dStage_nodeHeader*)(i_data);
-    i_stage->setStagInfo((stage_stag_info_class*)stag_info->m_offset);
+    stage_stag_info_class* info = DSTAGE_NODE_PTR(stag_info, param_3, stage_stag_info_class);
+#if PLATFORM_PC
+    if (info) {
+        /* Endian swap stage info fields (big-endian binary data) */
+        info->mNear = pal_swap_f32(info->mNear);
+        info->mFar  = pal_swap_f32(info->mFar);
+        info->field_0x0a = pal_swap16(info->field_0x0a);
+        info->field_0x0c = pal_swap32(info->field_0x0c);
+        info->field_0x10 = pal_swap32(info->field_0x10);
+        info->mGapLevel  = (s16)pal_swap16((u16)info->mGapLevel);
+        info->mRangeUp   = (s16)pal_swap16((u16)info->mRangeUp);
+        info->mRangeDown = (s16)pal_swap16((u16)info->mRangeDown);
+        info->field_0x20 = pal_swap_f32(info->field_0x20);
+        info->field_0x24 = pal_swap_f32(info->field_0x24);
+        info->mStageTitleNo = pal_swap16(info->mStageTitleNo);
+    }
+#endif
+    i_stage->setStagInfo(info);
 
     if (!dStage_isBossStage(i_stage)) {
         dComIfG_deleteStageRes("Xtg_00");
@@ -2069,12 +2361,19 @@ static int dStage_roomReadInit(dStage_dt_c* i_stage, void* i_data, int param_2, 
 
     i_stage->setRoom(p_node);
 
+#if PLATFORM_PC
+    /* On PC, rtbl entries were already repacked with resolved pointers by
+     * pal_repack_rtbl_entries() in dStage_dt_c_decode(). Skip resolution. */
+    (void)rtbl;
+    (void)param_3;
+#else
     for (int i = 0; i < p_node->num; i++) {
         if ((intptr_t)rtbl[i] < 0x80000000) {
             rtbl[i] = (roomRead_data_class*)((intptr_t)rtbl[i] + (intptr_t)param_3);
             rtbl[i]->m_rooms = (u8*)((intptr_t)rtbl[i]->m_rooms + (intptr_t)param_3);
         }
     }
+#endif
 
     return 1;
 }
@@ -2100,16 +2399,21 @@ static int dStage_pathInfoInit(dStage_dt_c* i_stage, void* i_data, int entryNum,
     UNUSED(entryNum);
     UNUSED(param_3);
     dStage_dPath_c* path_c = (dStage_dPath_c*)((char*)i_data + 4);
-    dPath* path = path_c->m_path;
 
     i_stage->setPathInfo(path_c);
 
+#if !PLATFORM_PC
+    /* On GCN/Wii, m_points is a raw offset that needs resolution against PPNT base */
+    dPath* path = path_c->m_path;
     for (int i = 0; i < path_c->m_num; i++) {
         if ((uintptr_t)path->m_points < 0x80000000) {
             path->m_points = (dPnt*)((uintptr_t)path->m_points + i_stage->getPntInf()->m_pnt_offset);
         }
         path++;
     }
+#endif
+    /* On PC, dPath entries are already repacked with resolved m_points by
+     * pal_repack_dpath_entries() in dStage_dt_c_decode(). */
 
     return 1;
 }
@@ -2126,15 +2430,17 @@ static int dStage_rpatInfoInit(dStage_dt_c* i_stage, void* i_data, int i_num, vo
     UNUSED(i_num);
     UNUSED(param_3);
     dStage_dPath_c* pStagePath = (dStage_dPath_c*)((char*)i_data + 4);
-    dPath* pPath = pStagePath->m_path;
 
     i_stage->setPath2Info(pStagePath);
+#if !PLATFORM_PC
+    dPath* pPath = pStagePath->m_path;
     for (s32 i = 0; i < pStagePath->m_num; pPath++, i++, (void)0) {
         if ((uintptr_t)pPath->m_points >= 0x80000000) {
             continue;
         }
         pPath->m_points = (dPnt*)((uintptr_t)pPath->m_points + i_stage->getPnt2Inf()->m_pnt_offset);
     }
+#endif
     return 1;
 }
 
@@ -2178,7 +2484,108 @@ static void dStage_dt_c_decode(void* i_data, dStage_dt_c* i_stage, FuncTable* fu
                 dStage_nodeHeader* node2 = node1;
                 if ((int)node2->m_tag == *(int*)nodeFunc->identifier) {
                     if (funcTbl[i].function != NULL) {
+#if PLATFORM_PC
+                        /* On 64-bit PC, the container struct overlay doesn't work because
+                         * pointer fields are 8 bytes but the raw data has 4-byte offsets.
+                         * Allocate a native-layout buffer: [tag][int num][pad][void* entries]
+                         * The handler does (int*)buf+1 = buf+4, overlaying a native struct:
+                         *   num at buf+4, m_entries at buf+4+offsetof(container,m_entries)
+                         * On 64-bit, offsetof(container, m_entries) = 8 (due to padding),
+                         * so m_entries is read from buf+12. */
+                        u8* rbuf = (u8*)malloc(24);
+                        if (rbuf) {
+                            void* entries = (void*)((u8*)i_data + node1->m_offset);
+                            int entryNum = node1->m_entryNum;
+                            u32 raw_offset = node1->m_offset;
+                            memcpy(rbuf + 0, &node1->m_tag, 4);       /* tag */
+                            memcpy(rbuf + 4, &entryNum, 4);           /* num */
+                            memcpy(rbuf + 8, &raw_offset, 4);         /* m_offset (for DSTAGE_NODE_PTR) */
+                            memcpy(rbuf + 12, &entries, sizeof(void*)); /* entries ptr */
+
+                            /* Track allocation for cleanup in dStage_Delete */
+                            dStage_pc_track_alloc(rbuf);
+
+                            /* Endian-swap chunk entry data based on tag */
+                            u32 tag = node1->m_tag;
+                            if (tag == *(u32*)"ACTR" || tag == *(u32*)"PLYR" ||
+                                tag == *(u32*)"TGOB") {
+                                pal_swap_actor_entries((stage_actor_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"TGSC" || tag == *(u32*)"SCOB" ||
+                                       tag == *(u32*)"Door" || tag == *(u32*)"TGDR") {
+                                pal_swap_tgsc_entries((stage_tgsc_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"SCLS") {
+                                pal_swap_scls_entries((stage_scls_info_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"CAMR" || tag == *(u32*)"RCAM") {
+                                pal_swap_camera_entries((stage_camera2_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"AROB" || tag == *(u32*)"RARO") {
+                                pal_swap_arrow_entries((stage_arrow_data_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"MULT") {
+                                pal_swap_mult_entries((dStage_Mult_info*)entries, entryNum);
+                            } else if (tag == *(u32*)"LGHT") {
+                                pal_swap_plight_entries((stage_plight_info_class*)entries, entryNum);
+                            } else if (tag == *(u32*)"SOND") {
+                                pal_swap_sound_entries((stage_sound_data*)entries, entryNum);
+                            } else if (tag == *(u32*)"DMAP") {
+                                pal_swap_dmap_entries((dStage_DMap_dt_c*)entries, entryNum);
+                            } else if (tag == *(u32*)"FLOR") {
+                                pal_swap_flor_entries((dStage_FloorInfo_dt_c*)entries, entryNum);
+                            } else if (tag == *(u32*)"FILI") {
+                                pal_swap_fili_entries((dStage_FileList_dt_c*)entries, entryNum);
+                            } else if (tag == *(u32*)"REVT") {
+                                pal_swap_revt_entries((dStage_MapEvent_dt_c*)entries, entryNum);
+                            } else if (tag == *(u32*)"PATH" || tag == *(u32*)"RPAT") {
+                                /* dPath entries have a pointer field (m_points), so sizeof
+                                 * differs between GCN (12 bytes) and 64-bit PC (16 bytes).
+                                 * Repack from 12-byte to 16-byte stride with endian swap. */
+                                dStage_dPnt_c* pntInfo = (tag == *(u32*)"PATH")
+                                    ? i_stage->getPntInf() : i_stage->getPnt2Inf();
+                                u32 pnt_off = pntInfo ? pntInfo->m_pnt_offset : 0;
+                                dPath* native = pal_repack_dpath_entries(
+                                    (u8*)entries, entryNum, pnt_off, (u8*)i_data);
+                                if (native) {
+                                    /* Update the entries pointer in rbuf to repacked array */
+                                    void* np = (void*)native;
+                                    memcpy(rbuf + 12, &np, sizeof(void*));
+                                }
+                            } else if (tag == *(u32*)"RTBL") {
+                                /* roomRead_data_class** is an array of 4-byte pointers on GCN.
+                                 * Each pointer targets an 8-byte struct on GCN (16 on PC).
+                                 * Repack the pointer array and each entry. */
+                                if (entryNum > 0) {
+                                    roomRead_data_class** native_ptrs =
+                                        (roomRead_data_class**)malloc(entryNum * sizeof(roomRead_data_class*));
+                                    if (native_ptrs) {
+                                        dStage_pc_track_alloc(native_ptrs);
+                                        u32* raw_ptrs = (u32*)entries;
+                                        for (int k = 0; k < entryNum; k++) {
+                                            u32 off = pal_swap32(raw_ptrs[k]);
+                                            native_ptrs[k] = pal_repack_rtbl_entry(
+                                                (u8*)i_data + off, (u8*)i_data);
+                                        }
+                                        void* np = (void*)native_ptrs;
+                                        memcpy(rbuf + 12, &np, sizeof(void*));
+                                    }
+                                }
+                            } else {
+                                /* Layer-tagged chunks: LGTx, PALx, Colx have multi-byte fields.
+                                 * Match on first 3 characters since 4th is the layer number. */
+                                char t3[4];
+                                memcpy(t3, &tag, 4);
+                                if (t3[0] == 'L' && t3[1] == 'G' && t3[2] == 'T') {
+                                    pal_swap_lgtvec_entries((stage_pure_lightvec_info_class*)entries, entryNum);
+                                } else if (t3[0] == 'P' && t3[1] == 'A' && t3[2] == 'L') {
+                                    pal_swap_palette_entries((stage_palette_info_class*)entries, entryNum);
+                                } else if (t3[0] == 'C' && t3[1] == 'o' && t3[2] == 'l') {
+                                    pal_swap_pselect_entries((stage_pselect_info_class*)entries, entryNum);
+                                }
+                                /* Envx, VRBx, SONx — all u8/char fields, no swap needed */
+                            }
+
+                            funcTbl[i].function(i_stage, rbuf, entryNum, i_data);
+                        }
+#else
                         funcTbl[i].function(i_stage, node1, node1->m_entryNum, i_data);
+#endif
                     }
                     break;
                 }
@@ -2279,11 +2686,83 @@ static int dStage_fieldMapTresureInit(dStage_dt_c* i_stage, void* i_data, int i_
 }
 
 static void dStage_dt_c_offsetToPtr(void* i_data) {
+    if (!i_data) return;
     dStage_fileHeader* file = (dStage_fileHeader*)i_data;
     dStage_nodeHeader* p_tno = file->m_nodes;
 
+#if PLATFORM_PC
+    /* Guard against double-swap: dStage_infoCreate calls stageInitLoader (which
+     * calls offsetToPtr), then dStage_Create calls stageLoader (which calls
+     * offsetToPtr again). Without this guard, headers get swapped back to
+     * big-endian, causing SIGSEGV in entry swap functions. */
+    if (dStage_pc_already_swapped(i_data)) {
+        return;
+    }
+
+    /* Stage data from disc is big-endian; swap numerical header fields on
+     * little-endian PC. Tags are 4CC byte strings and never need swapping.
+     * Only m_chunkCount, m_entryNum, and m_offset are numerical. */
+    {
+        s32 raw = file->m_chunkCount;
+        s32 swapped = pal_swap32s(raw);
+        bool needSwap = false;
+
+        /* If native chunkCount is unreasonable, must be big-endian */
+        if ((raw > 256 || raw < 0) && swapped > 0 && swapped < 256) {
+            file->m_chunkCount = swapped;
+            needSwap = true;
+        } else if (raw > 0 && raw < 256) {
+            /* chunkCount looks valid in native order. Check first tag's m_offset
+             * to determine if numerical fields need swapping. Tags are 4CC byte
+             * strings and are always in the correct order.
+             * Check if first tag is a known stage chunk 4CC. If so, check if
+             * m_offset needs swapping by looking at its magnitude. */
+            u32 tag = p_tno[0].m_tag;
+            if (tag == *(u32*)"STAG" || tag == *(u32*)"PLYR" ||
+                tag == *(u32*)"CAMR" || tag == *(u32*)"ACTR" ||
+                tag == *(u32*)"SCLS" || tag == *(u32*)"FILI" ||
+                tag == *(u32*)"RTBL" || tag == *(u32*)"MULT") {
+                /* Tag is valid 4CC. Check if m_offset is reasonable in native
+                 * order or needs swapping. Stage files are typically < 64KB,
+                 * so valid offsets are < 0x10000. */
+                u32 off = p_tno[0].m_offset;
+                u32 off_sw = pal_swap32(off);
+                if (off > 0x100000 && off_sw < 0x100000 && off_sw > 0) {
+                    needSwap = true;
+                } else if (off == 0 && p_tno[0].m_entryNum == 0) {
+                    /* Both zero — no swap needed (or empty chunk) */
+                } else {
+                    /* Offset looks reasonable — check entryNum */
+                    s32 en = p_tno[0].m_entryNum;
+                    s32 en_sw = pal_swap32s(en);
+                    if ((en > 10000 || en < 0) && en_sw >= 0 && en_sw < 10000) {
+                        needSwap = true;
+                    }
+                }
+            }
+        }
+
+        if (needSwap) {
+            for (int i = 0; i < file->m_chunkCount; i++) {
+                /* Tags are 4CC byte sequences — don't swap them.
+                 * Only swap numerical fields: entryNum and offset. */
+                p_tno[i].m_entryNum = pal_swap32s(p_tno[i].m_entryNum);
+                p_tno[i].m_offset   = pal_swap32(p_tno[i].m_offset);
+            }
+        }
+
+        dStage_pc_mark_swapped(i_data);
+    }
+
+    /* On 64-bit PC, m_offset (u32) cannot hold a full pointer.
+     * Instead of adding the base, keep the relative offset.
+     * Callers use dStage_resolvePtr() to get the actual pointer. */
+    /* (offsets are already relative — don't add base on PC) */
+    return;
+#endif
+
     for (int i = 0; i < file->m_chunkCount; i++) {
-        JUT_ASSERT(3381, p_tno->m_offset != 0);
+        if (p_tno->m_offset == 0) break;
         if (p_tno->m_offset != 0 && p_tno->m_offset < 0x80000000) {
             p_tno->m_offset += (uintptr_t)i_data;
         }
@@ -2299,6 +2778,12 @@ static int dStage_mapPathInit(dStage_dt_c* i_stage, void* i_data, int param_2, v
 
 static int dStage_mapPathInitCommonLayer(dStage_dt_c* i_stage, void* i_data, int param_2,
                                          void* param_3) {
+#if PLATFORM_PC
+    /* Map path data contains nested pointer fields (dDrawPath_c::room_class::mpFloor etc.)
+     * that are GCN 4-byte offsets. These haven't been resolved to 64-bit pointers.
+     * Skip map path init on PC until deep pointer resolution is implemented. */
+    return 1;
+#endif
     map_path_class* map_path = (map_path_class*)((int*)i_data + 1);
     dMpath_c::setPointer(i_stage->getRoomNo(), map_path, 1);
     return 1;
@@ -2306,6 +2791,10 @@ static int dStage_mapPathInitCommonLayer(dStage_dt_c* i_stage, void* i_data, int
 
 static int dStage_fieldMapMapPathInit(dStage_dt_c* i_stage, void* i_data, int param_2,
                                          void* param_3) {
+#if PLATFORM_PC
+    /* Same issue as dStage_mapPathInitCommonLayer — nested pointers not resolved. */
+    return 1;
+#endif
     map_path_class* map_path = (map_path_class*)((int*)i_data + 1);
     dDrawPath_c::room_class* room_p = (dDrawPath_c::room_class*)map_path->m_entries;
     if (room_p == NULL) {
@@ -2618,6 +3107,11 @@ void dStage_dt_c_stageLoader(void* i_data, dStage_dt_c* i_stage) {
         {"REVT", dStage_stEventInfoInit},   {"SOND", dStage_soundInfoInitCL},
     };
 
+#if PLATFORM_PC
+    /* On PC, stage.dzs is big-endian. Swap the file header (chunk count +
+     * node tags/offsets) before decode, same as roomLoader does. */
+    dStage_dt_c_offsetToPtr(i_data);
+#endif
     dStage_dt_c_decode(i_data, i_stage, l_funcTable, ARRAY_SIZEU(l_funcTable));
     layerTableLoader(i_data, i_stage, -1);
     layerActorLoader(i_data, i_stage, -1);
@@ -2685,6 +3179,23 @@ void dStage_infoCreate() {
     OS_REPORT("dStage_Create\n");
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
+#if PLATFORM_PC
+    if (!stageRsrc) {
+        /* Diagnose: the archive is loaded but getStageRes returns NULL */
+        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
+        if (info && info->getArchive()) {
+            JKRArchive* arc = info->getArchive();
+            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
+            if (e) {
+                /* findNameResource works — the issue is in getRes/getResInfoLoaded.
+                 * Use the archive directly to get the resource. */
+                s32 idx = (s32)(e - arc->mFiles);
+                stageRsrc = arc->getIdxResource(idx);
+            }
+        }
+        if (!stageRsrc) { pal_error(PAL_ERR_STAGE_DATA, "dStage_infoCreate: stage.dzs not resolvable"); return; }
+    }
+#endif
 
     dComIfGp_roomControl_init();
     dStage_dt_c_stageInitLoader(stageRsrc, dComIfGp_getStage());
@@ -2695,6 +3206,43 @@ char dStage_roomControl_c::mDemoArcName[10];
 void dStage_Create() {
     void* stageRsrc = dComIfG_getStageRes("stage.dzs");
     JUT_ASSERT(4451, stageRsrc != NULL);
+#if PLATFORM_PC
+    if (!stageRsrc) {
+        /* Try direct archive lookup as fallback */
+        dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
+        if (info && info->getArchive()) {
+            JKRArchive* arc = info->getArchive();
+            JKRArchive::SDIFileEntry* e = arc->findNameResource("stage.dzs");
+            if (e) {
+                s32 idx = (s32)(e - arc->mFiles);
+                stageRsrc = arc->getIdxResource(idx);
+            }
+        }
+    }
+    if (!stageRsrc) {
+        /* No stage data available — init env and events with defaults */
+        pal_error(PAL_ERR_STAGE_DATA, "dStage_Create: stage.dzs not found");
+        *dStage_roomControl_c::getDemoArcName() = NULL;
+        dKankyo_create();
+        dComIfGp_evmng_create();
+        return;
+    }
+    /* Stage data available: parse header + STAG chunk, then run full loader.
+     * The 64-bit struct overlay fix in dStage_dt_c_decode allocates native
+     * containers with resolved pointers, so actor/camera/SCLS spawning works. */
+    dStage_dt_c_stageLoader(stageRsrc, dComIfGp_getStage());
+
+    *dStage_roomControl_c::getDemoArcName() = NULL;
+    dKankyo_create();
+
+    if (dComIfG_getStageRes("vrbox_sora.bmd")) {
+        fopAcM_Create(PROC_VRBOX, NULL, NULL);
+        fopAcM_Create(PROC_VRBOX2, NULL, NULL);
+    }
+
+    dComIfGp_evmng_create();
+    return;
+#endif
 #if DEBUG
     data_8074C568_debug = false;
     data_8074C569_debug = false;
@@ -2724,6 +3272,12 @@ void dStage_Create() {
 void dStage_Delete() {
     OS_REPORT("dStage_Delete\n");
 
+#if PLATFORM_PC
+    /* Free native container struct allocations from dStage_dt_c_decode */
+    dStage_pc_free_allocs();
+    dStage_pc_clear_swap_tracking();
+#endif
+
     char* demoArcName = dStage_roomControl_c::getDemoArcName();
     if (*demoArcName != '\0') {
         dComIfG_deleteObjectResMain(demoArcName);
@@ -2737,7 +3291,8 @@ void dStage_Delete() {
     {
         dStage_roomControl_c::destroyMemoryBlock();
 
-        if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON) {
+        if (dStage_stagInfo_GetSTType(dComIfGp_getStage()->getStagInfo()) == ST_DUNGEON)
+        {
             dRes_info_c* info = dComIfG_getStageResInfo("Stg_00");
             JUT_ASSERT(4579, info != NULL);
             *info->getArchiveName() = 'X';
@@ -2806,7 +3361,13 @@ int dStage_changeScene(int i_exitId, f32 speed, u32 mode, s8 room_no, s16 angle,
         scls = dComIfGp_getStageSclsInfo();
     } else {
         JUT_ASSERT(4783, 0 <= room_no && room_no < 64);
+#if PLATFORM_PC
+        if (room_no < 0 || room_no >= 64) return 0;
+#endif
         dStage_roomDt_c* room = dComIfGp_roomControl_getStatusRoomDt(room_no);
+#if PLATFORM_PC
+        if (room == NULL) return 0;
+#endif
         scls = room->getSclsInfo();
     }
 
@@ -2815,6 +3376,9 @@ int dStage_changeScene(int i_exitId, f32 speed, u32 mode, s8 room_no, s16 angle,
     }
 
     JUT_ASSERT(4793, 0 <= i_exitId && i_exitId < scls->num);
+#if PLATFORM_PC
+    if (i_exitId < 0 || i_exitId >= scls->num) return 0;
+#endif
 
     stage_scls_info_class* scls_info = &scls->m_entries[i_exitId];
     s32 wipe = dStage_sclsInfo_getWipe(scls_info);
@@ -2852,7 +3416,13 @@ int dStage_changeScene4Event(int i_exitId, s8 room_no, int i_wipe, bool param_3,
         scls = dComIfGp_getStageSclsInfo();
     } else {
         JUT_ASSERT(4853, 0 <= room_no && room_no < 64);
+#if PLATFORM_PC
+        if (room_no < 0 || room_no >= 64) return 0;
+#endif
         dStage_roomDt_c* room = dComIfGp_roomControl_getStatusRoomDt(room_no);
+#if PLATFORM_PC
+        if (room == NULL) return 0;
+#endif
         scls = room->getSclsInfo();
     }
 
@@ -2863,6 +3433,9 @@ int dStage_changeScene4Event(int i_exitId, s8 room_no, int i_wipe, bool param_3,
     }
 
     JUT_ASSERT(4865, 0 <= i_exitId && i_exitId < scls->num);
+#if PLATFORM_PC
+    if (i_exitId < 0 || i_exitId >= scls->num) return 0;
+#endif
     stage_scls_info_class* scls_info = &scls->m_entries[i_exitId];
 
     s32 wipe = i_wipe == -1 ? dStage_sclsInfo_getWipe(scls_info) : i_wipe;

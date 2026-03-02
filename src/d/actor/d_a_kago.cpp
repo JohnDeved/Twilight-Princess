@@ -516,7 +516,11 @@ void daKago_c::demo_skip(int i_parameter) {
 
     switch (i_parameter) {
     case 0:
+<<<<<<< HEAD
+        field_0x748 = 2;
+=======
         mDemoMode = 2;
+>>>>>>> port
         field_0x74c = 0;
         break;
     case 1:
@@ -530,7 +534,11 @@ void daKago_c::demo_skip(int i_parameter) {
         mHeadRotZ = mHeadRotY = 0;
         /* dSv_event_flag_c::M_051 - Main Event - Shadow Kargorok (?) (Large) event complete (Horse grass appears in various places) */
         dComIfGs_onEventBit(dSv_event_flag_c::saveBitLabels[84]);
+<<<<<<< HEAD
+        field_0x748 = 7;
+=======
         mDemoMode = 7;
+>>>>>>> port
         field_0x74c = 0;
         break;
     case 4:
@@ -696,8 +704,13 @@ int daKago_c::setSceneChange(int i_mode) {
 }
 
 void daKago_c::createBalloonScore() {
+<<<<<<< HEAD
+    if (field_0x6e7 != 0 && mBalloon2DId == fpcM_ERROR_PROCESS_ID_e) {
+        mBalloon2DId = fopAcM_create(PROC_BALLOON2D, 0, 0, 0xffffffff, 0, 0, -1);
+=======
     if (mType != TYPE_TWILIGHT && mBalloon2DId == fpcM_ERROR_PROCESS_ID_e) {
         mBalloon2DId = fopAcM_create(PROC_BALLOON2D, 0, NULL, -1, NULL, NULL, -1);
+>>>>>>> port
         field_0x6e9 = 1;
     }
 }
@@ -1218,7 +1231,11 @@ void daKago_c::executeFly() {
 
         if (mMode == 3) {
             cLib_chaseUC(&field_0x6de, 0, 4);
+<<<<<<< HEAD
+            cLib_addCalcAngleS(&current.angle.x, -8192, 8, 0x100, 0x10);
+=======
             cLib_addCalcAngleS(&current.angle.x, -0x2000, 8, 0x100, 0x10);
+>>>>>>> port
         } else {
             cLib_addCalcAngleS(&current.angle.x, pntAngleX, 8, 0x100, 0x10);
         }
@@ -2237,7 +2254,11 @@ bool daKago_c::PerchDemoAwayForward() {
         if (field_0x728 < 30) {
             cLib_addCalcAngleS(&current.angle.x, 0, 8, 0x100, 0x40);
         } else {
+<<<<<<< HEAD
+            cLib_addCalcAngleS(&current.angle.x, -8192, 8, 0x100, 0x40);
+=======
             cLib_addCalcAngleS(&current.angle.x, -0x2000, 8, 0x100, 0x40);
+>>>>>>> port
         }
 
         shape_angle.x = current.angle.x;
@@ -2283,7 +2304,11 @@ bool daKago_c::PerchDemoAwayForward() {
 
         cLib_chaseF(&mFlySpeed, 30.0f, 1.0f);
 
+<<<<<<< HEAD
+        cLib_addCalcAngleS(&current.angle.x, -8192, 8, 0x100, 0x40);
+=======
         cLib_addCalcAngleS(&current.angle.x, -0x2000, 8, 0x100, 0x40);
+>>>>>>> port
         shape_angle.x = current.angle.x;
         shape_angle.y = current.angle.y;
 
@@ -2549,7 +2574,11 @@ bool daKago_c::executeFirstDemo() {
 
         if (field_0x728 > 30) {
             cLib_chaseF(&field_0x6cc, 350.0f, 4.0f);
+<<<<<<< HEAD
+            cLib_addCalcAngleS(&field_0x718, -2048, 8, 0x100, 0x10);
+=======
             cLib_addCalcAngleS(&mHeadRotZ, -0x800, 8, 0x100, 0x10);
+>>>>>>> port
         } else {
             cLib_chaseF(&field_0x6cc, 350.0f, 6.0f);
             cLib_addCalcAngleS(&mHeadRotZ, 0x400, 8, 0x200, 0x10);
@@ -2698,7 +2727,11 @@ bool daKago_c::executeFirstDemo() {
     case 6:
         dComIfGp_getEvent()->setSkipProc(this, DemoSkipCallBack, 2);
 
+<<<<<<< HEAD
+        cLib_addCalcAngleS(&current.angle.x, -8192, 8, 0x100, 0x40);
+=======
         cLib_addCalcAngleS(&current.angle.x, -0x2000, 8, 0x100, 0x40);
+>>>>>>> port
         shape_angle.x = current.angle.x;
         shape_angle.y = current.angle.y;
 
@@ -2938,7 +2971,11 @@ void daKago_c::executeLandingLakeHairia() {
         speedF = mFlySpeed * std::abs(cM_scos(current.angle.x));
         speed.y = -mFlySpeed * cM_ssin(current.angle.x);
 
+<<<<<<< HEAD
+        cLib_chaseAngleS(&shape_angle.x, -8192, 0x100);
+=======
         cLib_chaseAngleS(&shape_angle.x, -0x2000, 0x100);
+>>>>>>> port
         current.angle.x = shape_angle.x;
 
         if (field_0x728 == 90) {
@@ -3067,7 +3104,11 @@ void daKago_c::executeLandingBoartHouse() {
         speedF = mFlySpeed * std::abs(cM_scos(current.angle.x));
         speed.y = -mFlySpeed * cM_ssin(current.angle.x);
 
+<<<<<<< HEAD
+        cLib_chaseAngleS(&shape_angle.x, -8192, 0x100);
+=======
         cLib_chaseAngleS(&shape_angle.x, -0x2000, 0x100);
+>>>>>>> port
         current.angle.x = shape_angle.x;
 
         if (field_0x728 == 80) {
@@ -3373,8 +3414,12 @@ void daKago_c::setDashBlurEffect(int param_0) {
         field_0x6be.y = shape_angle.y;
         field_0x6be.z = 0;
     }
+<<<<<<< HEAD
+    field_0xb40 = dComIfGp_particle_set(field_0xb40, 0x860f, &cameraEyeOffset, &tevStr, &field_0x6be, 0, 0xff, 0, -1, 0, 0, 0);
+=======
 
     field_0xb40 = dComIfGp_particle_set(field_0xb40, dPa_RM(ID_ZF_S_YCSPEED), &cameraEyeOffset, &tevStr, &field_0x6be, NULL, 0xff, NULL, -1, NULL, NULL, NULL);
+>>>>>>> port
 }
 
 void daKago_c::setWallHitEffect(cXyz i_pos, int i_effType) {
@@ -3404,9 +3449,15 @@ void daKago_c::setSibukiEffect() {
     cXyz effpos(current.pos.x, field_0x70c + l_HIO.mYOffsetFromWaterSurface, current.pos.z);
     csXyz effrot(0, shape_angle.y, 0);
     for (int i = 0; i < 3; i++) {
+<<<<<<< HEAD
+        field_0xb44[i] =
+            dComIfGp_particle_set(field_0xb44[i], kago_wave_id[i], &acStack_28, &tevStr, &cStack_30,
+                                  0, 0xff, 0, -1, 0, 0, 0);
+=======
         mSibukiEmitterIDs[i] =
             dComIfGp_particle_set(mSibukiEmitterIDs[i], kago_wave_id[i], &effpos, &tevStr, &effrot,
                                   NULL, 0xff, NULL, -1, NULL, NULL, NULL);
+>>>>>>> port
     }
 
     if (mType == TYPE_TWILIGHT) {
@@ -3417,10 +3468,17 @@ void daKago_c::setSibukiEffect() {
 }
 
 void daKago_c::setDashSibukiEffect() {
+<<<<<<< HEAD
+    cXyz acStack_20(current.pos.x, field_0x70c + l_HIO.mYOffsetFromWaterSurface, current.pos.z);
+    csXyz cStack_28(0, shape_angle.y, 0);
+    field_0xb50 = dComIfGp_particle_set(field_0xb50, 0x86fe, &acStack_20, &tevStr, &cStack_28, 0,
+                                        0xff, 0, -1, 0, 0, 0);
+=======
     cXyz effpos(current.pos.x, field_0x70c + l_HIO.mYOffsetFromWaterSurface, current.pos.z);
     csXyz effrot(0, shape_angle.y, 0);
     mDashSibukiEmitterID = dComIfGp_particle_set(mDashSibukiEmitterID, dPa_RM(ID_ZF_S_YCWAVE03_SPLASH), &effpos, &tevStr, &effrot, NULL,
                                                  0xff, NULL, -1, NULL, NULL, NULL);
+>>>>>>> port
 }
 
 void daKago_c::setWaterFallEffect() {
@@ -3432,9 +3490,15 @@ void daKago_c::setWaterFallEffect() {
     cXyz effpos(current.pos.x, current.pos.y, current.pos.z);
     csXyz effrot(0, shape_angle.y, 0);
     for (int i = 0; i < 2; i++) {
+<<<<<<< HEAD
+        field_0xb44[i] =
+            dComIfGp_particle_set(field_0xb44[i], kago_wave_id[i], &acStack_28, &tevStr, &cStack_30,
+                                  0, 0xff, 0, -1, 0, 0, 0);
+=======
         mSibukiEmitterIDs[i] =
             dComIfGp_particle_set(mSibukiEmitterIDs[i], kago_wave_id[i], &effpos, &tevStr, &effrot,
                                   NULL, 0xFF, NULL, -1, NULL, NULL, NULL);
+>>>>>>> port
     }
 
     if (mType == TYPE_TWILIGHT) {
@@ -3722,7 +3786,11 @@ int daKago_c::ctrlJoint(J3DJoint* i_joint, J3DModel* param_1) {
     return 1;
 }
 
+<<<<<<< HEAD
+int daKago_c::JointCallBack(J3DJoint* param_0, int param_1) {
+=======
 int daKago_c::JointCallBack(J3DJoint* i_joint, int param_1) {
+>>>>>>> port
     if (param_1 == 0) {
         J3DModel* model = j3dSys.getModel();
         daKago_c* kago = (daKago_c*)model->getUserArea();

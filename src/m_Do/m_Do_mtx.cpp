@@ -269,13 +269,39 @@ void mDoMtx_lookAt(Mtx mtx, Vec const* i_eye, Vec const* i_center, Vec const* i_
     }
 }
 
-void mDoMtx_concatProjView(const Mtx a, const Mtx b, Mtx c) {
+#if PLATFORM_PC
+/* On PC (64-bit), a_ and c_ are Mtx44 (4×4 = 64 bytes) but b_ is Mtx (3×4 = 48 bytes).
+   We access a_[3] and write c_[3], so these MUST be at least 4 rows.
+   Using Mtx (3×4) in the signature causes the compiler to assume only 48 bytes,
+   potentially optimizing away the row-3 writes or corrupting the stack. */
+void mDoMtx_concatProjView(f32 const (*a_)[4], f32 const (*b_)[4], f32 (*c_)[4]) {
+    CMtxP a = (CMtxP)a_;
+    CMtxP b = (CMtxP)b_;
+    MtxP  c = (MtxP)c_;
+    if (!a || !b || !c) {
+        return;
+    }
     mDoMtx_concat(a, b, c);
     c[3][0] = a[3][0] * b[0][0] + a[3][1] * b[1][0] + a[3][2] * b[2][0];
     c[3][1] = a[3][0] * b[0][1] + a[3][1] * b[1][1] + a[3][2] * b[2][1];
     c[3][2] = a[3][0] * b[0][2] + a[3][1] * b[1][2] + a[3][2] * b[2][2];
     c[3][3] = a[3][0] * b[0][3] + a[3][1] * b[1][3] + a[3][2] * b[2][3] + a[3][3];
 }
+#else
+void mDoMtx_concatProjView(const Mtx a_, const Mtx b_, Mtx c_) {
+    /* Cast to unbounded pointers — callers pass Mtx44 buffers but the
+       function accesses row 3, which is UB on the Mtx (float[3][4]) type.
+       Using MtxP/CMtxP avoids the compiler treating a_[3]/c_[3] as UB. */
+    CMtxP a = (CMtxP)a_;
+    CMtxP b = (CMtxP)b_;
+    MtxP  c = (MtxP)c_;
+    mDoMtx_concat(a, b, c);
+    c[3][0] = a[3][0] * b[0][0] + a[3][1] * b[1][0] + a[3][2] * b[2][0];
+    c[3][1] = a[3][0] * b[0][1] + a[3][1] * b[1][1] + a[3][2] * b[2][1];
+    c[3][2] = a[3][0] * b[0][2] + a[3][1] * b[1][2] + a[3][2] * b[2][2];
+    c[3][3] = a[3][0] * b[0][3] + a[3][1] * b[1][3] + a[3][2] * b[2][3] + a[3][3];
+}
+#endif
 
 bool mDoMtx_inverseTranspose(const Mtx a, Mtx b) {
     f32 f31 = a[0][0] * a[1][1] * a[2][2] + a[0][1] * a[1][2] * a[2][0] +

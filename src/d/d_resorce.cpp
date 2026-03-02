@@ -18,6 +18,55 @@
 #include "m_Do/m_Do_graphic.h"
 #include <cstdio>
 #include <cstring>
+<<<<<<< HEAD
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#include "pal/pal_endian.h"
+#include "pal/pal_error.h"
+#include <signal.h>
+#include <setjmp.h>
+static volatile sig_atomic_t s_j3d_crash = 0;
+static sigjmp_buf s_j3d_jmpbuf;
+static void j3d_sigsegv_handler(int sig) {
+    (void)sig;
+    s_j3d_crash = 1;
+    siglongjmp(s_j3d_jmpbuf, 1);
+}
+
+/* Wrap a J3D loader call with SIGSEGV/SIGABRT protection.
+ * Returns the loader result, or NULL if the loader crashed. */
+template<typename Func>
+static void* j3d_safe_load(Func func) {
+    struct sigaction sa_segv_new, sa_segv_old;
+    struct sigaction sa_abrt_new, sa_abrt_old;
+    memset(&sa_segv_new, 0, sizeof(sa_segv_new));
+    sa_segv_new.sa_handler = j3d_sigsegv_handler;
+    sigemptyset(&sa_segv_new.sa_mask);
+    sa_segv_new.sa_flags = SA_NODEFER;  /* Allow re-delivery of SIGSEGV */
+    sa_abrt_new = sa_segv_new;
+    sigaction(SIGSEGV, &sa_segv_new, &sa_segv_old);
+    sigaction(SIGABRT, &sa_abrt_new, &sa_abrt_old);
+    s_j3d_crash = 0;
+
+    void* result = NULL;
+    if (sigsetjmp(s_j3d_jmpbuf, 1) == 0) {
+        result = func();
+    } else {
+        /* Returned from siglongjmp — SIGSEGV/SIGABRT was caught */
+        result = NULL;
+    }
+    sigaction(SIGSEGV, &sa_segv_old, NULL);
+    sigaction(SIGABRT, &sa_abrt_old, NULL);
+
+    if (s_j3d_crash) {
+        pal_error(PAL_ERR_J3D_LOAD, "signal caught in J3D loader");
+        return NULL;
+    }
+    return result;
+}
+#endif
+=======
+>>>>>>> port
 
 dRes_info_c::dRes_info_c() {
     mCount = 0;
@@ -229,7 +278,19 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
         flags ^= 0x60020;
     }
 
+#if PLATFORM_PC
+    /* On PC, J3D model loading may crash due to incomplete endian conversion
+     * or 64-bit struct layout differences. Catch SIGSEGV and return NULL. */
+    {
+        u32 f = flags;
+        void* d = i_data;
+        i_data = j3d_safe_load([&]() -> void* {
+            return J3DModelLoaderDataBase::load(d, f);
+        });
+    }
+#else
     i_data = J3DModelLoaderDataBase::load(i_data, flags);
+#endif
     if (i_data == NULL) {
         return NULL;
     }
@@ -317,6 +378,18 @@ int dRes_info_c::loadResource() {
     for (int i = 0; i < mArchive->countDirectory(); i++) {
         u32 nodeType = node->type;
         u32 fileIndex = node->first_file_index;
+#if PLATFORM_PC
+        {
+            char t[5];
+            t[0] = (nodeType >> 24) & 0xFF;
+            t[1] = (nodeType >> 16) & 0xFF;
+            t[2] = (nodeType >> 8) & 0xFF;
+            t[3] = nodeType & 0xFF;
+            t[4] = 0;
+            fprintf(stderr, "[PAL] loadResource '%s' dir[%d] type='%s'(0x%08X) first=%u count=%u\n",
+                    mArchiveName, i, t, nodeType, fileIndex, node->num_entries);
+        }
+#endif
 
         for (int j = 0; j < node->num_entries; j++) {
             if (mArchive->isFileEntry(fileIndex)) {
@@ -359,10 +432,22 @@ int dRes_info_c::loadResource() {
 #if DEBUG
                     g_kankyoHIO.navy.field_0x22a |= u16(0x100);
 #endif
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020030);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020030);
+#endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* On PC, skip failed J3D models but continue loading other resources.
+                         * mRes[fileIndex] stays NULL, callers must check. */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDP model load failed");
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
                     for (u16 k = 0; k < modelData->getMaterialNum(); k++) {
@@ -385,18 +470,34 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDP */
                 } else if (nodeType == 'BMDR' || nodeType == 'BMDV' || nodeType == 'BMDE' ||
                            nodeType == 'BMWR' || nodeType == 'BMWE')
                 {
                     res = loaderBasicBmd(nodeType, res);
                     if (res == NULL) {
+#if PLATFORM_PC
+                        /* On PC, skip failed J3D models but continue loading other resources */
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDR/BMDV/BMDE model load failed");
+#else
                         return -1;
+#endif
                     }
                 } else if (nodeType == 'BMDG') {
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020010);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
+#endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDG model load failed");
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
 #if DEBUG
@@ -414,14 +515,25 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDG */
                 } else if (nodeType == 'BMDA') {
 #if DEBUG
                     g_kankyoHIO.navy.field_0x22a |= u16(0x800);
 #endif
+#if PLATFORM_PC
+                    res = (J3DModelData*)j3d_safe_load([&]() -> void* {
+                        return J3DModelLoaderDataBase::load(res, 0x59020010);
+                    });
+#else
                     res = (J3DModelData*)J3DModelLoaderDataBase::load(res, 0x59020010);
+#endif
                     if (res == NULL) {
+#if PLATFORM_PC
+                        pal_error(PAL_ERR_J3D_LOAD, "BMDA model load failed");
+#else
                         return -1;
-                    }
+#endif
+                    } else {
 
                     J3DModelData* modelData = (J3DModelData*)res;
 
@@ -432,6 +544,7 @@ int dRes_info_c::loadResource() {
 
                     modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
                     modelData->makeSharedDL();
+                    } /* end else (res != NULL) for BMDA */
 #if DEBUG
                 } else if (nodeType == 'BMDL') {
                     J3DModelFileData* fileData = (J3DModelFileData*)res;
@@ -471,11 +584,41 @@ int dRes_info_c::loadResource() {
                         u8 unk_data[0x1C];
                         u32 some_data_offset;
                     };
+#if PLATFORM_PC
+                    /* Byte-swap the animation file before reading the offset field */
+                    pal_j3d_swap_anim(res, 0x800000);
+
+                    /* Wrap BCKS/BCK load with crash protection */
+                    {
+                        J3DUnkChunk* chunk = (J3DUnkChunk*)res;
+                        void* bas;
+                        if (chunk->some_data_offset != 0xFFFFFFFF) {
+                            bas = (void*)((uintptr_t)chunk->some_data_offset + (uintptr_t)res);
+                        } else {
+                            bas = NULL;
+                        }
+                        mDoExt_transAnmBas* transAnmBas = new mDoExt_transAnmBas(bas);
+                        if (transAnmBas != NULL) {
+                            void* loadResult = j3d_safe_load([&]() -> void* {
+                                J3DAnmLoaderDataBase::setResource(transAnmBas, res);
+                                return transAnmBas;
+                            });
+                            if (loadResult == NULL) {
+                                delete transAnmBas;
+                                res = NULL;
+                            } else {
+                                res = transAnmBas;
+                            }
+                        } else {
+                            res = NULL;
+                        }
+                    }
+#else
                     J3DUnkChunk* chunk = (J3DUnkChunk*)res;
                     void* bas;
 
                     if (chunk->some_data_offset != 0xFFFFFFFF) {
-                        bas = (void*)(chunk->some_data_offset + (u32)res);
+                        bas = (void*)((uintptr_t)chunk->some_data_offset + (uintptr_t)res);
                     } else {
                         bas = NULL;
                     }
@@ -487,14 +630,24 @@ int dRes_info_c::loadResource() {
 
                     J3DAnmLoaderDataBase::setResource(transAnmBas, res);
                     res = transAnmBas;
+#endif
                 } else if (nodeType == 'BTP ' || nodeType == 'BTK ' || nodeType == 'BPK ' ||
                            nodeType == 'BRK ' || nodeType == 'BLK ' || nodeType == 'BVA ' ||
                            nodeType == 'BXA ')
                 {
+#if PLATFORM_PC
+                    res = j3d_safe_load([&]() -> void* {
+                        return J3DAnmLoaderDataBase::load(res);
+                    });
+                    if (res == NULL) {
+                        pal_error(PAL_ERR_J3D_LOAD, "animation load failed (BTP/BTK/BPK/BRK/BLK/BVA/BXA)");
+                    }
+#else
                     res = J3DAnmLoaderDataBase::load(res);
                     if (res == NULL) {
                         return -1;
                     }
+#endif
                 } else if (nodeType == 'DZB ') {
                     res = cBgS::ConvDzb(res);
                 } else if (nodeType == 'KCL ') {
@@ -514,6 +667,14 @@ int dRes_info_c::loadResource() {
 
 void dRes_info_c::deleteArchiveRes() {
     JUT_ASSERT(1118, mArchive != NULL);
+
+#if PLATFORM_PC
+    /* On PC, archive internal pointers (mNodes, mStringTable) may be stale
+       during exit-time destructor ordering. Validate before traversing. */
+    if (mArchive->mNodes == NULL || mArchive->mStringTable == NULL) {
+        return;
+    }
+#endif
 
     JKRArchive::SDIDirEntry* nodes = mArchive->mNodes;
     for (int i = 0; i < mArchive->countDirectory(); i++) {
@@ -901,10 +1062,14 @@ void* dRes_control_c::getRes(char const* i_arcName, char const* i_resName, dRes_
     }
 
     JKRArchive* archive = resInfo->getArchive();
+#if PLATFORM_PC
+    if (archive == NULL) return NULL;
+#endif
     JKRArchive::SDIFileEntry* entry = archive->findNameResource(i_resName);
 
     if (entry != NULL) {
-        return resInfo->getRes(entry - archive->mFiles);
+        s32 idx = (s32)(entry - archive->mFiles);
+        return resInfo->getRes(idx);
     } else {
         OS_REPORT("\e[34m%s not found in %s.arc\n\e[m", i_resName, i_arcName);
         return NULL;
@@ -918,6 +1083,9 @@ void* dRes_control_c::getIDRes(char const* i_arcName, u16 i_resID, dRes_info_c* 
     }
 
     JKRArchive* archive = resInfo->getArchive();
+#if PLATFORM_PC
+    if (archive == NULL) return NULL;
+#endif
     int index = mDoExt_resIDToIndex(archive, i_resID);
     if (index < 0) {
         return 0;

@@ -135,6 +135,9 @@ static int dkWmark_Execute(dkWmark_c* i_this) {
 }
 
 int dkWmark_c::draw() {
+#if PLATFORM_PC
+    if (mpModel == NULL) return 1;
+#endif
     J3DGXColor color;
 
     if (mDoLib_clipper::clip(j3dSys.getViewMtx(), pos, scale.x * 50.0f)) {

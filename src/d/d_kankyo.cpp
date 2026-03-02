@@ -760,6 +760,11 @@ static void dKy_FiveSenses_fullthrottle_dark_static1() {
     dScnKy_env_light_c* kankyo = dKy_getEnvlight();
     BOOL init_mode_change = FALSE;
 
+#if PLATFORM_PC
+    /* Player actor doesn't exist during title screen */
+    if (dComIfGp_getLinkPlayer() == NULL) return;
+#endif
+
     cXyz particle_pos;
     cXyz particle_size;
 
@@ -1168,6 +1173,11 @@ static void dungeonlight_init() {
 }
 
 static void undwater_init() {
+#if PLATFORM_PC
+    /* On PC, J3D model data from Always.arc may be corrupt due to incomplete endian swap.
+     * Skip underwater effect init entirely — it's a visual effect that needs full J3D pipeline. */
+    return;
+#endif
     J3DModelData* modelData2 = (J3DModelData*)dComIfG_getObjectRes("Always", 0x1D);
     JUT_ASSERT(1867, modelData2 != NULL);
 

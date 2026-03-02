@@ -19,6 +19,7 @@ orig/*/*
 
 # Build files
 build/
+build-pc/
 .ninja_*
 build.ninja
 
@@ -39,3 +40,21 @@ compile_commands.json
 
 # ISOs
 *.iso
+crash.log
+milestones.log
+
+# CI-generated outputs
+verify_output/
+verify_png/
+verify-report.json
+milestone-summary.json
+regression-report.json
+
+# PC port save data
+/save
+logo_render.bmp
+/test_output/
+/test_output2/
+build_pc/
+build-asan/
+verify_output/

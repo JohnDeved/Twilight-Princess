@@ -37,6 +37,13 @@
 #include <revolution/sc.h>
 #endif
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+#include "pal/gx/gx_render.h"
+#endif
+
+=======
+>>>>>>> port
 #if PLATFORM_WII
 #include "d/d_cursor_mng.h"
 #endif
@@ -1520,6 +1527,102 @@ static void drawItem3D() {
 }
 
 int mDoGph_Painter() {
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, use bgfx for rendering. Draw 3D scene + 2D overlays. */
+    if (JFWDisplay::getManager() != NULL) {
+        pal_render_begin_frame();
+        mDoGph_gInf_c::beginRender();
+
+        GXSetAlphaUpdate(GX_DISABLE);
+        j3dSys.drawInit();
+        GXSetDither(GX_ENABLE);
+
+        /* --- 3D rendering (camera + draw lists) --- */
+        if (dComIfGp_getWindowNum() != 0) {
+            dDlst_window_c* window_p = dComIfGp_getWindow(0);
+            int camera_id = window_p->getCameraID();
+            camera_class* camera_p = dComIfGp_getCamera(camera_id);
+
+            if (camera_p != NULL) {
+                view_port_class* view_port = window_p->getViewPort();
+                view_port_class local_port;
+
+                if (view_port->x_orig != 0.0f || view_port->y_orig != 0.0f) {
+                    local_port.x_orig = 0.0f;
+                    local_port.y_orig = 0.0f;
+                    local_port.width  = FB_WIDTH;
+                    local_port.height = FB_HEIGHT;
+                    local_port.near_z = view_port->near_z;
+                    local_port.far_z  = view_port->far_z;
+                    local_port.scissor = view_port->scissor;
+                    view_port = &local_port;
+                }
+
+                GXSetViewport(view_port->x_orig, view_port->y_orig,
+                              view_port->width, view_port->height,
+                              view_port->near_z, view_port->far_z);
+                GXSetScissor(view_port->x_orig, view_port->y_orig,
+                             view_port->width, view_port->height);
+
+                dComIfGp_setCurrentWindow(window_p);
+                dComIfGp_setCurrentView(camera_p);
+                dComIfGp_setCurrentViewport(view_port);
+                GXSetProjection(camera_p->projMtx, GX_PERSPECTIVE);
+                PPCSync();
+
+                j3dSys.setViewMtx(camera_p->viewMtx);
+                dKy_setLight();
+
+                /* Sky */
+                dComIfGd_drawOpaListSky();
+                dComIfGd_drawXluListSky();
+                GXSetClipMode(GX_CLIP_ENABLE);
+
+                /* Background / terrain */
+                dComIfGd_drawOpaListBG();
+                dComIfGd_drawOpaListDarkBG();
+                dComIfGd_drawOpaListMiddle();
+
+                /* Opaque objects */
+                dComIfGd_drawOpaList();
+                dComIfGd_drawOpaListDark();
+                dComIfGd_drawOpaListPacket();
+
+                /* Translucent background */
+                dComIfGd_drawXluListBG();
+                dComIfGd_drawXluListDarkBG();
+
+                /* Translucent objects */
+                dComIfGd_drawXluList();
+                dComIfGd_drawXluListDark();
+
+                /* Late 3D */
+                dComIfGd_drawOpaList3Dlast();
+
+                j3dSys.reinitGX();
+                GXSetClipMode(GX_CLIP_ENABLE);
+            }
+        }
+
+        /* --- 2D overlays (logo, menus, HUD) --- */
+        J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
+        ortho.setPort();
+
+        dComIfGd_draw2DOpa();
+        dComIfGd_draw2DXlu();
+        dComIfGd_draw2DOpaTop();
+
+        /* --- Item/3D model draw list (with proper camera setup) --- */
+        drawItem3D();
+
+        mDoGph_gInf_c::endRender();
+        pal_render_end_frame();
+    }
+    return 1;
+#else
+=======
+>>>>>>> port
     #if DEBUG
     drawHeapMap();
     #endif

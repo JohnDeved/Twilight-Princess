@@ -1460,6 +1460,9 @@ fpc_ProcID fopAcM_createItemFromEnemyID(u8 i_enemyID, cXyz const* i_pos, int i_i
                                             int itemNo;
     int tableNo = 0xFF;
     u32* data = (u32*)dEnemyItem_c::getItemData();
+#if PLATFORM_PC
+    if (data == NULL) return fpcM_ERROR_PROCESS_ID_e;
+#endif
     data++;
     int tableNum = (int) *data;
     data++;
@@ -1477,7 +1480,7 @@ fpc_ProcID fopAcM_createItemFromEnemyID(u8 i_enemyID, cXyz const* i_pos, int i_i
         table++;
     }
     
-    if (daPy_getPlayerActorClass()->checkHorseRide()) {
+    if (daPy_getPlayerActorClass() != NULL && daPy_getPlayerActorClass()->checkHorseRide()) {
         tableNo = fopAcM_getItemNoFromTableNo(tableNo);
         void* actor =
             fopAcM_createItemForDirectGet(i_pos, tableNo, i_roomNo, NULL, NULL, 0.0f, 0.0f);
@@ -1869,6 +1872,9 @@ fopAc_ac_c* fopAcM_myRoomSearchEnemy(s8 roomNo) {
 
     {
         daPy_py_c* player = (daPy_py_c*)dComIfGp_getPlayer(0);
+#if PLATFORM_PC
+        if (player == NULL) return NULL;
+#endif
         fopAc_ac_c* actor = fopAcM_SearchByID(player->getGrabActorID());
 
         if (actor != NULL && fopAcM_GetGroup(actor) == 2) {

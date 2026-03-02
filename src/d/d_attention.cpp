@@ -176,71 +176,79 @@ dAttention_c::dAttention_c(fopAc_ac_c* i_player, u32 i_padNo) {
     JUT_ASSERT(0x198, heap != NULL);
 
     J3DModelData* modelDataR = (J3DModelData*)dComIfG_getObjectRes("Always", 0x25);
+#if !PLATFORM_PC
     JUT_ASSERT(0x1BB, modelDataR);
+#endif
 
     J3DModelData* modelDataY = (J3DModelData*)dComIfG_getObjectRes("Always", 0x26);
+#if !PLATFORM_PC
     JUT_ASSERT(0x1BF, modelDataY);
+#endif
 
-    for (int i = 0; i < 2; i++) {
-        draw[i].mModel[DRAW_TYPE_YELLOW] = mDoExt_J3DModel__create(modelDataY, 0x80000, 0x11000285);
-        JUT_ASSERT(0x1CA, draw[i].mModel[0] != NULL);
+#if PLATFORM_PC
+    if (modelDataR != NULL && modelDataY != NULL)
+#endif
+    {
+        for (int i = 0; i < 2; i++) {
+            draw[i].mModel[DRAW_TYPE_YELLOW] = mDoExt_J3DModel__create(modelDataY, 0x80000, 0x11000285);
+            JUT_ASSERT(0x1CA, draw[i].mModel[0] != NULL);
 
-        draw[i].mModel[DRAW_TYPE_RED] = mDoExt_J3DModel__create(modelDataR, 0x80000, 0x11000285);
-        JUT_ASSERT(0x1D4, draw[i].mModel[1] != NULL);
+            draw[i].mModel[DRAW_TYPE_RED] = mDoExt_J3DModel__create(modelDataR, 0x80000, 0x11000285);
+            JUT_ASSERT(0x1D4, draw[i].mModel[1] != NULL);
 
-        int res;
-        res = draw[i].mNoticeCursorBck[DRAW_TYPE_YELLOW].init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0x11), TRUE, 2, 1.0f, 0, -1, false);
-        JUT_ASSERT(0x1DC, res == 1);
+            int res;
+            res = draw[i].mNoticeCursorBck[DRAW_TYPE_YELLOW].init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0x11), TRUE, 2, 1.0f, 0, -1, false);
+            JUT_ASSERT(0x1DC, res == 1);
 
-        res = draw[i].mNoticeCursorBpk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x2B), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x1E4, res == 1);
+            res = draw[i].mNoticeCursorBpk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x2B), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x1E4, res == 1);
 
-        res = draw[i].mNoticeCursorBrk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x37), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x1EC, res == 1);
+            res = draw[i].mNoticeCursorBrk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x37), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x1EC, res == 1);
 
-        res = draw[i].mNoticeCursorBtk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3F), TRUE, 2, 1.0f, 0,
-                                         -1);
-        JUT_ASSERT(0x1F4, res == 1);
+            res = draw[i].mNoticeCursorBtk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3F), TRUE, 2, 1.0f, 0,
+                                             -1);
+            JUT_ASSERT(0x1F4, res == 1);
 
-        res = draw[i].mNoticeCursor02Brk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x38), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x1FC, res == 1);
-        
-        res = draw[i].mNoticeCursorBck[DRAW_TYPE_RED].init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0x10), TRUE, 2, 1.0f, 0, -1, false);
-        JUT_ASSERT(0x204, res == 1);
+            res = draw[i].mNoticeCursor02Brk[DRAW_TYPE_YELLOW].init(modelDataY, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x38), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x1FC, res == 1);
+            
+            res = draw[i].mNoticeCursorBck[DRAW_TYPE_RED].init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0x10), TRUE, 2, 1.0f, 0, -1, false);
+            JUT_ASSERT(0x204, res == 1);
 
-        res = draw[i].mNoticeCursorBpk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x2A), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x20B, res == 1);
+            res = draw[i].mNoticeCursorBpk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x2A), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x20B, res == 1);
 
-        res = draw[i].mNoticeCursorBrk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x35), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x212, res == 1);
+            res = draw[i].mNoticeCursorBrk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x35), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x212, res == 1);
 
-        res = draw[i].mNoticeCursorBtk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3E), TRUE, 2, 1.0f, 0,
-                                         -1);
-        JUT_ASSERT(0x219, res == 1);
+            res = draw[i].mNoticeCursorBtk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3E), TRUE, 2, 1.0f, 0,
+                                             -1);
+            JUT_ASSERT(0x219, res == 1);
 
-        res = draw[i].mNoticeCursor02Brk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x36), TRUE, 2, 1.0f, 0, -1);
-        JUT_ASSERT(0x220, res == 1);
+            res = draw[i].mNoticeCursor02Brk[DRAW_TYPE_RED].init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x36), TRUE, 2, 1.0f, 0, -1);
+            JUT_ASSERT(0x220, res == 1);
 
-        res = draw[i].mImpactBck.init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0xC), TRUE, 0, 1.0f, 0, -1, false);
-        JUT_ASSERT(0x228, res == 1);
+            res = draw[i].mImpactBck.init((J3DAnmTransform*)dComIfG_getObjectRes("Always", 0xC), TRUE, 0, 1.0f, 0, -1, false);
+            JUT_ASSERT(0x228, res == 1);
 
-        res = draw[i].mImpactBpk.init(modelDataR, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x29), TRUE, 0, 1.0f, 0, -1);
-        JUT_ASSERT(0x22F, res == 1);
+            res = draw[i].mImpactBpk.init(modelDataR, (J3DAnmColor*)dComIfG_getObjectRes("Always", 0x29), TRUE, 0, 1.0f, 0, -1);
+            JUT_ASSERT(0x22F, res == 1);
 
-        res = draw[i].mImpactBrk.init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x32), TRUE, 0, 1.0f, 0, -1);
-        JUT_ASSERT(0x236, res == 1);
+            res = draw[i].mImpactBrk.init(modelDataR, (J3DAnmTevRegKey*)dComIfG_getObjectRes("Always", 0x32), TRUE, 0, 1.0f, 0, -1);
+            JUT_ASSERT(0x236, res == 1);
 
-        res = draw[i].mImpactBtk.init(modelDataR, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3D), TRUE, 0, 1.0f, 0, -1);
-        JUT_ASSERT(0x23D, res == 1);
+            res = draw[i].mImpactBtk.init(modelDataR, (J3DAnmTextureSRTKey*)dComIfG_getObjectRes("Always", 0x3D), TRUE, 0, 1.0f, 0, -1);
+            JUT_ASSERT(0x23D, res == 1);
 
-        draw[i].mDrawType = DRAW_TYPE_YELLOW;
-        draw[i].mAlphaAnmFrameMax = 1;
-        draw[i].mAlphaAnmFrame = 0;
-        draw[i].mAlphaAnmPlayDirection = 1;
-        draw[i].field_0x173 = 2;
-        draw[i].field_0x175 = 0;
+            draw[i].mDrawType = DRAW_TYPE_YELLOW;
+            draw[i].mAlphaAnmFrameMax = 1;
+            draw[i].mAlphaAnmFrame = 0;
+            draw[i].mAlphaAnmPlayDirection = 1;
+            draw[i].field_0x173 = 2;
+            draw[i].field_0x175 = 0;
+        }
     }
-
     mDoExt_restoreCurrentHeap();
     if ((int)mDoExt_adjustSolidHeap(heap) >= 0) {
         DCStoreRangeNoSync(heap->getStartAddr(), heap->getHeapSize());
@@ -633,6 +641,9 @@ int dAttention_c::makeList() {
 }
 
 void dAttention_c::setOwnerAttentionPos() {
+#if PLATFORM_PC
+    if (mpPlayer == NULL) return;
+#endif
     mOwnerAttnPos = mpPlayer->attention_info.position;
 
     if (fopAcM_GetName(mpPlayer) == PROC_ALINK) {

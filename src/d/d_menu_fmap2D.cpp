@@ -2202,7 +2202,11 @@ dMenu_Fmap2DTop_c::dMenu_Fmap2DTop_c(JKRExpHeap* i_heap, STControl* i_stick) {
     mpAnalogStick = new CPaneMgr(mpTitleScreen, 'as_n', 0, NULL);
     mpDpad = new CPaneMgr(mpTitleScreen, MULTI_CHAR('juji_c_n'), 0, NULL);
 #endif
+<<<<<<< HEAD
+#if PLATFORM_SHIELD || PLATFORM_PC
+=======
 #if PLATFORM_SHIELD
+>>>>>>> port
     mpButtonA = new CPaneMgr(mpTitleScreen, MULTI_CHAR('abtn_n'), 2, NULL);
     JUT_ASSERT(3935, mpButtonA != NULL);
     mpButtonB = new CPaneMgr(mpTitleScreen, MULTI_CHAR('bbtn_n'), 2, NULL);

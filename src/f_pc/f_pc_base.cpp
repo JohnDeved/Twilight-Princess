@@ -14,6 +14,14 @@
 #include "f_pc/f_pc_profile.h"
 #include "f_pc/f_pc_debug_sv.h"
 #include "Z2AudioLib/Z2AudioMgr.h"
+<<<<<<< HEAD
+#if PLATFORM_PC || PLATFORM_NX_HB
+#include "pal/pal_milestone.h"
+#include "pal/pal_error.h"
+#include <cstdio>
+#endif
+=======
+>>>>>>> port
 
 BOOL fpcBs_Is_JustOfType(int i_typeA, int i_typeB) {
     if (i_typeB == i_typeA) {
@@ -72,6 +80,14 @@ void fpcBs_DeleteAppend(base_process_class* i_proc) {
 
 int fpcBs_IsDelete(base_process_class* i_proc) {
     int result;
+#if PLATFORM_PC
+    if (i_proc == NULL) { pal_error(PAL_ERR_NULL_PTR, "fpcBs_IsDelete: proc NULL"); return 0; }
+    if (i_proc->methods == NULL) {
+        fprintf(stderr, "frame=? cat=NULL_PTR detail=\"fpcBs_IsDelete: methods NULL, profname=%d id=%u type=%d\"\n",
+                i_proc->profname, i_proc->id, i_proc->type);
+        return 0;
+    }
+#endif
     layer_class* save_layer = fpcLy_CurrentLayer();
 
     fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
@@ -83,10 +99,22 @@ int fpcBs_IsDelete(base_process_class* i_proc) {
 
 int fpcBs_Delete(base_process_class* i_proc) {
     BOOL result = TRUE;
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) {
+        pal_error(PAL_ERR_NULL_PTR, "fpcBs_Delete: proc/methods");
+        /* Do NOT free — methods==NULL suggests already-freed or corrupt process.
+         * Freeing would be a double-free, corrupting the JKR heap. */
+        return 1;
+    }
+#endif
     if (result == TRUE) {
         result = fpcMtd_Delete(i_proc->methods, i_proc);
         if (result == 1) {
             s16 profname = i_proc->profname;
+#if PLATFORM_PC
+            fprintf(stderr, "[PROC-DELETE] profname=%d addr=%p\n",
+                    profname, (void*)i_proc);
+#endif
             fpcBs_DeleteAppend(i_proc);
             i_proc->type = 0;
             cMl::free(i_proc);
@@ -118,6 +146,12 @@ base_process_class* fpcBs_Create(s16 i_profname, fpc_ProcID i_procID, void* i_ap
     u32 size;
 
     pprofile = (process_profile_definition*)fpcPf_Get(i_profname);
+<<<<<<< HEAD
+#if PLATFORM_PC
+    if (pprofile == NULL) { pal_error(PAL_ERR_RESOURCE, "fpcBs_Create: NULL profile"); return NULL; }
+#endif
+=======
+>>>>>>> port
     size = pprofile->process_size + pprofile->unk_size;
 
     pprocess = (base_process_class*)cMl::memalignB(-4, size);

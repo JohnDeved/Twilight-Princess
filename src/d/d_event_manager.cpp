@@ -286,7 +286,13 @@ int dEvent_manager_c::create() {
 
     mEventList[BASE_DEMO].init();
 
+#if PLATFORM_PC
+    /* On PC, Event archive resources may have corrupt RARC data due to
+     * incomplete endian conversion or 64-bit struct issues. Guard the access. */
+    res = NULL;
+#else
     res = (char*)dComIfG_getObjectRes("Event", DataFileName);
+#endif
     base_status = mEventList[BASE_KEEP].init(res, -1);
 
     #if DEBUG

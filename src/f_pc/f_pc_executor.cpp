@@ -30,6 +30,9 @@ BOOL fpcEx_IsExist(fpc_ProcID i_id) {
 }
 
 int fpcEx_Execute(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) return 0;
+#endif
     if (i_proc->state.init_state != 2 || fpcPause_IsEnable(i_proc, 1) == TRUE)
         return 0;
 
@@ -37,6 +40,25 @@ int fpcEx_Execute(base_process_class* i_proc) {
 }
 
 int fpcEx_ToLineQ(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc->layer_tag.layer == NULL || i_proc->layer_tag.layer->process_node == NULL) {
+        /* Root layer has no process_node — skip process_node deref.
+         * For root layer (layer_id==0), go directly to the queue add. */
+        if (i_proc->layer_tag.layer != NULL && i_proc->layer_tag.layer->layer_id == fpcLy_ROOT_e) {
+            int var_r28 = i_proc->priority.current_info.list_id;
+            if (fpcLnTg_ToQueue(&i_proc->line_tag_, var_r28) == 0) {
+                fpcLyTg_QueueTo(&i_proc->layer_tag);
+                return 0;
+            }
+            i_proc->state.init_state = 2;
+            if (fpcBs_Is_JustOfType(g_fpcNd_type, i_proc->subtype)) {
+                fpcLyIt_OnlyHere(&((process_node_class*)i_proc)->layer, (fpcLyIt_OnlyHereFunc)fpcEx_ToLineQ, i_proc);
+            }
+            return 1;
+        }
+        return 0;
+    }
+#endif
     base_process_class* process = &i_proc->layer_tag.layer->process_node->base;
 
     if (i_proc->layer_tag.layer->layer_id == fpcLy_ROOT_e || cTg_IsUse(&process->line_tag_.base) == TRUE) {

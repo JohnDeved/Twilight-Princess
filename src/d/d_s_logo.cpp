@@ -18,8 +18,11 @@
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_machine.h"
 #include <cstring>
+<<<<<<< HEAD
+=======
 #include "m_Do/m_Do_main.h"
 #include "JSystem/JUtility/JUTConsole.h"
+>>>>>>> port
 
 #if !PLATFORM_GCN
 #include <revolution/os.h>
@@ -218,6 +221,53 @@ void dScnLogo_c::checkProgSelect() {
 
 int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, skip warning/progressive/dolby states — just show the Nintendo logo,
+     * then transition to the opening scene once all DVD loads are complete. */
+    if (mNintendoLogo) {
+        dComIfGd_set2DOpa(mNintendoLogo);
+    }
+    if (mTimer == 0) {
+        /* Wait for all async DVD loads to finish before scene transition.
+         * Without this, the destructor accesses command pointers that haven't
+         * finished loading, causing SIGSEGV. */
+        /* Timeout: some resources never finish on PC due to missing REL modules.
+         * After 120 draw frames (~2 seconds), force the scene transition. */
+        static int s_sync_wait_frames = 0;
+        s_sync_wait_frames++;
+        int objSyncBusy = dComIfG_syncAllObjectRes();
+        if (!objSyncBusy || s_sync_wait_frames > 120) {
+            /* NULL-safe sync: treat NULL command as already synced */
+            #define CMD_SYNC(p) ((p) == NULL || (p)->sync())
+            if (s_sync_wait_frames > 120 ||
+                (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
+                CMD_SYNC(mpFmapResCommand) && CMD_SYNC(mpDmapResCommand) &&
+                CMD_SYNC(mpCollectResCommand) && CMD_SYNC(mpItemIconCommand) &&
+                CMD_SYNC(mpRingResCommand) && CMD_SYNC(mpPlayerNameCommand) &&
+                CMD_SYNC(mpItemInfResCommand) && CMD_SYNC(mpButtonCommand) &&
+                CMD_SYNC(mpCardIconCommand) && CMD_SYNC(mpBmgResCommand) &&
+                CMD_SYNC(mpMsgComCommand) && CMD_SYNC(mpMsgResCommand[0]) &&
+                CMD_SYNC(mpMsgResCommand[1]) && CMD_SYNC(mpMsgResCommand[2]) &&
+                CMD_SYNC(mpMsgResCommand[3]) && CMD_SYNC(mpMsgResCommand[4]) &&
+                CMD_SYNC(mpMsgResCommand[5]) && CMD_SYNC(mpMsgResCommand[6]) &&
+                CMD_SYNC(mpFontResCommand) && CMD_SYNC(mpMain2DCommand) &&
+                CMD_SYNC(mpRubyResCommand) && CMD_SYNC(mParticleCommand) &&
+                CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand)))
+            {
+                s_sync_wait_frames = 0;
+                mDoRst::setLogoScnFlag(0);
+                mDoRst::setProgChgFlag(0);
+                nextSceneChange();
+            }
+            #undef CMD_SYNC
+        }
+        return 1;
+    }
+    return 1;
+#endif
+=======
+>>>>>>> port
     (this->*l_execFunc[mExecCommand])();
     return 1;
 }
@@ -815,11 +865,65 @@ dScnLogo_c::~dScnLogo_c() {
     mLogoHeap->destroy();
     JKRFree(dummyGameAlloc);
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* NULL-guard all command pointers — create() can return NULL if the file
+     * doesn't exist on PC (e.g. missing archives or heap exhaustion). */
+    #define CMD_SET_ARCHIVE(setter, cmd) do { if (cmd) setter((cmd)->getArchive()); } while(0)
+    if (mParticleCommand) dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
+    CMD_SET_ARCHIVE(dComIfGp_setFieldMapArchive2, mpField0Command);
+    CMD_SET_ARCHIVE(dComIfGp_setAnmArchive, mpAlAnmCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setFmapResArchive, mpFmapResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setDmapResArchive, mpDmapResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setCollectResArchive, mpCollectResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setItemIconArchive, mpItemIconCommand);
+    dComIfGp_setAllMapArchive(NULL);
+    CMD_SET_ARCHIVE(dComIfGp_setRingResArchive, mpRingResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setNameResArchive, mpPlayerNameCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setDemoMsgArchive, mpItemInfResCommand);
+    CMD_SET_ARCHIVE(dComIfGp_setMeterButtonArchive, mpButtonCommand);
+    dComIfGp_setErrorResArchive(NULL);
+    CMD_SET_ARCHIVE(dComIfGp_setCardIconResArchive, mpCardIconCommand);
+    if (mpBmgResCommand) dComIfGp_setMsgDtArchive(0, mpBmgResCommand->getArchive());
+    CMD_SET_ARCHIVE(dComIfGp_setMsgCommonArchive, mpMsgComCommand);
+    for (int i = 0; i < 7; i++) {
+        if (mpMsgResCommand[i]) dComIfGp_setMsgArchive(i, mpMsgResCommand[i]->getArchive());
+    }
+    if (mpFontResCommand) dComIfGp_setFontArchive(mpFontResCommand->getArchive());
+    if (mpRubyResCommand) dComIfGp_setRubyArchive(mpRubyResCommand->getArchive());
+    CMD_SET_ARCHIVE(dComIfGp_setMain2DArchive, mpMain2DCommand);
+    #undef CMD_SET_ARCHIVE
+
+    #define CMD_DESTROY(cmd) do { if (cmd) (cmd)->destroy(); } while(0)
+    CMD_DESTROY(mpField0Command);
+    CMD_DESTROY(mpAlAnmCommand);
+    CMD_DESTROY(mpFmapResCommand);
+    CMD_DESTROY(mpDmapResCommand);
+    CMD_DESTROY(mpCollectResCommand);
+    CMD_DESTROY(mpItemIconCommand);
+    CMD_DESTROY(mpRingResCommand);
+    CMD_DESTROY(mpPlayerNameCommand);
+    CMD_DESTROY(mpItemInfResCommand);
+    CMD_DESTROY(mpButtonCommand);
+    CMD_DESTROY(mpCardIconCommand);
+    CMD_DESTROY(mpBmgResCommand);
+    CMD_DESTROY(mpMsgComCommand);
+    for (int i = 0; i < 7; i++) {
+        CMD_DESTROY(mpMsgResCommand[i]);
+    }
+    CMD_DESTROY(mpFontResCommand);
+    CMD_DESTROY(mpMain2DCommand);
+    CMD_DESTROY(mpRubyResCommand);
+    CMD_DESTROY(mParticleCommand);
+    #undef CMD_DESTROY
+#else
+=======
     #if PLATFORM_WII || VERSION == VERSION_SHIELD
     dHomeButton_c::create(mHomeBtnRegion, mpHomeBtnCommand->getMemAddress());
     mpHomeBtnCommand->destroy();
     #endif
 
+>>>>>>> port
     dComIfGp_particle_createCommon(mParticleCommand->getMemAddress());
     dComIfGp_setFieldMapArchive2(mpField0Command->getArchive());
     dComIfGp_setAnmArchive(mpAlAnmCommand->getArchive());
@@ -875,15 +979,23 @@ dScnLogo_c::~dScnLogo_c() {
 
     #if !PLATFORM_SHIELD
     mParticleCommand->destroy();
+<<<<<<< HEAD
+#endif
+=======
     #else
     delete mParticleCommand;
     #endif
+>>>>>>> port
 
+#if !PLATFORM_PC
     JKRAramHeap* aram_heap = JKRAram::getAramHeap();
     u32 free_size = aram_heap->getTotalFreeSize();
+#endif
+    /* Font init — endian conversion is now handled in mDoExt_initFontCommon */
     mDoExt_getMesgFont();
     mDoExt_getSubFont();
     mDoExt_getRubyFont();
+#if !PLATFORM_PC
     mDoExt_setAraCacheSize(free_size - aram_heap->getTotalFreeSize());
 
 #if VERSION == VERSION_GCN_JPN
@@ -892,7 +1004,18 @@ dScnLogo_c::~dScnLogo_c() {
         dComIfGp_setFontArchive(NULL);
     }
 #endif
+#endif
 
+#if PLATFORM_PC
+    if (mItemTableCommand) {
+        dComIfGp_setItemTable(mItemTableCommand->getMemAddress());
+        mItemTableCommand->destroy();
+    }
+    if (mEnemyItemCommand) {
+        dEnemyItem_c::setItemData((u8*)mEnemyItemCommand->getMemAddress());
+        mEnemyItemCommand->destroy();
+    }
+#else
     dComIfGp_setItemTable(mItemTableCommand->getMemAddress());
     #if !PLATFORM_SHIELD
     mItemTableCommand->destroy();
@@ -903,11 +1026,30 @@ dScnLogo_c::~dScnLogo_c() {
     dEnemyItem_c::setItemData((u8*)mEnemyItemCommand->getMemAddress());
     #if !PLATFORM_SHIELD
     mEnemyItemCommand->destroy();
+<<<<<<< HEAD
+#endif
+=======
     #else
     delete mEnemyItemCommand;
     #endif
+>>>>>>> port
 
+#if PLATFORM_PC
+    /* Always.arc may fail to load on PC due to heap pressure;
+     * guard against NULL to prevent crash in setSimpleTex */
+    {
+        ResTIMG* shadowTex = (ResTIMG*)dComIfG_getObjectRes("Always", 0x4A);
+        if (shadowTex) {
+            dDlst_shadowControl_c::setSimpleTex(shadowTex);
+        }
+    }
+#else
     dDlst_shadowControl_c::setSimpleTex((ResTIMG*)dComIfG_getObjectRes("Always", 0x4A));
+<<<<<<< HEAD
+#endif
+    dTres_c::createWork();
+    dMpath_c::createWork();
+=======
 
     #if PLATFORM_WII || PLATFORM_SHIELD
     dComIfG_inf_c::createBaseCsr();
@@ -917,6 +1059,7 @@ dScnLogo_c::~dScnLogo_c() {
     dMpath_c::createWork();
 
     OS_REPORT("\x1b[31m%d gameHeap->getFreeSize %08x(%d)\n\x1b[m", 1479, mDoExt_getGameHeap()->getFreeSize(), mDoExt_getGameHeap()->getFreeSize());
+>>>>>>> port
 
     #if PLATFORM_WII
     data_8053a730 = 0;
@@ -927,6 +1070,22 @@ static int phase_0(dScnLogo_c* i_this) {
     mDoGph_gInf_c::setFadeColor(*(JUtility::TColor*)&g_blackColor);
     dComIfGp_particle_create();
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, MOUNT_MEM puts Always.arc/Alink.arc on the game heap.
+     * Reduce the logo workspace to leave room for those archives.
+     * We only need space for the Nintendo logo texture (no warning/progressive screens). */
+    i_this->dummyGameAlloc = mDoExt_getGameHeap()->alloc(0x40000, -0x10);
+    JUT_ASSERT(1523, i_this->dummyGameAlloc != NULL);
+    i_this->field_0x1d0 = JKRExpHeap::create(i_this->dummyGameAlloc, 0x40000, NULL, false);
+    i_this->field_0x1d4 = JKRExpHeap::create(0x20000, i_this->field_0x1d0, false);
+#else
+    i_this->dummyGameAlloc = mDoExt_getGameHeap()->alloc(0x340000, -0x10);
+    JUT_ASSERT(1523, i_this->dummyGameAlloc != NULL);
+    i_this->field_0x1d0 = JKRExpHeap::create(i_this->dummyGameAlloc, 0x340000, NULL, false);
+    i_this->field_0x1d4 = JKRExpHeap::create(0x130000, i_this->field_0x1d0, false);
+#endif
+=======
     OS_REPORT("\x1b[31m%d gameHeap->getFreeSize %08x(%d)\n\x1b[m", 1497, mDoExt_getGameHeap()->getFreeSize(), mDoExt_getGameHeap()->getFreeSize());
     u32 var_r29 = 0x340000;
     u32 var_r28 = 0x130000;
@@ -939,6 +1098,7 @@ static int phase_0(dScnLogo_c* i_this) {
 
     i_this->mLogo01Heap = JKRCreateExpHeap(var_r28, i_this->mLogoHeap, false);
     JUT_ASSERT(1528, i_this->mLogo01Heap != NULL);
+>>>>>>> port
 
     #if VERSION == VERSION_GCN_PAL
     switch (i_this->getPalLanguage()) {
@@ -1054,10 +1214,14 @@ int dScnLogo_c::create() {
     OS_REPORT("\x1b[31m%d gameHeap->getFreeSize %08x(%d)\n\x1b[m", 1732, mDoExt_getGameHeap()->getFreeSize(), mDoExt_getGameHeap()->getFreeSize());
 
     dvdDataLoad();
+<<<<<<< HEAD
+#if !PLATFORM_PC
+=======
 
     OS_REPORT("\x1b[31m%d gameHeap->getFreeSize %08x(%d)\n\x1b[m", 1738, mDoExt_getGameHeap()->getFreeSize(), mDoExt_getGameHeap()->getFreeSize());
 
     #if !(PLATFORM_WII || PLATFORM_SHIELD)
+>>>>>>> port
     Z2AudioMgr::getInterface()->loadStaticWaves();
     #endif
 
@@ -1079,7 +1243,15 @@ int dScnLogo_c::create() {
 
     mDoGph_gInf_c::startFadeIn(30);
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* PC: skip safety/warning screen, show Nintendo logo for 90 frames then transition */
+    mExecCommand = EXEC_NINTENDO_IN;
+    mTimer = 90;
+#else
+=======
     #if !(PLATFORM_WII || PLATFORM_SHIELD)
+>>>>>>> port
     checkProgSelect();
     if (field_0x20a != 0) {
         mExecCommand = EXEC_PROG_IN;
@@ -1095,6 +1267,7 @@ int dScnLogo_c::create() {
         }
         mDoRst::setProgSeqFlag(1);
     }
+#endif
 
     JUTGamePad::clearResetOccurred();
     JUTGamePad::setResetCallback(mDoRst_resetCallBack, NULL);
@@ -1335,6 +1508,39 @@ void dScnLogo_c::dvdDataLoad() {
     rt = dComIfG_setObjectRes("Alink", (u8)0, NULL);
     JUT_ASSERT(2429, rt == 1);
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC there's no ARAM; use MOUNT_MEM + system heap to avoid J2D heap pressure */
+    #define PC_MOUNT JKRArchive::MOUNT_MEM
+    #define PC_HEAP  NULL
+#else
+    #define PC_MOUNT JKRArchive::MOUNT_ARAM
+    #define PC_HEAP  mDoExt_getJ2dHeap()
+#endif
+
+    mpField0Command = mDoDvdThd_mountXArchive_c::create(
+        "/res/FieldMap/Field0.arc", 0, PC_MOUNT, PC_HEAP);
+    mpAlAnmCommand =
+        mDoDvdThd_mountXArchive_c::create("/res/Object/AlAnm.arc", 0, PC_MOUNT, NULL);
+    mpFmapResCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/fmapres.arc", 0, PC_MOUNT, PC_HEAP);
+    mpDmapResCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/dmapres.arc", 0, PC_MOUNT, PC_HEAP);
+    mpCollectResCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/clctres.arc", 0, PC_MOUNT, PC_HEAP);
+    mpItemIconCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/itemicon.arc", 0, PC_MOUNT, PC_HEAP);
+    mpRingResCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/ringres.arc", 0, PC_MOUNT, PC_HEAP);
+    mpPlayerNameCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/playerName.arc", 0, PC_MOUNT, PC_HEAP);
+    mpItemInfResCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/itmInfRes.arc", 0, PC_MOUNT, PC_HEAP);
+    mpButtonCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/button.arc", 0, PC_MOUNT, PC_HEAP);
+    mpCardIconCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/CardIcon/cardicon.arc", 0, PC_MOUNT, PC_HEAP);
+=======
     #if PLATFORM_WII || PLATFORM_SHIELD
     rt = dComIfG_setObjectRes("NNGC", (u8)0, NULL);
     JUT_ASSERT(2433, rt == 1);
@@ -1353,6 +1559,7 @@ void dScnLogo_c::dvdDataLoad() {
     mpItemInfResCommand = aramMount(ITEM_INF_RES_PATH, mDoExt_getJ2dHeap());
     mpButtonCommand = aramMount(BUTTON_RES_PATH, mDoExt_getJ2dHeap());
     mpCardIconCommand = aramMount(ICON_RES_PATH, mDoExt_getJ2dHeap());
+>>>>>>> port
 
     #if VERSION == VERSION_GCN_PAL
     switch (getPalLanguage()) {
@@ -1389,6 +1596,31 @@ void dScnLogo_c::dvdDataLoad() {
     mpBmgResCommand = onMemMount(MSG_PATH);
     #endif
 
+<<<<<<< HEAD
+    mpMsgComCommand = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgcom.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMsgResCommand[0] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres00.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMsgResCommand[1] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres01.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMsgResCommand[2] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres02.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMsgResCommand[3] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres03.arc", 0, PC_MOUNT, PC_HEAP);
+#if VERSION == VERSION_GCN_JPN
+    mpMsgResCommand[4] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres04.arc", 0, PC_MOUNT, PC_HEAP);
+#else
+    mpMsgResCommand[4] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres04F.arc", 0, PC_MOUNT, PC_HEAP);
+#endif
+    mpMsgResCommand[5] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres05.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMsgResCommand[6] = mDoDvdThd_mountXArchive_c::create(
+        "/res/Layout/msgres06.arc", 0, PC_MOUNT, PC_HEAP);
+    mpMain2DCommand =
+        mDoDvdThd_mountXArchive_c::create("/res/Layout/main2D.arc", 0, JKRArchive::MOUNT_MEM, NULL);
+=======
     mpMsgComCommand = aramMount(MSG_COM_PATH, mDoExt_getJ2dHeap());
     mpMsgResCommand[0] = aramMount(MSG_RES0_PATH, mDoExt_getJ2dHeap());
     mpMsgResCommand[1] = aramMount(MSG_RES1_PATH, mDoExt_getJ2dHeap());
@@ -1403,6 +1635,7 @@ void dScnLogo_c::dvdDataLoad() {
     mpMsgResCommand[6] = aramMount("/res/Layout/msgres06.arc", mDoExt_getJ2dHeap());
 
     mpMain2DCommand = onMemMount(MAIN2D_PATH);
+>>>>>>> port
 
 #if VERSION == VERSION_GCN_JPN
     mpFontResCommand = mDoDvdThd_mountXArchive_c::create("/res/Fontjp/fontres.arc", 1, JKRArchive::MOUNT_MEM, NULL);
@@ -1431,6 +1664,11 @@ void dScnLogo_c::dvdDataLoad() {
 
     preLoad_dyl_create();
     preLoad_dyl();
+
+#if PLATFORM_PC
+    #undef PC_MOUNT
+    #undef PC_HEAP
+#endif
 }
 
 static int dScnLogo_Create(scene_class* i_this) {

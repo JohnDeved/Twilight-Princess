@@ -129,7 +129,15 @@ fpc_ProcID fopScnRq_Request(int i_reqType, scene_class* i_scene, s16 i_procName,
     }
 
     if (i_fadename != 0x7FFF) {
+#if PLATFORM_PC
+        /* On PC, the overlap fade actor may not signal IsDoingReq/IsDone
+         * properly because the fader system depends on timing and audio
+         * callbacks that don't run on PC. Skip the fade phases to prevent
+         * the scene from being permanently paused. */
+        (void)fadeFase;
+#else
         phase_handler = fadeFase;
+#endif
         fade_req = fopScnRq_FadeRequest(i_fadename, i_peektime);
         if (fade_req == NULL) {
             fpcNdRq_Delete(&req->create_request);

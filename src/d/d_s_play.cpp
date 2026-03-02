@@ -26,6 +26,8 @@
 #include "m_Do/m_Do_graphic.h"
 #include "d/actor/d_a_suspend.h"
 #include "d/actor/d_a_ykgr.h"
+<<<<<<< HEAD
+=======
 #include "JSystem/JHostIO/JORFile.h"
 #include "JSystem/JHostIO/JORServer.h"
 #include "JSystem/JKernel/JKRExpHeap.h"
@@ -46,6 +48,7 @@
 #include "d/d_a_obj.h"
 #include "d/d_debug_viewer.h"
 #endif
+>>>>>>> port
 #include <cstring>
 
 #if PLATFORM_WII
@@ -533,6 +536,13 @@ static void drawUsedHeapSize() {
 #endif
 
 static int dScnPly_Draw(dScnPly_c* i_this) {
+#if PLATFORM_PC
+    static int s_scnply_draw_count = 0;
+    s_scnply_draw_count++;
+    if (s_scnply_draw_count <= 3) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d\n", s_scnply_draw_count);
+    }
+#endif
     static s16 l_wipeType[] = {
         0, 0, 17, 2, 2, 1, 3, 1, 4, 4, 5, 5, 6, 7, 0, 0, 2, 2, 2, 2, 2, 8, 8,
     };
@@ -666,6 +676,12 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
         #endif
 
         dComIfG_Ccsp()->Draw();
+<<<<<<< HEAD
+#if PLATFORM_PC
+        if (dComIfGp_getPlayer(0) != NULL)
+#endif
+        dComIfGp_getAttention()->Draw();
+=======
         #if DEBUG
         dComIfG_Bgsp().Draw();
         dPath_Draw();
@@ -673,6 +689,7 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 
         dAttention_c* attention = dComIfGp_getAttention();
         attention->Draw();
+>>>>>>> port
     }
 
     #if DEBUG
@@ -785,6 +802,9 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
         #endif
 
         dComIfGp_getEvent()->Step();
+#if PLATFORM_PC
+        if (dComIfGp_getPlayer(0) != NULL)
+#endif
         dComIfGp_getAttention()->Run();
     }
 
@@ -1011,6 +1031,12 @@ static BOOL heapSizeCheck() {
 
 bool dScnPly_c::resetGame() {
     if (fpcM_GetName(this) == PROC_OPENING_SCENE) {
+#if PLATFORM_PC
+        /* On PC, archive bank syncing and audio reset can block forever
+         * because DVD-thread resources may never finish loading and audio
+         * callback doesn't run. Skip these for opening scene. */
+        (void)dStage_roomControl_c::resetArchiveBank(0);
+#else
         if (!dStage_roomControl_c::resetArchiveBank(0)) {
             return false;
         }
@@ -1018,6 +1044,7 @@ bool dScnPly_c::resetGame() {
         if (!mDoAud_resetRecover()) {
             return false;
         }
+#endif
 
         if (mDoRst::isReset()) {
             field_0x1d4 = 1;
@@ -1304,12 +1331,27 @@ static int phase_1(dScnPly_c* i_this) {
 static int phase_1_0(dScnPly_c* i_this) {
     static char camparamarc[10] = "CamParam";
 
+<<<<<<< HEAD
+#if PLATFORM_PC
+    /* On PC, syncStageRes can return -1 (resource not registered) if stage
+     * archive loading failed due to setRes error. Treat -1 as "done" to
+     * avoid getting stuck in phase_1_0 forever. */
+    int stgSync = dComIfG_syncStageRes("Stg_00");
+    if (stgSync > 0) {
+        return cPhs_INIT_e;
+    }
+#else
+    if (dComIfG_syncStageRes("Stg_00")) {
+=======
     int rt = dComIfG_syncStageRes("Stg_00");
     JUT_ASSERT(2469, rt >= 0);
 
     if (rt != 0) {
+>>>>>>> port
         return cPhs_INIT_e;
-    } else {
+    }
+#endif
+    {
         dStage_infoCreate();
         dComIfG_setObjectRes("Event", (u8)0, NULL);
         dComIfGp_setCameraParamFileName(0, camparamarc);
@@ -1319,10 +1361,29 @@ static int phase_1_0(dScnPly_c* i_this) {
 }
 
 static int phase_2(dScnPly_c* i_this) {
+<<<<<<< HEAD
+    int tmp = dComIfG_syncAllObjectRes();
+#if PLATFORM_PC
+    /* On PC, some object resources may never finish loading (e.g. archives
+     * that depend on missing REL modules). After 120 frames, force progress
+     * to avoid getting stuck in phase_2 forever. */
+    static int s_phase2_wait = 0;
+    if (tmp >= 0 && tmp != 0) {
+        s_phase2_wait++;
+        if (s_phase2_wait <= 120) {
+            return cPhs_INIT_e;
+        }
+    }
+    s_phase2_wait = 0;
+#else
+    if (tmp >= 0 && tmp != 0) {
+=======
     int rt = dComIfG_syncAllObjectRes();
     if (rt >= 0 && rt != 0) {
+>>>>>>> port
         return cPhs_INIT_e;
     }
+#endif
 
     u8 particle_no = dStage_stagInfo_GetParticleNo(dComIfGp_getStage()->getStagInfo(),
                                                    dComIfG_play_c::getLayerNo(0));
@@ -1343,10 +1404,19 @@ static int phase_2(dScnPly_c* i_this) {
 }
 
 static int phase_3(dScnPly_c* i_this) {
-    if ((i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) || mDoAud_check1stDynamicWave()) {
+    if (i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) {
         return cPhs_INIT_e;
     }
 
+<<<<<<< HEAD
+#if !PLATFORM_PC
+    if (mDoAud_check1stDynamicWave()) {
+        return cPhs_INIT_e;
+    }
+#endif
+
+=======
+>>>>>>> port
     if (i_this->field_0x1d0 != NULL && !i_this->field_0x1d0->sync()) {
         return cPhs_INIT_e;
     }
@@ -1446,6 +1516,19 @@ static int phase_4(dScnPly_c* i_this) {
     dComIfGp_createSimpleModel();
     dMdl_mng_c::create();
 
+<<<<<<< HEAD
+    mDoGph_gInf_c::setTickRate((OS_BUS_CLOCK / 4) / 30);
+    g_envHIO.field_0x4 = -1;
+    g_save_bit_HIO.field_0x4 = -1;
+#if PLATFORM_PC
+    /* On PC, the opening scene has no player actor. dAttention_c
+     * constructor accesses Always.arc animation resources that may
+     * have corrupt endian data, causing SIGSEGV cascades. Skip when
+     * no player exists. */
+    if (dComIfGp_getPlayer(0) != NULL)
+#endif
+    new (dComIfGp_getAttention()) dAttention_c(dComIfGp_getPlayer(0), 0);
+=======
     mDoGph_gInf_c::setTickRate(OS_TIMER_CLOCK / 30);
 
     #if DEBUG
@@ -1460,11 +1543,26 @@ static int phase_4(dScnPly_c* i_this) {
 
     dAttention_c* attention = dComIfGp_getAttention();
     new (attention) dAttention_c(dComIfGp_getPlayer(0), 0);
+>>>>>>> port
     dComIfGp_getVibration().Init();
     daYkgr_c::init();
 
     dComIfG_setBrightness(255);
     mDoGph_gInf_c::offFade();
+#if PLATFORM_PC
+    /* On PC, the overlap fade actor may not execute the fade-in transition
+     * correctly (timing differences, missing audio sync).  Force the fader
+     * to "fully black" state and start a fade-in (same pattern as
+     * dOvlpFd_startFadeIn). */
+    {
+        JUTFader* fader = mDoGph_gInf_c::getFader();
+        if (fader) {
+            fader->setStatus(JUTFader::UNKSTATUS_0, 0);
+            fader->setStatus(JUTFader::UNKSTATUS_0, -1);
+            fader->startFadeIn(30);
+        }
+    }
+#endif
     mDoAud_zelAudio_c::onBgmSet();
     dScnPly_c::pauseTimer = 0;
     dScnPly_c::nextPauseTimer = 0;
@@ -1578,9 +1676,13 @@ static int dScnPly_Create(scene_class* i_this) {
         (request_of_phase_process_fn)phase_compleate,
     };
 
+<<<<<<< HEAD
+    return dComLbG_PhaseHandler(&static_cast<dScnPly_c*>(i_this)->field_0x1c4, l_method, i_this);
+=======
     dScnPly_c* a_this = (dScnPly_c*)i_this;
     int phase_state = dComLbG_PhaseHandler(&a_this->field_0x1c4, l_method, a_this);
     return phase_state;
+>>>>>>> port
 }
 
 static scene_method_class l_dScnPly_Method = {
