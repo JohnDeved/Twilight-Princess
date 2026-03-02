@@ -792,6 +792,10 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         if (desc[GX_VA_CLR0].type == GX_DIRECT) si += 4;
         if (data) { memcpy(dst + di, data, 4); }
         else { memset(dst + di, 0xFF, 4); }
+        /* GCN doesn't use framebuffer alpha for TV display — vertex color
+         * alpha can legitimately be 0. On PC, force alpha=255 so the
+         * fragment is fully opaque and SRC_ALPHA blending works. */
+        dst[di + 3] = 0xFF;
         di += 4;
     }
     /* Color1 */
@@ -800,6 +804,8 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         if (desc[GX_VA_CLR1].type == GX_DIRECT) si += 4;
         if (data) { memcpy(dst + di, data, 4); }
         else { memset(dst + di, 0xFF, 4); }
+        /* Force alpha=255 — same GCN→PC alpha fix as Color0 */
+        dst[di + 3] = 0xFF;
         di += 4;
     }
 

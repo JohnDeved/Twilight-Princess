@@ -307,8 +307,8 @@ void pal_render_end_frame(void) {
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
                      gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 
-    /* Save screenshot at frame 30 (logo should be visible) */
-    if (s_frame_count == 30 && pal_capture_screenshot_active()) {
+    /* Save screenshot at frame 120 (title scene with 85+ draw calls) */
+    if (s_frame_count == 120 && pal_capture_screenshot_active()) {
         pal_capture_save();
     }
 
