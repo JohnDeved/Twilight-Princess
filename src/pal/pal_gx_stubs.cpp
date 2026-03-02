@@ -792,46 +792,58 @@ GDOverflowCb GDGetOverflowCallback(void) { return NULL; }
 /* GX Vertex data I/O (normally inline/macro, may need symbols)     */
 /* ================================================================ */
 
-void GXPosition3f32(f32 x, f32 y, f32 z) { (void)x; (void)y; (void)z; }
-void GXPosition3s16(s16 x, s16 y, s16 z) { (void)x; (void)y; (void)z; }
-void GXPosition3u16(u16 x, u16 y, u16 z) { (void)x; (void)y; (void)z; }
-void GXPosition3s8(s8 x, s8 y, s8 z) { (void)x; (void)y; (void)z; }
-void GXPosition3u8(u8 x, u8 y, u8 z) { (void)x; (void)y; (void)z; }
-void GXPosition2f32(f32 x, f32 y) { (void)x; (void)y; }
-void GXPosition2s16(s16 x, s16 y) { (void)x; (void)y; }
-void GXPosition2u16(u16 x, u16 y) { (void)x; (void)y; }
-void GXPosition2s8(s8 x, s8 y) { (void)x; (void)y; }
-void GXPosition2u8(u8 x, u8 y) { (void)x; (void)y; }
-void GXPosition1x8(u8 index) { (void)index; }
-void GXPosition1x16(u16 index) { (void)index; }
+/* ---------------------------------------------------------------- */
+/* GX direct vertex submission — write raw data to vertex buffer    */
+/* These mirror what gx_displaylist.cpp does for DL vertex data.    */
+/* The TEV flush path reads this raw data and converts to float.    */
+/* ---------------------------------------------------------------- */
 
-void GXNormal3f32(f32 nx, f32 ny, f32 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal3s16(s16 nx, s16 ny, s16 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal3s8(s8 nx, s8 ny, s8 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal1x8(u8 index) { (void)index; }
-void GXNormal1x16(u16 index) { (void)index; }
+void GXPosition3f32(f32 x, f32 y, f32 z) { pal_gx_write_vtx_f32(x); pal_gx_write_vtx_f32(y); pal_gx_write_vtx_f32(z); }
+void GXPosition3s16(s16 x, s16 y, s16 z) { pal_gx_write_vtx_s16(x); pal_gx_write_vtx_s16(y); pal_gx_write_vtx_s16(z); }
+void GXPosition3u16(u16 x, u16 y, u16 z) { pal_gx_write_vtx_u16(x); pal_gx_write_vtx_u16(y); pal_gx_write_vtx_u16(z); }
+void GXPosition3s8(s8 x, s8 y, s8 z) { pal_gx_write_vtx_s8(x); pal_gx_write_vtx_s8(y); pal_gx_write_vtx_s8(z); }
+void GXPosition3u8(u8 x, u8 y, u8 z) { pal_gx_write_vtx_u8(x); pal_gx_write_vtx_u8(y); pal_gx_write_vtx_u8(z); }
+void GXPosition2f32(f32 x, f32 y) { pal_gx_write_vtx_f32(x); pal_gx_write_vtx_f32(y); }
+void GXPosition2s16(s16 x, s16 y) { pal_gx_write_vtx_s16(x); pal_gx_write_vtx_s16(y); }
+void GXPosition2u16(u16 x, u16 y) { pal_gx_write_vtx_u16(x); pal_gx_write_vtx_u16(y); }
+void GXPosition2s8(s8 x, s8 y) { pal_gx_write_vtx_s8(x); pal_gx_write_vtx_s8(y); }
+void GXPosition2u8(u8 x, u8 y) { pal_gx_write_vtx_u8(x); pal_gx_write_vtx_u8(y); }
+void GXPosition1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXPosition1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXColor4u8(u8 r, u8 g, u8 b, u8 a) { (void)r; (void)g; (void)b; (void)a; }
-void GXColor3u8(u8 r, u8 g, u8 b) { (void)r; (void)g; (void)b; }
-void GXColor1u32(u32 clr) { (void)clr; }
-void GXColor1u16(u16 clr) { (void)clr; }
-void GXColor1x8(u8 index) { (void)index; }
-void GXColor1x16(u16 index) { (void)index; }
+void GXNormal3f32(f32 nx, f32 ny, f32 nz) { pal_gx_write_vtx_f32(nx); pal_gx_write_vtx_f32(ny); pal_gx_write_vtx_f32(nz); }
+void GXNormal3s16(s16 nx, s16 ny, s16 nz) { pal_gx_write_vtx_s16(nx); pal_gx_write_vtx_s16(ny); pal_gx_write_vtx_s16(nz); }
+void GXNormal3s8(s8 nx, s8 ny, s8 nz) { pal_gx_write_vtx_s8(nx); pal_gx_write_vtx_s8(ny); pal_gx_write_vtx_s8(nz); }
+void GXNormal1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXNormal1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXTexCoord2f32(f32 s, f32 t) { (void)s; (void)t; }
-void GXTexCoord2s16(s16 s, s16 t) { (void)s; (void)t; }
-void GXTexCoord2u16(u16 s, u16 t) { (void)s; (void)t; }
-void GXTexCoord2s8(s8 s, s8 t) { (void)s; (void)t; }
-void GXTexCoord2u8(u8 s, u8 t) { (void)s; (void)t; }
-void GXTexCoord1f32(f32 s) { (void)s; }
-void GXTexCoord1s16(s16 s) { (void)s; }
-void GXTexCoord1u16(u16 s) { (void)s; }
-void GXTexCoord1s8(s8 s) { (void)s; }
-void GXTexCoord1u8(u8 s) { (void)s; }
-void GXTexCoord1x8(u8 index) { (void)index; }
-void GXTexCoord1x16(u16 index) { (void)index; }
+void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
+    u32 color = ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | a;
+    pal_gx_write_vtx_u32(color);
+}
+void GXColor3u8(u8 r, u8 g, u8 b) {
+    u32 color = ((u32)r << 24) | ((u32)g << 16) | ((u32)b << 8) | 0xFF;
+    pal_gx_write_vtx_u32(color);
+}
+void GXColor1u32(u32 clr) { pal_gx_write_vtx_u32(clr); }
+void GXColor1u16(u16 clr) { pal_gx_write_vtx_u16(clr); }
+void GXColor1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXColor1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXMatrixIndex1x8(u8 index) { (void)index; }
+void GXTexCoord2f32(f32 s, f32 t) { pal_gx_write_vtx_f32(s); pal_gx_write_vtx_f32(t); }
+void GXTexCoord2s16(s16 s, s16 t) { pal_gx_write_vtx_s16(s); pal_gx_write_vtx_s16(t); }
+void GXTexCoord2u16(u16 s, u16 t) { pal_gx_write_vtx_u16(s); pal_gx_write_vtx_u16(t); }
+void GXTexCoord2s8(s8 s, s8 t) { pal_gx_write_vtx_s8(s); pal_gx_write_vtx_s8(t); }
+void GXTexCoord2u8(u8 s, u8 t) { pal_gx_write_vtx_u8(s); pal_gx_write_vtx_u8(t); }
+void GXTexCoord1f32(f32 s) { pal_gx_write_vtx_f32(s); }
+void GXTexCoord1s16(s16 s) { pal_gx_write_vtx_s16(s); }
+void GXTexCoord1u16(u16 s) { pal_gx_write_vtx_u16(s); }
+void GXTexCoord1s8(s8 s) { pal_gx_write_vtx_s8(s); }
+void GXTexCoord1u8(u8 s) { pal_gx_write_vtx_u8(s); }
+void GXTexCoord1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXTexCoord1x16(u16 index) { pal_gx_write_vtx_u16(index); }
+
+void GXMatrixIndex1x8(u8 index) { pal_gx_write_vtx_u8(index); }
 
 } /* extern "C" */
 
