@@ -1485,11 +1485,11 @@ int pal_blo_swap(void* data, u32 size) {
         u8* blk = p + pos;
 
         /* INF1: screen info
-         *   +0x08: u16 width, u16 height, u32 color */
+         *   +0x08: u16 width, u16 height, GXColor color (4×u8, no swap) */
         if (be_tag == FCC('I','N','F','1')) {
             if (be_size >= 0x10) {
                 swap_u16_array(blk, 8, 2);  /* width, height */
-                swap_u32_array(blk, 12, 1); /* color */
+                /* +12: GXColor is {u8 r,g,b,a} — byte array, no swap */
             }
         }
 
@@ -1559,7 +1559,7 @@ int pal_blo_swap(void* data, u32 size) {
             if (be_size >= 0x78) {
                 swap_u16_array(blk, 0x48, 12);  /* 12 u16s (0x48-0x5F) */
                 swap_u16_array(blk, 0x60, 8);   /* 8 s16s (4 TVec2<s16>) */
-                swap_u32_array(blk, 0x68, 4);   /* 4 corner colors */
+                /* +0x68: 4×GXColor corner colors — byte arrays, no swap */
             }
         }
 
@@ -1596,7 +1596,7 @@ int pal_blo_swap(void* data, u32 size) {
                 u32 tbi = 0x48;
                 swap_u16_array(blk, tbi, 5);           /* 5 u16s (0-9) */
                 swap_u16_array(blk, tbi + 10, 2);      /* fontSizeX/Y */
-                swap_u32_array(blk, tbi + 0x10, 2);    /* charColor, gradColor */
+                /* +0x10: GXColor charColor, GXColor gradColor — byte arrays, no swap */
                 swap_u16_array(blk, tbi + 0x1C, 2);    /* field_0x1c, field_0x1e */
             }
             /* String length u16 at +0x68 */

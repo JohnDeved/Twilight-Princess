@@ -325,10 +325,10 @@ void daTitle_c::logoDispWaitInit() {
      * but on PC there's no demo system.  Set animations to their end frame
      * so the title logo is fully visible. */
     if (mpModel != NULL) {
-        mBck.setFrame(mBck.getEndFrame() - 1.0f);
-        mBpk.setFrame(mBpk.getEndFrame() - 1.0f);
-        mBrk.setFrame(mBrk.getEndFrame() - 1.0f);
-        mBtk.setFrame(mBtk.getEndFrame() - 1.0f);
+        mBck.setFrame(mBck.getEndFrame());
+        mBpk.setFrame(mBpk.getEndFrame());
+        mBrk.setFrame(mBrk.getEndFrame());
+        mBtk.setFrame(mBtk.getEndFrame());
     }
 #endif
 }
