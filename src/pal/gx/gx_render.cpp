@@ -91,21 +91,6 @@ public:
     void captureEnd() override {}
 
     void captureFrame(const void* _data, uint32_t _size) override {
-        /* Log first capture's raw pixel data for diagnostics */
-        static int s_cap_log = 0;
-        if (s_cap_log < 3 && _data && _size >= 16) {
-            const uint8_t* p = (const uint8_t*)_data;
-            /* Check a pixel from the middle of the frame (offset ~half of data) */
-            uint32_t mid = _size / 2;
-            mid &= ~3u; /* align to 4-byte boundary */
-            fprintf(stderr, "{\"capture_raw\":{\"n\":%d,\"size\":%u,"
-                    "\"first4\":[%u,%u,%u,%u],"
-                    "\"mid4\":[%u,%u,%u,%u]}}\n",
-                    s_cap_log, _size,
-                    p[0], p[1], p[2], p[3],
-                    p[mid], p[mid+1], p[mid+2], p[mid+3]);
-            s_cap_log++;
-        }
         pal_capture_frame(_data, _size);
     }
 };
@@ -239,8 +224,13 @@ void pal_render_begin_frame(void) {
     pal_window_poll();
 
     GXColor cc = g_gx_state.clear_color;
+    /* GX doesn't use framebuffer alpha for display — the TV always shows
+     * RGB content regardless of alpha. On PC, force alpha=255 so the
+     * rendered content is visible in the capture/window. */
+    cc.a = 255;
     uint32_t clear_rgba = ((uint32_t)cc.r << 24) | ((uint32_t)cc.g << 16) |
                           ((uint32_t)cc.b << 8) | (uint32_t)cc.a;
+
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
                         clear_rgba, 1.0f, 0);
 
@@ -250,6 +240,7 @@ void pal_render_begin_frame(void) {
     uint16_t vp_h = (uint16_t)g_gx_state.vp_ht;
     if (vp_w == 0) vp_w = (uint16_t)s_frame_width;
     if (vp_h == 0) vp_h = (uint16_t)s_frame_height;
+
     bgfx::setViewRect(0, vp_x, vp_y, vp_w, vp_h);
 
     bgfx::touch(0);

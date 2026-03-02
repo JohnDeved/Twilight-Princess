@@ -1106,6 +1106,11 @@ void pal_tev_flush_draw(void) {
     }
 
     if (inject_color) {
+        /* GCN doesn't use framebuffer alpha for display — mat_color.a can
+         * legitimately be 0. On PC, force injected color alpha to 255 so
+         * the fragment is fully opaque and SRC_ALPHA blending works. */
+        const_clr[3] = 255;
+
         /* Rebuild layout with color attribute AND texture coords */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
         int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
@@ -1364,8 +1369,10 @@ void pal_tev_flush_draw(void) {
     uint64_t state = 0;
     if (g_gx_state.color_update)
         state |= BGFX_STATE_WRITE_RGB;
-    if (g_gx_state.alpha_update)
-        state |= BGFX_STATE_WRITE_A;
+    /* GX doesn't use framebuffer alpha for TV display output.
+     * On PC, always write alpha so the rendered content is visible
+     * in the window/capture (blending and compositing rely on FB alpha). */
+    state |= BGFX_STATE_WRITE_A;
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
