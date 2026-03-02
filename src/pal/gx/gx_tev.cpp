@@ -500,7 +500,7 @@ static uint64_t convert_primitive_state(GXPrimitive prim) {
     switch (prim) {
     case GX_TRIANGLES:      return 0; /* bgfx default is triangle list */
     case GX_TRIANGLESTRIP:  return BGFX_STATE_PT_TRISTRIP;
-    case GX_TRIANGLEFAN:    return BGFX_STATE_PT_TRISTRIP; /* approx */
+    case GX_TRIANGLEFAN:    return 0; /* converted to triangles via index buffer */
     case GX_LINES:          return BGFX_STATE_PT_LINES;
     case GX_LINESTRIP:      return BGFX_STATE_PT_LINESTRIP;
     case GX_POINTS:         return BGFX_STATE_PT_POINTS;
@@ -1382,7 +1382,12 @@ void pal_tev_flush_draw(void) {
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
-    state |= convert_primitive_state(ds->prim_type);
+    /* When using index buffer conversion (quads→tris, fans→tris),
+     * the primitive state must be triangle list (0), not the original GX type. */
+    if (use_index_buffer && num_indices > 0)
+        state |= 0; /* triangle list — explicit no-op for clarity */
+    else
+        state |= convert_primitive_state(ds->prim_type);
 
     /* Alpha test — apply GX alpha compare to bgfx alpha ref.
      * Only the simple case (comp0 != ALWAYS with ref0 > 0) is handled;
