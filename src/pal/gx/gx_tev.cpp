@@ -369,6 +369,16 @@ static int classify_tev_config(void) {
         }
     }
 
+    /* J2D blend pattern: stage 0 = [C0, C1, TEXC, ZERO] → mix(C0, C1, tex)
+     * This lerps between TEV registers C0/C1 using texture color.
+     * Stage 1 may apply rasterized color (RASC) multiply. */
+    if (all_konst && all_tex) {
+        if (s0->color_a == GX_CC_C0 && s0->color_b == GX_CC_C1 &&
+            s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO) {
+            return GX_TEV_SHADER_BLEND;
+        }
+    }
+
     /* Texture + rasterized → MODULATE */
     if (all_ras) {
         return GX_TEV_SHADER_MODULATE;
