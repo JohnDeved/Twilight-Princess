@@ -301,6 +301,21 @@ void pal_render_end_frame(void) {
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }
 
+    /* Submit test quad during title scene frames to confirm bgfx pipeline
+     * is operational — controlled by TP_BLEND_TEST=1.  If the test quad's
+     * green pixels appear but game draws don't, the issue is specific to the
+     * game's vertex/state, not the rendering pipeline. */
+    {
+        static int s_test_quad = -1;
+        if (s_test_quad < 0) {
+            const char* bt = getenv("TP_BLEND_TEST");
+            s_test_quad = (bt && bt[0] == '1') ? 1 : 0;
+        }
+        if (s_test_quad && s_frame_count >= 120 && s_frame_count <= 180) {
+            pal_tev_submit_test_quad();
+        }
+    }
+
     /* Submit frame — triggers rendering and capture.
      *
      * bgfx uses multi-threaded rendering by default (BGFX_CONFIG_MULTITHREADED=1).

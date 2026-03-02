@@ -1051,45 +1051,111 @@ void pal_tev_submit_test_quad(void) {
     if (!s_tev_ready || !bgfx::isValid(s_programs[GX_TEV_SHADER_PASSCLR]))
         return;
 
-    /* Simple quad: position (3 floats) + color (4 bytes) = 16 bytes/vert */
-    struct TestVert {
-        float x, y, z;
-        uint32_t abgr;  /* bgfx uses ABGR packing for Uint8 color */
-    };
+    /* Test A: Simple quad (pos+color = 16 bytes) — known working */
+    {
+        struct TestVert {
+            float x, y, z;
+            uint32_t abgr;
+        };
 
-    bgfx::VertexLayout layout;
-    layout.begin()
-          .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
-          .end();
+        bgfx::VertexLayout layout;
+        layout.begin()
+              .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+              .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+              .end();
 
-    bgfx::TransientVertexBuffer tvb;
-    if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
-    bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
+        bgfx::TransientVertexBuffer tvb;
+        if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
+        bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
 
-    /* NDC coordinates: centered green quad */
-    TestVert* v = (TestVert*)tvb.data;
-    v[0] = { -0.5f, -0.5f, 0.0f, 0xff00ff00 }; /* green */
-    v[1] = {  0.5f, -0.5f, 0.0f, 0xff00ff00 };
-    v[2] = {  0.5f,  0.5f, 0.0f, 0xff00ff00 };
-    v[3] = { -0.5f,  0.5f, 0.0f, 0xff00ff00 };
+        TestVert* v = (TestVert*)tvb.data;
+        v[0] = { -0.5f, -0.5f, 0.0f, 0xff00ff00 }; /* green */
+        v[1] = {  0.5f, -0.5f, 0.0f, 0xff00ff00 };
+        v[2] = {  0.5f,  0.5f, 0.0f, 0xff00ff00 };
+        v[3] = { -0.5f,  0.5f, 0.0f, 0xff00ff00 };
 
-    bgfx::TransientIndexBuffer tib;
-    if (!bgfx::getAvailTransientIndexBuffer(6)) return;
-    bgfx::allocTransientIndexBuffer(&tib, 6);
-    uint16_t* idx = (uint16_t*)tib.data;
-    idx[0] = 0; idx[1] = 1; idx[2] = 2;
-    idx[3] = 0; idx[4] = 2; idx[5] = 3;
+        bgfx::TransientIndexBuffer tib;
+        if (!bgfx::getAvailTransientIndexBuffer(6)) return;
+        bgfx::allocTransientIndexBuffer(&tib, 6);
+        uint16_t* idx = (uint16_t*)tib.data;
+        idx[0] = 0; idx[1] = 1; idx[2] = 2;
+        idx[3] = 0; idx[4] = 2; idx[5] = 3;
 
-    /* Identity transform */
-    float identity[16] = {
-        1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1
-    };
-    bgfx::setTransform(identity);
-    bgfx::setVertexBuffer(0, &tvb);
-    bgfx::setIndexBuffer(&tib);
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+        float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+        bgfx::setTransform(identity);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+    }
+
+    /* Test B: Same quad but with texcoord layout (24 bytes) matching game draws.
+     * Uses screen-space positions + ortho MVP to replicate the game draw path. */
+    {
+        struct TestVertTC {
+            float x, y, z;
+            uint8_t r, g, b, a;
+            float u, v;
+        };
+
+        bgfx::VertexLayout layout;
+        layout.begin()
+              .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+              .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+              .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+              .end();
+
+        bgfx::TransientVertexBuffer tvb;
+        if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
+        bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
+
+        TestVertTC* v = (TestVertTC*)tvb.data;
+        /* Screen-space positions (0-376, 0-104, z=0) matching game draws */
+        v[0] = {   0.0f,   0.0f, 0.0f, 255,0,0,255, 0.0f, 0.0f };  /* red */
+        v[1] = { 376.0f,   0.0f, 0.0f, 255,0,0,255, 1.0f, 0.0f };
+        v[2] = { 376.0f, 104.0f, 0.0f, 255,0,0,255, 1.0f, 1.0f };
+        v[3] = {   0.0f, 104.0f, 0.0f, 255,0,0,255, 0.0f, 1.0f };
+
+        bgfx::TransientIndexBuffer tib;
+        if (!bgfx::getAvailTransientIndexBuffer(6)) return;
+        bgfx::allocTransientIndexBuffer(&tib, 6);
+        uint16_t* idx = (uint16_t*)tib.data;
+        idx[0] = 0; idx[1] = 1; idx[2] = 2;
+        idx[3] = 0; idx[4] = 2; idx[5] = 3;
+
+        /* Build the same ortho MVP that the game uses (640×456 viewport) */
+        float mvp[16];
+        {
+            const float (*proj)[4] = g_gx_state.proj_mtx;
+            uint32_t mi = g_gx_state.current_pos_mtx;
+            if (mi >= GX_MAX_POS_MTX) mi = 0;
+            const float (*model)[4] = g_gx_state.pos_mtx[mi];
+
+            float m44[16] = {
+                model[0][0], model[0][1], model[0][2], model[0][3],
+                model[1][0], model[1][1], model[1][2], model[1][3],
+                model[2][0], model[2][1], model[2][2], model[2][3],
+                0.0f,        0.0f,        0.0f,        1.0f
+            };
+
+            float mvp_rm[16];
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++) {
+                    mvp_rm[r * 4 + c] = 0.0f;
+                    for (int k = 0; k < 4; k++)
+                        mvp_rm[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
+                }
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++)
+                    mvp[c * 4 + r] = mvp_rm[r * 4 + c];
+        }
+
+        bgfx::setTransform(mvp);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+    }
 
     fprintf(stderr, "{\"tev\":\"test_quad_submitted\"}\n");
 }
@@ -1212,6 +1278,23 @@ void pal_tev_flush_draw(void) {
          * legitimately be 0. On PC, force injected color alpha to 255 so
          * the fragment is fully opaque and SRC_ALPHA blending works. */
         const_clr[3] = 255;
+
+        /* SHADER TEST: When TP_BLEND_TEST is set and this is a BLEND draw,
+         * force vertex color to red so PASSCLR outputs red instead of white.
+         * This makes it visually obvious when BLEND draws reach the screen. */
+        {
+            static int s_blend_test_clr = -1;
+            if (s_blend_test_clr < 0) {
+                const char* bt = getenv("TP_BLEND_TEST");
+                s_blend_test_clr = (bt && bt[0] == '1') ? 1 : 0;
+            }
+            if (s_blend_test_clr && preset == GX_TEV_SHADER_BLEND) {
+                const_clr[0] = 255;
+                const_clr[1] = 0;
+                const_clr[2] = 0;
+                const_clr[3] = 255;
+            }
+        }
 
         /* Rebuild layout with color attribute AND texture coords */
         const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
@@ -1581,6 +1664,7 @@ void pal_tev_flush_draw(void) {
 
     /* 9. Set render state */
     uint64_t state = 0;
+    int suppress_color = 0;
     if (g_gx_state.color_update) {
         /* J2D pane depth-prime draws use TEV config [ZERO,ZERO,ZERO,C0] to
          * output TEVREG0 with no blending and depth enabled.  On real GCN
@@ -1602,7 +1686,7 @@ void pal_tev_flush_draw(void) {
          * timing can set non-zero values in the title scene.  The TEV
          * pattern itself is sufficient to identify depth-prime fills.
          */
-        int suppress_color = 0;
+        suppress_color = 0;
         if (preset == GX_TEV_SHADER_PASSCLR &&
             g_gx_state.blend_mode == GX_BM_NONE &&
             g_gx_state.z_compare_enable)
@@ -1627,6 +1711,20 @@ void pal_tev_flush_draw(void) {
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
+
+    /* SHADER TEST: When TP_BLEND_TEST is set, strip blending from BLEND
+     * draws to match the test quad's state (WRITE_RGB|WRITE_A only).
+     * This isolates whether the blend function itself causes invisible output. */
+    {
+        static int s_blend_test_state = -1;
+        if (s_blend_test_state < 0) {
+            const char* bt = getenv("TP_BLEND_TEST");
+            s_blend_test_state = (bt && bt[0] == '1') ? 1 : 0;
+        }
+        if (s_blend_test_state && preset == GX_TEV_SHADER_BLEND) {
+            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        }
+    }
     /* When using index buffer conversion (quads→tris, fans→tris),
      * the primitive state must be triangle list (0), not the original GX type. */
     if (use_index_buffer && num_indices > 0)
@@ -1645,36 +1743,42 @@ void pal_tev_flush_draw(void) {
 
     bgfx::setState(state);
 
-    /* One-time state dump for title scene debugging */
+    /* Per-draw diagnostic for title scene BLEND draws — logs state values
+     * that could cause black output (blend func, alpha test, suppress, etc.) */
     {
         static int s_state_dump = 0;
-        if (s_state_dump < 3 && s_total_draw_count > 250) {
-            s_state_dump++;
-            fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":%d,"
-                    "\"prog_valid\":%d,\"prog_idx\":%u,"
-                    "\"color_update\":%d,\"state\":\"0x%016llX\","
-                    "\"write_rgb\":%d,\"write_a\":%d,"
-                    "\"scissor\":[%d,%d,%d,%d],"
-                    "\"vp\":[%d,%d,%d,%d],"
-                    "\"cull\":%d,"
-                    "\"alpha_comp0\":%d,\"alpha_ref0\":%d,"
-                    "\"nverts\":%u,\"nidx\":%u,"
-                    "\"use_ib\":%d}}\n",
-                    s_total_draw_count, preset,
-                    bgfx::isValid(s_programs[preset]) ? 1 : 0,
-                    s_programs[preset].idx,
-                    g_gx_state.color_update,
-                    (unsigned long long)state,
-                    (int)((state & BGFX_STATE_WRITE_RGB) != 0),
-                    (int)((state & BGFX_STATE_WRITE_A) != 0),
-                    g_gx_state.sc_left, g_gx_state.sc_top,
-                    g_gx_state.sc_wd, g_gx_state.sc_ht,
-                    (int)g_gx_state.vp_left, (int)g_gx_state.vp_top,
-                    (int)g_gx_state.vp_wd, (int)g_gx_state.vp_ht,
-                    g_gx_state.cull_mode,
-                    g_gx_state.alpha_comp0, g_gx_state.alpha_ref0,
-                    (unsigned)nverts, (unsigned)num_indices,
-                    use_index_buffer);
+        if (s_state_dump < 10 && s_total_draw_count > 200) {
+            if (preset == GX_TEV_SHADER_BLEND || s_state_dump < 3) {
+                s_state_dump++;
+                fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"prog_valid\":%d,\"prog_idx\":%u,"
+                        "\"color_update\":%d,\"state\":\"0x%016llX\","
+                        "\"write_rgb\":%d,\"write_a\":%d,"
+                        "\"suppress\":%d,"
+                        "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
+                        "\"z_en\":%d,\"z_func\":%d,\"z_upd\":%d,"
+                        "\"alpha_comp0\":%d,\"alpha_ref0\":%d,"
+                        "\"cull\":%d,"
+                        "\"scissor\":[%d,%d,%d,%d],"
+                        "\"nverts\":%u,\"nidx\":%u,\"inject\":%d}}\n",
+                        s_total_draw_count,
+                        (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                        bgfx::isValid(s_programs[preset]) ? 1 : 0,
+                        s_programs[preset].idx,
+                        g_gx_state.color_update,
+                        (unsigned long long)state,
+                        (int)((state & BGFX_STATE_WRITE_RGB) != 0),
+                        (int)((state & BGFX_STATE_WRITE_A) != 0),
+                        suppress_color,
+                        g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
+                        g_gx_state.z_compare_enable, g_gx_state.z_func, g_gx_state.z_update_enable,
+                        g_gx_state.alpha_comp0, g_gx_state.alpha_ref0,
+                        g_gx_state.cull_mode,
+                        g_gx_state.sc_left, g_gx_state.sc_top,
+                        g_gx_state.sc_wd, g_gx_state.sc_ht,
+                        (unsigned)nverts, (unsigned)num_indices,
+                        inject_color);
+            }
         }
     }
 
@@ -1685,8 +1789,24 @@ void pal_tev_flush_draw(void) {
             (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
     }
 
-    /* 10. Submit draw call */
-    bgfx::submit(0, s_programs[preset]);
+    /* 10. Submit draw call
+     *
+     * SHADER TEST: When TP_BLEND_TEST is set, swap BLEND→PASSCLR to verify
+     * that BLEND draws reach the screen.  If red appears, the BLEND shader
+     * or uniform wiring is wrong.  If still black, the vertex/transform/state
+     * prevents the draw from producing visible fragments. */
+    int submit_preset = preset;
+    {
+        static int s_blend_test = -1;
+        if (s_blend_test < 0) {
+            const char* bt = getenv("TP_BLEND_TEST");
+            s_blend_test = (bt && bt[0] == '1') ? 1 : 0;
+        }
+        if (s_blend_test && preset == GX_TEV_SHADER_BLEND) {
+            submit_preset = GX_TEV_SHADER_PASSCLR;
+        }
+    }
+    bgfx::submit(0, s_programs[submit_preset]);
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;
