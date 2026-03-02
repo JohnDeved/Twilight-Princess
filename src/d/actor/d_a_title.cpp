@@ -459,6 +459,9 @@ static int daTitle_Create(fopAc_ac_c* i_this) {
 }
 
 void dDlst_daTitle_c::draw() {
+#if PLATFORM_PC
+    if (Scr == NULL) return;
+#endif
     J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
     Scr->draw(0.0f, 0.0f, ctx);
 }

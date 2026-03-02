@@ -1593,6 +1593,9 @@ int mDoGph_Painter() {
                 dComIfGd_drawXluList();
                 dComIfGd_drawXluListDark();
 
+                /* Late 3D */
+                dComIfGd_drawOpaList3Dlast();
+
                 j3dSys.reinitGX();
                 GXSetClipMode(GX_CLIP_ENABLE);
             }
@@ -1604,6 +1607,7 @@ int mDoGph_Painter() {
 
         dComIfGd_draw2DOpa();
         dComIfGd_draw2DXlu();
+        dComIfGd_draw2DOpaTop();
 
         /* --- Item/3D model draw list --- */
         dComIfGd_drawListItem3d();
