@@ -112,6 +112,26 @@ void J2DTextBoxEx::drawSelf(f32 param_0, f32 param_1, Mtx* p_mtx) {
 #if PLATFORM_PC
         GXSetTevColor(GX_TEVREG0, mBlackColor);
         GXSetTevColor(GX_TEVREG1, mWhiteColor);
+        /* BPK animation diagnostic: log mBlackColor/mWhiteColor to confirm
+         * whether they're static or changing per-frame. */
+        {
+            static u32 s_tbx_log_count = 0;
+            if (s_tbx_log_count < 100) {
+                fprintf(stderr,
+                    "[PAL] J2DTextBoxEx::drawSelf draw#%u mBlack=(%u,%u,%u,%u) "
+                    "mWhite=(%u,%u,%u,%u) charClr=(%u,%u,%u,%u) gradClr=(%u,%u,%u,%u) "
+                    "fontSz=(%d,%d) str=%s alpha=%u font=%p\n",
+                    s_tbx_log_count,
+                    mBlackColor.r, mBlackColor.g, mBlackColor.b, mBlackColor.a,
+                    mWhiteColor.r, mWhiteColor.g, mWhiteColor.b, mWhiteColor.a,
+                    mCharColor.r, mCharColor.g, mCharColor.b, mCharColor.a,
+                    mGradientColor.r, mGradientColor.g, mGradientColor.b, mGradientColor.a,
+                    (int)mFontSizeX, (int)mFontSizeY,
+                    (mStringPtr && mStringPtr[0]) ? "non-empty" : "empty",
+                    (unsigned)mColorAlpha, (void*)font);
+                s_tbx_log_count++;
+            }
+        }
 #endif
         MTXConcat(*p_mtx, mGlobalMtx, m);
 

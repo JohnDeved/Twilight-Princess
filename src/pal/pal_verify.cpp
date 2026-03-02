@@ -463,16 +463,20 @@ void pal_verify_summary(void) {
         int threshold = 0;
         const char* label = "unknown";
 
-        /* Logo scene: frames 40-90 should have visible content
-         * (fade-in takes ~30 frames, logo is fully visible from ~35) */
-        if (f >= 40 && f <= 90) {
-            threshold = 2;  /* >=2% non-black expected (Nintendo logo ~4%) */
+        /* Logo scene: frames 40-122 should have visible content
+         * (fade-in takes ~30 frames, logo is fully visible from ~35,
+         * scene transitions to title around frame 130) */
+        if (f >= 40 && f <= 125) {
+            threshold = 2;  /* >=2% non-black expected (Nintendo logo ~8%) */
             label = "logo";
             regress_logo_found = 1;
         }
-        /* Title scene: frames 120-200 — no threshold yet (still black) */
-        else if (f >= 120 && f <= 200) {
-            threshold = 0;  /* 0% = no assertion, just tracking */
+        /* Title scene: frames 140-200 — the J2D overlay from
+         * zelda_press_start.blo renders 86+ draw calls but is currently
+         * near-black (BPK drives 3D model, not J2D overlay).
+         * Tracked without threshold until content is visible. */
+        else if (f >= 140 && f <= 200) {
+            threshold = 0;  /* tracking only */
             label = "title";
         }
 

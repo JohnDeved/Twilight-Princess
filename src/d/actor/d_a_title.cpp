@@ -330,6 +330,17 @@ void daTitle_c::logoDispWaitInit() {
         mBrk.setFrame(mBrk.getEndFrame());
         mBtk.setFrame(mBtk.getEndFrame());
     }
+    /* On GCN, logoDispAnm() plays the J3D animations, then calls
+     * alphaAnimeStart(0) when they finish.  KeyWaitAnm() then drives
+     * the alpha from 0→255.  On PC headless, no demo/button triggers
+     * logoDispAnm(), so the alpha stays at 0 (set in loadWait_proc).
+     * Set alpha to 255 directly so the J2D overlay is fully visible. */
+    if (field_0x600 != NULL) {
+        field_0x600->setAlpha(255);
+    }
+    field_0x5f9 = 1;
+    field_0x5fa = 0;
+    field_0x604 = 0;
 #endif
 }
 
@@ -495,6 +506,16 @@ static int daTitle_Create(fopAc_ac_c* i_this) {
 void dDlst_daTitle_c::draw() {
 #if PLATFORM_PC
     if (Scr == NULL) return;
+    /* Title scene J2D draw diagnostic — confirm draw dispatch fires and
+     * track per-frame rendering of the press-start overlay. */
+    {
+        static u32 s_title_draw_count = 0;
+        if (s_title_draw_count < 30) {
+            fprintf(stderr, "[PAL] dDlst_daTitle_c::draw #%u  Scr=%p\n",
+                    s_title_draw_count, (void*)Scr);
+            s_title_draw_count++;
+        }
+    }
 #endif
     J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
     Scr->draw(0.0f, 0.0f, ctx);

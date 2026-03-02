@@ -90,6 +90,22 @@ void J2DPictureEx::drawSelf(f32 param_0, f32 param_1, f32 (*param_2)[3][4]) {
          * mBlack / mWhite so the lerp produces visible content. */
         GXSetTevColor(GX_TEVREG0, mBlack);
         GXSetTevColor(GX_TEVREG1, mWhite);
+
+        /* BPK animation diagnostic: log mBlack/mWhite to confirm whether
+         * J2DAnmColorKey is driving these values per-frame.  Throttled to
+         * first 200 draws to avoid log spam. */
+        {
+            static u32 s_bpk_log_count = 0;
+            if (s_bpk_log_count < 200) {
+                fprintf(stderr,
+                    "[PAL] J2DPictureEx::drawSelf draw#%u mBlack=(%u,%u,%u,%u) "
+                    "mWhite=(%u,%u,%u,%u)\n",
+                    s_bpk_log_count,
+                    mBlack.r, mBlack.g, mBlack.b, mBlack.a,
+                    mWhite.r, mWhite.g, mWhite.b, mWhite.a);
+                s_bpk_log_count++;
+            }
+        }
 #endif
         GXClearVtxDesc();
         GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
