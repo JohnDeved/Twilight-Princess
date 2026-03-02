@@ -92,27 +92,15 @@ BOOL fpcCtRq_Do(create_request* i_request) {
 
 #if PLATFORM_PC
     if (i_request == NULL) return 1;
-    if (i_request->process != NULL) {
-        fprintf(stderr, "[CT-DO] proc=%p profname=%d methods=%p\n",
-                (void*)i_request->process,
-                i_request->process->profname,
-                (void*)i_request->process->methods);
-    }
 #endif
 
     if (i_request->methods != NULL) {
         if (i_request->methods->phase_handler != NULL) {
             cPhs__Handler pHandler = i_request->methods->phase_handler;
 
-#if PLATFORM_PC
-            fprintf(stderr, "[CT-DO] calling phase_handler=%p\n", (void*)(uintptr_t)pHandler);
-#endif
             i_request->is_doing = TRUE;
             phase = pHandler(i_request);
             i_request->is_doing = FALSE;
-#if PLATFORM_PC
-            fprintf(stderr, "[CT-DO] phase_handler returned %d\n", phase);
-#endif
         }
     }
 

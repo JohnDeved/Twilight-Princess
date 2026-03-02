@@ -81,12 +81,10 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
 
 #if PLATFORM_PC
             CHECK_CANARY("pre-Painter");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] entering cAPIGph_Painter\n", s_frame_counter);
 #endif
             cAPIGph_Painter();
 #if PLATFORM_PC
             CHECK_CANARY("cAPIGph_Painter");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] cAPIGph_Painter done\n", s_frame_counter);
 #endif
 
             if (!dPa_control_c::isStatus(1)) {
@@ -96,7 +94,6 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
             }
 #if PLATFORM_PC
             CHECK_CANARY("fpcDt_Handler");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcDt_Handler done\n", s_frame_counter);
 #endif
 
             if (!fpcPi_Handler()) {
@@ -111,7 +108,6 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
             }
 #if PLATFORM_PC
             CHECK_CANARY("fpcCt_Handler");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcCt_Handler done\n", s_frame_counter);
 #endif
 
             if (i_preExecuteFn != NULL) {
@@ -119,7 +115,6 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
             }
 #if PLATFORM_PC
             CHECK_CANARY("preExecuteFn");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] preExecuteFn done\n", s_frame_counter);
 #endif
 
             if (!fapGm_HIO_c::isCaptureScreen()) {
@@ -127,14 +122,12 @@ void fpcM_Management(fpcM_ManagementFunc i_preExecuteFn, fpcM_ManagementFunc i_p
             }
 #if PLATFORM_PC
             CHECK_CANARY("fpcEx_Handler");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcEx_Handler done\n", s_frame_counter);
 #endif
             if (!fapGm_HIO_c::isCaptureScreen() || fapGm_HIO_c::getCaptureScreenDivH() != 1) {
                 fpcDw_Handler((fpcDw_HandlerFuncFunc)fpcM_DrawIterater, (fpcDw_HandlerFunc)fpcM_Draw);
             }
 #if PLATFORM_PC
             CHECK_CANARY("fpcDw_Handler");
-            if (s_frame_counter >= 170) fprintf(stderr, "[FRAME %d] fpcDw_Handler done\n", s_frame_counter);
 #endif
 
             if (i_postExecuteFn != NULL) {

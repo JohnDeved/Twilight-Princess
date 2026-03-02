@@ -8,9 +8,9 @@
 | Field | Value |
 |---|---|
 | **Highest CI Milestone** | `15` (TEST_COMPLETE — all 2000 frames crash-free) |
-| **Current Step** | Step 5+ — Texture pipeline complete, frame ~181 SIGSEGV fixed |
-| **Last Updated** | 2026-03-01 |
-| **Blocking Issue** | Exit cleanup crash (deleteArchiveRes SIGSEGV in exit handlers — not gameplay-blocking) |
+| **Current Step** | Step 5+ — All major crashes fixed, cleanup + rendering improvements |
+| **Last Updated** | 2026-03-02 |
+| **Blocking Issue** | None — all 2000 frames crash-free; exit cleanup fixed with _Exit() |
 
 ## Step Checklist
 
