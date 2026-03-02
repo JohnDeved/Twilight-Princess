@@ -296,6 +296,12 @@ static int dScnPly_Delete(dScnPly_c* i_this) {
 
 bool dScnPly_c::resetGame() {
     if (fpcM_GetName(this) == PROC_OPENING_SCENE) {
+#if PLATFORM_PC
+        /* On PC, archive bank syncing and audio reset can block forever
+         * because DVD-thread resources may never finish loading and audio
+         * callback doesn't run. Skip these for opening scene. */
+        (void)dStage_roomControl_c::resetArchiveBank(0);
+#else
         if (!dStage_roomControl_c::resetArchiveBank(0)) {
             return false;
         }
@@ -303,6 +309,7 @@ bool dScnPly_c::resetGame() {
         if (!mDoAud_resetRecover()) {
             return false;
         }
+#endif
 
         if (mDoRst::isReset()) {
             field_0x1d4 = 1;
@@ -675,6 +682,20 @@ static int phase_4(dScnPly_c* i_this) {
 
     dComIfG_setBrightness(255);
     mDoGph_gInf_c::offFade();
+#if PLATFORM_PC
+    /* On PC, the overlap fade actor may not execute the fade-in transition
+     * correctly (timing differences, missing audio sync).  Force the fader
+     * to "fully black" state and start a fade-in (same pattern as
+     * dOvlpFd_startFadeIn). */
+    {
+        JUTFader* fader = mDoGph_gInf_c::getFader();
+        if (fader) {
+            fader->setStatus(JUTFader::UNKSTATUS_0, 0);
+            fader->setStatus(JUTFader::UNKSTATUS_0, -1);
+            fader->startFadeIn(30);
+        }
+    }
+#endif
     mDoAud_zelAudio_c::onBgmSet();
     dScnPly_c::pauseTimer = 0;
     dScnPly_c::nextPauseTimer = 0;

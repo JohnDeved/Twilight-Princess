@@ -297,6 +297,12 @@ void daTitle_c::loadWait_proc() {
 
 void daTitle_c::logoDispWaitInit() {
     mProcID = 1;
+#if PLATFORM_PC
+    /* On PC in headless mode, no button presses or demo actor triggers the
+     * title animation.  Show the 2D overlay immediately so the title screen
+     * has visible content instead of all-black. */
+    field_0x5f8 = 1;
+#endif
 }
 
 void daTitle_c::logoDispWait() {

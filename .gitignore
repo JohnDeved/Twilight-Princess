@@ -61,3 +61,4 @@ logo_render.bmp
 /test_output2/
 build_pc/
 build-asan/
+verify_output/
