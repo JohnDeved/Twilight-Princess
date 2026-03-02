@@ -1627,11 +1627,19 @@ int pal_blo_swap(void* data, u32 size) {
         /* TEX1: texture resource list
          *   +0x08: u16 count, 2 pad
          *   +0x0C: u32 dataOffset (used by getResReference to seek to entries)
-         *   +dataOffset: JUTResReference entries (u8 type + u8 nameLen + string) */
+         *   +dataOffset: J2DResReference data (u16 mCount, u16 mOffsets[]) */
         if (be_tag == FCC('T','E','X','1')) {
             if (be_size >= 0x10) {
                 swap_u16_array(blk, 8, 1);  /* count */
                 swap_u32_array(blk, 12, 1); /* dataOffset */
+                /* Swap J2DResReference data at dataOffset */
+                u32 dOff = *(u32*)(blk + 12);
+                if (dOff && dOff + 2 <= be_size) {
+                    swap_u16_array(blk, dOff, 1); /* mCount */
+                    u16 refCnt = *(u16*)(blk + dOff);
+                    if (refCnt > 0 && dOff + 2 + refCnt * 2 <= be_size)
+                        swap_u16_array(blk, dOff + 2, refCnt); /* mOffsets[] */
+                }
             } else if (be_size >= 0x0C) {
                 swap_u16_array(blk, 8, 1);
             }
@@ -1642,6 +1650,14 @@ int pal_blo_swap(void* data, u32 size) {
             if (be_size >= 0x10) {
                 swap_u16_array(blk, 8, 1);
                 swap_u32_array(blk, 12, 1);
+                /* Swap J2DResReference data at dataOffset */
+                u32 dOff = *(u32*)(blk + 12);
+                if (dOff && dOff + 2 <= be_size) {
+                    swap_u16_array(blk, dOff, 1);
+                    u16 refCnt = *(u16*)(blk + dOff);
+                    if (refCnt > 0 && dOff + 2 + refCnt * 2 <= be_size)
+                        swap_u16_array(blk, dOff + 2, refCnt);
+                }
             } else if (be_size >= 0x0C) {
                 swap_u16_array(blk, 8, 1);
             }
