@@ -107,50 +107,6 @@ void dScnLogo_c::checkProgSelect() {
 
 int dScnLogo_c::draw() {
     cLib_calcTimer<u16>(&mTimer);
-#if PLATFORM_PC
-    /* On PC, skip warning/progressive/dolby states — just show the Nintendo logo,
-     * then transition to the opening scene once all DVD loads are complete. */
-    if (mNintendoLogo) {
-        dComIfGd_set2DOpa(mNintendoLogo);
-    }
-    if (mTimer == 0) {
-        /* Wait for all async DVD loads to finish before scene transition.
-         * Without this, the destructor accesses command pointers that haven't
-         * finished loading, causing SIGSEGV. */
-        /* Timeout: some resources never finish on PC due to missing REL modules.
-         * After 120 draw frames (~2 seconds), force the scene transition. */
-        static int s_sync_wait_frames = 0;
-        s_sync_wait_frames++;
-        int objSyncBusy = dComIfG_syncAllObjectRes();
-        if (!objSyncBusy || s_sync_wait_frames > 120) {
-            /* NULL-safe sync: treat NULL command as already synced */
-            #define CMD_SYNC(p) ((p) == NULL || (p)->sync())
-            if (s_sync_wait_frames > 120 ||
-                (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
-                CMD_SYNC(mpFmapResCommand) && CMD_SYNC(mpDmapResCommand) &&
-                CMD_SYNC(mpCollectResCommand) && CMD_SYNC(mpItemIconCommand) &&
-                CMD_SYNC(mpRingResCommand) && CMD_SYNC(mpPlayerNameCommand) &&
-                CMD_SYNC(mpItemInfResCommand) && CMD_SYNC(mpButtonCommand) &&
-                CMD_SYNC(mpCardIconCommand) && CMD_SYNC(mpBmgResCommand) &&
-                CMD_SYNC(mpMsgComCommand) && CMD_SYNC(mpMsgResCommand[0]) &&
-                CMD_SYNC(mpMsgResCommand[1]) && CMD_SYNC(mpMsgResCommand[2]) &&
-                CMD_SYNC(mpMsgResCommand[3]) && CMD_SYNC(mpMsgResCommand[4]) &&
-                CMD_SYNC(mpMsgResCommand[5]) && CMD_SYNC(mpMsgResCommand[6]) &&
-                CMD_SYNC(mpFontResCommand) && CMD_SYNC(mpMain2DCommand) &&
-                CMD_SYNC(mpRubyResCommand) && CMD_SYNC(mParticleCommand) &&
-                CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand)))
-            {
-                s_sync_wait_frames = 0;
-                mDoRst::setLogoScnFlag(0);
-                mDoRst::setProgChgFlag(0);
-                nextSceneChange();
-            }
-            #undef CMD_SYNC
-        }
-        return 1;
-    }
-    return 1;
-#endif
     (this->*l_execFunc[mExecCommand])();
     return 1;
 }
@@ -399,9 +355,14 @@ void dScnLogo_c::nintendoOutDraw() {
     dComIfGd_set2DOpa(mNintendoLogo);
 
     if (mTimer == 0) {
+#if PLATFORM_PC
+        /* On PC, skip dolby states — go directly to DVD wait after fade-out completes */
+        mExecCommand = EXEC_DVD_WAIT;
+#else
         mExecCommand = EXEC_DOLBY_IN;
         mTimer = 90;
         mDoGph_gInf_c::startFadeIn(30);
+#endif
     }
 }
 
@@ -432,6 +393,37 @@ void dScnLogo_c::dolbyOutDraw2() {
 }
 
 void dScnLogo_c::dvdWaitDraw() {
+#if PLATFORM_PC
+    /* NULL-safe sync with timeout — some resources never finish on PC
+     * due to missing REL modules. After 120 frames, force transition. */
+    static int s_sync_wait_frames = 0;
+    s_sync_wait_frames++;
+    int objSyncBusy = dComIfG_syncAllObjectRes();
+    if (!objSyncBusy || s_sync_wait_frames > 120) {
+        #define CMD_SYNC(p) ((p) == NULL || (p)->sync())
+        if (s_sync_wait_frames > 120 ||
+            (CMD_SYNC(mpField0Command) && CMD_SYNC(mpAlAnmCommand) &&
+            CMD_SYNC(mpFmapResCommand) && CMD_SYNC(mpDmapResCommand) &&
+            CMD_SYNC(mpCollectResCommand) && CMD_SYNC(mpItemIconCommand) &&
+            CMD_SYNC(mpRingResCommand) && CMD_SYNC(mpPlayerNameCommand) &&
+            CMD_SYNC(mpItemInfResCommand) && CMD_SYNC(mpButtonCommand) &&
+            CMD_SYNC(mpCardIconCommand) && CMD_SYNC(mpBmgResCommand) &&
+            CMD_SYNC(mpMsgComCommand) && CMD_SYNC(mpMsgResCommand[0]) &&
+            CMD_SYNC(mpMsgResCommand[1]) && CMD_SYNC(mpMsgResCommand[2]) &&
+            CMD_SYNC(mpMsgResCommand[3]) && CMD_SYNC(mpMsgResCommand[4]) &&
+            CMD_SYNC(mpMsgResCommand[5]) && CMD_SYNC(mpMsgResCommand[6]) &&
+            CMD_SYNC(mpFontResCommand) && CMD_SYNC(mpMain2DCommand) &&
+            CMD_SYNC(mpRubyResCommand) && CMD_SYNC(mParticleCommand) &&
+            CMD_SYNC(mItemTableCommand) && CMD_SYNC(mEnemyItemCommand)))
+        {
+            s_sync_wait_frames = 0;
+            mDoRst::setLogoScnFlag(0);
+            mDoRst::setProgChgFlag(0);
+            mExecCommand = EXEC_SCENE_CHANGE;
+        }
+        #undef CMD_SYNC
+    }
+#else
     if (!dComIfG_syncAllObjectRes()) {
         if (mpField0Command->sync() && mpAlAnmCommand->sync() && mpFmapResCommand->sync() &&
             mpDmapResCommand->sync() && mpCollectResCommand->sync() && mpItemIconCommand->sync() &&
@@ -449,6 +441,7 @@ void dScnLogo_c::dvdWaitDraw() {
             mExecCommand = EXEC_SCENE_CHANGE;
         }
     }
+#endif
 }
 
 void dScnLogo_c::nextSceneChange() {

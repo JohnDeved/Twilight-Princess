@@ -363,6 +363,7 @@ static int phase_00(dScnPly_c* i_this) {
 }
 
 static int phase_01(dScnPly_c* i_this) {
+#if !PLATFORM_PC
     mDoAud_setHour(dKy_getdaytime_hour());
     mDoAud_setMinute(dKy_getdaytime_minute());
     mDoAud_setWeekday(dKy_get_dayofweek());
@@ -383,6 +384,9 @@ static int phase_01(dScnPly_c* i_this) {
     } else {
         return cPhs_NEXT_e;
     }
+#else
+    return cPhs_NEXT_e;
+#endif
 }
 
 static int phase_0(dScnPly_c* i_this) {
