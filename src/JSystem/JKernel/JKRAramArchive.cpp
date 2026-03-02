@@ -8,12 +8,12 @@
 #include "JSystem/JUtility/JUTAssert.h"
 #include "JSystem/JUtility/JUTException.h"
 #include <cmath>
-#include <cstring>
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
 #include <stdlib.h>
 #include <string.h>
 #endif
+#include <cstring>
 
 JKRAramArchive::JKRAramArchive() {}
 
