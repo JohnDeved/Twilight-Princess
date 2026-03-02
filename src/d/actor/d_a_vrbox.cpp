@@ -16,6 +16,9 @@ static int daVrbox_Draw(vrbox_class* i_this) {
     f32 fvar = 0.0f;
     dStage_FileList_dt_c* filelist_p = NULL;
 
+#if PLATFORM_PC
+    if (soraModel_p == NULL) return 1;
+#endif
     daVrbox_color_set(i_this);
 
     if (g_env_light.hide_vrbox) {
