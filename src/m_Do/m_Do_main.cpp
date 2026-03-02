@@ -775,7 +775,7 @@ void main01(void) {
                 pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
                 gx_stub_report();
                 pal_verify_summary();
-                exit(0);
+                _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
         }
 #endif

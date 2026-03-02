@@ -653,6 +653,14 @@ int dRes_info_c::loadResource() {
 void dRes_info_c::deleteArchiveRes() {
     JUT_ASSERT(1118, mArchive != NULL);
 
+#if PLATFORM_PC
+    /* On PC, archive internal pointers (mNodes, mStringTable) may be stale
+       during exit-time destructor ordering.  Validate before traversing. */
+    if (mArchive->mNodes == NULL || mArchive->mStringTable == NULL) {
+        return;
+    }
+#endif
+
     JKRArchive::SDIDirEntry* nodes = mArchive->mNodes;
     for (int i = 0; i < mArchive->countDirectory(); i++) {
         u32 type = nodes->type;
