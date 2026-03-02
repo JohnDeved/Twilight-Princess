@@ -243,6 +243,12 @@ void pal_render_begin_frame(void) {
 
     bgfx::setViewRect(0, vp_x, vp_y, vp_w, vp_h);
 
+    /* Explicitly set view and projection to identity so that our MVP
+     * (set via bgfx::setTransform) is the only transform applied.
+     * bgfx's vertex shader computes: pos = u_viewProj * u_model * a_position */
+    float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    bgfx::setViewTransform(0, identity, identity);
+
     bgfx::touch(0);
 
     /* Enable bgfx debug text overlay for frame diagnostics */
