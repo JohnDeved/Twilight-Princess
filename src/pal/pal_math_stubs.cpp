@@ -345,6 +345,17 @@ void C_MTXTrans(Mtx m, f32 xT, f32 yT, f32 zT) {
     m[2][0] = 0.0f; m[2][1] = 0.0f; m[2][2] = 1.0f; m[2][3] = zT;
 }
 
+void C_MTXConcat(const Mtx a, const Mtx b, Mtx ab) {
+    Mtx tmp;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 4; j++) {
+            tmp[i][j] = a[i][0]*b[0][j] + a[i][1]*b[1][j] + a[i][2]*b[2][j];
+        }
+        tmp[i][3] += a[i][3];
+    }
+    memcpy(ab, tmp, sizeof(Mtx));
+}
+
 void C_MTXLookAt(Mtx m, const Vec* camPos, const Vec* camUp, const Vec* target) {
     Vec look, right, up;
 

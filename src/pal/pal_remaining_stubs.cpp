@@ -245,6 +245,13 @@ void mDoHIO_subRoot_c::genMessage(JORMContext*) {}
 void mDoHIO_subRoot_c::updateChild(s8) {}
 void mDoHIO_subRoot_c::deleteChild(s8) {}
 mDoHIO_subRoot_c::~mDoHIO_subRoot_c() {}
+
+mDoHIO_child_c::~mDoHIO_child_c() {}
+
+mDoHIO_entry_c::mDoHIO_entry_c() : mNo(-1), mCount(0) {}
+mDoHIO_entry_c::~mDoHIO_entry_c() {}
+void mDoHIO_entry_c::entryHIO(const char*) {}
+void mDoHIO_entry_c::removeHIO() {}
 #endif
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */
