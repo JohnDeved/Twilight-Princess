@@ -21,6 +21,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
 #include <cmath>
+#include <cstring>
 
 #if DEBUG
 #include "d/d_debug_pad.h"
@@ -10130,7 +10131,7 @@ bool dCamera_c::eventCamera(s32 param_0) {
         }
 
         int* sp90_i;
-        if (getEvStringData(sp90, "Trim", "DEFAULT") != NULL) {
+        if (getEvStringData(sp90, "Trim", "DEFAULT") != false) {
             sp90_i = (int*)sp90;
             if (*sp90_i == 'STAN') {
                 mEventData.field_0x1c = 0;
@@ -11211,7 +11212,7 @@ camera_process_profile_definition g_profile_CAMERA = {
     fpcPi_CURRENT_e,
     PROC_CAMERA,
     &g_fpcLf_Method.base,
-    sizeof(dCamera_c),
+    sizeof(camera_class),
     0,
     0,
     &g_fopVw_Method,
@@ -11232,7 +11233,7 @@ camera_process_profile_definition g_profile_CAMERA2 = {
     fpcPi_CURRENT_e,
     PROC_CAMERA2,
     &g_fpcLf_Method.base,
-    sizeof(dCamera_c),
+    sizeof(camera_class),
     0,
     0,
     &g_fopVw_Method,

@@ -1,8 +1,12 @@
 #include "d/dolzel.h" // IWYU pragma: keep
 
 #include "d/d_kankyo.h"
-#include <dolphin/dolphin.h>
-#include <dolphin/gf/GFPixel.h>
+#ifdef __REVOLUTION_SDK__
+#include <revolution.h>
+#else
+#include <dolphin.h>
+#endif
+#include <gf/GFPixel.h>
 
 #include "JSystem/JHostIO/JORFile.h"
 #include "JSystem/JHostIO/JORServer.h"
@@ -25,6 +29,7 @@
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_lib.h"
 #include <cstdlib>
+#include <cstring>
 
 static void GxXFog_set();
 

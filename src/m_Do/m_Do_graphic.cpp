@@ -20,7 +20,7 @@
 #include "d/d_menu_collect.h"
 #include "d/d_jcam_editor.h"
 #include "d/d_jpreviewer.h"
-#include <dolphin/base/PPCArch.h>
+#include <base/PPCArch.h>
 #include "f_ap/f_ap_game.h"
 #include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
@@ -31,6 +31,7 @@
 #include "d/d_meter2_info.h"
 #include "d/d_s_play.h"
 #include "DynamicLink.h"
+#include <cstring>
 
 #if PLATFORM_WII || PLATFORM_SHIELD
 #include <revolution/sc.h>
