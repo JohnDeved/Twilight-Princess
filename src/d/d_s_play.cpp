@@ -165,6 +165,17 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
 
     for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
+#if PLATFORM_PC
+        {
+            static int s_dw_iter_count = 0;
+            s_dw_iter_count++;
+            if (s_dw_iter_count <= 30) {
+                base_process_class* proc = (base_process_class*)i->mpTagData;
+                fprintf(stderr, "[DW-ITER] #%d proc=%p profname=%d\n", 
+                    s_dw_iter_count, proc, proc ? proc->profname : -1);
+            }
+        }
+#endif
         fpcM_Draw(i->mpTagData);
     }
 

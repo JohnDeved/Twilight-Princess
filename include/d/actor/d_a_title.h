@@ -25,7 +25,7 @@ class CPaneMgrAlpha;
  */
 class daTitle_c : public fopAc_ac_c {
 public:
-    //daTitle_c() {}
+    daTitle_c() {}
     int CreateHeap();
     int create();
     static int createHeapCallBack(fopAc_ac_c*);

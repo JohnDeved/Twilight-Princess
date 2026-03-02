@@ -241,7 +241,11 @@ static int fopAc_Draw(void* i_this) {
     l_HIO.field_0x8 = l_HIO.mStopDraw;
     #endif
 
-    if (!dComIfGp_isPauseFlag()) {
+    if (
+#if PLATFORM_PC
+        true ||
+#endif
+        !dComIfGp_isPauseFlag()) {
         int var_r28 = dComIfGp_event_moveApproval(actor);
         if ((var_r28 == 2 || (!fopAcM_CheckStatus(actor, fopAc_ac_c::getStopStatus()) &&
             (!fopAcM_CheckStatus(actor, fopAcStts_CULL_e) || !fopAcM_cullingCheck(actor)))) &&
@@ -442,6 +446,12 @@ static int fopAc_Create(void* i_this) {
     if (fpcM_IsFirstCreating(i_this)) {
         actor_process_profile_definition* profile =
             (actor_process_profile_definition*)fpcM_GetProfile(i_this);
+#if PLATFORM_PC
+        {
+            base_process_class* bp = (base_process_class*)i_this;
+            fprintf(stderr, "[AC-INIT] profname=%d profile->sub_method=%p\n", bp->profname, profile->sub_method);
+        }
+#endif
         actor->actor_type = fpcM_MakeOfType(&g_fopAc_type);
         actor->sub_method = (profile_method_class*)profile->sub_method;
 
@@ -546,6 +556,16 @@ static int fopAc_Create(void* i_this) {
 
     ret = fpcMtd_Create((process_method_class*)actor->sub_method, actor);
     
+#if PLATFORM_PC
+    {
+        base_process_class* bp = (base_process_class*)actor;
+        static int s_sub_create_log = 0;
+        if (s_sub_create_log < 20) {
+            fprintf(stderr, "[AC-SUB-CREATE] profname=%d ret=%d (COMPLEATE=%d)\n", bp->profname, ret, cPhs_COMPLEATE_e);
+            s_sub_create_log++;
+        }
+    }
+#endif
     #if DEBUG
     }
 
@@ -553,6 +573,10 @@ static int fopAc_Create(void* i_this) {
     #endif
     
     if (ret == cPhs_COMPLEATE_e) {
+#if PLATFORM_PC
+        base_process_class* bp = (base_process_class*)actor;
+        fprintf(stderr, "[AC-CREATE] profname=%d → ToDrawQ priority=%d\n", bp->profname, fpcM_DrawPriority(actor));
+#endif
         fopDwTg_ToDrawQ(&actor->draw_tag, fpcM_DrawPriority(actor));
     } else if (ret == cPhs_ERROR_e) {
         fopAcM_OnCondition(actor, 0x10);

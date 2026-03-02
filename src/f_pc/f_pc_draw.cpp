@@ -13,7 +13,11 @@ int fpcDw_Execute(base_process_class* i_proc) {
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
 #endif
-    if (!fpcPause_IsEnable(i_proc, 2)) {
+    if (
+#if PLATFORM_PC
+        true ||  /* On PC, bypass pause check — fader/overlap doesn't unpause */
+#endif
+        !fpcPause_IsEnable(i_proc, 2)) {
         layer_class* save_layer;
         int ret;
         process_method_func draw_func;
