@@ -976,7 +976,9 @@ void dPa_control_c::level_c::execute(dPa_control_c::level_c::emitter_c* i_emitte
 }
 
 void dPa_control_c::level_c::execute() {
+    #if PLATFORM_WII || VERSION == VERSION_SHIELD_DEBUG
     JUT_ASSERT(2134, dComIfG_inf_c::baseCsr_c::getNavi() != NULL);
+    #endif
     #if PLATFORM_WII || VERSION == VERSION_SHIELD_DEBUG
     u32 prtclId = dComIfG_inf_c::baseCsr_c::getNavi()->getParticleId();
     u32 blurID = mDoGph_gInf_c::csr_c::getBlurID();

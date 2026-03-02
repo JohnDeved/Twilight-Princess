@@ -216,8 +216,35 @@ void dDbVw_drawCircle(int i_bufferType, cXyz& i_pos, f32 i_radius,
     (void)i_color; (void)i_clipZ; (void)i_width;
 }
 
-/* --- HIO static member --- */
-#include "f_ap/f_ap_game.h"
-u8 fapGm_HIO_c::mCaptureScreenDivH = 1;
+/* --- HIO static member — now defined in f_ap_game.cpp --- */
+
+/* --- JORReflexible virtual methods (DEBUG build only) --- */
+#if DEBUG
+#include "JSystem/JHostIO/JORReflexible.h"
+
+void JORReflexible::listen(u32, const JOREvent*) {}
+void JORReflexible::genObjectInfo(const JORGenEvent*) {}
+void JORReflexible::listenNodeEvent(const JORNodeEvent*) {}
+void JORReflexible::listenPropertyEvent(const JORPropertyEvent*) {}
+
+JORServer* JORReflexible::getJORServer() { return NULL; }
+
+/* mDoHIO stubs — m_Do_hostIO.cpp not in Shield splits */
+#include "m_Do/m_Do_hostIO.h"
+void mDoHIO_deleteChild(s8) {}
+
+mDoHIO_root_c mDoHIO_root;
+void mDoHIO_root_c::update() {}
+void mDoHIO_root_c::deleteChild(s8) {}
+void mDoHIO_root_c::updateChild(s8) {}
+void mDoHIO_root_c::genMessage(JORMContext*) {}
+mDoHIO_root_c::~mDoHIO_root_c() {}
+
+s8 mDoHIO_subRoot_c::createChild(const char*, JORReflexible*) { return -1; }
+void mDoHIO_subRoot_c::genMessage(JORMContext*) {}
+void mDoHIO_subRoot_c::updateChild(s8) {}
+void mDoHIO_subRoot_c::deleteChild(s8) {}
+mDoHIO_subRoot_c::~mDoHIO_subRoot_c() {}
+#endif
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

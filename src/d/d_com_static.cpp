@@ -465,7 +465,7 @@ void daMP_c::daMP_c_THPPlayerPause() {
 daTagMagne_c* daTagMagne_c::mTagMagne;
 
 int daTagMagne_c::checkMagnetCode(cBgS_PolyInfo& poly) {
-#if DEBUG
+#if DEBUG && ENABLE_REGHIO
     if (g_regHIO.mChildReg[4].mShortReg[6]) {
         return true;
     }

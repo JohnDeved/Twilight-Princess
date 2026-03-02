@@ -683,10 +683,10 @@ void main01(void) {
 #endif
 
     #if DEBUG
-    FixedMemoryCheck* local_20 = FixedMemoryCheck::easyCreate(_f_text, intptr_t(_e_text - _f_text));
-    FixedMemoryCheck* local_24 = FixedMemoryCheck::easyCreate(_f_ctors, intptr_t(_e_ctors - _f_ctors));
-    FixedMemoryCheck* local_28 = FixedMemoryCheck::easyCreate(_f_dtors, intptr_t(_e_dtors - _f_dtors));
-    FixedMemoryCheck* local_2c = FixedMemoryCheck::easyCreate(_f_rodata, intptr_t(_e_rodata - _f_rodata));
+    FixedMemoryCheck* local_20 = FixedMemoryCheck::easyCreate(_f_text, (u32)(intptr_t)(_e_text - _f_text));
+    FixedMemoryCheck* local_24 = FixedMemoryCheck::easyCreate(_f_ctors, (u32)(intptr_t)(_e_ctors - _f_ctors));
+    FixedMemoryCheck* local_28 = FixedMemoryCheck::easyCreate(_f_dtors, (u32)(intptr_t)(_e_dtors - _f_dtors));
+    FixedMemoryCheck* local_2c = FixedMemoryCheck::easyCreate(_f_rodata, (u32)(intptr_t)(_e_rodata - _f_rodata));
     #endif
 
     // setup FrameBuffer and ZBuffer, init display lists
@@ -738,7 +738,9 @@ void main01(void) {
 
     #if DEBUG
     mDoMain_HIO.entryHIO("メイン");
+    #if ENABLE_REGHIO
     g_regHIO.id = mDoHIO_createChild("レジスタ", &g_regHIO);
+    #endif
     g_presetHIO.field_0x4 = mDoHIO_createChild("状況ファイル", &g_presetHIO);
     #endif
 
@@ -827,7 +829,7 @@ void main01(void) {
 }
 
 #if DEBUG
-JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>:: instance;
+template<> JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>::instance;
 
 // DEBUG NONMATCHING
 void parse_args(int argc, const char* argv[]) {

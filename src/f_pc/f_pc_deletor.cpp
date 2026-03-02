@@ -63,7 +63,7 @@ int fpcDt_ToQueue(base_process_class* i_proc) {
         if (i_proc->layer_tag.layer != NULL)
 #endif
         fpcLy_DeletingMesg(i_proc->layer_tag.layer);
-#if DEBUG
+#if DEBUG && VERSION == VERSION_SHIELD_DEBUG
         i_proc->delete_tag.unk_0x1c = 60;
 #endif
         return 1;

@@ -4,6 +4,14 @@
 
 #include "JSystem/JUtility/JUTAssert.h"
 
+#if PLATFORM_PC
+#include <cmath>
+#ifndef FP_QNAN
+#define FP_QNAN FP_NAN
+#endif
+using std::fpclassify;
+#endif
+
 dBgS_CaptPoly::dBgS_CaptPoly() {
     SetPolyPassChk(GetPolyPassChkInfo());
     SetGrpPassChk(GetGrpPassChkInfo());
