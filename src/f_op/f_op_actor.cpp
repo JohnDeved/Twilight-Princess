@@ -496,13 +496,25 @@ static int fopAc_Create(void* i_this) {
         camera_class* sp10 = dComIfGp_getCamera(0);
 
         if (dComIfGp_roomControl_getStayNo() >= 0) {
+#if PLATFORM_PC
+            dStage_roomDt_c* roomDt = dComIfGp_roomControl_getStatusRoomDt(dComIfGp_roomControl_getStayNo());
+            if (roomDt != NULL)
+                sp14 = roomDt->getFileListInfo();
+#else
             sp14 = dComIfGp_roomControl_getStatusRoomDt(dComIfGp_roomControl_getStayNo())->getFileListInfo();
+#endif
         }
 
         dStage_FileList_dt_c* filelist = NULL;
         if (actor->home.roomNo >= 0) {
+#if PLATFORM_PC
+            dStage_roomDt_c* roomDt = dComIfGp_roomControl_getStatusRoomDt(actor->home.roomNo);
+            if (roomDt != NULL)
+                filelist = roomDt->getFileListInfo();
+#else
             filelist =
                 dComIfGp_roomControl_getStatusRoomDt(actor->home.roomNo)->getFileListInfo();
+#endif
         }
 
         if (filelist != NULL) {
