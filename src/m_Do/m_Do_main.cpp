@@ -769,11 +769,16 @@ void main01(void) {
                 /* Per-frame timeout: if a single frame took > 60s, the softpipe
                  * renderer is stuck on complex geometry.  Exit cleanly instead
                  * of blocking CI for 20+ minutes. */
-                if (elapsed_ms > 60000 && getenv("TP_HEADLESS")) {
+                static int s_headless_cached = -1;
+                if (s_headless_cached < 0) {
+                    const char* hl = getenv("TP_HEADLESS");
+                    s_headless_cached = (hl && hl[0] == '1') ? 1 : 0;
+                }
+                if (elapsed_ms > 60000 && s_headless_cached) {
                     fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
                             "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
                             frame, elapsed_ms);
-                    pal_milestone("FRAME_TIMEOUT", -3, "softpipe_hang");
+                    pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
                     gx_stub_report();
                     pal_verify_summary();
                     _Exit(0);

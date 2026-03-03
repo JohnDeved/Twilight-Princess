@@ -155,9 +155,8 @@ def main():
             null_models = sum(1 for p in parts if p.get('model_null', False))
             total_shapes = sum(p.get('shapes', 0) for p in parts)
             hidden_shapes = sum(p.get('hidden', 0) for p in parts)
-            entered = sum(p.get('entered', 0) for p in parts)
             print(f"  frame {frame}: {len(parts)} parts, {null_models} null models, "
-                  f"{total_shapes} shapes ({hidden_shapes} hidden), {entered} entered")
+                  f"{total_shapes} shapes ({hidden_shapes} hidden)")
 
     # Assertions
     errors = []
