@@ -17,6 +17,9 @@
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include <cstring>
+#if PLATFORM_PC
+#include <cstdio>
+#endif
 
 const char* daBg_c::setArcName() {
     static char arcName[32];
@@ -288,6 +291,41 @@ int daBg_c::draw() {
 
     dComIfGd_setListBG();
     mDoLib_clipper::changeFar(1000000.0f);
+
+#if PLATFORM_PC
+    static int s_bg_draw_frame = 0;
+    /* Emit bg_draw_diag JSON for frames 127-145 (covers PROC_BG creation through expected first Draw) */
+    bool bg_diag = (s_bg_draw_frame >= 127 && s_bg_draw_frame <= 145) || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200);
+    if (bg_diag) {
+        daBg_Part* diagPart = mBgParts;
+        for (int di = 0; di < 6; di++) {
+            J3DModel* dm = diagPart->model;
+            int shapes = 0, hidden = 0, mats = 0;
+            bool has_sdl = false;
+            bool locked = false;
+            if (dm != NULL) {
+                J3DModelData* dd = dm->getModelData();
+                if (dd != NULL) {
+                    shapes = dd->getShapeNum();
+                    mats = dd->getMaterialNum();
+                    if (mats > 0 && dd->getMaterialNodePointer(0) != NULL)
+                        has_sdl = dd->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+                    locked = dd->isLocked();
+                    for (int sj = 0; sj < shapes; sj++) {
+                        J3DShape* sh = dd->getShapeNodePointer(sj);
+                        if (sh && sh->checkFlag(0x0001)) hidden++;
+                    }
+                }
+            }
+            fprintf(stderr, "{\"bg_draw_diag\":{\"frame\":%d,\"part\":%d,\"model_null\":%s,"
+                    "\"shapes\":%d,\"hidden\":%d,\"mats\":%d,\"has_sdl\":%s,\"locked\":%s}}\n",
+                    s_bg_draw_frame, di, dm == NULL ? "true" : "false",
+                    shapes, hidden, mats, has_sdl ? "true" : "false", locked ? "true" : "false");
+            diagPart++;
+        }
+    }
+    s_bg_draw_frame++;
+#endif
 
     J3DModelData* modelData;
     for (int i = 0; i < 6; i++) {
