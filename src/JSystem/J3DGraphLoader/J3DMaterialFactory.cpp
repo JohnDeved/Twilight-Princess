@@ -658,6 +658,7 @@ u8 J3DMaterialFactory::newIndTexStageNum(int i_idx) const {
     if (mpIndInitData[i_idx].mEnabled == true) {
         u8 num = mpIndInitData[i_idx].mIndTexStageNum;
 #if PLATFORM_PC
+        /* GX hardware supports max 4 indirect texture stages */
         if (num > 4) num = 4;
 #endif
         return num;
@@ -669,6 +670,7 @@ u8 J3DMaterialFactory::newIndTexStageNum(int i_idx) const {
 J3DIndTexOrder J3DMaterialFactory::newIndTexOrder(int i_idx, int i_no) const {
     J3DIndTexOrder dflt;
 #if PLATFORM_PC
+    /* J3DIndInitData has 3 entries for order/mtx/coordScale arrays */
     if ((u32)i_idx >= mMaterialNum || (u32)i_no >= 3) return dflt;
 #endif
     if (mpIndInitData[i_idx].mEnabled == true) {
@@ -693,6 +695,7 @@ J3DIndTexMtx J3DMaterialFactory::newIndTexMtx(int i_idx, int i_no) const {
 J3DIndTevStage J3DMaterialFactory::newIndTevStage(int i_idx, int i_no) const {
     J3DIndTevStage dflt;
 #if PLATFORM_PC
+    /* GX supports max 16 TEV stages */
     if ((u32)i_idx >= mMaterialNum || (u32)i_no >= 16) return dflt;
 #endif
     if (mpIndInitData[i_idx].mEnabled == true) {
