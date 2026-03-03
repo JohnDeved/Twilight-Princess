@@ -17,5 +17,5 @@
     "TEST_COMPLETE"
   ],
   "updated": "2026-03-03",
-  "note": "Reduced TP_TEST_FRAMES from 2000 to 400 (softpipe ~1fps, old 120s timeout only reached 128 frames). FRAMES_1800 removed — unreachable at 400 frames. Timeout increased to 600s."
+  "note": "TP_TEST_FRAMES=200, timeout=1200s (20min). Under softpipe each play-scene frame takes ~66s. Need 150+ frames to reach BG Draw phase. Heap stable at 262MB after size=0/-1 cap fixes."
 }

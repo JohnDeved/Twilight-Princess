@@ -45,6 +45,7 @@
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/pal_verify.h"
 #include <stdlib.h>
+#include <time.h>
 #endif
 
 class mDoMain_HIO_c : public mDoHIO_entry_c {
@@ -755,6 +756,17 @@ void main01(void) {
         frame++;
 
 #if PLATFORM_PC || PLATFORM_NX_HB
+        {
+            static struct timespec s_prev_ts;
+            struct timespec now_ts;
+            clock_gettime(CLOCK_MONOTONIC, &now_ts);
+            if (frame > 1 && (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200))) {
+                long elapsed_ms = (now_ts.tv_sec - s_prev_ts.tv_sec) * 1000 +
+                                  (now_ts.tv_nsec - s_prev_ts.tv_nsec) / 1000000;
+                fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
+            }
+            s_prev_ts = now_ts;
+        }
         if (frame == 1)
             pal_milestone_frame("FIRST_FRAME", MILESTONE_FIRST_FRAME, frame);
         /* Frame-count milestones only fire once a real rendered frame has been
