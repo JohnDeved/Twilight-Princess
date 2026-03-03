@@ -12,7 +12,7 @@
  * or NULL if the material ID index is out of range. */
 static J3DMaterialInitData* getMtlInitDataSafe(J3DMaterialInitData* base, u16* ids,
                                                  u16 matNum, int idx) {
-    if (idx < 0 || (u32)idx >= matNum) return NULL;
+    if ((u32)idx >= matNum) return NULL;
     u16 id = ids[idx];
     if (id >= matNum) return NULL;
     return &base[id];
@@ -158,7 +158,7 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
 #if PLATFORM_PC
     /* Bounds-check material ID to prevent crashes on models with unusual
      * material features (e.g., Demo38_01 BMDR, Kmdl BMWR). */
-    if (i_idx < 0 || (u32)i_idx >= mMaterialNum ||
+    if ((u32)i_idx >= mMaterialNum ||
         mpMaterialID[i_idx] >= mMaterialNum) {
         if (i_material == NULL)
             i_material = new J3DMaterial();
