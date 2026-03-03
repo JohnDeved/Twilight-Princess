@@ -40,6 +40,7 @@
 #if PLATFORM_PC
 #include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_displaylist.h"
 #endif
 
 #if PLATFORM_WII
@@ -1542,6 +1543,7 @@ int mDoGph_Painter() {
         GXSetDither(GX_ENABLE);
 
         /* --- 3D rendering (camera + draw lists) --- */
+        pal_gx_dl_reset_counters();
         if (dComIfGp_getWindowNum() != 0) {
             dDlst_window_c* window_p = dComIfGp_getWindow(0);
             int camera_id = window_p->getCameraID();
@@ -1606,6 +1608,16 @@ int mDoGph_Painter() {
                 j3dSys.reinitGX();
                 GXSetClipMode(GX_CLIP_ENABLE);
             }
+        }
+        {
+            static int s_3d_diag_frame = 0;
+            int dl_draws = pal_gx_dl_get_draw_count();
+            int dl_verts = pal_gx_dl_get_vert_count();
+            if (s_3d_diag_frame < 10 || (s_3d_diag_frame % 60 == 0 && s_3d_diag_frame < 600)) {
+                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d}}\n",
+                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts);
+            }
+            s_3d_diag_frame++;
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */

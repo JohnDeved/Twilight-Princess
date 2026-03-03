@@ -33,6 +33,10 @@
 #include "pal/gx/gx_state.h"
 #include "pal/pal_error.h"
 
+/* Draw call diagnostics */
+static int s_dl_draw_count = 0;
+static int s_dl_vert_count = 0;
+
 /* ================================================================ */
 /* Big-endian byte stream reader                                    */
 /* ================================================================ */
@@ -670,6 +674,8 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
     }
 
     /* Begin draw call */
+    s_dl_draw_count++;
+    s_dl_vert_count += nverts;
     pal_gx_begin(prim, (GXVtxFmt)vtxfmt, nverts);
 
     /* Feed vertex data byte-by-byte to the state machine.
@@ -811,6 +817,11 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
 /* ================================================================ */
 
 static int s_dl_call_count = 0;
+
+int pal_gx_dl_get_draw_count() { return s_dl_draw_count; }
+int pal_gx_dl_get_vert_count() { return s_dl_vert_count; }
+void pal_gx_dl_reset_counters() { s_dl_draw_count = 0; s_dl_vert_count = 0; s_dl_call_count = 0; }
+
 void pal_gx_call_display_list(const void* list, u32 nbytes) {
     if (!list || nbytes == 0) return;
 
