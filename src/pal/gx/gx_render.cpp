@@ -246,6 +246,14 @@ void pal_render_begin_frame(void) {
     float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     bgfx::setViewTransform(0, identity, identity);
 
+    /* View 1: fade overlay — renders after all view 0 content.
+     * No clear (preserves view 0 framebuffer), same rect. */
+    bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
+    bgfx::setViewClear(1, BGFX_CLEAR_NONE);
+    bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
+    bgfx::setViewTransform(1, identity, identity);
+    bgfx::touch(1);
+
     bgfx::touch(0);
 
     /* Enable bgfx debug text overlay for frame diagnostics */

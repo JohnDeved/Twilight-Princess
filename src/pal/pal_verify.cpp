@@ -449,7 +449,8 @@ void pal_verify_summary(void) {
     }
 
     /* Regression assertions: check pixel-coverage thresholds at key frames.
-     * Logo (frames 30-90): expect >=2% non-black (red Nintendo logo).
+     * Logo (frames 40-90): expect >=2% non-black (red Nintendo logo).
+     *   Fade-in completes ~frame 33, fade-out starts ~frame 93.
      * Title (frames 130-200): expect >=100 non-black pixels (grayscale
      * "PRESS START" text renders ~900 pixels = 0.3% of 640x480). */
     int regress_pass = 1;
@@ -466,10 +467,9 @@ void pal_verify_summary(void) {
         u32 pixel_threshold = 0;
         const char* label = "unknown";
 
-        /* Logo scene: frames 40-125 should have visible content
-         * (fade-in takes ~30 frames, logo is fully visible from ~35,
-         * scene transitions to title around frame 130) */
-        if (f >= 40 && f <= 125) {
+        /* Logo scene: frames 40-90 should have visible content
+         * (fade-in completes ~frame 33, fade-out starts ~frame 93) */
+        if (f >= 40 && f <= 90) {
             threshold = 2;  /* >=2% non-black expected (Nintendo logo ~8%) */
             label = "logo";
             regress_logo_found = 1;

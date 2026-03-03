@@ -39,6 +39,7 @@
 
 #if PLATFORM_PC
 #include "pal/gx/gx_render.h"
+#include "pal/gx/gx_state.h"
 #endif
 
 #if PLATFORM_WII
@@ -408,6 +409,9 @@ void mDoGph_gInf_c::fadeOut(f32 fadeSpeed) {
 }
 
 void darwFilter(GXColor matColor) {
+#if PLATFORM_PC
+    g_gx_state.fade_overlay_active = 1;
+#endif
     GXSetNumChans(1);
     GXSetChanCtrl(GX_COLOR0A0, GX_FALSE, GX_SRC_REG, GX_SRC_REG, GX_LIGHT_NULL, GX_DF_NONE,
                   GX_AF_NONE);
@@ -443,6 +447,9 @@ void darwFilter(GXColor matColor) {
     GXPosition3s8(1, 1, -5);
     GXPosition3s8(0, 1, -5);
     GXEnd();
+#if PLATFORM_PC
+    g_gx_state.fade_overlay_active = 0;
+#endif
 }
 
 void mDoGph_gInf_c::calcFade() {
@@ -1611,6 +1618,9 @@ int mDoGph_Painter() {
 
         /* --- Item/3D model draw list (with proper camera setup) --- */
         drawItem3D();
+
+        /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */
+        mDoGph_gInf_c::calcFade();
 
         mDoGph_gInf_c::endRender();
         pal_render_end_frame();

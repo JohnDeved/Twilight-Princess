@@ -1196,23 +1196,19 @@ void pal_tev_flush_draw(void) {
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
-    /* J2D depth-prime fill detection — skip the entire draw.
+    /* J2D constant-color fill detection — skip the entire draw.
      *
-     * J2D pane depth-prime draws use TEV config [ZERO,ZERO,ZERO,C0] to output
-     * TEVREG0 with no blending and depth enabled.  On real GCN hardware,
-     * subsequent textured draws overwrite these fills because GCN processes
-     * draws strictly in submission order.  bgfx does not guarantee strict
-     * draw ordering within a view, and the softpipe/Mesa GL driver does not
-     * correctly honor glColorMask(GL_FALSE) when transitioning from color-
-     * write draws to depth-only draws, causing these fills to overwrite
-     * visible content with black.
-     *
-     * J2D textured draws have z_en=0 (no depth test), so the depth prime
-     * from these fills is unnecessary.  Skip them entirely.
+     * PASSCLR draws with TEV [ZERO,ZERO,ZERO,C0] + GX_BM_NONE just output
+     * TEVREG0 as a solid color with no blending.  On GCN hardware, these are
+     * rendered in strict submission order and overwritten by subsequent
+     * textured draws.  bgfx does not guarantee draw ordering within a view,
+     * so these fills can render AFTER the textured draws they were supposed
+     * to underlay, creating visible colored rectangles (red/black squares)
+     * over the actual content.  Skip them — the bgfx view clear color
+     * provides the background.
      */
     if (preset == GX_TEV_SHADER_PASSCLR &&
-        g_gx_state.blend_mode == GX_BM_NONE &&
-        g_gx_state.z_compare_enable)
+        g_gx_state.blend_mode == GX_BM_NONE)
     {
         const GXTevStage* s0 = &g_gx_state.tev_stages[0];
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
@@ -1225,9 +1221,13 @@ void pal_tev_flush_draw(void) {
     /* PASSCLR draws with TEV [ZERO,ZERO,ZERO,RASC] + SRC_ALPHA blending are
      * transparent fills on GCN (vertex alpha = 0 → SRC_ALPHA makes them
      * invisible).  On PC we force vertex alpha to 255 which makes them
-     * opaque black, overwriting J2D textured content.  Skip them. */
+     * opaque black, overwriting J2D textured content.  Skip them — but only
+     * when the raster color comes from vertex colors (mat_src == GX_SRC_VTX).
+     * When mat_src == GX_SRC_REG, the alpha is explicitly set by the game
+     * (e.g. darwFilter fade overlay) and the draw should proceed. */
     if (preset == GX_TEV_SHADER_PASSCLR &&
-        g_gx_state.blend_mode == GX_BM_BLEND)
+        g_gx_state.blend_mode == GX_BM_BLEND &&
+        g_gx_state.chan_ctrl[0].mat_src == GX_SRC_VTX)
     {
         const GXTevStage* s0 = &g_gx_state.tev_stages[0];
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
@@ -1331,8 +1331,11 @@ void pal_tev_flush_draw(void) {
     if (inject_color) {
         /* GCN doesn't use framebuffer alpha for display — mat_color.a can
          * legitimately be 0. On PC, force injected color alpha to 255 so
-         * the fragment is fully opaque and SRC_ALPHA blending works. */
-        const_clr[3] = 255;
+         * the fragment is fully opaque and SRC_ALPHA blending works.
+         * Exception: the fade overlay (darwFilter) intentionally uses
+         * varying alpha for its SRC_ALPHA blend effect. */
+        if (!g_gx_state.fade_overlay_active)
+            const_clr[3] = 255;
 
         /* SHADER TEST: When TP_BLEND_TEST is set and this is a BLEND draw,
          * force vertex color to red so PASSCLR outputs red instead of white.
@@ -1868,8 +1871,10 @@ void pal_tev_flush_draw(void) {
             (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
     }
 
-    /* 10. Submit draw call */
-    bgfx::submit(0, s_programs[preset]);
+    /* 10. Submit draw call — use view 1 for fade overlay so it renders
+     * after all scene content in view 0. */
+    bgfx::ViewId view_id = g_gx_state.fade_overlay_active ? 1 : 0;
+    bgfx::submit(view_id, s_programs[preset]);
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

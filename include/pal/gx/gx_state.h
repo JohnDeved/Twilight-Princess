@@ -264,6 +264,10 @@ typedef struct {
     /* Statistics */
     u32 draw_calls;
     u32 total_verts;
+
+    /* Fade overlay flag — when set, draws go to bgfx view 1 (renders
+     * after all scene content in view 0). */
+    u8 fade_overlay_active;
 } GXStateMachine;
 
 /* ================================================================ */
