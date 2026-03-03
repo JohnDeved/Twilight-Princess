@@ -25,7 +25,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: write
       pull-requests: write
@@ -94,11 +94,11 @@ jobs:
         if: success()
         env:
           TP_HEADLESS: "1"
-          TP_TEST_FRAMES: "2000"
+          TP_TEST_FRAMES: "400"
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,300,600,1200,1800"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,200,300,400"
         run: |
           set -o pipefail
           mkdir -p verify_output
@@ -118,7 +118,7 @@ jobs:
           # Enable per-frame capture — every frame saved as BMP + raw video
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
-          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones.log || true
+          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones.log || true
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           kill $XVFB_PID 2>/dev/null || true

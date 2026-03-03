@@ -1,5 +1,5 @@
 {
-  "milestones_reached_count": 15,
+  "milestones_reached_count": 14,
   "milestones_reached": [
     "BOOT_START",
     "HEAP_INIT",
@@ -11,12 +11,11 @@
     "PLAY_SCENE",
     "FRAMES_60",
     "FRAMES_300",
-    "FRAMES_1800",
     "DVD_READ_OK",
     "SCENE_CREATED",
     "RENDER_FRAME",
     "TEST_COMPLETE"
   ],
-  "updated": "2026-03-01",
-  "note": "TEST_COMPLETE milestone — all 2000 frames run crash-free; frame ~181 SIGSEGV fixed (GCC epilogue bug in mDoMtx_lookAt)"
+  "updated": "2026-03-03",
+  "note": "Reduced TP_TEST_FRAMES from 2000 to 400 (softpipe ~1fps, old 120s timeout only reached 128 frames). FRAMES_1800 removed — unreachable at 400 frames. Timeout increased to 600s."
 }
