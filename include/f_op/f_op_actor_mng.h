@@ -575,6 +575,10 @@ fpc_ProcID fopAcM_createChildFromOffset(s16 i_procName, fpc_ProcID i_parentID, u
 
 void fopAcM_DeleteHeap(fopAc_ac_c* i_actor);
 
+#if PLATFORM_PC
+void fopAcM_cleanupPendingSolidHeap(void);
+#endif
+
 s32 fopAcM_callCallback(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback, JKRHeap* i_heap);
 
 bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback, u32 i_size);

@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include "f_op/f_op_actor_mng.h"
 static volatile sig_atomic_t s_create_crash = 0;
 static sigjmp_buf s_create_jmpbuf;
 static void create_sigsegv_handler(int sig) {
@@ -167,6 +168,9 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
         }
         fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d,\"internal_phase\":%d}}\n",
                 i_request->process_name, i_request->phase_request.id, internal_phase);
+        /* Free any solid heap that was allocated for this actor's createHeap
+         * callback but leaked because the callback crashed. */
+        fopAcM_cleanupPendingSolidHeap();
         phase_state = cPhs_ERROR_e;
     }
     sigaction(SIGSEGV, &sa_old_segv, NULL);

@@ -367,9 +367,29 @@ void fopAcM_DeleteHeap(fopAc_ac_c* i_actor) {
     }
 }
 
+#if PLATFORM_PC
+/* Track the in-progress solid heap allocation so it can be freed if the
+ * actor's createHeap callback crashes via sigsetjmp.  Without this, a
+ * crashed creation leaks the entire solid heap from the game heap. */
+static JKRSolidHeap* s_pending_solid_heap = NULL;
+
+void fopAcM_cleanupPendingSolidHeap(void) {
+    if (s_pending_solid_heap != NULL) {
+        mDoExt_destroySolidHeap(s_pending_solid_heap);
+        s_pending_solid_heap = NULL;
+    }
+}
+#endif
+
 s32 fopAcM_callCallback(fopAc_ac_c* i_actor, heapCallbackFunc i_callback, JKRHeap* i_heap) {
     JKRHeap* oldHeap = mDoExt_setCurrentHeap(i_heap);
+#if PLATFORM_PC
+    s_pending_solid_heap = (JKRSolidHeap*)i_heap;
+#endif
     s32 ret = i_callback(i_actor);
+#if PLATFORM_PC
+    s_pending_solid_heap = NULL;
+#endif
     mDoExt_setCurrentHeap(oldHeap);
     return ret;
 }
