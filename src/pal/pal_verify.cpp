@@ -68,6 +68,7 @@ static int s_regress_count = 0;
 static struct {
     u32 frame;
     int pct_nonblack;
+    u32 nonblack_pixels;
 } s_regress_data[REGRESS_MAX_CAPTURES];
 
 static void parse_capture_frames(const char* spec) {
@@ -333,6 +334,7 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (s_regress_count < REGRESS_MAX_CAPTURES) {
         s_regress_data[s_regress_count].frame = frame_num;
         s_regress_data[s_regress_count].pct_nonblack = pct_nonblack;
+        s_regress_data[s_regress_count].nonblack_pixels = nonblack;
         s_regress_count++;
     }
 
@@ -447,10 +449,9 @@ void pal_verify_summary(void) {
     }
 
     /* Regression assertions: check pixel-coverage thresholds at key frames.
-     * Logo (frames 30-90): expect >2% non-black (red Nintendo logo).
-     * Title (frames 120-180): currently 0% (J2D overlay still rendering black).
-     * Thresholds are intentionally conservative to catch major regressions
-     * (e.g., logo disappears entirely) without false positives. */
+     * Logo (frames 30-90): expect >=2% non-black (red Nintendo logo).
+     * Title (frames 130-200): expect >=100 non-black pixels (grayscale
+     * "PRESS START" text renders ~900 pixels = 0.3% of 640x480). */
     int regress_pass = 1;
     int regress_logo_found = 0;
     int regress_checked = 0;
@@ -460,10 +461,12 @@ void pal_verify_summary(void) {
     for (int i = 0; i < s_regress_count; i++) {
         u32 f = s_regress_data[i].frame;
         int pct = s_regress_data[i].pct_nonblack;
+        u32 pixels = s_regress_data[i].nonblack_pixels;
         int threshold = 0;
+        u32 pixel_threshold = 0;
         const char* label = "unknown";
 
-        /* Logo scene: frames 40-122 should have visible content
+        /* Logo scene: frames 40-125 should have visible content
          * (fade-in takes ~30 frames, logo is fully visible from ~35,
          * scene transitions to title around frame 130) */
         if (f >= 40 && f <= 125) {
@@ -471,29 +474,40 @@ void pal_verify_summary(void) {
             label = "logo";
             regress_logo_found = 1;
         }
-        /* Title scene: frames 140-200 — the J2D overlay from
-         * zelda_press_start.blo renders 86+ draw calls but is currently
-         * near-black (BPK drives 3D model, not J2D overlay).
-         * Tracked without threshold until content is visible. */
-        else if (f >= 140 && f <= 200) {
-            threshold = 0;  /* tracking only */
+        /* Title scene: frames 130-200 — the J2D overlay from
+         * zelda_press_start.blo renders "PRESS START" text at center-bottom.
+         * ~900 grayscale pixels = 0.3% of screen (rounds to 0% as integer).
+         * Use pixel count threshold instead of percentage. */
+        else if (f >= 130 && f <= 200) {
+            pixel_threshold = 100;  /* >=100 non-black pixels expected */
             label = "title";
         }
 
-        int pass = (pct >= threshold) ? 1 : 0;
-        if (threshold > 0) {
+        int pass;
+        if (pixel_threshold > 0) {
+            pass = (pixels >= pixel_threshold) ? 1 : 0;
             regress_checked++;
             if (pass)
                 regress_passed++;
             else
                 regress_pass = 0;
+        } else if (threshold > 0) {
+            pass = (pct >= threshold) ? 1 : 0;
+            regress_checked++;
+            if (pass)
+                regress_passed++;
+            else
+                regress_pass = 0;
+        } else {
+            pass = 1;
         }
 
         if (i > 0) fprintf(stdout, ",");
         fprintf(stdout,
             "{\"frame\":%u,\"label\":\"%s\",\"pct_nonblack\":%d,"
-            "\"threshold\":%d,\"pass\":%d}",
-            f, label, pct, threshold, pass);
+            "\"nonblack_pixels\":%u,\"threshold\":%d,"
+            "\"pixel_threshold\":%u,\"pass\":%d}",
+            f, label, pct, pixels, threshold, pixel_threshold, pass);
     }
     fprintf(stdout, "],\"logo_visible\":%d,\"checks_passed\":%d,"
             "\"checks_total\":%d,\"regression\":%s}}\n",
