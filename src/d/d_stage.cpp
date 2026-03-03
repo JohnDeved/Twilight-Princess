@@ -3232,6 +3232,13 @@ void dStage_Create() {
      * containers with resolved pointers, so actor/camera/SCLS spawning works. */
     dStage_dt_c_stageLoader(stageRsrc, dComIfGp_getStage());
 
+    /* Initialize the starting room — loads room archives and spawns PROC_BG
+     * (background geometry actor). Without this, the 3D world is empty.
+     * Matches the GCN path at line 3256. */
+    if (dComIfGp_getStartStageRoomNo() >= 0) {
+        dStage_roomInit(dComIfGp_getStartStageRoomNo());
+    }
+
     *dStage_roomControl_c::getDemoArcName() = NULL;
     dKankyo_create();
 

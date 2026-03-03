@@ -938,7 +938,7 @@ int cDyl_LinkASync(s16 i_ProfName) {
                 return cPhs_COMPLEATE_e;
             } else {
                 // "cDyl_LinkASync: Link failed. Returning\n"
-                OSReport_Error("cDyl_LinkASync: リンクに失敗しました。諦めます\n");
+                OSReport_Error("cDyl_LinkASync: リンクに失敗しました。諦めます (prof=%d)\n", i_ProfName);
                 return cPhs_ERROR_e;
             }
         } else {

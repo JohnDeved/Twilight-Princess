@@ -341,7 +341,13 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
     setIndirectTex(modelData);
 
     if (i_tag == 'BMWR' || i_tag == 'BMWE') {
+#if PLATFORM_PC
+        /* Skip addWarpMaterial on PC — it modifies display list data
+         * (addTexMtxIndexInDL) which requires properly endian-swapped
+         * vertex descriptors and display lists. */
+#else
         addWarpMaterial(modelData);
+#endif
     }
 
     if (i_tag == 'BMDR' || i_tag == 'BMWR') {

@@ -51,6 +51,14 @@ void J3DShape::addTexMtxIndexInDL(GXAttr attr, u32 valueBase) {
     bool found = false;
 
     for (GXVtxDescList* vtxDesc = getVtxDesc(); vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        /* Guard against unswapped vtxDesc data — limit iteration to prevent
+         * walking past the end of the array (max 26 GX vertex attributes). */
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL || (u32)vtxDesc->type > 3)
+            continue;
+#endif
         if (vtxDesc->attr == GX_VA_PNMTXIDX)
             pnmtxidxOffs = stride;
 
@@ -80,6 +88,12 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
     s32 attrCount = 0;
 
     for (; vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL)
+            continue;
+#endif
         if (vtxDesc->attr == GX_VA_PNMTXIDX) {
             attrIdx = stride;
         }
@@ -95,6 +109,12 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
     vtxDesc = getVtxDesc();
     GXVtxDescList* dst = newVtxDesc;
     for (; vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL)
+            continue;
+#endif
         if ((attr < vtxDesc->attr) && !inserted) {
             dst->attr = attr;
             dst->type = GX_DIRECT;
@@ -106,6 +126,9 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
 
         dst->attr = vtxDesc->attr;
         dst->type = vtxDesc->type;
+#if PLATFORM_PC
+        if (vtxDesc->type <= 3)
+#endif
         stride = stride + kSize[vtxDesc->type];
         dst++;
     }

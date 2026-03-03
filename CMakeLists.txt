@@ -163,6 +163,9 @@ set(REL_SOURCES
     src/d/actor/d_a_vrbox.cpp
     src/d/actor/d_a_vrbox2.cpp
     src/d/actor/d_a_alldie.cpp
+    src/d/actor/d_a_bg.cpp
+    src/d/actor/d_a_bg_obj.cpp
+    src/d/actor/d_a_set_bgobj.cpp
 )
 
 # --- Include directories ---

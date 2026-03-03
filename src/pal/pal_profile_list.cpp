@@ -749,9 +749,9 @@ static process_profile_definition* s_pc_profile_list[] = {
     &g_profile_KY_THUNDER,
     &g_profile_VRBOX,
     &g_profile_VRBOX2,
-    NULL, /* g_profile_BG — REL module, not available */
-    NULL, /* g_profile_SET_BG_OBJ — REL module, not available */
-    NULL, /* g_profile_BG_OBJ — REL module, not available */
+    &g_profile_BG,
+    &g_profile_SET_BG_OBJ,
+    &g_profile_BG_OBJ,
     NULL, /* g_profile_MIRROR — REL module, not available */
     NULL, /* g_profile_MOVIE_PLAYER — REL module, not available */
     &g_profile_TITLE,
