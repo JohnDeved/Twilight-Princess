@@ -163,7 +163,9 @@ jobs:
         run: |
           # || true: Always produce the report JSON for the PR comment step.
           # Failures are surfaced in the regression check, not here.
-          python3 tools/parse_milestones.py milestones.log \
+          # Use Phase 1 (logic) log only for milestones to avoid duplicates
+          # from Phase 2 re-emitting boot milestones.
+          python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
             --min-milestone 5 || true
 

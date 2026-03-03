@@ -4769,13 +4769,24 @@ void dScnKy_env_light_c::exeKankyo() {
         }
     }
 
+#if PLATFORM_PC
+    const char* stageName = dComIfGp_getStartStageName();
+    if (stageName && strcmp(stageName, "R_SP127") == 0) {
+        dCamera_c* camBody = dCam_getBody();
+        if (dComIfGp_getCamera(0) != NULL) {
+            if ((camBody->Mode() == 4 || camBody->Mode() == 7) && dComIfGp_event_runCheck())
+#else
     if (strcmp(dComIfGp_getStartStageName(), "R_SP127") == 0) {
         if ((dCam_getBody()->Mode() == 4 || dCam_getBody()->Mode() == 7) && dComIfGp_event_runCheck())
+#endif
         {
             cLib_addCalc(&g_env_light.mDemoAttentionPoint, 0.0f, 0.5f, 0.1f, 1E-05f);
         } else {
             cLib_addCalc(&g_env_light.mDemoAttentionPoint, 0.11f, 0.5f, 0.1f, 1E-05f);
         }
+#if PLATFORM_PC
+        }
+#endif
     }
 
     #if DEBUG

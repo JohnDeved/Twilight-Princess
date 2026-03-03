@@ -10944,6 +10944,13 @@ static int camera_execute(camera_process_class* i_this) {
      * fully-initialized CamParam data. Skip the body update and just refresh
      * the view matrices from current lookat state. */
     {
+        /* Always set view matrix FIRST — if subsequent code crashes (caught by
+         * the Execute-level sigsetjmp), the view matrix and clipper are already
+         * valid for this frame. Without this, a crash anywhere below skips
+         * view_setup, leaving a stale view matrix that clips all BG shapes
+         * and keeps dl_draws at zero. */
+        view_setup(camera);
+
         int camera_id = get_camera_id(camera);
         dDlst_window_c* window = get_window(camera_id);
         if (!window) return 1;  /* window not ready */
@@ -10970,6 +10977,7 @@ static int camera_execute(camera_process_class* i_this) {
             store(camera);
         }
 
+        /* Refresh view matrix with any updated camera state */
         view_setup(camera);
         return 1;
     }
