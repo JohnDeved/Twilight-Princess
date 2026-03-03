@@ -195,12 +195,16 @@ int daTitle_c::Execute() {
      * presses Start before this happens.  Use 0x7FFF fade name to skip
      * the fade/overlap system which may already be in use. */
     if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS")) {
-        static int s_auto_advance_timer = 0;
+        static int s_auto_advance_timer = -1;
+        if (s_auto_advance_timer < 0)
+            s_auto_advance_timer = 0;  /* reset on first entry */
         if (++s_auto_advance_timer >= 3) {
             scene_class* playScene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
             if (playScene != NULL) {
+                /* Scene 13 = play scene start (matches original GCN nextScene_proc) */
                 fopScnM_ChangeReq(playScene, 13, 0x7FFF, 0);
                 mProcID = 4;
+                s_auto_advance_timer = -1;  /* reset for potential revisit */
             }
         }
     }

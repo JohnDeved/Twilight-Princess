@@ -486,20 +486,18 @@ void pal_verify_summary(void) {
         int pass;
         if (pixel_threshold > 0) {
             pass = (pixels >= pixel_threshold) ? 1 : 0;
-            regress_checked++;
-            if (pass)
-                regress_passed++;
-            else
-                regress_pass = 0;
         } else if (threshold > 0) {
             pass = (pct >= threshold) ? 1 : 0;
+        } else {
+            pass = 1;
+        }
+
+        if (threshold > 0 || pixel_threshold > 0) {
             regress_checked++;
             if (pass)
                 regress_passed++;
             else
                 regress_pass = 0;
-        } else {
-            pass = 1;
         }
 
         if (i > 0) fprintf(stdout, ",");
