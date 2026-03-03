@@ -276,15 +276,10 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
     }
 
 #if PLATFORM_PC
-    /* On PC, J3D model loading may crash due to incomplete endian conversion
-     * or 64-bit struct layout differences. Catch SIGSEGV and return NULL. */
-    {
-        u32 f = flags;
-        void* d = i_data;
-        i_data = j3d_safe_load([&]() -> void* {
-            return J3DModelLoaderDataBase::load(d, f);
-        });
-    }
+    /* On PC, the entire loaderBasicBmd call is wrapped in j3d_safe_load
+     * at the call site (loadResource). Don't nest j3d_safe_load here —
+     * the shared static jmpbuf would corrupt the outer wrapper. */
+    i_data = J3DModelLoaderDataBase::load(i_data, flags);
 #else
     i_data = J3DModelLoaderDataBase::load(i_data, flags);
 #endif
@@ -494,7 +489,17 @@ int dRes_info_c::loadResource() {
                 } else if (nodeType == 'BMDR' || nodeType == 'BMDV' || nodeType == 'BMDE' ||
                            nodeType == 'BMWR' || nodeType == 'BMWE')
                 {
+#if PLATFORM_PC
+                    /* Wrap entire loaderBasicBmd in signal handler since post-processing
+                     * (material iteration, shared DL creation) may crash on models with
+                     * unswapped material IDs or corrupt data */
+                    void* safe_res = j3d_safe_load([&]() -> void* {
+                        return loaderBasicBmd(nodeType, res);
+                    });
+                    res = safe_res;
+#else
                     res = loaderBasicBmd(nodeType, res);
+#endif
                     if (res == NULL) {
 #if PLATFORM_PC
                         /* On PC, skip failed J3D models but continue loading other resources */

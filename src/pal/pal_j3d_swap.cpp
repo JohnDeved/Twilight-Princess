@@ -504,12 +504,16 @@ static void swap_mat3(u8* block, u32 blockSize) {
     if (matIdOff != 0 && matIdOff < blockSize) {
         /* Log pre-swap values for diagnostics */
         static int s_matid_diag = 0;
-        if (s_matid_diag < 5 && matNum > 0) {
+        if ((s_matid_diag < 60 || matNum >= 8) && matNum > 0) {
             u16 pre0 = *(u16*)(block + matIdOff);
+            u16 pre1 = (matNum > 1 && matIdOff + 4 <= blockSize) ? *(u16*)(block + matIdOff + 2) : 0;
             swap_u16_array(block, matIdOff, matNum);
             u16 post0 = *(u16*)(block + matIdOff);
-            fprintf(stderr, "{\"mat3_swap_matid\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u,\"pre0\":%u,\"post0\":%u}}\n",
-                    (unsigned)matNum, matIdOff, blockSize, (unsigned)pre0, (unsigned)post0);
+            u16 post1 = (matNum > 1 && matIdOff + 4 <= blockSize) ? *(u16*)(block + matIdOff + 2) : 0;
+            u8 b0 = block[matIdOff], b1 = block[matIdOff+1];
+            fprintf(stderr, "{\"mat3_swap_matid\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u,\"pre0\":%u,\"pre1\":%u,\"post0\":%u,\"post1\":%u,\"bytes\":[%u,%u]}}\n",
+                    (unsigned)matNum, matIdOff, blockSize, (unsigned)pre0, (unsigned)pre1,
+                    (unsigned)post0, (unsigned)post1, (unsigned)b0, (unsigned)b1);
             s_matid_diag++;
         } else {
             swap_u16_array(block, matIdOff, matNum);
@@ -529,15 +533,25 @@ static void swap_mat3(u8* block, u32 blockSize) {
      * See J3DMaterialInitData struct for exact layout. */
     u32 matInitOff = *(u32*)(block + 0x0C);
     if (matInitOff != 0 && matInitOff < blockSize && matNum > 0) {
-        u32 entrySize = 0x14C;
-        /* Verify entry size from actual data layout */
-        if (matIdOff > matInitOff && matNum > 0) {
-            u32 calcSize = (matIdOff - matInitOff) / matNum;
-            if (calcSize >= 0x14C) entrySize = 0x14C;
-            else if (calcSize > 0) entrySize = calcSize;
+        u32 entrySize = 0x14C;  /* Standard J3DMaterialInitData size */
+        /* Calculate actual MaterialInitData entry count from section sizes.
+         * Multiple materials can share the same InitData entry via the remap table,
+         * so initCount may be LESS than matNum. Using matNum would overwrite
+         * the MaterialID remap table that follows. */
+        u32 initCount = matNum;
+        if (matIdOff > matInitOff) {
+            u32 initDataSize = matIdOff - matInitOff;
+            u32 calcCount = initDataSize / entrySize;
+            if (calcCount > 0 && calcCount <= (u32)matNum) {
+                initCount = calcCount;
+            } else if (calcCount == 0 && initDataSize > 0) {
+                /* Entry size might be smaller than 0x14C for some model variants */
+                entrySize = initDataSize;
+                initCount = 1;
+            }
         }
 
-        for (int i = 0; i < matNum && i < 1024; i++) {
+        for (u32 i = 0; i < initCount && i < 1024; i++) {
             u32 e = matInitOff + i * entrySize;
             if (e + entrySize > blockSize) break;
             /* J3DMaterialInitData layout:
