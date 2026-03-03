@@ -502,7 +502,21 @@ static void swap_mat3(u8* block, u32 blockSize) {
     /* Material ID array at offset[1] (0x10) - u16 per material */
     u32 matIdOff = *(u32*)(block + 0x10);
     if (matIdOff != 0 && matIdOff < blockSize) {
-        swap_u16_array(block, matIdOff, matNum);
+        /* Log pre-swap values for diagnostics */
+        static int s_matid_diag = 0;
+        if (s_matid_diag < 5 && matNum > 0) {
+            u16 pre0 = *(u16*)(block + matIdOff);
+            swap_u16_array(block, matIdOff, matNum);
+            u16 post0 = *(u16*)(block + matIdOff);
+            fprintf(stderr, "{\"mat3_swap_matid\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u,\"pre0\":%u,\"post0\":%u}}\n",
+                    (unsigned)matNum, matIdOff, blockSize, (unsigned)pre0, (unsigned)post0);
+            s_matid_diag++;
+        } else {
+            swap_u16_array(block, matIdOff, matNum);
+        }
+    } else {
+        fprintf(stderr, "{\"mat3_swap_matid_skip\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u}}\n",
+                (unsigned)matNum, matIdOff, blockSize);
     }
 
     /* Name table at offset[2] (0x14) */

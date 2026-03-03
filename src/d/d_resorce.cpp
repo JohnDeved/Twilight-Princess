@@ -297,12 +297,16 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
     if (i_tag == 'BMDE' || i_tag == 'BMDV' || i_tag == 'BMWE') {
         for (i = 0; i < modelData->getShapeNum(); i++) {
             J3DShape* shape = modelData->getShapeNodePointer(i);
-            shape->setTexMtxLoadType(0x2000);
+            if (shape != NULL)
+                shape->setTexMtxLoadType(0x2000);
         }
     }
 
     for (i = 0; i < modelData->getMaterialNum(); i++) {
         J3DMaterial* material = modelData->getMaterialNodePointer(i);
+#if PLATFORM_PC
+        if (material == NULL || material->getColorChan(0) == NULL) continue;
+#endif
         u8 lightMask = material->getColorChan(0)->getLightMask();
         switch (g_env_light.light_mask_type) {
         case 1:
@@ -351,6 +355,18 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
     }
 
     if (i_tag == 'BMDR' || i_tag == 'BMWR') {
+#if PLATFORM_PC
+        void* sdl_result = j3d_safe_load([&]() -> void* {
+            s32 result = modelData->newSharedDisplayList(J3DMdlFlag_UseSingleDL);
+            if (result != kJ3DError_Success) return NULL;
+            modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
+            modelData->makeSharedDL();
+            return (void*)1;
+        });
+        if (sdl_result == NULL) {
+            pal_error(PAL_ERR_J3D_LOAD, "BMDR/BMWR shared DL creation failed");
+        }
+#else
         s32 result = modelData->newSharedDisplayList(J3DMdlFlag_UseSingleDL);
         if (result != kJ3DError_Success) {
             return NULL;
@@ -358,6 +374,7 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
             modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
             modelData->makeSharedDL();
         }
+#endif
     }
 
     return (J3DModelData*)i_data;
