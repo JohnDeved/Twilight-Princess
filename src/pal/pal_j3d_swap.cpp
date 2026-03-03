@@ -879,6 +879,7 @@ int pal_j3d_swap_model(void* data, u32 size) {
     /* Walk blocks and swap each */
     u8* blockPtr = buf + 0x20;
     u32 blocks_swapped = 0;
+    u16 shp_count = 0, mat_count = 0;
     for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < effectiveSize; i++) {
         /* Read block header in big-endian */
         u32 blockType = r32(blockPtr);
@@ -926,9 +927,11 @@ int pal_j3d_swap_model(void* data, u32 size) {
             break;
         case FCC('S','H','P','1'):
             swap_shp1(blockPtr, blockSize);
+            if (blockSize > 0x0A) shp_count = *(u16*)(blockPtr + 0x08); /* already swapped */
             break;
         case FCC('M','A','T','3'):
             swap_mat3(blockPtr, blockSize);
+            if (blockSize > 0x0A) mat_count = *(u16*)(blockPtr + 0x08); /* already swapped */
             break;
         case FCC('M','A','T','2'):
             swap_mat2(blockPtr, blockSize);
@@ -968,11 +971,12 @@ int pal_j3d_swap_model(void* data, u32 size) {
         blockPtr += blockSize;
     }
 
-    /* Per-model summary: emit JSON with model type, size, blocks, SHP1 shape count */
+    /* Per-model summary: emit JSON with model type, size, blocks, SHP1 shape count, MAT3 material count */
     {
         static int s_model_id = 0;
-        fprintf(stderr, "{\"model_swap\":{\"id\":%d,\"type\":\"%c%c%c%c\",\"size\":%u,\"blocks\":%u,\"swapped\":%u}}\n",
-                s_model_id, buf[4], buf[5], buf[6], buf[7], size, blockNum, blocks_swapped);
+        fprintf(stderr, "{\"model_swap\":{\"id\":%d,\"type\":\"%c%c%c%c\",\"size\":%u,\"blocks\":%u,\"swapped\":%u,\"shapes\":%u,\"materials\":%u}}\n",
+                s_model_id, buf[4], buf[5], buf[6], buf[7], size, blockNum, blocks_swapped,
+                (unsigned)shp_count, (unsigned)mat_count);
         s_model_id++;
     }
     return 1;
