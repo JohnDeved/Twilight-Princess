@@ -541,7 +541,15 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
         }
 
         if (heap == NULL) {
+#if PLATFORM_PC
+            /* Cap the fallback allocation to 8MB instead of -1 (all free space).
+             * On GCN the game heap was 24MB so -1 was bounded, but on PC with
+             * 260MB game heap, -1 grabs everything in one allocation, starving
+             * all other actors.  8MB is generous for any single actor. */
+            heap = mDoExt_createSolidHeapFromGame(0x800000, 0x20);
+#else
             heap = mDoExt_createSolidHeapFromGame(-1, 0x20);
+#endif
             if (heap == NULL) {
                 // Allocation failed with max free heap size. [%s]
                 OSReport_Error("最大空きヒープサイズで確保失敗。[%s]\n", procNameString);
