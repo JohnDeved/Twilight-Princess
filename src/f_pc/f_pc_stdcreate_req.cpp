@@ -15,9 +15,11 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <string.h>
 #include "f_op/f_op_actor_mng.h"
 #include "m_Do/m_Do_ext.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
+#include "d/d_procname.h"
 static volatile sig_atomic_t s_create_crash = 0;
 static sigjmp_buf s_create_jmpbuf;
 static void create_sigsegv_handler(int sig) {
@@ -25,6 +27,12 @@ static void create_sigsegv_handler(int sig) {
     s_create_crash = 1;
     siglongjmp(s_create_jmpbuf, 1);
 }
+
+/* Per-profile crash counter: suppress re-creation after too many failures.
+ * Each crashed actor retry leaks 8MB+ of game heap; suppressing retries
+ * prevents heap exhaustion. Max 2 attempts per profile. */
+#define FPCSCTRQ_MAX_CRASH_RETRIES 2
+static u8 s_profile_crash_count[1024];
 #endif
 
 typedef struct standard_create_request_class {
@@ -168,8 +176,14 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
              * request_of_phase_process_class.id is the current internal phase. */
             internal_phase = *(int*)((u8*)i_request->base.process + 0x1C4);
         }
-        fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d,\"internal_phase\":%d}}\n",
-                i_request->process_name, i_request->phase_request.id, internal_phase);
+        /* Increment per-profile crash counter to suppress future retries. */
+        if (i_request->process_name >= 0 && i_request->process_name < (s16)(sizeof(s_profile_crash_count)/sizeof(s_profile_crash_count[0]))) {
+            s_profile_crash_count[i_request->process_name]++;
+        }
+        fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d,\"internal_phase\":%d,\"crash_count\":%d}}\n",
+                i_request->process_name, i_request->phase_request.id, internal_phase,
+                (i_request->process_name >= 0 && i_request->process_name < (s16)(sizeof(s_profile_crash_count)/sizeof(s_profile_crash_count[0])))
+                    ? s_profile_crash_count[i_request->process_name] : -1);
         /* Free any solid heap that was allocated for this actor's createHeap
          * callback but leaked because the callback crashed. */
         fopAcM_cleanupPendingSolidHeap();
@@ -237,6 +251,23 @@ fpc_ProcID fpcSCtRq_Request(layer_class* i_layer, s16 i_procName, stdCreateFunc 
     if (i_procName >= 0x7FFF) {
         return fpcM_ERROR_PROCESS_ID_e;
     }
+
+#if PLATFORM_PC
+    /* Suppress re-creation of actor profiles that have crashed repeatedly.
+     * Each retry leaks 8MB+ of game heap via solid heap allocations that
+     * are never freed when the actor crashes during creation. */
+    if (i_procName >= 0 && i_procName < (s16)(sizeof(s_profile_crash_count)/sizeof(s_profile_crash_count[0]))) {
+        if (s_profile_crash_count[i_procName] >= FPCSCTRQ_MAX_CRASH_RETRIES) {
+            static u8 s_suppress_logged[1024];
+            if (!s_suppress_logged[i_procName]) {
+                fprintf(stderr, "{\"actor_create_suppressed\":{\"prof\":%d,\"crash_count\":%d}}\n",
+                        i_procName, s_profile_crash_count[i_procName]);
+                s_suppress_logged[i_procName] = 1;
+            }
+            return fpcM_ERROR_PROCESS_ID_e;
+        }
+    }
+#endif
 
     standard_create_request_class* request =
         (standard_create_request_class*)fpcCtRq_Create(i_layer, sizeof(standard_create_request_class), &submethod);
