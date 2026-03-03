@@ -107,8 +107,10 @@ jobs:
           # Runs without DISPLAY to use bgfx Noop backend.
           # Verifies game logic milestones (PROC_BG creation, dl_draws,
           # j3d_entries, heap stability) without slow softpipe rendering.
+          # Uses 400 frames to reach FRAMES_300 milestone.
           echo "=== Phase 1: Logic test (Noop renderer) ==="
           unset DISPLAY
+          export TP_TEST_FRAMES=400
           timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_logic.log || true
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
