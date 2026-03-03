@@ -1748,15 +1748,13 @@ void pal_tev_flush_draw(void) {
                 g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
-                1.0f /* GCN ignores framebuffer alpha — force opaque so
-                        SRC_ALPHA blending doesn't discard pixels with
-                        texture alpha=0 (common in IA8/J2D textures) */
+                g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f,
             };
             float reg1[4] = {
                 g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
                 g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
-                1.0f /* force opaque — see reg0 comment */
+                g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f,
             };
 
             /* DIAGNOSTIC: When TP_BLEND_RED is set, force both TEV regs to
