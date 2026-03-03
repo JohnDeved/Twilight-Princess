@@ -400,6 +400,12 @@ void J3DMaterialFactory::modifyPatchedCurrentMtx(J3DMaterial* i_material, int i_
 
 J3DMaterial* J3DMaterialFactory::createLockedMaterial(J3DMaterial* i_material, int i_idx,
                                                       u32 i_flags) const {
+#if PLATFORM_PC
+    if ((u32)i_idx >= mMaterialNum) {
+        if (i_material == NULL) i_material = new J3DMaterial();
+        return i_material;
+    }
+#endif
     if (i_material == NULL) {
         i_material = new J3DLockedMaterial();
         J3D_ASSERT_ALLOCMEM(629, i_material);
@@ -813,6 +819,9 @@ J3DFog J3DMaterialFactory::newFog(int i_idx) const {
 #endif
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mFogIdx != 0xffff) {
+#if PLATFORM_PC
+        if (mtl_init_data->mFogIdx < 256 && mpFogInfo != NULL)
+#endif
         fog.setFogInfo(mpFogInfo[mtl_init_data->mFogIdx]);
     }
     return fog;
@@ -825,10 +834,12 @@ J3DAlphaComp J3DMaterialFactory::newAlphaComp(int i_idx) const {
 #endif
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mAlphaCompIdx != 0xffff) {
+#if PLATFORM_PC
+        if (mtl_init_data->mAlphaCompIdx < 256 && mpAlphaCompInfo != NULL)
+#endif
         return J3DAlphaComp(mpAlphaCompInfo[mtl_init_data->mAlphaCompIdx]);
-    } else {
-        return J3DAlphaComp(0xffff);
     }
+    return J3DAlphaComp(0xffff);
 }
 
 J3DBlend J3DMaterialFactory::newBlend(int i_idx) const {
@@ -838,10 +849,12 @@ J3DBlend J3DMaterialFactory::newBlend(int i_idx) const {
 #endif
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mBlendIdx != 0xffff) {
+#if PLATFORM_PC
+        if (mtl_init_data->mBlendIdx < 256 && mpBlendInfo != NULL)
+#endif
         return J3DBlend(mpBlendInfo[mtl_init_data->mBlendIdx]);
-    } else {
-        return J3DBlend(j3dDefaultBlendInfo);
     }
+    return J3DBlend(j3dDefaultBlendInfo);
 }
 
 J3DZMode J3DMaterialFactory::newZMode(int i_idx) const {
@@ -852,10 +865,12 @@ J3DZMode J3DMaterialFactory::newZMode(int i_idx) const {
 #endif
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mZModeIdx != 0xff) {
+#if PLATFORM_PC
+        if (mtl_init_data->mZModeIdx < 256 && mpZModeInfo != NULL)
+#endif
         return J3DZMode(mpZModeInfo[mtl_init_data->mZModeIdx]);
-    } else {
-        return J3DZMode();
     }
+    return J3DZMode();
 }
 
 const u8 J3DMaterialFactory::newZCompLoc(int i_idx) const {
@@ -889,8 +904,10 @@ J3DNBTScale J3DMaterialFactory::newNBTScale(int i_idx) const {
 #endif
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mNBTScaleIdx != 0xffff) {
+#if PLATFORM_PC
+        if (mtl_init_data->mNBTScaleIdx < 256 && mpNBTScaleInfo != NULL)
+#endif
         return J3DNBTScale(mpNBTScaleInfo[mtl_init_data->mNBTScaleIdx]);
-    } else {
-        return dflt;
     }
+    return dflt;
 }
