@@ -807,6 +807,13 @@ int mDoMch_Create() {
     gameHeapSize += 0xC800;
     #endif
 
+    #if PLATFORM_PC
+    /* PC has much more RAM than GCN (GBs vs 24MB).  Increase archive heap
+       so room bank archives + demo archives can mount without heap exhaustion.
+       Original 9085 KB is consumed by R00_00 room data alone. */
+    archiveHeapSize += 0x800000;  /* +8 MB */
+    #endif
+
     #if DEBUG
     if (mDoMain::archiveHeapSize != -1) {
         OSReport_Error("アーカイブヒープサイズ指定！\n");
@@ -835,8 +842,11 @@ int mDoMch_Create() {
     #endif
     #if PLATFORM_PC
     /* On 64-bit, JKRExpHeap node headers are larger (8-byte pointers).
-     * Reduce system heap to leave room for sub-heap allocation overhead. */
+     * Reduce system heap to leave room for sub-heap allocation overhead.
+     * Also give root heap extra space for the larger archive heap — room
+     * bank archives + demo archives need more than 9 MB on PC. */
     arenaSize -= 0x10000;
+    arenaSize -= 0x800000;  /* -8 MB from sysHeap → rootHeap gets +8 MB */
     #endif
     JFWSystem::setSysHeapSize(arenaSize);
     my_PrintHeap("システムヒープ", arenaSize);

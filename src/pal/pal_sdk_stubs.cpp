@@ -134,7 +134,7 @@ u32 OSGetPhysicalMem2Size(void) { return 64 * 1024 * 1024; }
 /* OS Arena / Memory                                                */
 /* ================================================================ */
 
-static u8 s_arena_mem[64 * 1024 * 1024]; /* 64 MB arena — headroom for 64-bit pointer overhead + heap structure padding */
+static u8 s_arena_mem[128 * 1024 * 1024]; /* 128 MB arena — PC needs extra room for 64-bit pointer overhead, heap structure padding, and larger archive heap for room data */
 static u8* s_arena_lo = s_arena_mem;
 static u8* s_arena_hi = s_arena_mem + sizeof(s_arena_mem);
 

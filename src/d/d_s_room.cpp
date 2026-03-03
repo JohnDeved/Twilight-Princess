@@ -184,18 +184,32 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
             case 0:
                 if (!resetArchiveBank(roomNo)) {
 #if PLATFORM_PC
-                    fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) returned 0\n", roomNo);
+                    static int s_rab_log = 0;
+                    if (s_rab_log < 5) {
+                        fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) returned 0\n", roomNo);
+                        s_rab_log++;
+                    }
 #endif
                     return 0;
                 }
+#if PLATFORM_PC
+                fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) OK, advancing to case 1\n", roomNo);
+#endif
                 i_this->field_0x1d4++;
             case 1:
                 if (!setArchiveBank(roomNo)) {
 #if PLATFORM_PC
-                    fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) returned 0\n", roomNo);
+                    static int s_sab_log = 0;
+                    if (s_sab_log < 5) {
+                        fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) returned 0\n", roomNo);
+                        s_sab_log++;
+                    }
 #endif
                     return 0;
                 }
+#if PLATFORM_PC
+                fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) OK\n", roomNo);
+#endif
 
                 if (i_this->mpDzrRes != NULL) {
                     loadDemoArchive(roomNo);
@@ -203,6 +217,10 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
             default:
                 if (*dStage_roomControl_c::getDemoArcName() != '\0') {
                     int phase = dComIfG_syncObjectRes(dStage_roomControl_c::getDemoArcName());
+#if PLATFORM_PC
+                    fprintf(stderr, "[PAL] objectSetCheck: syncObjectRes('%s') = %d\n",
+                            dStage_roomControl_c::getDemoArcName(), phase);
+#endif
 
                     if (phase < 0) {
                         #if VERSION == VERSION_WII_USA_R0
@@ -215,7 +233,7 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
 
                 fopAcM_create(PROC_BG, roomNo, NULL, -1, NULL, NULL, -1);
 #if PLATFORM_PC
-                fprintf(stderr, "[PAL] objectSetCheck: fopAcM_create(PROC_BG, %d) CALLED!\n", roomNo);
+                fprintf(stderr, "[PAL] objectSetCheck: fopAcM_create(PROC_BG, %d) CALLED! field_0x1d4 -> -1\n", roomNo);
 #endif
                 dComIfGp_getPEvtManager()->demoInit();
                 dComIfGp_getPEvtManager()->roomInit(roomNo);
