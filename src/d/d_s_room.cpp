@@ -170,9 +170,9 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
 #if PLATFORM_PC
     {
         static int s_osc_count = 0;
-        if (s_osc_count < 10 || s_osc_count % 60 == 0) {
-            fprintf(stderr, "[PAL] objectSetCheck: roomNo=%d flag8=%d flag20=%d field_0x1d4=%d\n",
-                    roomNo, (int)status_flag_8, (int)status_flag_20, i_this->field_0x1d4);
+        if (s_osc_count < 20 || s_osc_count % 30 == 0) {
+            fprintf(stderr, "{\"objectSetCheck\":{\"call\":%d,\"roomNo\":%d,\"flag8\":%d,\"flag20\":%d,\"state\":%d}}\n",
+                    s_osc_count, roomNo, (int)status_flag_8, (int)status_flag_20, i_this->field_0x1d4);
         }
         s_osc_count++;
     }
@@ -186,14 +186,14 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
 #if PLATFORM_PC
                     static int s_rab_log = 0;
                     if (s_rab_log < 5) {
-                        fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) returned 0\n", roomNo);
+                        fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"resetArchiveBank\",\"roomNo\":%d}}\n", roomNo);
                         s_rab_log++;
                     }
 #endif
                     return 0;
                 }
 #if PLATFORM_PC
-                fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) OK, advancing to case 1\n", roomNo);
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"resetArchiveBank_OK\",\"roomNo\":%d}}\n", roomNo);
 #endif
                 i_this->field_0x1d4++;
             case 1:
@@ -201,14 +201,14 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
 #if PLATFORM_PC
                     static int s_sab_log = 0;
                     if (s_sab_log < 5) {
-                        fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) returned 0\n", roomNo);
+                        fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"setArchiveBank\",\"roomNo\":%d}}\n", roomNo);
                         s_sab_log++;
                     }
 #endif
                     return 0;
                 }
 #if PLATFORM_PC
-                fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) OK\n", roomNo);
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"setArchiveBank_OK\",\"roomNo\":%d}}\n", roomNo);
 #endif
 
                 if (i_this->mpDzrRes != NULL) {
@@ -218,7 +218,7 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
                 if (*dStage_roomControl_c::getDemoArcName() != '\0') {
                     int phase = dComIfG_syncObjectRes(dStage_roomControl_c::getDemoArcName());
 #if PLATFORM_PC
-                    fprintf(stderr, "[PAL] objectSetCheck: syncObjectRes('%s') = %d\n",
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"syncObjectRes\",\"name\":\"%s\",\"result\":%d}}\n",
                             dStage_roomControl_c::getDemoArcName(), phase);
 #endif
 
@@ -227,13 +227,21 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
                         dStage_escapeRestart();
                         #endif
                     } else if (phase > 0) {
+#if PLATFORM_PC
+                        static int s_sync_drop = 0;
+                        if (s_sync_drop < 5) {
+                            fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"syncObjectRes_pending\",\"name\":\"%s\"}}\n",
+                                    dStage_roomControl_c::getDemoArcName());
+                            s_sync_drop++;
+                        }
+#endif
                         return 0;
                     }
                 }
 
                 fopAcM_create(PROC_BG, roomNo, NULL, -1, NULL, NULL, -1);
 #if PLATFORM_PC
-                fprintf(stderr, "[PAL] objectSetCheck: fopAcM_create(PROC_BG, %d) CALLED! field_0x1d4 -> -1\n", roomNo);
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"fopAcM_create_PROC_BG\",\"roomNo\":%d}}\n", roomNo);
 #endif
                 dComIfGp_getPEvtManager()->demoInit();
                 dComIfGp_getPEvtManager()->roomInit(roomNo);
@@ -384,6 +392,16 @@ static int phase_2(room_of_scene_class* i_this) {
     const char* arcName = setArcName(i_this);
     int rt = dComIfG_syncStageRes(arcName);
 
+#if PLATFORM_PC
+    {
+        static int s_ph2_log = 0;
+        if (s_ph2_log < 10) {
+            fprintf(stderr, "{\"room_phase2\":{\"step\":\"syncStageRes\",\"arc\":\"%s\",\"result\":%d}}\n", arcName, rt);
+        }
+        s_ph2_log++;
+    }
+#endif
+
     if (rt < 0) {
         #if VERSION == VERSION_WII_USA_R0
         dStage_escapeRestart();
@@ -397,6 +415,10 @@ static int phase_2(room_of_scene_class* i_this) {
     }
 
     int roomNo = fopScnM_GetParam(i_this);
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"createZone\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     #if DEBUG
     JKRExpHeap* block = dStage_roomControl_c::getMemoryBlock(roomNo);
@@ -412,13 +434,25 @@ static int phase_2(room_of_scene_class* i_this) {
         dComIfGp_roomControl_setZoneNo(roomNo, dComIfGs_createZone(roomNo));
     }
 
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"getStageRes\",\"roomNo\":%d}}\n", roomNo);
+#endif
+
     i_this->mpRoomDt = dComIfGp_roomControl_getStatusRoomDt(roomNo);
     i_this->mpRoomDt->setRoomNo(roomNo);
     i_this->mpDzrRes = dComIfG_getStageRes(arcName, "room.dzr");
 
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"roomLoader\",\"roomNo\":%d,\"dzrRes\":\"%p\"}}\n", roomNo, (void*)i_this->mpDzrRes);
+#endif
+
     if (i_this->mpDzrRes != NULL) {
         dStage_dt_c_roomLoader(i_this->mpDzrRes, i_this->mpRoomDt, roomNo);
     }
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"heapSetup\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     JKRHeap* old_heap = NULL;
     JKRExpHeap* heap = dStage_roomControl_c::getMemoryBlock(roomNo);
@@ -441,6 +475,10 @@ static int phase_2(room_of_scene_class* i_this) {
     if (old_heap != NULL) {
         mDoExt_setCurrentHeap(old_heap);
     }
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"complete\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     return cPhs_NEXT_e;
 }

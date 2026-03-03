@@ -160,6 +160,13 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
      * material features (e.g., Demo38_01 BMDR, Kmdl BMWR). */
     if ((u32)i_idx >= mMaterialNum ||
         mpMaterialID[i_idx] >= mMaterialNum) {
+        static int s_bounds_log = 0;
+        if (s_bounds_log < 10) {
+            fprintf(stderr, "{\"mat3_bounds\":{\"func\":\"createNormalMaterial\",\"i_idx\":%d,\"matNum\":%u,\"matID\":%u}}\n",
+                    i_idx, (unsigned)mMaterialNum,
+                    (u32)i_idx < mMaterialNum ? (unsigned)mpMaterialID[i_idx] : 0xFFFF);
+            s_bounds_log++;
+        }
         if (i_material == NULL)
             i_material = new J3DMaterial();
         return i_material;
@@ -216,6 +223,13 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
             i_material->mTevBlock->getTevStage(i)->setRasSel(
                 mpTevSwapModeInfo[material_init_data->mTevSwapModeIdx[i]].mRasSel);
 #if PLATFORM_PC
+            } else {
+                static int s_swap_log = 0;
+                if (s_swap_log < 5) {
+                    fprintf(stderr, "{\"mat3_bounds\":{\"func\":\"TevSwapMode\",\"i_idx\":%d,\"stage\":%d,\"swapIdx\":%u}}\n",
+                            i_idx, (int)i, (unsigned)swapIdx);
+                    s_swap_log++;
+                }
             }
 #endif
         }

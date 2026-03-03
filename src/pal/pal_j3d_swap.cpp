@@ -234,6 +234,30 @@ static void swap_vtx1(u8* block, u32 blockSize) {
             swap_u32_array(block, offsets[i], count);
         }
     }
+
+    /* VTX1 float range probe: log min/max of position data for first few models */
+    if (offsets[1] != 0 && attrCompType[1] == 0) {
+        static int s_vtx1_probe = 0;
+        if (s_vtx1_probe < 5) {
+            u32 posOff = offsets[1];
+            u32 posEnd = blockSize;
+            for (int j = 2; j < 14; j++) {
+                if (offsets[j] != 0) { posEnd = offsets[j]; break; }
+            }
+            u32 nfloats = (posEnd - posOff) / 4;
+            if (nfloats >= 3) {
+                float* fdata = (float*)(block + posOff);
+                float fmin = fdata[0], fmax = fdata[0];
+                for (u32 fi = 1; fi < nfloats && fi < 10000; fi++) {
+                    if (fdata[fi] < fmin) fmin = fdata[fi];
+                    if (fdata[fi] > fmax) fmax = fdata[fi];
+                }
+                fprintf(stderr, "{\"vtx1_probe\":{\"nfloats\":%u,\"min\":%.4f,\"max\":%.4f,\"sample\":[%.4f,%.4f,%.4f]}}\n",
+                        nfloats, fmin, fmax, fdata[0], fdata[1], fdata[2]);
+            }
+            s_vtx1_probe++;
+        }
+    }
 }
 
 /*
@@ -934,7 +958,13 @@ int pal_j3d_swap_model(void* data, u32 size) {
         blockPtr += blockSize;
     }
 
-    fprintf(stderr, "[pal_j3d] Swap complete: %u/%u blocks swapped\n", blocks_swapped, blockNum);
+    /* Per-model summary: emit JSON with model type, size, blocks, SHP1 shape count */
+    {
+        static int s_model_id = 0;
+        fprintf(stderr, "{\"model_swap\":{\"id\":%d,\"type\":\"%c%c%c%c\",\"size\":%u,\"blocks\":%u,\"swapped\":%u}}\n",
+                s_model_id, buf[4], buf[5], buf[6], buf[7], size, blockNum, blocks_swapped);
+        s_model_id++;
+    }
     return 1;
 }
 
