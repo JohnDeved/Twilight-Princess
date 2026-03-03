@@ -151,6 +151,17 @@ int fpcSCtRq_phase_Done(standard_create_request_class* i_request) {
 
 int fpcSCtRq_Handler(standard_create_request_class* i_request) {
 #if PLATFORM_PC
+    /* Skip processing if this profile already exceeded crash retries.
+     * Requests may have been queued before the counter reached the limit. */
+    {
+        s16 procName = i_request->process_name;
+        if (procName >= 0 && procName < (s16)(sizeof(s_profile_crash_count)/sizeof(s_profile_crash_count[0]))) {
+            if (s_profile_crash_count[procName] >= FPCSCTRQ_MAX_CRASH_RETRIES) {
+                return cPhs_ERROR_e;
+            }
+        }
+    }
+
     /* On PC, actor creation may crash due to endian/layout issues in model
      * data or function pointer tables. Catch SIGSEGV so one bad actor doesn't
      * crash the whole process. */
