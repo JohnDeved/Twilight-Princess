@@ -188,6 +188,24 @@ int daTitle_c::createHeapCallBack(fopAc_ac_c* title) {
 }
 
 int daTitle_c::Execute() {
+#if PLATFORM_PC
+    /* Auto-advance past title screen in headless mode.  Must run before
+     * the IsPeek check because the overlap manager blocks title execution
+     * after ~3 frames (the play scene takes over).  On GCN the player
+     * presses Start before this happens.  Use 0x7FFF fade name to skip
+     * the fade/overlap system which may already be in use. */
+    if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS")) {
+        static int s_auto_advance_timer = 0;
+        if (++s_auto_advance_timer >= 3) {
+            scene_class* playScene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
+            if (playScene != NULL) {
+                fopScnM_ChangeReq(playScene, 13, 0x7FFF, 0);
+                mProcID = 4;
+            }
+        }
+    }
+#endif
+
     if (fopOvlpM_IsPeek()) {
         return 1;
     }
@@ -394,7 +412,12 @@ void daTitle_c::nextScene_init() {
 void daTitle_c::nextScene_proc() {
     if (!fopOvlpM_IsPeek() && !mDoRst::isReset()) {
         scene_class* playScene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
+#if PLATFORM_PC
+        if (playScene == NULL)
+            return;
+#else
         JUT_ASSERT(706, playScene != NULL);
+#endif
         fopScnM_ChangeReq(playScene, 13, 0, 5);
 #if VERSION != VERSION_SHIELD_DEBUG
         mDoGph_gInf_c::setFadeColor(*(JUtility::TColor*)&g_blackColor);
