@@ -459,6 +459,15 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
     }
 
 #if PLATFORM_PC
+    /* Log allocation requests >1MB or zero/max */
+    {
+        JKRExpHeap* gh = mDoExt_getGameHeap();
+        u32 gh_free = gh ? gh->getFreeSize() : 0;
+        if (i_size == 0 || i_size > 0x100000) {
+            fprintf(stderr, "{\"gh_alloc\":{\"src\":\"entrySolidHeap\",\"prof\":\"%s\",\"req\":%u,\"gh_free\":%u}}\n",
+                    procNameString, i_size, gh_free);
+        }
+    }
     /* On PC, cap the max solid heap allocation to 4MB to prevent one actor
      * from exhausting the entire game heap when i_size=0. On GCN the game
      * heap was 24MB so a -1 allocation was bounded. With 138MB on PC, an

@@ -1055,12 +1055,17 @@ JKRSolidHeap* mDoExt_createSolidHeap(u32 i_size, JKRHeap* i_parent, u32 i_alignm
 
 JKRSolidHeap* mDoExt_createSolidHeapFromGame(u32 i_size, u32 i_alignment) {
 #if PLATFORM_PC
+    /* Cap size=0/-1 to 8MB — defense in depth against one actor
+     * consuming all 260MB of game heap (GCN was bounded at 24MB). */
+    if (i_size == 0 || i_size == (u32)-1) {
+        i_size = 0x800000; /* 8 MB */
+    }
     JKRExpHeap* gh = mDoExt_getGameHeap();
     u32 free_before = gh->getFreeSize();
     JKRSolidHeap* h = mDoExt_createSolidHeap(i_size, gh, i_alignment);
     u32 free_after = gh->getFreeSize();
-    if (i_size == 0 || i_size == (u32)-1 || (free_before - free_after) > 0x100000) {
-        fprintf(stderr, "{\"gh_alloc\":{\"req\":%u,\"took\":%u,\"free_before\":%u,\"free_after\":%u}}\n",
+    if ((free_before - free_after) > 0x100000) {
+        fprintf(stderr, "{\"gh_alloc\":{\"src\":\"FromGame\",\"req\":%u,\"took\":%u,\"free_before\":%u,\"free_after\":%u}}\n",
                 i_size, free_before - free_after, free_before, free_after);
     }
     return h;
@@ -1102,6 +1107,11 @@ JKRSolidHeap* mDoExt_createSolidHeapToCurrent(u32 i_size, JKRHeap* i_parent, u32
 JKRSolidHeap* mDoExt_createSolidHeapFromGameToCurrent(JKRHeap** o_heap, u32 i_size,
                                                       u32 i_alignment) {
     JKRExpHeap* gameHeap = mDoExt_getGameHeap();
+#if PLATFORM_PC
+    if (i_size == 0 || i_size == (u32)-1) {
+        i_size = 0x800000; /* 8 MB */
+    }
+#endif
     JKRSolidHeap* solidHeap =
         mDoExt_createSolidHeapToCurrent(o_heap, i_size, gameHeap, i_alignment);
     return solidHeap;
@@ -1109,7 +1119,23 @@ JKRSolidHeap* mDoExt_createSolidHeapFromGameToCurrent(JKRHeap** o_heap, u32 i_si
 
 JKRSolidHeap* mDoExt_createSolidHeapFromGameToCurrent(u32 i_size, u32 i_alignment) {
     JKRExpHeap* gameHeap = mDoExt_getGameHeap();
+#if PLATFORM_PC
+    /* Cap size=0 and size=-1 to 8MB — on GCN the 24MB game heap bounded
+     * these naturally, but on PC with 260MB game heap one actor would
+     * consume all free space, starving every other actor. */
+    if (i_size == 0 || i_size == (u32)-1) {
+        i_size = 0x800000; /* 8 MB */
+    }
+    u32 free_before = gameHeap->getFreeSize();
+#endif
     JKRSolidHeap* solidHeap = mDoExt_createSolidHeapToCurrent(i_size, gameHeap, i_alignment);
+#if PLATFORM_PC
+    u32 free_after = gameHeap->getFreeSize();
+    if ((free_before - free_after) > 0x100000) {
+        fprintf(stderr, "{\"gh_alloc\":{\"src\":\"ToCurrent\",\"req\":%u,\"took\":%u,\"free_before\":%u,\"free_after\":%u}}\n",
+                i_size, free_before - free_after, free_before, free_after);
+    }
+#endif
     return solidHeap;
 }
 
