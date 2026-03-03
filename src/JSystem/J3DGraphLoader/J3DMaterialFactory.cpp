@@ -465,6 +465,12 @@ u32 J3DMaterialFactory::calcSizeNormalMaterial(J3DMaterial* i_material, int i_id
         return calcSizeLockedMaterial(i_material, i_idx, i_flags);
     }
 
+#if PLATFORM_PC
+    if ((u32)i_idx >= mMaterialNum || mpMaterialID[i_idx] >= mMaterialNum) {
+        if (i_material == NULL) size += sizeof(J3DMaterial);
+        return size;
+    }
+#endif
     const u32 stages = countStages(i_idx);
     u32 tev_stage_num = getMdlDataFlag_TevStageNum(i_flags);
     u32 tev_stage_num_max = JMAMax(stages, tev_stage_num);
@@ -482,9 +488,6 @@ u32 J3DMaterialFactory::calcSizeNormalMaterial(J3DMaterial* i_material, int i_id
     size += J3DMaterial::calcSizeTevBlock((u16)tev_stage_num_max);
     size += J3DMaterial::calcSizeIndBlock(ind_flag);
     size += J3DMaterial::calcSizePEBlock(pe_flag, getMaterialMode(i_idx));
-#if PLATFORM_PC
-    if ((u32)i_idx >= mMaterialNum || mpMaterialID[i_idx] >= mMaterialNum) return size;
-#endif
     J3DMaterialInitData* init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     for (u32 i = 0; i < 8; i++) {
         if (init_data->mTexMtxIdx[i] != 0xffff) {
@@ -497,6 +500,12 @@ u32 J3DMaterialFactory::calcSizeNormalMaterial(J3DMaterial* i_material, int i_id
 u32 J3DMaterialFactory::calcSizePatchedMaterial(J3DMaterial* i_material, int i_idx,
                                                 u32 i_flags) const {
     u32 size = 0;
+#if PLATFORM_PC
+    if ((u32)i_idx >= mMaterialNum || mpMaterialID[i_idx] >= mMaterialNum) {
+        if (i_material == NULL) size += sizeof(J3DPatchedMaterial);
+        return size;
+    }
+#endif
     if (i_material == NULL) {
         size += sizeof(J3DPatchedMaterial);
     }
@@ -506,9 +515,6 @@ u32 J3DMaterialFactory::calcSizePatchedMaterial(J3DMaterial* i_material, int i_i
     size += sizeof(J3DTevBlockPatched);
     size += J3DMaterial::calcSizeIndBlock(ind_flag);
     size += J3DMaterial::calcSizePEBlock(0x10000000, getMaterialMode(i_idx));
-#if PLATFORM_PC
-    if ((u32)i_idx >= mMaterialNum || mpMaterialID[i_idx] >= mMaterialNum) return size;
-#endif
     J3DMaterialInitData* init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     for (u32 i = 0; i < 8; i++) {
         if (init_data->mTexMtxIdx[i] != 0xffff) {
