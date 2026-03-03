@@ -139,11 +139,31 @@ static int loadDemoArchive(int room_no) {
             dStage_Lbnk_dt_c* entries = lbnk->entries;
 
             if (entries != NULL) {
-                int bank = entries[dComIfG_play_c::getLayerNo(room_no)].bank;
+                int layerNo = dComIfG_play_c::getLayerNo(room_no);
+#if PLATFORM_PC
+                if (layerNo < 0 || layerNo >= 15 || lbnk->num <= 0) {
+                    return 0;
+                }
+#endif
+                int bank = entries[layerNo].bank;
 
                 if (bank != 0xff) {
+#if PLATFORM_PC
+                    if (bank < 0 || bank >= 100) {
+                        fprintf(stderr, "{\"loadDemoArchive\":{\"error\":\"bank_range\",\"bank\":%d,\"room\":%d,\"layer\":%d}}\n",
+                                bank, room_no, layerNo);
+                        return 0;
+                    }
+#endif
                     JUT_ASSERT(350, 0 <= bank && bank < 100);
-                    u8 bank2 = entries[dComIfG_play_c::getLayerNo(room_no)].bank2;
+                    u8 bank2 = entries[layerNo].bank2;
+#if PLATFORM_PC
+                    if (bank2 >= 100) {
+                        fprintf(stderr, "{\"loadDemoArchive\":{\"error\":\"bank2_range\",\"bank2\":%d,\"room\":%d}}\n",
+                                (int)bank2, room_no);
+                        return 0;
+                    }
+#endif
                     JUT_ASSERT(353, 0 <= bank2 && bank2 < 100);
 
                     sprintf(dStage_roomControl_c::getDemoArcName(), "Demo%02d_%02d", bank, bank2);
@@ -212,7 +232,14 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
 #endif
 
                 if (i_this->mpDzrRes != NULL) {
+#if PLATFORM_PC
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"loadDemoArchive_start\",\"roomNo\":%d}}\n", roomNo);
+#endif
                     loadDemoArchive(roomNo);
+#if PLATFORM_PC
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"loadDemoArchive_done\",\"roomNo\":%d,\"demoArc\":\"%s\"}}\n",
+                            roomNo, dStage_roomControl_c::getDemoArcName());
+#endif
                 }
             default:
                 if (*dStage_roomControl_c::getDemoArcName() != '\0') {
@@ -439,6 +466,12 @@ static int phase_2(room_of_scene_class* i_this) {
 #endif
 
     i_this->mpRoomDt = dComIfGp_roomControl_getStatusRoomDt(roomNo);
+#if PLATFORM_PC
+    if (i_this->mpRoomDt == NULL) {
+        fprintf(stderr, "{\"room_phase2\":{\"step\":\"ERROR_mpRoomDt_NULL\",\"roomNo\":%d}}\n", roomNo);
+        return cPhs_ERROR_e;
+    }
+#endif
     i_this->mpRoomDt->setRoomNo(roomNo);
     i_this->mpDzrRes = dComIfG_getStageRes(arcName, "room.dzr");
 

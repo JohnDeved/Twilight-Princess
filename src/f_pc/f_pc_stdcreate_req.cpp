@@ -156,9 +156,17 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
     if (sigsetjmp(s_create_jmpbuf, 1) == 0) {
         phase_state = cPhs_Do(&i_request->phase_request, i_request);
     } else {
-        /* SIGSEGV/SIGABRT caught during actor creation */
-        fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d}}\n",
-                i_request->process_name, i_request->phase_request.id);
+        /* SIGSEGV/SIGABRT caught during actor creation.
+         * phase_request.id is the creation pipeline phase (0=Load,1=Create,2=SubCreate,...).
+         * For scene processes, the internal phase (e.g. room phase 0-4) is at offset 0x1C4. */
+        int internal_phase = -1;
+        if (i_request->base.process != NULL) {
+            /* All scene classes have request_of_phase_process_class at offset 0x1C4.
+             * request_of_phase_process_class.id is the current internal phase. */
+            internal_phase = *(int*)((u8*)i_request->base.process + 0x1C4);
+        }
+        fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d,\"internal_phase\":%d}}\n",
+                i_request->process_name, i_request->phase_request.id, internal_phase);
         phase_state = cPhs_ERROR_e;
     }
     sigaction(SIGSEGV, &sa_old_segv, NULL);
