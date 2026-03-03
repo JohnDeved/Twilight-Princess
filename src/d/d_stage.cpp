@@ -564,7 +564,14 @@ BOOL dStage_roomControl_c::checkRoomDisp(int i_roomNo) const {
 }
 
 int dStage_roomControl_c::loadRoom(int roomCount, u8* rooms, bool param_2) {
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] loadRoom: roomCount=%d rooms=%p param_2=%d mRoomReadId=%d mNoChangeRoom=%d\n",
+            roomCount, (void*)rooms, (int)param_2, mRoomReadId, mNoChangeRoom);
+#endif
     if (mRoomReadId < 0 && mNoChangeRoom != 0) {
+#if PLATFORM_PC
+        fprintf(stderr, "[PAL] loadRoom: EARLY EXIT mRoomReadId=%d mNoChangeRoom=%d\n", mRoomReadId, mNoChangeRoom);
+#endif
         return 0;
     }
 
@@ -591,11 +598,24 @@ int dStage_roomControl_c::loadRoom(int roomCount, u8* rooms, bool param_2) {
     for (int i = 0; i < roomCount; i++) {
         int roomNo = dStage_roomRead_dt_c_GetLoadRoomIndex(rooms[i]);
         dStage_roomControl_c::setZoneCount(roomNo, 2);
+#if PLATFORM_PC
+        fprintf(stderr, "[PAL] loadRoom: i=%d roomNo=%d statusFlag_01=%d chkBg=%d\n",
+                i, roomNo, (int)checkStatusFlag(roomNo, 0x01), (int)dStage_roomRead_dt_c_ChkBg(rooms[i]));
+#endif
         if (!checkStatusFlag(roomNo, 0x01)) {
             if (param_2) {
                 if (dStage_roomRead_dt_c_ChkBg(rooms[i]) && createRoomScene(roomNo)) {
+#if PLATFORM_PC
+                    fprintf(stderr, "[PAL] loadRoom: createRoomScene(%d) SUCCEEDED, setting flag 2\n", roomNo);
+#endif
                     onStatusFlag(roomNo, 2);
                 }
+#if PLATFORM_PC
+                else {
+                    fprintf(stderr, "[PAL] loadRoom: createRoomScene(%d) skipped/failed (chkBg=%d)\n",
+                            roomNo, (int)dStage_roomRead_dt_c_ChkBg(rooms[i]));
+                }
+#endif
             } else {
                 if (createRoomScene(roomNo)) {
                     int flag;
@@ -1763,13 +1783,29 @@ static int dStage_roomInit(int i_roomNo) {
     dComIfGp_roomControl_setStayNo(i_roomNo);
 
     roomRead_class* room = dComIfGp_getStageRoom();
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] dStage_roomInit: roomNo=%d room=%p\n", i_roomNo, (void*)room);
+    if (room != NULL) {
+        fprintf(stderr, "[PAL] dStage_roomInit: room->num=%d entries=%p\n", room->num, (void*)room->m_entries);
+    }
+#endif
     if (room != NULL && room->num > i_roomNo) {
         dComIfGp_roomControl_setTimePass(dStage_roomRead_dt_c_GetTimePass(*room->m_entries[i_roomNo]));
 
+#if PLATFORM_PC
+        fprintf(stderr, "[PAL] dStage_roomInit: entry[%d]=%p entry->num=%d entry->m_rooms=%p\n",
+                i_roomNo, (void*)room->m_entries[i_roomNo],
+                (int)room->m_entries[i_roomNo]->num,
+                (void*)room->m_entries[i_roomNo]->m_rooms);
+#endif
         return dComIfGp_roomControl_loadRoom(room->m_entries[i_roomNo]->num,
                                              room->m_entries[i_roomNo]->m_rooms, true);
     }
 
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] dStage_roomInit: room check FAILED (room=%p, num=%d, roomNo=%d)\n",
+            (void*)room, room ? room->num : -1, i_roomNo);
+#endif
     return 1;
 }
 
@@ -3235,8 +3271,13 @@ void dStage_Create() {
     /* Initialize the starting room — loads room archives and spawns PROC_BG
      * (background geometry actor). Without this, the 3D world is empty.
      * Matches the GCN path at line 3256. */
-    if (dComIfGp_getStartStageRoomNo() >= 0) {
-        dStage_roomInit(dComIfGp_getStartStageRoomNo());
+    {
+        int startRoomNo = dComIfGp_getStartStageRoomNo();
+        fprintf(stderr, "[PAL] dStage_Create PC: startRoomNo=%d\n", startRoomNo);
+        if (startRoomNo >= 0) {
+            int rc = dStage_roomInit(startRoomNo);
+            fprintf(stderr, "[PAL] dStage_roomInit(%d) returned %d\n", startRoomNo, rc);
+        }
     }
 
     *dStage_roomControl_c::getDemoArcName() = NULL;

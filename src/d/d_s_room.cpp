@@ -167,16 +167,33 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
     BOOL status_flag_8 = dComIfGp_roomControl_checkStatusFlag(roomNo, 8);
     BOOL status_flag_20 = dComIfGp_roomControl_checkStatusFlag(roomNo, 0x20);
 
+#if PLATFORM_PC
+    {
+        static int s_osc_count = 0;
+        if (s_osc_count < 10 || s_osc_count % 60 == 0) {
+            fprintf(stderr, "[PAL] objectSetCheck: roomNo=%d flag8=%d flag20=%d field_0x1d4=%d\n",
+                    roomNo, (int)status_flag_8, (int)status_flag_20, i_this->field_0x1d4);
+        }
+        s_osc_count++;
+    }
+#endif
+
     if (i_this->field_0x1d4 == 0 || (i_this->field_0x1d4 > 0 && !status_flag_8)) {
         if (!status_flag_8) {
             switch (i_this->field_0x1d4) {
             case 0:
                 if (!resetArchiveBank(roomNo)) {
+#if PLATFORM_PC
+                    fprintf(stderr, "[PAL] objectSetCheck: resetArchiveBank(%d) returned 0\n", roomNo);
+#endif
                     return 0;
                 }
                 i_this->field_0x1d4++;
             case 1:
                 if (!setArchiveBank(roomNo)) {
+#if PLATFORM_PC
+                    fprintf(stderr, "[PAL] objectSetCheck: setArchiveBank(%d) returned 0\n", roomNo);
+#endif
                     return 0;
                 }
 
@@ -197,6 +214,9 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
                 }
 
                 fopAcM_create(PROC_BG, roomNo, NULL, -1, NULL, NULL, -1);
+#if PLATFORM_PC
+                fprintf(stderr, "[PAL] objectSetCheck: fopAcM_create(PROC_BG, %d) CALLED!\n", roomNo);
+#endif
                 dComIfGp_getPEvtManager()->demoInit();
                 dComIfGp_getPEvtManager()->roomInit(roomNo);
                 dStage_dt_c_roomReLoader(i_this->mpDzrRes, i_this->mpRoomDt, roomNo);
