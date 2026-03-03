@@ -812,6 +812,10 @@ int mDoMch_Create() {
        so room bank archives + demo archives can mount without heap exhaustion.
        Original 9085 KB is consumed by R00_00 room data alone. */
     archiveHeapSize += 0x800000;  /* +8 MB */
+    /* GameHeap needs more space on PC for actor objects, shader data, etc.
+       On 64-bit, J3D model data (materials, shapes, textures) consumes ~3x
+       more memory than 32-bit GCN due to pointer size, vtable, alignment. */
+    gameHeapSize += 0x2000000;  /* +32 MB */
     #endif
 
     #if DEBUG
@@ -846,7 +850,7 @@ int mDoMch_Create() {
      * Also give root heap extra space for the larger archive heap — room
      * bank archives + demo archives need more than 9 MB on PC. */
     arenaSize -= 0x10000;
-    arenaSize -= 0x800000;  /* -8 MB from sysHeap → rootHeap gets +8 MB */
+    arenaSize -= 0x2800000;  /* -40 MB from sysHeap → rootHeap gets +40 MB for archive + game heaps */
     #endif
     JFWSystem::setSysHeapSize(arenaSize);
     my_PrintHeap("システムヒープ", arenaSize);
