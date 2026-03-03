@@ -100,6 +100,7 @@ public:
         /* On PC, use the darwFilter-based fade.  The JFW fader renders via
          * J2D fillBox whose vertex alpha gets forced to 255, making the
          * overlay permanently opaque black instead of semi-transparent. */
+        if (param_0 <= 0) param_0 = 1;
         mFade = 1;
         mFadeSpeed = 1.0f / (f32)param_0;
         mFadeRate = 0.0f;
@@ -111,6 +112,7 @@ public:
     }
     static int startFadeIn(int param_0) {
 #if PLATFORM_PC
+        if (param_0 <= 0) param_0 = 1;
         mFade = 1;
         mFadeSpeed = -1.0f / (f32)param_0;
         mFadeRate = 1.0f;
