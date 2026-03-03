@@ -458,6 +458,16 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
         i_size = ALIGN_NEXT(i_size, 0x10);
     }
 
+#if PLATFORM_PC
+    /* On PC, cap the max solid heap allocation to 4MB to prevent one actor
+     * from exhausting the entire game heap when i_size=0. On GCN the game
+     * heap was 24MB so a -1 allocation was bounded. With 138MB on PC, an
+     * unbounded -1 allocation consumes all memory. */
+    if (i_size == 0) {
+        i_size = 0x400000; /* 4 MB — generous for any single actor */
+    }
+#endif
+
     while (true) {
         if (i_size != 0) {
             if (fopAcM::HeapAdjustVerbose) {

@@ -16,6 +16,8 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include "f_op/f_op_actor_mng.h"
+#include "m_Do/m_Do_ext.h"
+#include "JSystem/JKernel/JKRSolidHeap.h"
 static volatile sig_atomic_t s_create_crash = 0;
 static sigjmp_buf s_create_jmpbuf;
 static void create_sigsegv_handler(int sig) {
@@ -171,6 +173,17 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
         /* Free any solid heap that was allocated for this actor's createHeap
          * callback but leaked because the callback crashed. */
         fopAcM_cleanupPendingSolidHeap();
+        /* Also free the actor's own solid heap if it was already assigned.
+         * This happens when the crash occurs after fopAcM_entrySolidHeap
+         * succeeded (heap assigned to actor->heap) but before creation
+         * completed — the heap was leaked because the actor is abandoned. */
+        if (i_request->base.process != NULL) {
+            fopAc_ac_c* actor = (fopAc_ac_c*)i_request->base.process;
+            if (actor->heap != NULL) {
+                mDoExt_destroySolidHeap(actor->heap);
+                actor->heap = NULL;
+            }
+        }
         phase_state = cPhs_ERROR_e;
     }
     sigaction(SIGSEGV, &sa_old_segv, NULL);
