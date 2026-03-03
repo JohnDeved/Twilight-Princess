@@ -98,7 +98,7 @@ jobs:
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,200,300,400"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,200,300,390"
         run: |
           set -o pipefail
           mkdir -p verify_output
