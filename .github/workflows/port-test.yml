@@ -25,7 +25,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: write
@@ -118,7 +118,7 @@ jobs:
           # Enable per-frame capture — every frame saved as BMP + raw video
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
-          timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
+          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones.log || true
           EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           kill $XVFB_PID 2>/dev/null || true

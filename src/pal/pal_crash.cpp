@@ -62,6 +62,14 @@ static void crash_handler_sa(int sig, siginfo_t* info, void* ucontext) {
     _exit(128 + sig);
 }
 
+static void term_handler(int sig) {
+    /* Ensure clean exit on SIGTERM (used by timeout(1) in CI) */
+    uint32_t frame = pal_capture_get_frame_count();
+    fprintf(stdout, "{\"milestone\":\"TERMINATED\",\"id\":-2,\"signal\":%d,\"frame\":%u}\n", sig, frame);
+    fflush(stdout);
+    _exit(0);
+}
+
 void pal_crash_init(void) {
     struct sigaction sa;
     sa.sa_sigaction = crash_handler_sa;
@@ -70,6 +78,13 @@ void pal_crash_init(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGABRT, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
+
+    /* Handle SIGTERM for clean exit from timeout(1) in CI */
+    struct sigaction sa_term;
+    sa_term.sa_handler = term_handler;
+    sigemptyset(&sa_term.sa_mask);
+    sa_term.sa_flags = 0;
+    sigaction(SIGTERM, &sa_term, NULL);
 }
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */
