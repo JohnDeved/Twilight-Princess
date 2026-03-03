@@ -1624,7 +1624,7 @@ int mDoGph_Painter() {
             static int s_3d_diag_frame = 0;
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
-            if (s_3d_diag_frame < 10 || (s_3d_diag_frame % 60 == 0)) {
+            if (s_3d_diag_frame < 10 || (s_3d_diag_frame % 60 == 0 && s_3d_diag_frame < 1200)) {
                 fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d}}\n",
                         s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts);
             }
