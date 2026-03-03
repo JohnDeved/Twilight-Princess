@@ -1549,6 +1549,17 @@ int mDoGph_Painter() {
             int camera_id = window_p->getCameraID();
             camera_class* camera_p = dComIfGp_getCamera(camera_id);
 
+#if PLATFORM_PC
+            {
+                static int s_3d_entered = 0;
+                if (s_3d_entered < 5) {
+                    fprintf(stderr, "{\"3d_path\":{\"entered\":%d,\"camera_p\":%p,\"camera_id\":%d}}\n",
+                            s_3d_entered, (void*)camera_p, camera_id);
+                    s_3d_entered++;
+                }
+            }
+#endif
+
             if (camera_p != NULL) {
                 view_port_class* view_port = window_p->getViewPort();
                 view_port_class local_port;
@@ -1613,7 +1624,7 @@ int mDoGph_Painter() {
             static int s_3d_diag_frame = 0;
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
-            if (s_3d_diag_frame < 10 || (s_3d_diag_frame % 60 == 0 && s_3d_diag_frame < 600)) {
+            if (s_3d_diag_frame < 10 || (s_3d_diag_frame % 60 == 0)) {
                 fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d}}\n",
                         s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts);
             }

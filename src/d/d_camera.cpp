@@ -11156,7 +11156,7 @@ static int init_phase2(camera_class* i_this) {
          * After waiting long enough, proceed with a default camera
          * so the 3D rendering pipeline can activate.
          * Skip dCamera_c construction — it requires player + CamParam. */
-        if (i_this->field_0x238 < 5) {
+        if (i_this->field_0x238 < 1) {
             return cPhs_INIT_e;
         }
         fprintf(stderr, "[CAMERA-INIT2] field_0x238=%d, proceeding with real init\n", i_this->field_0x238);
