@@ -1,6 +1,7 @@
 #ifndef J3DMATERIALFACTORY_H
 #define J3DMATERIALFACTORY_H
 
+#include "global.h"
 #include "JSystem/J3DGraphBase/J3DMatBlock.h"
 #include "JSystem/J3DGraphLoader/J3DModelLoader.h"
 #include <dolphin/gx.h>
@@ -141,7 +142,14 @@ public:
     J3DNBTScale newNBTScale(int) const;
 
     u16 getMaterialID(int idx) const { return mpMaterialID[idx]; }
+#if PLATFORM_PC
+    u8 getMaterialMode(int idx) const {
+        if ((u32)idx >= mMaterialNum || mpMaterialID[idx] >= mMaterialNum) return 0;
+        return mpMaterialInitData[mpMaterialID[idx]].mMaterialMode;
+    }
+#else
     u8 getMaterialMode(int idx) const { return mpMaterialInitData[mpMaterialID[idx]].mMaterialMode; }
+#endif
     
     /* 0x00 */ u16 mMaterialNum;
     /* 0x04 */ J3DMaterialInitData* mpMaterialInitData;

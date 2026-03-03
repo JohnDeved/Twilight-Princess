@@ -409,9 +409,89 @@ static void swap_shp1(u8* block, u32 blockSize) {
         swap_u16_range(block, mtxTabOff, mtxTabEnd);
     }
 
-    /* DisplayList data: contains GX commands with u16 indices - swap as u16 */
-    /* Note: GX display lists have complex format. For now skip DL data swap
-     * since bgfx doesn't use GX display lists directly. */
+    /* DisplayList data: swap u16 vertex counts in GX primitive headers,
+     * and swap INDEX16 attribute values within vertex data.
+     * Each primitive: u8 opcode, u16 vertexCount, then vertexCount * stride bytes.
+     * We need the VtxDescList to compute stride and find INDEX16 fields. */
+    if (dlDataOff != 0 && drawInitOff != 0 && vtxDescOff != 0) {
+        /* Build a stride map from the VtxDescList for each vtxDescIndex.
+         * Parse all unique VtxDescLists referenced by shapes. */
+        for (int si = 0; si < shapeNum; si++) {
+            u8* s = block + shpInitOff + si * 0x28;
+            u16 vtxDescIdx = *(u16*)(s + 0x02);
+            u16 drawInitIdx = *(u16*)(s + 0x08);
+
+            /* Walk VtxDescList to compute stride and INDEX16 offsets.
+             * VtxDescList entries are (u32 attr, u32 type) pairs, already swapped. */
+            u8* vd = block + vtxDescOff + vtxDescIdx * 8;
+            u32 stride = 0;
+            u32 kSize[] = {0, 1, 1, 2}; /* NONE, DIRECT, INDEX8, INDEX16 */
+            /* Record INDEX16 attribute offsets for per-vertex swap */
+            u32 idx16_offsets[32];
+            int idx16_count = 0;
+
+            while ((u32)(vd - block) + 8 <= blockSize) {
+                u32 attr = *(u32*)vd;
+                u32 type = *(u32*)(vd + 4);
+                if (attr == 0xFF || attr == 0 || attr > 25) break;
+                if (type <= 3) {
+                    if (type == 3 && idx16_count < 32) {
+                        idx16_offsets[idx16_count++] = stride;
+                    }
+                    stride += kSize[type];
+                }
+                vd += 8;
+            }
+
+            if (stride == 0) continue;
+
+            /* Get the DrawInitData entries for this shape.
+             * DrawInitData: pairs of (u32 drawListSize, u32 drawListOffset).
+             * drawInitIdx is the starting index. Each shape has mMtxGroupNum
+             * draw entries, but we don't know mMtxGroupNum from here.
+             * Walk until we hit a drawListSize of 0 or run past the block. */
+            u32 diBase = drawInitOff + drawInitIdx * 8;
+            /* Walk draw init entries. Heuristic: max 64 mtx groups per shape. */
+            for (int di = 0; di < 64; di++) {
+                u32 diOff = diBase + di * 8;
+                if (diOff + 8 > blockSize) break;
+                u32 dlSize = *(u32*)(block + diOff);
+                u32 dlOff = *(u32*)(block + diOff + 4);
+                if (dlSize == 0) break;
+
+                /* Walk primitives in this display list */
+                u8* dlStart = block + dlDataOff + dlOff;
+                u8* dlEnd = dlStart + dlSize;
+                if (dlEnd > block + blockSize) dlEnd = block + blockSize;
+                u8* dl = dlStart;
+
+                while (dl + 3 <= dlEnd) {
+                    u8 opcode = *dl;
+                    dl++;
+                    /* GX primitive opcodes: 0x80-0xB8 (QUADS, TRI, TRISTRIP, TRIFAN, etc.) */
+                    if (opcode < 0x80 || opcode > 0xB8) break;
+
+                    /* Swap u16 vertex count (big-endian → little-endian) */
+                    u16 vtxCount = r16(dl);
+                    w16(dl, vtxCount);
+                    dl += 2;
+
+                    /* Swap INDEX16 attributes within each vertex */
+                    for (u16 v = 0; v < vtxCount; v++) {
+                        u8* vtxStart = dl + v * stride;
+                        if (vtxStart + stride > dlEnd) goto dl_done;
+                        for (int j = 0; j < idx16_count; j++) {
+                            u8* p = vtxStart + idx16_offsets[j];
+                            u16 val = r16(p);
+                            w16(p, val);
+                        }
+                    }
+                    dl += vtxCount * stride;
+                }
+                dl_done:;
+            }
+        }
+    }
 
     /* MtxInitData: u16 pairs (useCount, usedMtxIndex) */
     if (mtxInitOff != 0) {

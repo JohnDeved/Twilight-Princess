@@ -5,6 +5,19 @@
 #include "JSystem/JMath/JMath.h"
 #include "JSystem/JSupport/JSupport.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#include "global.h"
+
+#if PLATFORM_PC
+/* Bounds-checked accessor: returns pointer to material init data,
+ * or NULL if the material ID index is out of range. */
+static J3DMaterialInitData* getMtlInitDataSafe(J3DMaterialInitData* base, u16* ids,
+                                                 u16 matNum, int idx) {
+    if (idx < 0 || (u32)idx >= matNum) return NULL;
+    u16 id = ids[idx];
+    if (id >= matNum) return NULL;
+    return &base[id];
+}
+#endif
 
 J3DMaterialFactory::J3DMaterialFactory(J3DMaterialBlock const& i_block) {
     mMaterialNum = i_block.mMaterialNum;
@@ -69,15 +82,29 @@ u16 J3DMaterialFactory::countUniqueMaterials() {
 }
 
 u32 J3DMaterialFactory::countTexGens(int i_idx) const {
+#if PLATFORM_PC
+    J3DMaterialInitData* mtl_init_data = getMtlInitDataSafe(mpMaterialInitData, mpMaterialID, mMaterialNum, i_idx);
+    if (!mtl_init_data) return 0;
+#else
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
+#endif
     if (mtl_init_data->mTexGenNumIdx != 0xff) {
-        return mpTexGenNum[mtl_init_data->mTexGenNumIdx];
+        u32 result = mpTexGenNum[mtl_init_data->mTexGenNumIdx];
+#if PLATFORM_PC
+        if (result > 8) return 8;
+#endif
+        return result;
     }
     return 0;
 }
 
 u32 J3DMaterialFactory::countStages(int i_idx) const {
+#if PLATFORM_PC
+    J3DMaterialInitData* mtl_init_data = getMtlInitDataSafe(mpMaterialInitData, mpMaterialID, mMaterialNum, i_idx);
+    if (!mtl_init_data) return 0;
+#else
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
+#endif
     u32 count1 = 0;
     u32 count2 = 0;
     if (mtl_init_data->mTevStageNumIdx != 0xff) {
@@ -95,8 +122,14 @@ u32 J3DMaterialFactory::countStages(int i_idx) const {
         } else {
             count3 = count1;
         }
+#if PLATFORM_PC
+        if (count3 > 16) return 16;
+#endif
         return count3;
     }
+#if PLATFORM_PC
+    if (count2 > 16) return 16;
+#endif
     return count2;
 }
 
@@ -121,6 +154,17 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
     if (mpDisplayListInit != NULL) {
         return createLockedMaterial(i_material, i_idx, i_flags);
     }
+
+#if PLATFORM_PC
+    /* Bounds-check material ID to prevent crashes on models with unusual
+     * material features (e.g., Demo38_01 BMDR, Kmdl BMWR). */
+    if (i_idx < 0 || (u32)i_idx >= mMaterialNum ||
+        mpMaterialID[i_idx] >= mMaterialNum) {
+        if (i_material == NULL)
+            i_material = new J3DMaterial();
+        return i_material;
+    }
+#endif
 
     const u32 stages = countStages(i_idx);
     u32 tev_stage_num = getMdlDataFlag_TevStageNum(i_flags);
