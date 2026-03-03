@@ -134,7 +134,7 @@ u32 OSGetPhysicalMem2Size(void) { return 64 * 1024 * 1024; }
 /* OS Arena / Memory                                                */
 /* ================================================================ */
 
-static u8 s_arena_mem[512 * 1024 * 1024]; /* 512 MB arena — PC needs headroom for 64-bit pointers, 60+ J3D models, and larger game/archive heaps */
+static u8 s_arena_mem[1024 * 1024 * 1024]; /* 1 GB arena — PC needs headroom for 64-bit pointers, 60+ J3D models, and larger game/archive heaps */
 static u8* s_arena_lo = s_arena_mem;
 static u8* s_arena_hi = s_arena_mem + sizeof(s_arena_mem);
 

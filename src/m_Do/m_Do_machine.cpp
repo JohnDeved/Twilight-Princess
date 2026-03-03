@@ -815,7 +815,7 @@ int mDoMch_Create() {
     /* GameHeap needs more space on PC for actor objects, shader data, etc.
        On 64-bit, J3D model data (materials, shapes, textures) consumes ~3x
        more memory than 32-bit GCN due to pointer size, vtable, alignment. */
-    gameHeapSize += 0x8000000;  /* +128 MB — 60+ J3D models with 64-bit pointers exhaust smaller heaps */
+    gameHeapSize += 0x10000000;  /* +256 MB — initial room load at frame 128 consumes 131MB+ from 60+ J3D models with 64-bit pointers */
     #endif
 
     #if DEBUG
@@ -850,7 +850,7 @@ int mDoMch_Create() {
      * Also give root heap extra space for the larger archive heap — room
      * bank archives + demo archives need more than 9 MB on PC. */
     arenaSize -= 0x10000;
-    arenaSize -= 0x9800000;  /* -152 MB from sysHeap → rootHeap gets enough for 128 MB game + 17 MB archive heaps */
+    arenaSize -= 0x11800000;  /* -280 MB from sysHeap → rootHeap gets enough for 256 MB game + 17 MB archive heaps */
     #endif
     JFWSystem::setSysHeapSize(arenaSize);
     my_PrintHeap("システムヒープ", arenaSize);

@@ -1054,7 +1054,19 @@ JKRSolidHeap* mDoExt_createSolidHeap(u32 i_size, JKRHeap* i_parent, u32 i_alignm
 }
 
 JKRSolidHeap* mDoExt_createSolidHeapFromGame(u32 i_size, u32 i_alignment) {
+#if PLATFORM_PC
+    JKRExpHeap* gh = mDoExt_getGameHeap();
+    u32 free_before = gh->getFreeSize();
+    JKRSolidHeap* h = mDoExt_createSolidHeap(i_size, gh, i_alignment);
+    u32 free_after = gh->getFreeSize();
+    if (i_size == 0 || i_size == (u32)-1 || (free_before - free_after) > 0x100000) {
+        fprintf(stderr, "{\"gh_alloc\":{\"req\":%u,\"took\":%u,\"free_before\":%u,\"free_after\":%u}}\n",
+                i_size, free_before - free_after, free_before, free_after);
+    }
+    return h;
+#else
     return mDoExt_createSolidHeap(i_size, mDoExt_getGameHeap(), i_alignment);
+#endif
 }
 
 JKRSolidHeap* mDoExt_createSolidHeapFromSystem(u32 i_size, u32 i_alignment) {
