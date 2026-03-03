@@ -13,6 +13,19 @@
 #include "f_pc/f_pc_pause.h"
 #include "f_pc/f_pc_profile.h"
 #include "f_pc/f_pc_debug_sv.h"
+
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+#include <stdio.h>
+static volatile sig_atomic_t s_exec_crash = 0;
+static sigjmp_buf s_exec_jmpbuf;
+static void exec_sigsegv_handler(int sig) {
+    (void)sig;
+    s_exec_crash = 1;
+    siglongjmp(s_exec_jmpbuf, 1);
+}
+#endif
 #include "Z2AudioLib/Z2AudioMgr.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
@@ -45,6 +58,40 @@ int fpcBs_MakeOfId() {
 
 int fpcBs_Execute(base_process_class* i_proc) {
     int result = 1;
+
+#if PLATFORM_PC
+    if (i_proc == NULL || i_proc->methods == NULL) return 0;
+    /* Wrap Execute with SIGSEGV protection so one crashed actor doesn't
+     * take down the whole process. */
+    {
+        struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = exec_sigsegv_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+        sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+        s_exec_crash = 0;
+
+        if (sigsetjmp(s_exec_jmpbuf, 1) != 0) {
+            /* SIGSEGV/SIGABRT caught — skip this actor's Execute */
+            sigaction(SIGSEGV, &sa_old_segv, NULL);
+            sigaction(SIGABRT, &sa_old_abrt, NULL);
+            fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u)\n",
+                    i_proc->profname, i_proc->id);
+            return 0;
+        }
+
+        layer_class* save_layer = fpcLy_CurrentLayer();
+        fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
+        result = fpcMtd_Execute(i_proc->methods, i_proc);
+        fpcLy_SetCurrentLayer(save_layer);
+
+        sigaction(SIGSEGV, &sa_old_segv, NULL);
+        sigaction(SIGABRT, &sa_old_abrt, NULL);
+    }
+    return result;
+#endif
 
 #if DEBUG
     if (!fpcBs_Is_JustOfType(g_fpcBs_type, i_proc->type)) {

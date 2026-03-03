@@ -625,6 +625,10 @@ void dAttention_c::initList(u32 flags) {
 }
 
 static int select_attention(fopAc_ac_c* i_actor, void* i_attention) {
+#if PLATFORM_PC
+    if (i_actor == NULL)
+        return 0;
+#endif
     if (i_actor->attention_info.flags == 0) {
         return 0;
     }

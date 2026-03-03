@@ -11,6 +11,19 @@
 #include "SSystem/SComponent/c_phase.h"
 #include <dolphin/dolphin.h>
 
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+#include <stdio.h>
+static volatile sig_atomic_t s_create_crash = 0;
+static sigjmp_buf s_create_jmpbuf;
+static void create_sigsegv_handler(int sig) {
+    (void)sig;
+    s_create_crash = 1;
+    siglongjmp(s_create_jmpbuf, 1);
+}
+#endif
+
 typedef struct standard_create_request_class {
     /* 0x00 */ create_request base;
     /* 0x48 */ request_of_phase_process_class phase_request;
@@ -126,7 +139,36 @@ int fpcSCtRq_phase_Done(standard_create_request_class* i_request) {
 }
 
 int fpcSCtRq_Handler(standard_create_request_class* i_request) {
+#if PLATFORM_PC
+    /* On PC, actor creation may crash due to endian/layout issues in model
+     * data or function pointer tables. Catch SIGSEGV so one bad actor doesn't
+     * crash the whole process. */
+    struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+    memset(&sa_new, 0, sizeof(sa_new));
+    sa_new.sa_handler = create_sigsegv_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = SA_NODEFER;
+    sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+    sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+    s_create_crash = 0;
+
+    int phase_state;
+    if (sigsetjmp(s_create_jmpbuf, 1) == 0) {
+        phase_state = cPhs_Do(&i_request->phase_request, i_request);
+    } else {
+        /* SIGSEGV/SIGABRT caught during actor creation */
+        fprintf(stderr, "[PAL] SIGSEGV caught in actor creation (prof=%d)\n",
+                i_request->process_name);
+        phase_state = cPhs_ERROR_e;
+    }
+    sigaction(SIGSEGV, &sa_old_segv, NULL);
+    sigaction(SIGABRT, &sa_old_abrt, NULL);
+
+    if (phase_state == cPhs_ERROR_e)
+        return cPhs_ERROR_e;
+#else
     int phase_state = cPhs_Do(&i_request->phase_request, i_request);
+#endif
 
     switch (phase_state) {
     case cPhs_NEXT_e:
