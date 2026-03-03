@@ -13,6 +13,7 @@
 #include "JSystem/JUtility/JUTAssert.h"
 #if PLATFORM_PC
 #include "f_pc/f_pc_create_req.h"
+#define FPCDT_MAX_DRAIN_ITERATIONS 64
 #endif
 
 BOOL fpcDt_IsComplete() {
@@ -137,7 +138,7 @@ int fpcDt_Delete(void* i_proc) {
          * to drain pending creation phases before giving up.  This is the
          * PC-equivalent of the GCN fopScnPause_Enable lifecycle sync. */
         if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE) {
-            for (int drain = 0; drain < 64; drain++) {
+            for (int drain = 0; drain < FPCDT_MAX_DRAIN_ITERATIONS; drain++) {
                 fpcCtRq_Handler();
                 if (fpcCt_IsDoing((base_process_class*)i_proc) != TRUE)
                     break;

@@ -16,6 +16,7 @@
 #ifdef __linux__
 #include <execinfo.h>
 #include <ucontext.h>
+#define MAX_CRASH_LOG_FRAMES 10
 #endif
 
 extern "C" uint32_t pal_capture_get_frame_count(void);
@@ -49,7 +50,7 @@ static void crash_handler_sa(int sig, siginfo_t* info, void* ucontext) {
                 sig, fault_addr, rip, frame);
         char** syms = backtrace_symbols(bt, n);
         if (syms) {
-            int count = n > 10 ? 10 : n;
+            int count = n > MAX_CRASH_LOG_FRAMES ? MAX_CRASH_LOG_FRAMES : n;
             for (int i = 0; i < count; i++)
                 fprintf(logf, "  [%d] %s\n", i, syms[i]);
             free(syms);
