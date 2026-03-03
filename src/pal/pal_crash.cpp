@@ -38,6 +38,25 @@ static void crash_handler_sa(int sig, siginfo_t* info, void* ucontext) {
     /* Replace first backtrace entry with actual RIP for accurate decode */
     if (n > 0) bt[0] = rip;
     backtrace_symbols_fd(bt, n, 2);
+
+    /* Append crash entry to crash log file for multi-failure triage.
+     * TP_CRASH_LOG env var sets the path (default: crash_log.txt). */
+    const char* log_path = getenv("TP_CRASH_LOG");
+    if (!log_path) log_path = "crash_log.txt";
+    FILE* logf = fopen(log_path, "a");
+    if (logf) {
+        fprintf(logf, "CRASH: sig=%d fault_addr=%p rip=%p frame=%u\n",
+                sig, fault_addr, rip, frame);
+        char** syms = backtrace_symbols(bt, n);
+        if (syms) {
+            int count = n > 10 ? 10 : n;
+            for (int i = 0; i < count; i++)
+                fprintf(logf, "  [%d] %s\n", i, syms[i]);
+            free(syms);
+        }
+        fprintf(logf, "---\n");
+        fclose(logf);
+    }
 #endif
     _exit(128 + sig);
 }

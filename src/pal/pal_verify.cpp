@@ -482,6 +482,13 @@ void pal_verify_summary(void) {
             pixel_threshold = 100;  /* >=100 non-black pixels expected */
             label = "title";
         }
+        /* Play scene: frames 250-400 — tracking-only checkpoint to detect
+         * whether 3D world rendering produces any output after the title→play
+         * scene transition.  Uses pixel count >= 1 as a low bar. */
+        else if (f >= 250 && f <= 400) {
+            pixel_threshold = 1;  /* >=1 non-black pixel — any 3D output */
+            label = "play";
+        }
 
         int pass;
         if (pixel_threshold > 0) {

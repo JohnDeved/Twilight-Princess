@@ -11,6 +11,9 @@
 #include "f_pc/f_pc_node.h"
 #include "f_pc/f_pc_debug_sv.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#if PLATFORM_PC
+#include "f_pc/f_pc_create_req.h"
+#endif
 
 BOOL fpcDt_IsComplete() {
     return fpcDtTg_IsEmpty();
@@ -127,8 +130,25 @@ int fpcDt_Delete(void* i_proc) {
             return 0;
         }
 #endif
+#if PLATFORM_PC
+        /* On PC the overlap/pause system that normally drains the creation
+         * queue over multiple frames is not active.  When a child process
+         * is still mid-creation, run fpcCtRq_Handler() in a bounded loop
+         * to drain pending creation phases before giving up.  This is the
+         * PC-equivalent of the GCN fopScnPause_Enable lifecycle sync. */
+        if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE) {
+            for (int drain = 0; drain < 64; drain++) {
+                fpcCtRq_Handler();
+                if (fpcCt_IsDoing((base_process_class*)i_proc) != TRUE)
+                    break;
+            }
+            if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE)
+                return 0;
+        }
+#else
         if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE)
             return 0;
+#endif
 
         if (((base_process_class*)i_proc)->state.init_state == 3)
             return 0;
