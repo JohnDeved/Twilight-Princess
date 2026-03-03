@@ -387,15 +387,23 @@ static void swap_shp1(u8* block, u32 blockSize) {
         swap_u16_array(block, idxTabOff, shapeNum);
     }
 
-    /* VtxDescList: pairs of (u32 attr, u32 type) until GX_VA_NULL */
+    /* VtxDescList: pairs of (u32 attr, u32 type), multiple lists back-to-back.
+     * Each list is terminated by GX_VA_NULL (0xFF). Swap all entries until
+     * we reach the end of the vtxDesc section. */
     if (vtxDescOff != 0) {
+        /* Find the end of the vtxDesc section */
+        u32 vtxDescEnd = blockSize;
+        if (mtxTabOff > vtxDescOff && mtxTabOff < vtxDescEnd) vtxDescEnd = mtxTabOff;
+        if (dlDataOff > vtxDescOff && dlDataOff < vtxDescEnd) vtxDescEnd = dlDataOff;
+        if (mtxInitOff > vtxDescOff && mtxInitOff < vtxDescEnd) vtxDescEnd = mtxInitOff;
+        if (drawInitOff > vtxDescOff && drawInitOff < vtxDescEnd) vtxDescEnd = drawInitOff;
+
         u8* vd = block + vtxDescOff;
-        while ((u32)(vd - block) + 8 <= blockSize) {
+        while ((u32)(vd - block) + 8 <= vtxDescEnd) {
             u32 attr = r32(vd);
             w32(vd, attr);
             u32 type = r32(vd + 4);
             w32(vd + 4, type);
-            if (attr == 0xFF || attr == 0) break;
             vd += 8;
         }
     }
@@ -418,12 +426,15 @@ static void swap_shp1(u8* block, u32 blockSize) {
          * Parse all unique VtxDescLists referenced by shapes. */
         for (int si = 0; si < shapeNum; si++) {
             u8* s = block + shpInitOff + si * 0x28;
-            u16 vtxDescIdx = *(u16*)(s + 0x02);
-            u16 drawInitIdx = *(u16*)(s + 0x08);
+            u16 vtxDescIdx = *(u16*)(s + 0x04);   /* mVtxDescListIndex (byte offset) */
+            u16 drawInitIdx = *(u16*)(s + 0x08);   /* mDrawInitDataIndex (element index) */
+            u16 mtxGroupNum = *(u16*)(s + 0x02);   /* mMtxGroupNum */
 
             /* Walk VtxDescList to compute stride and INDEX16 offsets.
-             * VtxDescList entries are (u32 attr, u32 type) pairs, already swapped. */
-            u8* vd = block + vtxDescOff + vtxDescIdx * 8;
+             * VtxDescList entries are (u32 attr, u32 type) pairs, already swapped.
+             * vtxDescIdx is a BYTE OFFSET into the VtxDescList data. */
+            if (vtxDescOff + vtxDescIdx >= blockSize) continue;
+            u8* vd = block + vtxDescOff + vtxDescIdx;
             u32 stride = 0;
             u32 kSize[] = {0, 1, 1, 2}; /* NONE, DIRECT, INDEX8, INDEX16 */
             /* Record INDEX16 attribute offsets for per-vertex swap */
@@ -433,7 +444,7 @@ static void swap_shp1(u8* block, u32 blockSize) {
             while ((u32)(vd - block) + 8 <= blockSize) {
                 u32 attr = *(u32*)vd;
                 u32 type = *(u32*)(vd + 4);
-                if (attr == 0xFF || attr == 0 || attr > 25) break;
+                if (attr == 0xFF || attr > 25) break;
                 if (type <= 3) {
                     if (type == 3 && idx16_count < 32) {
                         idx16_offsets[idx16_count++] = stride;
@@ -447,12 +458,9 @@ static void swap_shp1(u8* block, u32 blockSize) {
 
             /* Get the DrawInitData entries for this shape.
              * DrawInitData: pairs of (u32 drawListSize, u32 drawListOffset).
-             * drawInitIdx is the starting index. Each shape has mMtxGroupNum
-             * draw entries, but we don't know mMtxGroupNum from here.
-             * Walk until we hit a drawListSize of 0 or run past the block. */
+             * drawInitIdx is the starting index, mtxGroupNum entries per shape. */
             u32 diBase = drawInitOff + drawInitIdx * 8;
-            /* Walk draw init entries. Heuristic: max 64 mtx groups per shape. */
-            for (int di = 0; di < 64; di++) {
+            for (int di = 0; di < mtxGroupNum && di < 256; di++) {
                 u32 diOff = diBase + di * 8;
                 if (diOff + 8 > blockSize) break;
                 u32 dlSize = *(u32*)(block + diOff);
