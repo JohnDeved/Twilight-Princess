@@ -94,6 +94,12 @@ def main():
                 bg_draw_diag[frame] = []
             bg_draw_diag[frame].append(diag)
 
+        # frame_timeout: {frame_timeout:{frame, ms, reason}}
+        if 'frame_timeout' in obj:
+            ft = obj['frame_timeout']
+            frame = ft.get('frame', 0)
+            max_frame = max(max_frame, frame)
+
         # objectSetCheck: look for fopAcM_create_PROC_BG step
         if 'objectSetCheck' in obj:
             osc = obj['objectSetCheck']

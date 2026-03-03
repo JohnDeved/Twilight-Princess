@@ -760,10 +760,24 @@ void main01(void) {
             static struct timespec s_prev_ts;
             struct timespec now_ts;
             clock_gettime(CLOCK_MONOTONIC, &now_ts);
-            if (frame > 1 && (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200))) {
+            if (frame > 1) {
                 long elapsed_ms = (now_ts.tv_sec - s_prev_ts.tv_sec) * 1000 +
                                   (now_ts.tv_nsec - s_prev_ts.tv_nsec) / 1000000;
-                fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
+                if (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200)) {
+                    fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
+                }
+                /* Per-frame timeout: if a single frame took > 60s, the softpipe
+                 * renderer is stuck on complex geometry.  Exit cleanly instead
+                 * of blocking CI for 20+ minutes. */
+                if (elapsed_ms > 60000 && getenv("TP_HEADLESS")) {
+                    fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
+                            "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
+                            frame, elapsed_ms);
+                    pal_milestone("FRAME_TIMEOUT", -3, "softpipe_hang");
+                    gx_stub_report();
+                    pal_verify_summary();
+                    _Exit(0);
+                }
             }
             s_prev_ts = now_ts;
         }

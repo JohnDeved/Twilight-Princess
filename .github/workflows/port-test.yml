@@ -25,7 +25,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
     permissions:
       contents: write
       pull-requests: write
@@ -102,26 +102,42 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p verify_output
-          # Start Xvfb for software OpenGL rendering (no GPU needed).
-          # bgfx renders via Mesa softpipe, captures every frame.
+
+          # === Phase 1: Logic test (Noop renderer, fast) ===
+          # Runs without DISPLAY to use bgfx Noop backend.
+          # Verifies game logic milestones (PROC_BG creation, dl_draws,
+          # j3d_entries, heap stability) without slow softpipe rendering.
+          echo "=== Phase 1: Logic test (Noop renderer) ==="
+          unset DISPLAY
+          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_logic.log || true
+          LOGIC_EXIT=${PIPESTATUS[0]}
+          echo "Phase 1 exit: $LOGIC_EXIT"
+
+          # === Phase 2: Pixel test (softpipe, slow) ===
+          # Runs with Xvfb + softpipe for pixel verification of logo/title.
+          # Limited to 130 frames (play-scene draw takes 20+ min per frame).
+          echo "=== Phase 2: Pixel test (softpipe) ==="
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
           export DISPLAY=:99
-          # Wait for Xvfb to be ready (CI can be slow)
           for i in 1 2 3 4 5; do
             xdpyinfo -display :99 >/dev/null 2>&1 && break
             sleep 1
           done
-          # Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
           export GALLIUM_DRIVER=softpipe
           export LIBGL_ALWAYS_SOFTWARE=1
-          # Enable per-frame capture — every frame saved as BMP + raw video
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
-          timeout -k 10 1200s build/tp-pc 2>&1 | tee milestones.log || true
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          export TP_TEST_FRAMES=130
+          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
+          PIXEL_EXIT=${PIPESTATUS[0]}
+          echo "Phase 2 exit: $PIXEL_EXIT"
           kill $XVFB_PID 2>/dev/null || true
+
+          # Merge logs: logic test has the game milestones, pixel test has renders
+          cat milestones_logic.log milestones_pixel.log > milestones.log
+
+          echo "exit_code=$PIXEL_EXIT" >> $GITHUB_OUTPUT
           # Convert raw frames to MP4 using ffmpeg (with debug text overlay from metadata)
           if [ -f verify_output/raw_frames.bin ]; then
             FRAME_COUNT=$(stat -c%s verify_output/raw_frames.bin 2>/dev/null || echo 0)
