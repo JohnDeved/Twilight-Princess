@@ -271,11 +271,23 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
                 fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"fopAcM_create_PROC_BG\",\"roomNo\":%d}}\n", roomNo);
 #endif
                 dComIfGp_getPEvtManager()->demoInit();
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"demoInit_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dComIfGp_getPEvtManager()->roomInit(roomNo);
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"roomInit_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dStage_dt_c_roomReLoader(i_this->mpDzrRes, i_this->mpRoomDt, roomNo);
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"roomReLoader_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dComIfGp_ret_wp_set(roomNo);
                 i_this->field_0x1d4 = -1;
                 i_this->field_0x1d5 = 1;
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"complete\",\"roomNo\":%d}}\n", roomNo);
+#endif
             }
         }
     } else if (status_flag_8) {

@@ -185,13 +185,19 @@ static void swap_vtx1(u8* block, u32 blockSize) {
             if (attr == 0xFF || attr == 26) break;
             u32 compType = *(u32*)(fmt + 8); /* compType: 0=u8,1=s8,2=u16,3=s16,4=f32 */
             /* Map to our VTX1 offset index:
-             * attr 9 (POS) → index 1, attr 10 (NRM) → index 2,
-             * attr 11-12 (CLR0/1) → index 3-4 (u8 rgba, no swap),
-             * attr 13-20 (TEX0-7) → index 5-12 */
+             * VTX1 data array offsets:
+             *   idx 1 = pos (0x0C), idx 2 = nrm (0x10), idx 3 = nbt (0x14)
+             *   idx 4 = clr0 (0x18), idx 5 = clr1 (0x1C)
+             *   idx 6-13 = tex0-7 (0x20-0x3C)
+             * GX_VA_POS=9, GX_VA_NRM=10, GX_VA_CLR0=11, GX_VA_CLR1=12,
+             * GX_VA_TEX0=13..GX_VA_TEX7=20, GX_VA_NBT=25 */
             int idx = -1;
-            if (attr == 9) idx = 1;       /* GX_VA_POS */
+            if (attr == 9) idx = 1;        /* GX_VA_POS */
             else if (attr == 10) idx = 2;  /* GX_VA_NRM */
-            else if (attr >= 13 && attr <= 20) idx = (int)(attr - 13 + 5); /* GX_VA_TEX0-7 */
+            else if (attr == 25) idx = 3;  /* GX_VA_NBT */
+            else if (attr == 11) idx = 4;  /* GX_VA_CLR0 */
+            else if (attr == 12) idx = 5;  /* GX_VA_CLR1 */
+            else if (attr >= 13 && attr <= 20) idx = (int)(attr - 13 + 6); /* GX_VA_TEX0-7 */
             if (idx >= 0 && idx < 14) {
                 if (compType == 4) attrCompType[idx] = 0; /* f32 */
                 else if (compType == 2 || compType == 3) attrCompType[idx] = 2; /* u16/s16 */
@@ -217,8 +223,9 @@ static void swap_vtx1(u8* block, u32 blockSize) {
                 break;
             }
         }
-        /* Color arrays (indices 3,4) are GXColor (4 bytes, RGBA) - no swap needed. */
-        if (i == 3 || i == 4) continue;
+        /* Color arrays (indices 4,5) are GXColor (4 bytes, RGBA) - no swap needed.
+         * NBT (index 3) is normal/binormal/tangent data, needs swap like normals. */
+        if (i == 4 || i == 5) continue;
 
         if (attrCompType[i] == 0) {
             /* f32 data: swap as u32 */
@@ -241,19 +248,22 @@ static void swap_vtx1(u8* block, u32 blockSize) {
         if (s_vtx1_probe < 5) {
             u32 posOff = offsets[1];
             u32 posEnd = blockSize;
+            int posEndIdx = -1;
             for (int j = 2; j < 14; j++) {
-                if (offsets[j] != 0) { posEnd = offsets[j]; break; }
+                if (offsets[j] != 0) { posEnd = offsets[j]; posEndIdx = j; break; }
             }
             u32 nfloats = (posEnd - posOff) / 4;
             if (nfloats >= 3) {
                 float* fdata = (float*)(block + posOff);
                 float fmin = fdata[0], fmax = fdata[0];
+                int bad_count = 0;
                 for (u32 fi = 1; fi < nfloats && fi < 10000; fi++) {
                     if (fdata[fi] < fmin) fmin = fdata[fi];
                     if (fdata[fi] > fmax) fmax = fdata[fi];
+                    if (fdata[fi] > 100000.0f || fdata[fi] < -100000.0f) bad_count++;
                 }
-                fprintf(stderr, "{\"vtx1_probe\":{\"nfloats\":%u,\"min\":%.4f,\"max\":%.4f,\"sample\":[%.4f,%.4f,%.4f]}}\n",
-                        nfloats, fmin, fmax, fdata[0], fdata[1], fdata[2]);
+                fprintf(stderr, "{\"vtx1_probe\":{\"nfloats\":%u,\"min\":%.4f,\"max\":%.4f,\"bad\":%d,\"posOff\":%u,\"posEnd\":%u,\"endIdx\":%d,\"sample\":[%.4f,%.4f,%.4f]}}\n",
+                        nfloats, fmin, fmax, bad_count, posOff, posEnd, posEndIdx, fdata[0], fdata[1], fdata[2]);
             }
             s_vtx1_probe++;
         }
