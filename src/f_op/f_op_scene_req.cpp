@@ -130,19 +130,21 @@ fpc_ProcID fopScnRq_Request(int i_reqType, scene_class* i_scene, s16 i_procName,
 
     if (i_fadename != 0x7FFF) {
 #if PLATFORM_PC
-        /* On PC, the overlap fade actor may not signal IsDoingReq/IsDone
-         * properly because the fader system depends on timing and audio
-         * callbacks that don't run on PC. Skip the fade phases to prevent
-         * the scene from being permanently paused. */
+        /* On PC, skip both the fade phases AND the overlap creation.
+         * The overlap fade actor depends on timing and audio callbacks
+         * that don't run on PC — it would get stuck in
+         * l_fopOvlpM_overlap[0], making fopOvlpM_IsPeek() permanently
+         * TRUE and blocking scene execution.  Visual fade transitions
+         * are handled by the darwFilter system instead. */
         (void)fadeFase;
 #else
         phase_handler = fadeFase;
-#endif
         fade_req = fopScnRq_FadeRequest(i_fadename, i_peektime);
         if (fade_req == NULL) {
             fpcNdRq_Delete(&req->create_request);
             return fpcM_ERROR_PROCESS_ID_e;
         }
+#endif
     }
 
     req->fade_request = fade_req;

@@ -189,23 +189,15 @@ int daTitle_c::createHeapCallBack(fopAc_ac_c* title) {
 
 int daTitle_c::Execute() {
 #if PLATFORM_PC
-    /* Auto-advance past title screen in headless mode.  Must run before
-     * the IsPeek check because the overlap manager blocks title execution
-     * after ~3 frames (the play scene takes over).  On GCN the player
-     * presses Start before this happens.  Use 0x7FFF fade name to skip
-     * the fade/overlap system which may already be in use. */
+    /* Auto-advance past title screen in headless mode.  Simulates
+     * the Start-button press that the GCN path uses.  With the
+     * overlap leak fixed (fopScnRq_Request skips overlap creation
+     * on PC), IsPeek returns FALSE and nextScene_proc() can run. */
     if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS")) {
-        static int s_auto_advance_timer = -1;
-        if (s_auto_advance_timer < 0)
-            s_auto_advance_timer = 0;  /* reset on first entry */
-        if (++s_auto_advance_timer >= 3) {
-            scene_class* playScene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
-            if (playScene != NULL) {
-                /* Scene 13 = play scene start (matches original GCN nextScene_proc) */
-                fopScnM_ChangeReq(playScene, 13, 0x7FFF, 0);
-                mProcID = 4;
-                s_auto_advance_timer = -1;  /* reset for potential revisit */
-            }
+        static int s_auto_advance_timer = 0;
+        if (++s_auto_advance_timer >= 30) {
+            nextScene_init();  /* sets mProcID=4, same as Start button */
+            s_auto_advance_timer = 0;
         }
     }
 #endif
@@ -419,10 +411,16 @@ void daTitle_c::nextScene_proc() {
 #if PLATFORM_PC
         if (playScene == NULL)
             return;
+        /* On PC, the overlap/pause system doesn't block re-entry.
+         * Submit the change request only once to avoid conflicts. */
+        static bool s_change_requested = false;
+        if (s_change_requested) return;
+        int rc = fopScnM_ChangeReq(playScene, 13, 0, 5);
+        if (rc) s_change_requested = true;
 #else
         JUT_ASSERT(706, playScene != NULL);
-#endif
         fopScnM_ChangeReq(playScene, 13, 0, 5);
+#endif
 #if VERSION != VERSION_SHIELD_DEBUG
         mDoGph_gInf_c::setFadeColor(*(JUtility::TColor*)&g_blackColor);
 #endif
