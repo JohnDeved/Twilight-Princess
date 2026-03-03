@@ -472,7 +472,20 @@ static int dScnRoom_Create(scene_class* i_this) {
     };
 
     room_of_scene_class* room = static_cast<room_of_scene_class*>(i_this);
+#if PLATFORM_PC
+    int phase = room->field_0x1c4.id;
+    int result = dComLbG_PhaseHandler(&room->field_0x1c4, l_method, i_this);
+    int roomNo = fopScnM_GetParam(i_this);
+    static int s_create_log = 0;
+    if (s_create_log < 20) {
+        fprintf(stderr, "{\"room_create\":{\"roomNo\":%d,\"phase\":%d,\"result\":%d}}\n",
+                roomNo, phase, result);
+        s_create_log++;
+    }
+    return result;
+#else
     return dComLbG_PhaseHandler(&room->field_0x1c4, l_method, i_this);
+#endif
 }
 
 static scene_method_class l_dScnRoom_Method = {

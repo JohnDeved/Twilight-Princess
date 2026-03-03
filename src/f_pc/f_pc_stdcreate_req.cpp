@@ -157,8 +157,8 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
         phase_state = cPhs_Do(&i_request->phase_request, i_request);
     } else {
         /* SIGSEGV/SIGABRT caught during actor creation */
-        fprintf(stderr, "[PAL] SIGSEGV caught in actor creation (prof=%d)\n",
-                i_request->process_name);
+        fprintf(stderr, "{\"actor_create_crash\":{\"prof\":%d,\"phase\":%d}}\n",
+                i_request->process_name, i_request->phase_request.id);
         phase_state = cPhs_ERROR_e;
     }
     sigaction(SIGSEGV, &sa_old_segv, NULL);
