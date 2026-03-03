@@ -524,8 +524,35 @@ static void swap_mat3(u8* block, u32 blockSize) {
      * These contain a mix of u8, u16, u32 values. Swap based on known data sizes.
      * The key tables for rendering: */
 
-    /* CullMode (offset[4], 0x1C): u32 per entry */
+    /* IndInitData (offset[3], 0x18): per-material indirect texture data.
+     * Each J3DIndInitData is 0x138 bytes:
+     *   0x00: u8 mEnabled, u8 mIndTexStageNum, u8 pad[2] — NO SWAP
+     *   0x04: J3DIndTexOrderInfo[3] (4 bytes each, all u8) — NO SWAP
+     *   0x10: u8 pad[4] — NO SWAP
+     *   0x14: J3DIndTexMtxInfo[3] (0x1C bytes each):
+     *     Mtx23 (6 x f32 = 24 bytes) + s8 field — swap f32s
+     *   0x68: J3DIndTexCoordScaleInfo[3] (4 bytes each, all u8) — NO SWAP
+     *   0x74: u8 pad[4] — NO SWAP
+     *   0x78: J3DIndTevStageInfo[0x10] (0x0C bytes each, all u8) — NO SWAP
+     */
     u32 off;
+    off = *(u32*)(block + 0x18);
+    if (off != 0 && off < blockSize) {
+        u32 indSize = 0x138;
+        int indCount = matNum;
+        for (int i = 0; i < indCount && i < 1024; i++) {
+            u32 eoff = off + i * indSize;
+            if (eoff + indSize > blockSize) break;
+            /* J3DIndTexMtxInfo[0] at +0x14: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x14, 6);
+            /* J3DIndTexMtxInfo[1] at +0x30: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x30, 6);
+            /* J3DIndTexMtxInfo[2] at +0x4C: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x4C, 6);
+        }
+    }
+
+    /* CullMode (offset[4], 0x1C): u32 per entry */
     off = *(u32*)(block + 0x1C);
     if (off != 0 && off < blockSize) {
         u32 end = blockSize;
@@ -539,37 +566,59 @@ static void swap_mat3(u8* block, u32 blockSize) {
     /* MatColor (offset[5], 0x20): GXColor entries (4 bytes each, RGBA) - no swap */
     /* ColorChanNum (offset[6], 0x24): u8 per entry - no swap */
 
-    /* ColorChanInfo (offset[7], 0x28): u16 per field * 6 fields per entry
-     * Each ColorChannelInfo is 8 bytes of bitfield data. Swap as u32. */
-    off = *(u32*)(block + 0x28);
-    if (off != 0 && off < blockSize) {
-        u32 end = blockSize;
-        for (int k = 8; k < 30; k++) {
-            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
-            if (nextOff > off) { end = nextOff; break; }
-        }
-        /* Swap as u16 pairs since ColorChanInfo has u16-aligned fields */
-        swap_u16_range(block, off, end);
-    }
+    /* ColorChanInfo (offset[7], 0x28): 8 bytes per entry, ALL u8 fields
+     * (mEnable, mMatSrc, mLightMask, mDiffuseFn, mAttnFn, mAmbSrc, pad[2])
+     * No byte swap needed for u8-only struct. */
 
     /* AmbColor (offset[8], 0x2C): GXColor entries - no swap */
 
-    /* TexGenNum (offset[10], 0x34): u8 per entry - no swap */
-
-    /* TexCoordInfo (offset[11], 0x38): 4 bytes per entry (u8 type, u8 src, u32 mtx) */
-    off = *(u32*)(block + 0x38);
+    /* LightInfo (offset[9], 0x30): J3DLightInfo entries (0x34 bytes each).
+     * Layout: Vec mLightPosition (3 f32), Vec mLightDirection (3 f32),
+     *         GXColor mColor (4 u8), Vec mCosAtten (3 f32), Vec mDistAtten (3 f32).
+     * All Vec fields need f32 swap, GXColor does not. */
+    off = *(u32*)(block + 0x30);
     if (off != 0 && off < blockSize) {
         u32 end = blockSize;
-        for (int k = 12; k < 30; k++) {
+        for (int k = 10; k < 30; k++) {
             u32 nextOff = *(u32*)(block + 0x0C + k * 4);
             if (nextOff > off) { end = nextOff; break; }
         }
-        swap_u32_range(block, off, end);
+        u32 lightSize = 0x34;
+        int lightCount = (end - off) / lightSize;
+        for (int i = 0; i < lightCount && i < 256; i++) {
+            u32 eoff = off + i * lightSize;
+            if (eoff + lightSize > blockSize) break;
+            /* Vec mLightPosition: 3 x f32 at +0x00 */
+            swap_u32_array(block, eoff + 0x00, 3);
+            /* Vec mLightDirection: 3 x f32 at +0x0C */
+            swap_u32_array(block, eoff + 0x0C, 3);
+            /* GXColor at +0x18: 4 u8 — NO SWAP */
+            /* Vec mCosAtten: 3 x f32 at +0x1C */
+            swap_u32_array(block, eoff + 0x1C, 3);
+            /* Vec mDistAtten: 3 x f32 at +0x28 */
+            swap_u32_array(block, eoff + 0x28, 3);
+        }
     }
 
+    /* TexGenNum (offset[10], 0x34): u8 per entry - no swap */
+
+    /* TexCoordInfo (offset[11], 0x38): 4 bytes per entry (u8 type, u8 src, u8 mtx, u8 pad)
+     * All u8 fields — no byte swap needed. */
+
     /* TexMtxInfo (offset[13], 0x40): large struct per entry, many f32 fields.
-     * Each TexMtxInfo is 0x64 bytes with mixed u8/f32 fields.
-     * Swap as u32 to correctly handle f32 values. */
+     * Each TexMtxInfo is 0x64 bytes with mixed u8/s16/f32 fields.
+     * Layout per entry (0x64 bytes):
+     *   0x00: u8 mProjection, u8 mInfo, u8 pad, u8 pad — NO SWAP
+     *   0x04: Vec mCenter (3 x f32) — swap as u32
+     *   0x10: J3DTextureSRTInfo:
+     *     0x10: f32 scaleX — swap as u32
+     *     0x14: f32 scaleY — swap as u32
+     *     0x18: s16 rotation — swap as u16
+     *     0x1A: u16 pad — skip
+     *     0x1C: f32 translationX — swap as u32
+     *     0x20: f32 translationY — swap as u32
+     *   0x24: Mtx effectMtx (3x4 f32 = 48 bytes) — swap as u32
+     */
     off = *(u32*)(block + 0x40);
     if (off != 0 && off < blockSize) {
         u32 end = blockSize;
@@ -585,8 +634,18 @@ static void swap_mat3(u8* block, u32 blockSize) {
         int numEntries = (end - off) / entrySize;
         for (int i = 0; i < numEntries && i < 256; i++) {
             u32 eoff = off + i * entrySize;
-            /* Skip first 4 bytes (u8 type, u8 info, pad[2]) */
-            swap_u32_range(block, eoff + 4, eoff + entrySize);
+            /* Skip first 4 bytes (u8 mProjection, u8 mInfo, pad[2]) */
+            /* Vec mCenter: 3 x f32 at +0x04 */
+            swap_u32_array(block, eoff + 0x04, 3);
+            /* J3DTextureSRTInfo at +0x10:
+             *   f32 scaleX, f32 scaleY at +0x10, +0x14 */
+            swap_u32_array(block, eoff + 0x10, 2);
+            /* s16 rotation at +0x18 */
+            swap_u16_array(block, eoff + 0x18, 1);
+            /* f32 translationX, translationY at +0x1C, +0x20 */
+            swap_u32_array(block, eoff + 0x1C, 2);
+            /* Mtx effectMtx: 12 x f32 at +0x24 */
+            swap_u32_array(block, eoff + 0x24, 12);
         }
     }
 
