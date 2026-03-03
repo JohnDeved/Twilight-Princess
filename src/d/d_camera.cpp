@@ -10977,7 +10977,7 @@ static int camera_execute(camera_process_class* i_this) {
             store(camera);
         }
 
-        /* Refresh view matrix with any updated camera state */
+        /* Final view_setup with any updated camera state from above */
         view_setup(camera);
         return 1;
     }
