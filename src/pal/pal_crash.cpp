@@ -8,6 +8,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>  /* _exit */
@@ -17,16 +18,19 @@
 #include <ucontext.h>
 #endif
 
+extern "C" uint32_t pal_capture_get_frame_count(void);
+
 static void crash_handler_sa(int sig, siginfo_t* info, void* ucontext) {
     /* Emit CRASH JSON to stdout so parse_milestones.py can consume it */
-    fprintf(stdout, "{\"milestone\":\"CRASH\",\"id\":-1,\"signal\":%d}\n", sig);
+    uint32_t frame = pal_capture_get_frame_count();
+    fprintf(stdout, "{\"milestone\":\"CRASH\",\"id\":-1,\"signal\":%d,\"frame\":%u}\n", sig, frame);
     fflush(stdout);
 #ifdef __linux__
     /* Print the actual faulting instruction pointer from the signal context */
     ucontext_t* uc = (ucontext_t*)ucontext;
     void* fault_addr = info->si_addr;
     void* rip = (void*)uc->uc_mcontext.gregs[REG_RIP];
-    fprintf(stderr, "CRASH: sig=%d fault_addr=%p rip=%p\n", sig, fault_addr, rip);
+    fprintf(stderr, "CRASH: sig=%d fault_addr=%p rip=%p frame=%u\n", sig, fault_addr, rip, frame);
     fflush(stderr);
 
     void* bt[32];
