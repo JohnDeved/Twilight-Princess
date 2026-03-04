@@ -87,7 +87,8 @@ fi
 
 # Build GDB command file: stop on every SIGSEGV, continue, print bt
 GDB_CMD_FILE="$(mktemp /tmp/tp-crash-gdb.XXXXXX)"
-trap 'rm -f "$GDB_CMD_FILE"' EXIT
+GDB_OUT_FILE="$(mktemp /tmp/tp-crash-gdb-out.XXXXXX)"
+trap 'rm -f "$GDB_CMD_FILE" "$GDB_OUT_FILE"' EXIT
 
 {
     echo "set pagination off"
@@ -110,17 +111,16 @@ echo "Binary : $BINARY"
 echo "Frames : $FRAMES"
 echo ""
 
-# Run GDB, capture output
-GDB_OUT="$(
-    TP_HEADLESS=1 TP_TEST_FRAMES="$FRAMES" \
-        gdb -batch -x "$GDB_CMD_FILE" "$BINARY" 2>/dev/null
-)"
+# Run GDB, capture output to a temp file (avoids "Argument list too long")
+TP_HEADLESS=1 TP_TEST_FRAMES="$FRAMES" \
+    gdb -batch -x "$GDB_CMD_FILE" "$BINARY" > "$GDB_OUT_FILE" 2>/dev/null || true
 
 # Parse: extract crash blocks (from "received signal SIGSEGV" to the bt output)
-python3 - <<'PYEOF' "$GDB_OUT" "$UNIQUE_ONLY" "$OUT_FILE"
+python3 - "$GDB_OUT_FILE" "$UNIQUE_ONLY" "$OUT_FILE" <<'PYEOF'
 import sys, re, collections
 
-gdb_out   = sys.argv[1]
+with open(sys.argv[1]) as f:
+    gdb_out = f.read()
 unique    = sys.argv[2] == "1"
 out_file  = sys.argv[3]
 
