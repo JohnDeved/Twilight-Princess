@@ -1,5 +1,5 @@
 {
-  "milestones_reached_count": 14,
+  "milestones_reached_count": 12,
   "milestones_reached": [
     "BOOT_START",
     "HEAP_INIT",
@@ -7,15 +7,13 @@
     "PAD_INIT",
     "FRAMEWORK_INIT",
     "FIRST_FRAME",
-    "LOGO_SCENE",
-    "PLAY_SCENE",
-    "FRAMES_60",
-    "FRAMES_300",
     "DVD_READ_OK",
+    "LOGO_SCENE",
     "SCENE_CREATED",
     "RENDER_FRAME",
+    "FRAMES_60",
     "TEST_COMPLETE"
   ],
-  "updated": "2026-03-03",
-  "note": "TP_TEST_FRAMES=200, timeout=1200s (20min). Under softpipe each play-scene frame takes ~66s. Need 150+ frames to reach BG Draw phase. Heap stable at 262MB after size=0/-1 cap fixes."
+  "updated": "2026-03-04",
+  "note": "After link error fixes and startup crash fixes. 200 frames in ~232s. Missing TITLE_SCENE, PLAY_SCENE, FRAMES_300 vs previous baseline (scene transition timing)."
 }
