@@ -23,7 +23,7 @@
 /* Kankyo fault tracking: count how many times kankyo setup crashed vs succeeded
  * per BG draw frame.  Emitted in bg_kankyo_stats telemetry. */
 static int s_kankyo_fault_count = 0;
-static int s_kankyo_success_count = 0;
+static int s_kankyo_bypass_count = 0;
 #endif
 
 const char* daBg_c::setArcName() {
@@ -361,10 +361,12 @@ int daBg_c::draw() {
 
             /* Skip kankyo/lighting (settingTevStruct, setLightTevColorType_MAJI,
              * dKy_bg_MAxx_proc) — these crash on PC due to uninitialized
-             * environmental state.  Use default material colors instead. */
-            s_kankyo_success_count++;  /* count frames where we successfully skip */
+             * environmental state.  Use default material colors instead.
+             * Camera (sp30) is also not needed since we force-show all shapes. */
+            s_kankyo_bypass_count++;  /* count frames where we cleanly bypass kankyo */
 
-            /* Material name processing that doesn't touch kankyo state */
+            /* Material name processing — only safe operations that don't touch
+             * kankyo/lighting state.  tevstr is initialized during room load. */
             if (bg_model != NULL) {
                 modelData = bg_model->getModelData();
                 if (modelData == NULL) goto bg_draw_entry_pc;
@@ -376,11 +378,12 @@ int daBg_c::draw() {
                     const char* name = nametab->getName(j);
                     if (name == NULL) continue;
 
-                    /* Material-specific btk speed / brk adjustments that are safe */
-                    if (!memcmp(&name[3], "MA09", 4)) {
+                    /* MA09: water surface shine rate (safe — float default 0) */
+                    if (!memcmp(&name[3], "MA09", 4) && bgPart->tevstr != NULL) {
                         bgPart->btk_speed =
                             1.0f - (1.0f - g_env_light.mWaterSurfaceShineRate) * 0.9f;
-                    } else if (!memcmp(&name[3], "MA05", 4)) {
+                    /* MA05: material ID tracking (safe if tevstr initialized) */
+                    } else if (!memcmp(&name[3], "MA05", 4) && bgPart->tevstr != NULL) {
                         bgPart->tevstr->Material_id |= (u8)j;
                     }
                 }
@@ -398,8 +401,8 @@ bg_draw_entry_pc:
 
     /* Emit kankyo stats at key frame intervals */
     if (bg_diag) {
-        fprintf(stderr, "{\"bg_kankyo_stats\":{\"frame\":%d,\"faults\":%d,\"successes\":%d}}\n",
-                s_bg_draw_frame - 1, s_kankyo_fault_count, s_kankyo_success_count);
+        fprintf(stderr, "{\"bg_kankyo_stats\":{\"frame\":%d,\"faults\":%d,\"bypasses\":%d}}\n",
+                s_bg_draw_frame - 1, s_kankyo_fault_count, s_kankyo_bypass_count);
     }
 
     return 1;

@@ -191,12 +191,13 @@ def main():
 
     # Check kankyo crash dependency
     total_kankyo_faults = sum(s.get('faults', 0) for s in bg_kankyo_stats)
-    total_kankyo_successes = sum(s.get('successes', 0) for s in bg_kankyo_stats)
+    total_kankyo_bypasses = sum(s.get('bypasses', s.get('successes', 0)) for s in bg_kankyo_stats)
     print(f"  Kankyo faults: {total_kankyo_faults}")
-    print(f"  Kankyo successes: {total_kankyo_successes}")
+    print(f"  Kankyo bypasses: {total_kankyo_bypasses}")
     print(f"  Kankyo crash lines: {kankyo_crash_count}")
     if kankyo_crash_count > 0:
-        errors.append(f"REGRESSION: {kankyo_crash_count} kankyo crash-recovery events (should be 0 with clean bypass)")
+        errors.append(f"REGRESSION: {kankyo_crash_count} kankyo crash-recovery events "
+                     f"(should be 0 — clean bypass replaces signal-based recovery)")
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:
@@ -218,7 +219,7 @@ def main():
             zero_frames = len(dl_draws_list) - len(nonzero_frames)
             if zero_frames > len(dl_draws_list) * 0.5:
                 warnings.append(f"Dominant blocker: {zero_frames}/{len(dl_draws_list)} play frames have 0 dl_draws "
-                               f"— scene transition unloads BG before stable rendering window")
+                               f"— room geometry not present in draw queue for most frames")
 
     print("\n=== J3D Draw Diagnostics ===")
     if j3d_diag_frames:
