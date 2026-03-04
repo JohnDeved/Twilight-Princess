@@ -42,6 +42,12 @@
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+#include <signal.h>
+#include <setjmp.h>
+static sigjmp_buf s_painter_jmpbuf;
+static void pal_painter_crash_handler(int sig) {
+    siglongjmp(s_painter_jmpbuf, sig);
+}
 #endif
 
 #if PLATFORM_WII
@@ -1591,31 +1597,53 @@ int mDoGph_Painter() {
                 j3dSys.setViewMtx(camera_p->viewMtx);
                 dKy_setLight();
 
-                /* Sky */
-                dComIfGd_drawOpaListSky();
-                dComIfGd_drawXluListSky();
-                GXSetClipMode(GX_CLIP_ENABLE);
+                /* Wrap 3D draw list flush with crash protection — texture
+                 * decode or bad model data can crash during rendering.
+                 * Protects so j3d_draw_diag still emits. */
+                {
+                    struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+                    memset(&sa_new, 0, sizeof(sa_new));
+                    sa_new.sa_handler = pal_painter_crash_handler;
+                    sigemptyset(&sa_new.sa_mask);
+                    sa_new.sa_flags = SA_NODEFER;
+                    sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+                    sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+                    if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {
+                        /* Sky */
+                        dComIfGd_drawOpaListSky();
+                        dComIfGd_drawXluListSky();
+                        GXSetClipMode(GX_CLIP_ENABLE);
 
-                /* Background / terrain */
-                dComIfGd_drawOpaListBG();
-                dComIfGd_drawOpaListDarkBG();
-                dComIfGd_drawOpaListMiddle();
+                        /* Background / terrain */
+                        dComIfGd_drawOpaListBG();
+                        dComIfGd_drawOpaListDarkBG();
+                        dComIfGd_drawOpaListMiddle();
 
-                /* Opaque objects */
-                dComIfGd_drawOpaList();
-                dComIfGd_drawOpaListDark();
-                dComIfGd_drawOpaListPacket();
+                        /* Opaque objects */
+                        dComIfGd_drawOpaList();
+                        dComIfGd_drawOpaListDark();
+                        dComIfGd_drawOpaListPacket();
 
-                /* Translucent background */
-                dComIfGd_drawXluListBG();
-                dComIfGd_drawXluListDarkBG();
+                        /* Translucent background */
+                        dComIfGd_drawXluListBG();
+                        dComIfGd_drawXluListDarkBG();
 
-                /* Translucent objects */
-                dComIfGd_drawXluList();
-                dComIfGd_drawXluListDark();
+                        /* Translucent objects */
+                        dComIfGd_drawXluList();
+                        dComIfGd_drawXluListDark();
 
-                /* Late 3D */
-                dComIfGd_drawOpaList3Dlast();
+                        /* Late 3D */
+                        dComIfGd_drawOpaList3Dlast();
+                    } else {
+                        static int s_painter_crash_count = 0;
+                        if (s_painter_crash_count < 5) {
+                            fprintf(stderr, "[PAL] 3D draw list crash caught (count=%d)\n", s_painter_crash_count);
+                        }
+                        s_painter_crash_count++;
+                    }
+                    sigaction(SIGSEGV, &sa_segv_old, NULL);
+                    sigaction(SIGABRT, &sa_abrt_old, NULL);
+                }
 
                 j3dSys.reinitGX();
                 GXSetClipMode(GX_CLIP_ENABLE);

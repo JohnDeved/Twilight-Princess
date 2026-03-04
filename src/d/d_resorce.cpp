@@ -351,16 +351,14 @@ J3DModelData* dRes_info_c::loaderBasicBmd(u32 i_tag, void* i_data) {
 
     if (i_tag == 'BMDR' || i_tag == 'BMWR') {
 #if PLATFORM_PC
-        void* sdl_result = j3d_safe_load([&]() -> void* {
-            s32 result = modelData->newSharedDisplayList(J3DMdlFlag_UseSingleDL);
-            if (result != kJ3DError_Success) return NULL;
-            modelData->simpleCalcMaterial(const_cast<MtxP>(j3dDefaultMtx));
-            modelData->makeSharedDL();
-            return (void*)1;
-        });
-        if (sdl_result == NULL) {
-            pal_error(PAL_ERR_J3D_LOAD, "BMDR/BMWR shared DL creation failed");
-        }
+        /* Skip shared DL creation on PC for now:
+         * 1) This code is already inside j3d_safe_load at the call site —
+         *    nesting j3d_safe_load here corrupts the shared static jmpbuf
+         *    and makes the outer wrapper return NULL (s_j3d_crash leaks).
+         * 2) Shared DLs are a GCN display-list optimization, not required
+         *    for rendering. Models still draw via the normal material/shape
+         *    path through our bgfx GX shim.
+         * Re-enable once material data endian swap is fully validated. */
 #else
         s32 result = modelData->newSharedDisplayList(J3DMdlFlag_UseSingleDL);
         if (result != kJ3DError_Success) {
@@ -674,9 +672,27 @@ int dRes_info_c::loadResource() {
                     }
 #endif
                 } else if (nodeType == 'DZB ') {
+#if PLATFORM_PC
+                    /* ConvDzb stores absolute pointers in u32 fields:
+                     *   pbgd->m_v_tbl += (uintptr_t)p_dzb;
+                     * On 64-bit, the pointer is truncated to 32 bits, producing
+                     * garbage addresses (heap is above 4GB on Linux).
+                     * Skip DZB conversion on PC — the BG actor checks for NULL
+                     * and falls through gracefully without collision data.
+                     * Collision is not needed for rendering (dl_draws). */
+                    res = NULL;
+#else
                     res = cBgS::ConvDzb(res);
+#endif
                 } else if (nodeType == 'KCL ') {
+#if PLATFORM_PC
+                    /* initKCollision has the same 64-bit pointer truncation issue
+                     * as ConvDzb, plus KC_Header struct layout mismatch (4-byte
+                     * offsets in file vs 8-byte pointers in struct on 64-bit). */
+                    res = NULL;
+#else
                     res = dBgWKCol::initKCollision(res);
+#endif
                 }
 
                 JUT_ASSERT(1092, fileIndex < countFile);

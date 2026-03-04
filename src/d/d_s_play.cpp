@@ -221,14 +221,38 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
 #endif
 
+#if PLATFORM_PC
+    /* Wrap post-Draw calls with crash protection — these can crash
+     * due to uninitialized state (player, collision, etc.) in the
+     * opening scene. Skip them on crash so the frame completes. */
+    {
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_predraw_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_predraw_jmpbuf, 1) == 0) {
+            if (!dComIfGp_isPauseFlag()) {
+                dEyeHL_mng_c::update();
+                dComIfG_Ccsp()->Draw();
+                if (dComIfGp_getPlayer(0) != NULL)
+                    dComIfGp_getAttention()->Draw();
+            }
+        } else {
+            fprintf(stderr, "[PAL] dScnPly_Draw: crash in post-Draw (Ccsp/Attention), skipped\n");
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+    }
+#else
     if (!dComIfGp_isPauseFlag()) {
         dEyeHL_mng_c::update();
         dComIfG_Ccsp()->Draw();
-#if PLATFORM_PC
-        if (dComIfGp_getPlayer(0) != NULL)
-#endif
         dComIfGp_getAttention()->Draw();
     }
+#endif
 
 #if PLATFORM_PC
     if (s_scnply_draw_count <= 5) {
