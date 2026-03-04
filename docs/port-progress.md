@@ -7,10 +7,24 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `15` (TEST_COMPLETE — all 2000 frames crash-free) |
-| **Current Step** | Step 5+ — Camera crash fix for dl_draws unblocking |
-| **Last Updated** | 2026-03-03 |
-| **Blocking Issue** | Camera (prof=781) crash at frame 130 prevented view_setup → stale view matrix → dl_draws=0. Fixed by calling view_setup FIRST in camera_execute. Also fixed ENVSE/KANKYO null camera crashes. CI duplicate milestones fixed. |
+| **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free in 227ms) |
+| **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
+| **Last Updated** | 2026-03-04 |
+| **Blocking Issue** | OpaListBG draw list crashes on play-scene frames (permanently suppressed for CI stability). Root cause: uninitialized kankyo/lighting state accessed during J3D draw buffer flush. 3D draws only on frames 128-130 before suppression kicks in. Next: fix the draw list crash root cause to sustain 3D rendering across all frames. |
+
+## Remaining Work Estimate
+
+| Area | Description | Est. Effort | Priority |
+|---|---|---|---|
+| **Scene stability** | Fix OpaListBG/XluListBG/XluListSky draw list crashes — initialize kankyo/lighting state or bypass cleanly | 1-2 sessions | **P0** |
+| **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
+| **Draw drop-off** | j3d_entries→dl_draws categorization — why 64 entries produce only 2 draws | 1 session | P1 |
+| **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
+| **Lighting** | Ambient/diffuse/specular from GX light state into shaders | 2 sessions | P2 |
+| **Multi-texture** | Multi-texture TEV stages (currently single-texture per draw) | 1 session | P2 |
+| **Audio** | Software mixer replacing DSP/ARAM → SDL3 PCM output | 3-4 sessions | P3 |
+| **Gameplay** | Title → Ordon → Faron → Forest Temple loop (auto-input injection) | 2-3 sessions | P3 |
+| **NX Homebrew** | libnx/EGL, HID, audren, romfs backends | 3-4 sessions | P4 |
 
 ## Step Checklist
 
