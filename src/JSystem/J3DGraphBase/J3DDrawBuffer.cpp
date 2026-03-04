@@ -8,6 +8,10 @@
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/JKernel/JKRHeap.h"
+#if PLATFORM_PC
+#include <stdio.h>
+#include <string.h>
+#endif
 
 void J3DDrawBuffer::calcZRatio() {
     mZRatio = (mZFar - mZNear) / (f32)mEntryTableSize;
@@ -241,6 +245,26 @@ void J3DDrawBuffer::drawHead() const {
             /* Addresses below 4KB fall within the OS NULL-page guard region
              * and indicate a corrupted linked-list pointer. */
             if ((uintptr_t)packet < 0x1000) break;
+            /* Packet-chain probe: sample packet pointer, vptr, next pointer and
+             * first bytes before virtual dispatch to diagnose vtable corruption. */
+            {
+                static int s_packet_probe = 0;
+                if (s_packet_probe < 80) {
+                    const void* vptr = *(const void* const*)packet;
+                    const J3DPacket* next = packet->getNextPacket();
+                    unsigned char head[8] = {0};
+                    memcpy(head, packet, sizeof(head));
+                    fprintf(stderr,
+                            "{\"j3d_packet_probe\":{\"slot\":%u,\"probe\":%d,"
+                            "\"packet\":\"%p\",\"vptr\":\"%p\",\"next\":\"%p\","
+                            "\"vptr_low\":%d,\"head\":[%u,%u,%u,%u,%u,%u,%u,%u]}}\n",
+                            i, s_packet_probe, (void*)packet, vptr, (void*)next,
+                            ((uintptr_t)vptr < 0x100000) ? 1 : 0,
+                            (unsigned)head[0], (unsigned)head[1], (unsigned)head[2], (unsigned)head[3],
+                            (unsigned)head[4], (unsigned)head[5], (unsigned)head[6], (unsigned)head[7]);
+                    s_packet_probe++;
+                }
+            }
 #endif
             packet->draw();
         }

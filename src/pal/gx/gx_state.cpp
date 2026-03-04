@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_tev.h"
 
 /* ================================================================ */
@@ -482,12 +483,14 @@ void pal_gx_set_blend_mode(GXBlendMode type, GXBlendFactor src, GXBlendFactor ds
     g_gx_state.blend_src = src;
     g_gx_state.blend_dst = dst;
     g_gx_state.blend_logic_op = op;
+    gx_frame_blendmode_calls++;
 }
 
 void pal_gx_set_z_mode(GXBool compare, GXCompare func, GXBool update) {
     g_gx_state.z_compare_enable = compare;
     g_gx_state.z_func = func;
     g_gx_state.z_update_enable = update;
+    gx_frame_zmode_calls++;
 }
 
 void pal_gx_set_alpha_compare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, u8 ref1) {

@@ -307,6 +307,10 @@ void pal_render_end_frame(void) {
         fprintf(stderr, "{\"render\":\"frame_stats\",\"frame\":%u,"
                 "\"draw_calls\":%u,\"verts\":%u}\n",
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
+        fprintf(stderr, "{\"zblend_prop\":{\"frame\":%u,\"gx_set_z\":%u,\"gx_set_blend\":%u,"
+                "\"submit_depth\":%u,\"submit_blend\":%u}}\n",
+                s_frame_count, gx_frame_zmode_calls, gx_frame_blendmode_calls,
+                gx_frame_submit_with_depth_state, gx_frame_submit_with_blend_state);
     }
 
     /* Submit frame — triggers rendering and capture.

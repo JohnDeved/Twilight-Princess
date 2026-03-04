@@ -33,6 +33,10 @@ unsigned int gx_frame_depth_draws = 0;
 unsigned int gx_frame_blend_draws = 0;
 unsigned int gx_frame_unique_textures = 0;
 unsigned int gx_frame_prim_mask = 0;
+unsigned int gx_frame_zmode_calls = 0;
+unsigned int gx_frame_blendmode_calls = 0;
+unsigned int gx_frame_submit_with_depth_state = 0;
+unsigned int gx_frame_submit_with_blend_state = 0;
 
 /* Unique texture tracking — small fixed-size set.
  * Per-frame cap of 64 textures is sufficient for verification.
@@ -57,6 +61,10 @@ void gx_stub_frame_reset(void) {
     gx_frame_blend_draws = 0;
     gx_frame_unique_textures = 0;
     gx_frame_prim_mask = 0;
+    gx_frame_zmode_calls = 0;
+    gx_frame_blendmode_calls = 0;
+    gx_frame_submit_with_depth_state = 0;
+    gx_frame_submit_with_blend_state = 0;
     s_tracked_texture_count = 0;
     s_draw_calls_crosscheck = 0;
 }

@@ -1991,6 +1991,10 @@ void pal_tev_flush_draw(void) {
     }
 
     bgfx::setState(state);
+    if ((state & BGFX_STATE_DEPTH_TEST_MASK) != 0)
+        gx_frame_submit_with_depth_state++;
+    if ((state & BGFX_STATE_BLEND_MASK) != 0)
+        gx_frame_submit_with_blend_state++;
 
     /* Per-draw diagnostic for title scene BLEND draws — logs state values
      * that could cause black output (blend func, alpha test, suppress, etc.) */
