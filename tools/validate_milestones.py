@@ -44,6 +44,10 @@ def main():
     suppressed_profiles = {}
     crash_profiles = {}
     bg_draw_diag = {}
+    draw_timeouts = []      # actors whose Draw timed out
+    draw_crashes = []       # actors whose Draw crashed
+    exec_crashes = []       # actors whose Execute crashed
+    scnply_draw_steps = []  # dScnPly_Draw step diagnostics
 
     # frame_time telemetry: {frame_time:{frame, ms}}
     frame_times = {}  # frame -> ms
@@ -51,6 +55,18 @@ def main():
 
     for line in lines:
         line = line.strip()
+
+        # Parse non-JSON diagnostic lines
+        if line.startswith('[PAL]'):
+            if 'Draw timeout' in line:
+                draw_timeouts.append(line)
+            elif 'SIGSEGV caught in Draw' in line:
+                draw_crashes.append(line)
+            elif 'SIGSEGV caught in Execute' in line:
+                exec_crashes.append(line)
+            elif 'dScnPly_Draw' in line:
+                scnply_draw_steps.append(line)
+
         if not line.startswith('{'):
             continue
         try:
@@ -101,6 +117,12 @@ def main():
             max_frame = max(max_frame, frame)
 
         # objectSetCheck: look for fopAcM_create_PROC_BG step
+        if 'objectSetCheck_progress' in obj:
+            osc = obj['objectSetCheck_progress']
+            step = osc.get('step', '')
+            if step == 'fopAcM_create_PROC_BG':
+                proc_bg_created = True
+        # Also check old key name for compatibility
         if 'objectSetCheck' in obj:
             osc = obj['objectSetCheck']
             step = osc.get('step', '')
@@ -133,6 +155,22 @@ def main():
     print(f"  first dl_draws > 0:   {first_dl_draws_nonzero}")
     print(f"  crashed profiles:     {crash_profiles}")
     print(f"  suppressed profiles:  {suppressed_profiles}")
+    if exec_crashes:
+        print(f"  Execute crashes:      {len(exec_crashes)}")
+        for c in exec_crashes[:5]:
+            print(f"    {c}")
+    if draw_crashes:
+        print(f"  Draw crashes:         {len(draw_crashes)}")
+        for c in draw_crashes[:5]:
+            print(f"    {c}")
+    if draw_timeouts:
+        print(f"  Draw timeouts:        {len(draw_timeouts)}")
+        for t in draw_timeouts[:5]:
+            print(f"    {t}")
+    if scnply_draw_steps:
+        print(f"  dScnPly_Draw steps:   {len(scnply_draw_steps)}")
+        for s in scnply_draw_steps[:10]:
+            print(f"    {s}")
 
     # Frame budget summary
     print(f"\n=== Frame Budget ===")
