@@ -297,7 +297,7 @@ int daBg_c::draw() {
 
 #if PLATFORM_PC
     static int s_bg_draw_frame = 0;
-    /* Emit bg_draw_diag JSON for first 5 BG draws and periodically */
+    /* Emit bg_draw_diag JSON for first 5 BG draws, frames 127-145, and every 30th frame */
     bool bg_diag = (s_bg_draw_frame < 5) || (s_bg_draw_frame >= 127 && s_bg_draw_frame <= 145) || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200);
     if (bg_diag) {
         daBg_Part* diagPart = mBgParts;

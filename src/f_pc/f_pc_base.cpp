@@ -35,6 +35,7 @@ extern "C" void pal_mark_exec_crashed(unsigned int id) {
         s_exec_crashed_ids[s_exec_crashed_count++] = id;
 }
 extern "C" int pal_is_exec_crashed(unsigned int id) {
+    if (s_exec_crashed_count == 0) return 0;
     for (int i = 0; i < s_exec_crashed_count; i++)
         if (s_exec_crashed_ids[i] == id) return 1;
     return 0;

@@ -32,6 +32,10 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+static sigjmp_buf s_predraw_jmpbuf;
+static void pal_predraw_crash_handler(int sig) {
+    siglongjmp(s_predraw_jmpbuf, sig);
+}
 #endif
 
 #if PLATFORM_WII
@@ -126,8 +130,7 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
         static sigjmp_buf s_predraw_jmpbuf;
         struct sigaction sa_new, sa_old_segv, sa_old_abrt;
         memset(&sa_new, 0, sizeof(sa_new));
-        extern void draw_sigsegv_handler_extern(int sig);
-        sa_new.sa_handler = [](int sig) { siglongjmp(s_predraw_jmpbuf, sig); };
+        sa_new.sa_handler = pal_predraw_crash_handler;
         sigemptyset(&sa_new.sa_mask);
         sa_new.sa_flags = SA_NODEFER;
         sigaction(SIGSEGV, &sa_new, &sa_old_segv);

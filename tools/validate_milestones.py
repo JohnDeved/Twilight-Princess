@@ -117,17 +117,12 @@ def main():
             max_frame = max(max_frame, frame)
 
         # objectSetCheck: look for fopAcM_create_PROC_BG step
-        if 'objectSetCheck_progress' in obj:
-            osc = obj['objectSetCheck_progress']
-            step = osc.get('step', '')
-            if step == 'fopAcM_create_PROC_BG':
-                proc_bg_created = True
-        # Also check old key name for compatibility
-        if 'objectSetCheck' in obj:
-            osc = obj['objectSetCheck']
-            step = osc.get('step', '')
-            if step == 'fopAcM_create_PROC_BG':
-                proc_bg_created = True
+        # Handle both old key 'objectSetCheck' and new key 'objectSetCheck_progress'
+        for key in ('objectSetCheck_progress', 'objectSetCheck'):
+            if key in obj:
+                step = obj[key].get('step', '')
+                if step == 'fopAcM_create_PROC_BG':
+                    proc_bg_created = True
 
         # actor_create_suppressed
         if 'actor_create_suppressed' in obj:
