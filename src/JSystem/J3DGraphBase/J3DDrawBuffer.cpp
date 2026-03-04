@@ -204,8 +204,13 @@ int J3DDrawBuffer::entryImm(J3DPacket* pPacket, u16 index) {
 
 #if PLATFORM_PC
     {
+        /* Keep entry probes bounded; 80 samples covers multiple full setup
+         * bursts (typical failing chain is ~38 entries) without log spam. */
+        enum { MAX_ENTRY_PROBES = 80 };
+        /* Framework actor/update loop is single-threaded on PC; a plain static
+         * counter is sufficient here and avoids extra atomic overhead. */
         static int s_entry_probe_count = 0;
-        if (s_entry_probe_count < 80) {
+        if (s_entry_probe_count < MAX_ENTRY_PROBES) {
             const void* vptr = *(const void* const*)pPacket;
             fprintf(stderr,
                     "{\"j3d_entry_probe\":{\"idx\":%u,\"probe\":%d,"
@@ -261,18 +266,31 @@ void J3DDrawBuffer::drawHead() const {
         if (buf[i] != NULL) {
             /* Validate chain shape before virtual dispatch to isolate list/link
              * corruption without relying on signal recovery. */
+            enum {
+                /* NULL-page guard on Linux/Windows is at least one page. */
+                NULL_PAGE_GUARD_SIZE = 0x1000,
+                /* Heuristic diagnostic threshold: valid executable/vtable
+                 * mappings for this process are far above low-memory legacy
+                 * ranges; <1MB is treated as suspicious (not a hard ABI rule). */
+                MIN_VALID_VPTR = 0x100000,
+                /* Safety cap for runaway/cyclic lists. Normal chains are far
+                 * smaller (~tens of packets), so 512 indicates corruption. */
+                MAX_CHAIN_LENGTH = 512,
+            };
             const J3DPacket* cursor = buf[i];
             int chain_len = 0;
             int invalid_ptr = 0;
             int self_loop = 0;
             int vptr_low = 0;
-            while (cursor != NULL && chain_len < 512) {
-                if ((uintptr_t)cursor < 0x1000) {
+            while (cursor != NULL && chain_len < MAX_CHAIN_LENGTH) {
+                if ((uintptr_t)cursor < NULL_PAGE_GUARD_SIZE) {
                     invalid_ptr = 1;
                     break;
                 }
                 const void* vptr = *(const void* const*)cursor;
-                if ((uintptr_t)vptr < 0x100000)
+                /* Vtable pointers below 1MB are treated as suspicious; valid
+                 * executable mappings for this process are far above that. */
+                if ((uintptr_t)vptr < MIN_VALID_VPTR)
                     vptr_low = 1;
                 const J3DPacket* next = cursor->getNextPacket();
                 if (next == cursor) {
@@ -282,7 +300,7 @@ void J3DDrawBuffer::drawHead() const {
                 cursor = next;
                 chain_len++;
             }
-            if (chain_len >= 512)
+            if (chain_len >= MAX_CHAIN_LENGTH)
                 self_loop = 1;
             if (invalid_ptr || self_loop || vptr_low) {
                 fprintf(stderr,
