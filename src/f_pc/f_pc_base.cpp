@@ -25,6 +25,20 @@ static void exec_sigsegv_handler(int sig) {
     s_exec_crash = 1;
     siglongjmp(s_exec_jmpbuf, 1);
 }
+/* Track actor IDs that crashed during Execute so their Draw is skipped.
+ * Actors with corrupted state from Execute crashes may loop forever in Draw. */
+#define PAL_MAX_EXEC_CRASH_IDS 256
+static unsigned int s_exec_crashed_ids[PAL_MAX_EXEC_CRASH_IDS];
+static int s_exec_crashed_count = 0;
+extern "C" void pal_mark_exec_crashed(unsigned int id) {
+    if (s_exec_crashed_count < PAL_MAX_EXEC_CRASH_IDS)
+        s_exec_crashed_ids[s_exec_crashed_count++] = id;
+}
+extern "C" int pal_is_exec_crashed(unsigned int id) {
+    for (int i = 0; i < s_exec_crashed_count; i++)
+        if (s_exec_crashed_ids[i] == id) return 1;
+    return 0;
+}
 #endif
 #include "Z2AudioLib/Z2AudioMgr.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
@@ -79,6 +93,7 @@ int fpcBs_Execute(base_process_class* i_proc) {
             sigaction(SIGABRT, &sa_old_abrt, NULL);
             fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u)\n",
                     i_proc->profname, i_proc->id);
+            pal_mark_exec_crashed(i_proc->id);
             return 0;
         }
 

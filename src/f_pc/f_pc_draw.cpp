@@ -14,6 +14,7 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include <unistd.h>
+extern "C" int pal_is_exec_crashed(unsigned int id);
 static volatile sig_atomic_t s_draw_crash = 0;
 static sigjmp_buf s_draw_jmpbuf;
 static void draw_sigsegv_handler(int sig) {
@@ -33,6 +34,9 @@ static void draw_alarm_handler(int sig) {
 int fpcDw_Execute(base_process_class* i_proc) {
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
+    /* Skip Draw for actors that crashed during Execute — their internal
+     * state is corrupted and Draw may loop forever. */
+    if (pal_is_exec_crashed(i_proc->id)) return 0;
 #endif
     if (
 #if PLATFORM_PC
