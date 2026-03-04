@@ -90,7 +90,14 @@ u32 J3DDisplayListObj::endDL() {
     OSRestoreInterrupts(sInterruptFlag);
     mSize = GDGetGDLObjOffset(&sGDLObj);
     GDFlushCurrToMem();
+#if PLATFORM_PC
+    /* On PC, never leave __GDCurrentDL as NULL.  Block load() methods
+     * (called outside beginDL/endDL) dereference it.  Redirect to the
+     * always-valid dummy buffer instead. */
+    pal_gd_reset_dummy();
+#else
     GDSetCurrent(NULL);
+#endif
     return mSize;
 }
 
@@ -216,6 +223,10 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 void J3DMatPacket::draw() {
 #if PLATFORM_PC
     if (mpMaterial == NULL) return;
+    /* Ensure __GDCurrentDL is valid BEFORE any material/block code runs.
+     * endDL() may have set it to NULL on a previous frame; mpMaterial->load()
+     * and block load() methods dereference __GDCurrentDL via GD helpers. */
+    pal_gd_reset_dummy();
 #endif
     mpMaterial->load();
 #if PLATFORM_PC
@@ -244,9 +255,6 @@ void J3DMatPacket::draw() {
             s_mat_block_diag++;
         }
     }
-    /* Reset dummy GD buffer before block loads. Block load() methods call
-     * GDGetCurrOffset/GDOverflowCheck which dereference __GDCurrentDL.
-     * On PC, GD writes are no-ops but the pointer must be valid. */
     pal_gd_reset_dummy();
     if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
     if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();

@@ -44,6 +44,7 @@
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include <signal.h>
 #include <setjmp.h>
+extern "C" void pal_gd_reset_dummy(void);
 static sigjmp_buf s_painter_jmpbuf;
 static void pal_painter_crash_handler(int sig) {
     siglongjmp(s_painter_jmpbuf, sig);
@@ -1551,6 +1552,11 @@ int mDoGph_Painter() {
 
         /* --- 3D rendering (camera + draw lists) --- */
         pal_gx_dl_reset_counters();
+#if PLATFORM_PC
+        /* Ensure __GDCurrentDL is valid at the start of each frame.
+         * endDL() may have set it to NULL during previous-frame model setup. */
+        pal_gd_reset_dummy();
+#endif
         if (dComIfGp_getWindowNum() != 0) {
             dDlst_window_c* window_p = dComIfGp_getWindow(0);
             int camera_id = window_p->getCameraID();
