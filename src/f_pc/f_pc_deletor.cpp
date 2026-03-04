@@ -13,6 +13,7 @@
 #include "JSystem/JUtility/JUTAssert.h"
 #if PLATFORM_PC
 #include "f_pc/f_pc_create_req.h"
+#include <cstdio>
 #define FPCDT_MAX_DRAIN_ITERATIONS 64
 #endif
 
@@ -56,6 +57,16 @@ void fpcDt_Handler() {
 }
 
 int fpcDt_ToQueue(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc->profname == 732) {
+        static int s_bg_delete_log = 0;
+        if (s_bg_delete_log < 5) {
+            fprintf(stderr, "{\"bg_delete_attempt\":{\"prof\":732,\"unk0xA\":%d,\"call\":%d}}\n",
+                    (int)i_proc->unk_0xA, s_bg_delete_log);
+            s_bg_delete_log++;
+        }
+    }
+#endif
     if (i_proc->unk_0xA != 1 && fpcBs_IsDelete(i_proc) == 1) {
         if (fpcPi_IsInQueue(&i_proc->priority) == 1) {
             fpcPi_Delete(&i_proc->priority);

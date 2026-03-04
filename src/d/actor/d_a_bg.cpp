@@ -563,7 +563,16 @@ static int daBg_Execute(daBg_c* i_this) {
 }
 
 int daBg_c::isDelete() {
+#if PLATFORM_PC
+    /* On PC the BG actor holds room geometry and must stay alive for its Draw
+     * to call mDoExt_modelEntryDL every frame.  The room manager already
+     * protects BG actors from objectDeleteJugge (d_s_room.cpp), but other
+     * framework paths call fpcDt_Delete which checks isDelete().  Return 0 to
+     * keep the actor in the draw queue permanently. */
+    return 0;
+#else
     return 1;
+#endif
 }
 
 static int daBg_IsDelete(daBg_c* i_this) {
