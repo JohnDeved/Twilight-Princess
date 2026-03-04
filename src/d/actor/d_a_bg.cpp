@@ -287,6 +287,9 @@ int daBg_c::draw() {
     int sp38 = 0;
 
     dDlst_window_c* sp34 = dComIfGp_getWindow(0);
+#if PLATFORM_PC
+    if (sp34 == NULL) return 1;
+#endif
     camera_class* sp30 = dComIfGp_getCamera(sp34->getCameraID());
 
     dComIfGd_setListBG();

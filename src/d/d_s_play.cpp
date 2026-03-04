@@ -28,6 +28,12 @@
 #include "d/actor/d_a_ykgr.h"
 #include <cstring>
 
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+#include <stdio.h>
+#endif
+
 #if PLATFORM_WII
 #include "d/d_cursor_mng.h"
 #endif
@@ -112,6 +118,28 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
         0x0006, 0x0007, 0x0000, 0x0000, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0008, 0x0008,
     };
 
+#if PLATFORM_PC
+    /* Wrap pre-Draw calls with crash protection so that a crash in
+     * collision/BG processing doesn't prevent the Draw iterator from
+     * running (which is where BG actor registers shapes → dl_draws). */
+    {
+        static sigjmp_buf s_predraw_jmpbuf;
+        struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+        memset(&sa_new, 0, sizeof(sa_new));
+        extern void draw_sigsegv_handler_extern(int sig);
+        sa_new.sa_handler = [](int sig) { siglongjmp(s_predraw_jmpbuf, sig); };
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+        sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+        if (sigsetjmp(s_predraw_jmpbuf, 1) != 0) {
+            sigaction(SIGSEGV, &sa_old_segv, NULL);
+            sigaction(SIGABRT, &sa_old_abrt, NULL);
+            fprintf(stderr, "[PAL] dScnPly_Draw: crash in pre-Draw (Ccsp/Bgsp), skipping to Draw iterator\n");
+            goto draw_iterator;
+        }
+#endif
+
     dComIfG_Ccsp()->Move();
     dComIfG_Bgsp().ClrMoveFlag();
 
@@ -171,6 +199,10 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
 
 #if PLATFORM_PC
+        sigaction(SIGSEGV, &sa_old_segv, NULL);
+        sigaction(SIGABRT, &sa_old_abrt, NULL);
+    }
+    draw_iterator:
     if (s_scnply_draw_count <= 5) {
         fprintf(stderr, "[PAL] dScnPly_Draw #%d step2: pre-DrawIter\n", s_scnply_draw_count);
     }
