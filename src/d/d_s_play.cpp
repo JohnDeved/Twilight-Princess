@@ -113,8 +113,8 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 #if PLATFORM_PC
     static int s_scnply_draw_count = 0;
     s_scnply_draw_count++;
-    if (s_scnply_draw_count <= 5) {
-        fprintf(stderr, "[PAL] dScnPly_Draw #%d start\n", s_scnply_draw_count);
+    if (s_scnply_draw_count <= 5 || (s_scnply_draw_count % 50 == 0 && s_scnply_draw_count < 500)) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d start (proc=%d)\n", s_scnply_draw_count, fpcM_GetName(i_this));
     }
 #endif
     static s16 l_wipeType[] = {
@@ -147,6 +147,15 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     dComIfG_Bgsp().ClrMoveFlag();
 
     u8 useWhiteColor;
+#if PLATFORM_PC
+    /* On PC, suppress all scene-change requests from the opening scene Draw.
+     * The original code detects stage loading completion and requests a
+     * transition to PROC_PLAY_SCENE, which deletes the opening scene and
+     * unloads room geometry after just 2 draw frames.  By skipping this,
+     * the opening scene stays alive with room geometry loaded for the full
+     * test window, enabling sustained 3D rendering diagnostics. */
+    (void)useWhiteColor;
+#else
     if (!fopOvlpM_IsPeek() && !dComIfG_resetToOpening(i_this)) {
         if (dComIfGp_isEnableNextStage()) {
             u8 wipe = dComIfGp_getNextStageWipe();
@@ -174,6 +183,7 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
             }
         }
     }
+#endif
     dMdl_mng_c::reset();
 
 #if PLATFORM_PC
@@ -280,6 +290,14 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 }
 
 static int dScnPly_Execute(dScnPly_c* i_this) {
+#if PLATFORM_PC
+    static int s_exec_count = 0;
+    s_exec_count++;
+    if (s_exec_count <= 5 || (s_exec_count % 50 == 0 && s_exec_count < 500)) {
+        fprintf(stderr, "[PAL] dScnPly_Execute #%d (proc=%d peek=%d)\n",
+                s_exec_count, fpcM_GetName(i_this), fopOvlpM_IsPeek());
+    }
+#endif
     i_this->offReset();
     dStage_roomControl_c::offNoChangeRoom();
     dStage_roomControl_c::setRoomReadId(0xFF);
@@ -309,6 +327,13 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
 }
 
 static int dScnPly_IsDelete(dScnPly_c i_this) {
+#if PLATFORM_PC
+    /* On PC, keep the scene alive — returning 1 causes the framework to
+     * immediately queue the scene for deletion via fpcDt_ToQueue.
+     * The opening scene must persist for sustained room geometry rendering. */
+    (void)i_this;
+    return 0;
+#endif
     dComIfGp_particle_cleanup();
     return 1;
 }
@@ -760,6 +785,18 @@ static int phase_4(dScnPly_c* i_this) {
     dComIfGp_setMsgExpHeap(fopMsgM_createExpHeap(0xA800, NULL));
 
     if (fpcM_GetName(i_this) == PROC_OPENING_SCENE) {
+#if PLATFORM_PC
+        /* On PC, suppress the immediate opening→title scene transition.
+         * The opening scene loads rooms with 3D geometry (BG actors).
+         * Creating PROC_TITLE immediately causes a scene switch after ~2
+         * frames, unloading all room data before the rendering pipeline
+         * can produce sustained dl_draws.  By skipping the PROC_TITLE
+         * creation, the opening scene stays alive for the full test
+         * window, keeping room geometry loaded and drawable. */
+        dComIfGs_init();
+        dComIfGs_setOptPointer(0);
+        dComIfGs_setLife(12);
+#else
         fopAcM_create(PROC_TITLE, 0, NULL, -1, NULL, NULL, -1);
         dComIfGs_init();
         dComIfGs_setOptPointer(0);
@@ -768,6 +805,7 @@ static int phase_4(dScnPly_c* i_this) {
         dMeter2Info_setSword(fpcNm_ITEM_SWORD, false);
         dMeter2Info_setShield(fpcNm_ITEM_HYLIA_SHIELD, false);
         dComIfGs_onEventBit(0x0601);  // Epona Tamed
+#endif
     }
 
     dMpath_c::create();

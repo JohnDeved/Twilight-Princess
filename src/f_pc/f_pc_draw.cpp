@@ -37,6 +37,15 @@ int fpcDw_Execute(base_process_class* i_proc) {
     /* Skip Draw for actors that crashed during Execute — their internal
      * state is corrupted and Draw may loop forever. */
     if (pal_is_exec_crashed(i_proc->id)) return 0;
+    {
+        static int s_dw_exec_frame = 0;
+        static int s_dw_exec_count = 0;
+        s_dw_exec_count++;
+        if (s_dw_exec_count < 20 || (s_dw_exec_count % 200 == 0 && s_dw_exec_count < 2000)) {
+            fprintf(stderr, "{\"dw_exec\":{\"n\":%d,\"prof\":%d,\"id\":%u}}\n",
+                    s_dw_exec_count, i_proc->profname, i_proc->id);
+        }
+    }
 #endif
     if (
 #if PLATFORM_PC
@@ -123,6 +132,15 @@ int fpcDw_Handler(fpcDw_HandlerFuncFunc i_iterHandler, fpcDw_HandlerFunc i_func)
     int ret;
     cAPIGph_BeforeOfDraw();
     ret = i_iterHandler(i_func);
+#if PLATFORM_PC
+    {
+        static int s_dw_handler_frame = 0;
+        if (s_dw_handler_frame < 5 || (s_dw_handler_frame >= 127 && s_dw_handler_frame <= 135) || s_dw_handler_frame % 50 == 0) {
+            fprintf(stderr, "{\"dw_handler\":{\"frame\":%d,\"ret\":%d}}\n", s_dw_handler_frame, ret);
+        }
+        s_dw_handler_frame++;
+    }
+#endif
     cAPIGph_AfterOfDraw();
     return ret;
 }
