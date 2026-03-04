@@ -19,6 +19,10 @@
 #include "c/c_dylink.h"
 #include "m_Do/m_Do_printf.h"
 
+#if PLATFORM_PC
+#include <stdio.h>
+#endif
+
 #if DEBUG
 class print_error_check_c {
 public:
@@ -443,6 +447,14 @@ static int fopAc_Create(void* i_this) {
     fopAc_ac_c* actor = (fopAc_ac_c*)i_this;
     int ret;
 
+#if PLATFORM_PC
+    /* Log every call to fopAc_Create for the BG actor */
+    if (actor->base.base.profname == 732) {
+        fprintf(stderr, "{\"fopAc_Create_enter\":{\"prof\":732,\"first\":%d}}\n",
+                fpcM_IsFirstCreating(i_this) ? 1 : 0);
+    }
+#endif
+
     if (fpcM_IsFirstCreating(i_this)) {
         actor_process_profile_definition* profile =
             (actor_process_profile_definition*)fpcM_GetProfile(i_this);
@@ -550,6 +562,15 @@ static int fopAc_Create(void* i_this) {
 
     ret = fpcMtd_Create((process_method_class*)actor->sub_method, actor);
     
+#if PLATFORM_PC
+    /* Log every fpcMtd_Create return for actor creation — traces whether
+     * the BG actor (prof=732) returns cPhs_COMPLEATE_e here. */
+    if (actor->base.base.profname == 732 || ret == cPhs_COMPLEATE_e) {
+        fprintf(stderr, "{\"fopAc_Create_ret\":{\"prof\":%d,\"ret\":%d}}\n",
+                actor->base.base.profname, ret);
+    }
+#endif
+
     #if DEBUG
     }
 
@@ -557,7 +578,16 @@ static int fopAc_Create(void* i_this) {
     #endif
     
     if (ret == cPhs_COMPLEATE_e) {
+#if PLATFORM_PC
+        int drawPri = fpcM_DrawPriority(actor);
+        fprintf(stderr, "{\"draw_reg_pre\":{\"prof\":%d,\"pri\":%d}}\n",
+                actor->base.base.profname, drawPri);
+        fopDwTg_ToDrawQ(&actor->draw_tag, drawPri);
+        fprintf(stderr, "{\"draw_reg_post\":{\"prof\":%d}}\n",
+                actor->base.base.profname);
+#else
         fopDwTg_ToDrawQ(&actor->draw_tag, fpcM_DrawPriority(actor));
+#endif
     } else if (ret == cPhs_ERROR_e) {
         fopAcM_OnCondition(actor, 0x10);
     }
