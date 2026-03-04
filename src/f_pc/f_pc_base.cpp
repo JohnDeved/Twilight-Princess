@@ -54,6 +54,40 @@ extern "C" int pal_is_exec_crashed(unsigned int id) {
         if (s_exec_crashed_ids[i] == id) return 1;
     return 0;
 }
+/* Per-profile crash counters: profiles that crash 3+ times in Execute
+ * are permanently skipped.  This eliminates per-frame SIGSEGV overhead
+ * (sigsetjmp/siglongjmp + signal handler setup) for actors that will
+ * never succeed.  Without this, ~6 actors crashing every frame causes
+ * CI timeout (400 frames × ~1s/frame = 400s > runner limit). */
+#define PAL_MAX_CRASH_PROFILES 128
+#define PAL_CRASH_THRESHOLD 3
+struct pal_profile_crash_entry { s16 profname; int count; };
+static pal_profile_crash_entry s_profile_crashes[PAL_MAX_CRASH_PROFILES];
+static int s_profile_crash_count = 0;
+static int pal_profile_crash_increment(s16 profname) {
+    for (int i = 0; i < s_profile_crash_count; i++) {
+        if (s_profile_crashes[i].profname == profname)
+            return ++s_profile_crashes[i].count;
+    }
+    if (s_profile_crash_count < PAL_MAX_CRASH_PROFILES) {
+        s_profile_crashes[s_profile_crash_count].profname = profname;
+        s_profile_crashes[s_profile_crash_count].count = 1;
+        s_profile_crash_count++;
+    }
+    return 1;
+}
+static int pal_profile_is_suppressed(s16 profname) {
+    for (int i = 0; i < s_profile_crash_count; i++) {
+        if (s_profile_crashes[i].profname == profname &&
+            s_profile_crashes[i].count >= PAL_CRASH_THRESHOLD)
+            return 1;
+    }
+    return 0;
+}
+/* Expose profile suppression check for Draw path (f_pc_draw.cpp) */
+extern "C" int pal_is_profile_suppressed(int profname) {
+    return pal_profile_is_suppressed((s16)profname);
+}
 #endif
 #include "Z2AudioLib/Z2AudioMgr.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
@@ -90,6 +124,8 @@ int fpcBs_Execute(base_process_class* i_proc) {
 
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
+    /* Skip profiles that have crashed 3+ times — no signal handler overhead */
+    if (pal_profile_is_suppressed(i_proc->profname)) return 0;
     /* Wrap Execute with SIGSEGV/SIGABRT protection so one crashed actor doesn't
      * take down the whole process. Uses SA_ONSTACK to avoid corrupting
      * main stack canaries (which trigger __fortify_fail → abort). */
@@ -108,8 +144,15 @@ int fpcBs_Execute(base_process_class* i_proc) {
             /* SIGSEGV/SIGABRT caught — skip this actor's Execute */
             sigaction(SIGSEGV, &sa_old_segv, NULL);
             sigaction(SIGABRT, &sa_old_abrt, NULL);
-            fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u)\n",
-                    i_proc->profname, i_proc->id);
+            int crash_count = pal_profile_crash_increment(i_proc->profname);
+            if (crash_count <= PAL_CRASH_THRESHOLD) {
+                fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u count=%d/%d)\n",
+                        i_proc->profname, i_proc->id, crash_count, PAL_CRASH_THRESHOLD);
+            }
+            if (crash_count == PAL_CRASH_THRESHOLD) {
+                fprintf(stderr, "[PAL] Execute: prof=%d permanently suppressed after %d crashes\n",
+                        i_proc->profname, PAL_CRASH_THRESHOLD);
+            }
             pal_mark_exec_crashed(i_proc->id);
             return 0;
         }
