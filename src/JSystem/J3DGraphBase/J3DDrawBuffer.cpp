@@ -15,6 +15,8 @@ static int s_pal_diag_virtual_draw_calls = 0;
 static int s_pal_diag_crash_phase = 0;
 static int s_pal_diag_crash_slot = -1;
 static int s_pal_diag_crash_packet_index = -1;
+static const void* s_pal_diag_crash_packet_ptr = NULL;
+static const void* s_pal_diag_crash_packet_vptr = NULL;
 enum {
     /* Stable phase ids for telemetry parsing; coarse steps use +10 spacing and
      * draw-call boundaries use adjacent ids (before/after). */
@@ -63,6 +65,8 @@ void J3DDrawBuffer::palDiagFrameReset() {
     s_pal_diag_crash_phase = 0;
     s_pal_diag_crash_slot = -1;
     s_pal_diag_crash_packet_index = -1;
+    s_pal_diag_crash_packet_ptr = NULL;
+    s_pal_diag_crash_packet_vptr = NULL;
 #endif
 }
 
@@ -87,6 +91,8 @@ void J3DDrawBuffer::palDiagCrashMarkerReset() {
     s_pal_diag_crash_phase = 0;
     s_pal_diag_crash_slot = -1;
     s_pal_diag_crash_packet_index = -1;
+    s_pal_diag_crash_packet_ptr = NULL;
+    s_pal_diag_crash_packet_vptr = NULL;
 #endif
 }
 
@@ -111,6 +117,22 @@ int J3DDrawBuffer::palDiagCrashPacketIndex() {
     return s_pal_diag_crash_packet_index;
 #else
     return -1;
+#endif
+}
+
+const void* J3DDrawBuffer::palDiagCrashPacketPtr() {
+#if PLATFORM_PC
+    return s_pal_diag_crash_packet_ptr;
+#else
+    return NULL;
+#endif
+}
+
+const void* J3DDrawBuffer::palDiagCrashPacketVptr() {
+#if PLATFORM_PC
+    return s_pal_diag_crash_packet_vptr;
+#else
+    return NULL;
 #endif
 }
 
@@ -452,6 +474,8 @@ void J3DDrawBuffer::drawHead() const {
                 }
             }
             s_pal_diag_virtual_draw_calls++;
+            s_pal_diag_crash_packet_ptr = packet;
+            s_pal_diag_crash_packet_vptr = *(const void* const*)packet;
             s_pal_diag_crash_phase = CRASH_PHASE_HEAD_BEFORE_DRAW;
 #endif
             packet->draw();
@@ -482,6 +506,8 @@ void J3DDrawBuffer::drawTail() const {
             if ((uintptr_t)packet < 0x1000) break;
             s_pal_diag_packets_visited++;
             s_pal_diag_virtual_draw_calls++;
+            s_pal_diag_crash_packet_ptr = packet;
+            s_pal_diag_crash_packet_vptr = *(const void* const*)packet;
             s_pal_diag_crash_phase = CRASH_PHASE_TAIL_BEFORE_DRAW;
 #endif
             packet->draw();

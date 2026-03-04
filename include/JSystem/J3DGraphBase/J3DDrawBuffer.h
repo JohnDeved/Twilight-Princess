@@ -84,6 +84,8 @@ public:
     static int palDiagCrashPhase();
     static int palDiagCrashSlot();
     static int palDiagCrashPacketIndex();
+    static const void* palDiagCrashPacketPtr();
+    static const void* palDiagCrashPacketVptr();
 
     u32 getEntryTableSize() { return mEntryTableSize; }
     int getSortMode() { return mSortMode; }
