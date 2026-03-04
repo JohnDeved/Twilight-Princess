@@ -211,8 +211,24 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
 #endif
 
-    for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
-        fpcM_Draw(i->mpTagData);
+    {
+        int draw_count = 0;
+        for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
+#if PLATFORM_PC
+            if (draw_count < 10 && s_scnply_draw_count <= 2) {
+                base_process_class* p = (base_process_class*)i->mpTagData;
+                if (p) fprintf(stderr, "{\"draw_iter\":{\"idx\":%d,\"prof\":%d,\"id\":%u}}\n",
+                        draw_count, p->profname, p->id);
+            }
+            draw_count++;
+#endif
+            fpcM_Draw(i->mpTagData);
+        }
+#if PLATFORM_PC
+        if (s_scnply_draw_count <= 2) {
+            fprintf(stderr, "{\"draw_iter_total\":{\"count\":%d}}\n", draw_count);
+        }
+#endif
     }
 
 #if PLATFORM_PC

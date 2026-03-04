@@ -101,6 +101,14 @@ J3DShapeDraw::J3DShapeDraw(const u8* displayList, u32 displayListSize) {
 }
 
 void J3DShapeDraw::draw() const {
+#if PLATFORM_PC
+    static int s_shapedraw_log = 0;
+    if (s_shapedraw_log < 5) {
+        fprintf(stderr, "{\"shapedraw\":{\"ptr\":\"%p\",\"size\":%u}}\n",
+                mDisplayList, mDisplayListSize);
+        s_shapedraw_log++;
+    }
+#endif
     GXCallDisplayList(mDisplayList, mDisplayListSize);
 }
 

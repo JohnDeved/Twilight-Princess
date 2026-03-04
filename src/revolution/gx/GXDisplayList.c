@@ -5,6 +5,10 @@
 
 #include "__gx.h"
 
+#if PLATFORM_PC
+#include "pal/gx/gx_displaylist.h"
+#endif
+
 static __GXFifoObj DisplayListFifo;
 static volatile __GXFifoObj* OldCPUFifo;
 static GXData __savedGXdata;
@@ -76,6 +80,18 @@ u32 GXEndDisplayList(void) {
 }
 
 void GXCallDisplayList(void* list, u32 nbytes) {
+#if PLATFORM_PC
+    /* On PC (64-bit), the FIFO format only supports 32-bit addresses.
+     * GX_WRITE_U32(list) truncates the 64-bit pointer, making the
+     * display list data unreachable when the FIFO is later parsed.
+     * Instead, directly parse the display list buffer now. */
+    if (__GXData->dirtyState != 0) {
+        __GXSetDirtyState();
+    }
+    if (list != NULL && nbytes > 0) {
+        pal_gx_call_display_list(list, nbytes);
+    }
+#else
     CHECK_GXBEGIN(272, "GXCallDisplayList");
     ASSERTMSGLINE(273, !__GXData->inDispList, "GXCallDisplayList: display list already in progress");
     ASSERTMSGLINE(274, (nbytes & 0x1F) == 0, "GXCallDisplayList: nbytes is not 32 byte aligned");
@@ -96,4 +112,5 @@ void GXCallDisplayList(void* list, u32 nbytes) {
     GX_WRITE_U8(GX_CMD_CALL_DL);
     GX_WRITE_U32(list);
     GX_WRITE_U32(nbytes);
+#endif
 }

@@ -669,6 +669,13 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
 
     if (vert_size == 0 || r->pos + total_bytes > r->size) {
         /* Can't determine vertex size or not enough data — skip */
+        static int s_dl_skip_log = 0;
+        if (s_dl_skip_log < 10) {
+            fprintf(stderr, "{\"dl_draw_skip\":{\"vtxfmt\":%d,\"nverts\":%u,\"vert_size\":%u,"
+                    "\"total_bytes\":%u,\"pos\":%u,\"size\":%u,\"prim\":0x%02X}}\n",
+                    vtxfmt, (unsigned)nverts, vert_size, total_bytes, r->pos, r->size, prim_type);
+            s_dl_skip_log++;
+        }
         if (vert_size > 0) r->pos += total_bytes;
         return;
     }
@@ -828,6 +835,17 @@ void pal_gx_dl_reset_counters() {
 
 void pal_gx_call_display_list(const void* list, u32 nbytes) {
     if (!list || nbytes == 0) return;
+
+    s_dl_call_count++;
+    static int s_dl_call_log = 0;
+    if (s_dl_call_log < 5) {
+        fprintf(stderr, "{\"dl_call\":{\"count\":%d,\"ptr\":\"%p\",\"size\":%u,\"first_bytes\":[%u,%u,%u,%u]}}\n",
+                s_dl_call_count, list, nbytes,
+                ((const u8*)list)[0], ((const u8*)list)[1],
+                nbytes > 2 ? ((const u8*)list)[2] : 0,
+                nbytes > 3 ? ((const u8*)list)[3] : 0);
+        s_dl_call_log++;
+    }
 
     DLReader reader;
     reader.data = (const u8*)list;

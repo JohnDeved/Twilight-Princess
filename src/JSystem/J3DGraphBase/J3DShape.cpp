@@ -424,6 +424,16 @@ void J3DShape::drawFast() const {
         mCurrentMtx.load();
 
     setArrayAndBindPipeline();
+#if PLATFORM_PC
+    {
+        static int s_shape_drawfast_log = 0;
+        if (s_shape_drawfast_log < 5) {
+            fprintf(stderr, "{\"shape_drawfast\":{\"mtxGroupNum\":%u,\"noMtx\":%d}}\n",
+                    mMtxGroupNum, checkFlag(J3DShpFlag_NoMtx) ? 1 : 0);
+            s_shape_drawfast_log++;
+        }
+    }
+#endif
     if (!checkFlag(J3DShpFlag_NoMtx)) {
         if (J3DShapeMtx::getLODFlag())
             J3DShapeMtx::resetMtxLoadCache();

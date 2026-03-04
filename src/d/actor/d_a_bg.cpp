@@ -583,6 +583,15 @@ int daBg_c::create() {
     field_0x5f1 = 0;
     dBgp_c* bgp = dStage_roomControl_c::getBgp(roomNo);
 
+#if PLATFORM_PC
+    static int s_bg_create_log = 0;
+    if (s_bg_create_log < 10) {
+        fprintf(stderr, "{\"bg_create\":{\"roomNo\":%d,\"heap\":%p,\"bgp\":%p,\"call\":%d}}\n",
+                roomNo, (void*)this->heap, (void*)bgp, s_bg_create_log);
+        s_bg_create_log++;
+    }
+#endif
+
     if (this->heap == NULL) {
         fopAcM_ct(this, daBg_c);
 
@@ -676,6 +685,13 @@ int daBg_c::create() {
     }
 
     if (bgp != NULL) {
+#if PLATFORM_PC
+        static int s_bgp_exec_log = 0;
+        if (s_bgp_exec_log < 10) {
+            fprintf(stderr, "{\"bgp_exec\":{\"call\":%d}}\n", s_bgp_exec_log);
+            s_bgp_exec_log++;
+        }
+#endif
         if (!bgp->execute(false)) {
             return cPhs_INIT_e;
         }
@@ -683,6 +699,9 @@ int daBg_c::create() {
 
     dComIfGp_roomControl_onStatusFlag(roomNo, 0x10);
     OS_REPORT("<BG> room%d\n", roomNo);
+#if PLATFORM_PC
+    fprintf(stderr, "{\"bg_create_complete\":{\"roomNo\":%d}}\n", roomNo);
+#endif
     return cPhs_COMPLEATE_e;
 }
 

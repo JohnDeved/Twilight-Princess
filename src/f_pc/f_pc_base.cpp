@@ -162,19 +162,39 @@ int fpcBs_Delete(base_process_class* i_proc) {
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) {
         pal_error(PAL_ERR_NULL_PTR, "fpcBs_Delete: proc/methods");
-        /* Do NOT free — methods==NULL suggests already-freed or corrupt process.
-         * Freeing would be a double-free, corrupting the JKR heap. */
         return 1;
     }
-#endif
+    /* Wrap the delete method with crash protection — actors with
+     * unswapped data or uninitialized state can crash during deletion. */
+    {
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = exec_sigsegv_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        s_exec_crash = 0;
+        if (sigsetjmp(s_exec_jmpbuf, 1) == 0) {
+            result = fpcMtd_Delete(i_proc->methods, i_proc);
+        } else {
+            fprintf(stderr, "[PAL] SIGSEGV caught in Delete (prof=%d id=%u)\n",
+                    i_proc->profname, (unsigned)i_proc->id);
+            result = 1; /* treat as "done" to free the process */
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+    }
+    if (result == 1) {
+        fpcBs_DeleteAppend(i_proc);
+        i_proc->type = 0;
+        cMl::free(i_proc);
+    }
+#else
     if (result == TRUE) {
         result = fpcMtd_Delete(i_proc->methods, i_proc);
         if (result == 1) {
             s16 profname = i_proc->profname;
-#if PLATFORM_PC
-            fprintf(stderr, "[PROC-DELETE] profname=%d addr=%p\n",
-                    profname, (void*)i_proc);
-#endif
             fpcBs_DeleteAppend(i_proc);
             i_proc->type = 0;
             cMl::free(i_proc);
@@ -197,6 +217,7 @@ int fpcBs_Delete(base_process_class* i_proc) {
             #endif
         }
     }
+#endif
     return result;
 }
 

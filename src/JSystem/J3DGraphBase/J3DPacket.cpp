@@ -64,6 +64,9 @@ void J3DDisplayListObj::swapBuffer() {
 }
 
 void J3DDisplayListObj::callDL() const {
+#if PLATFORM_PC
+    if (mpDisplayList[0] == NULL || mSize == 0) return;
+#endif
     GXCallDisplayList(mpDisplayList[0], mSize);
 }
 
@@ -208,15 +211,31 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 
 void J3DMatPacket::draw() {
     mpMaterial->load();
+#if PLATFORM_PC
+    /* On PC, display lists are empty because GD functions are stubs.
+     * Directly load the material's TEV/color/texgen state here instead
+     * of replaying the empty DL. This sets the GX state for rendering. */
+    if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
+    if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();
+    if (mpMaterial->getPEBlock() != NULL)  mpMaterial->getPEBlock()->load();
+    if (mpMaterial->getTexGenBlock() != NULL) mpMaterial->getTexGenBlock()->load();
+    if (mpMaterial->getColorBlock() != NULL) mpMaterial->getColorBlock()->load();
+#else
     callDL();
+#endif
 
     J3DShapePacket* packet = getShapePacket();
+#if PLATFORM_PC
+    if (packet == NULL || packet->getShape() == NULL) return;
+#endif
     packet->getShape()->loadPreDrawSetting();
 
     while (packet != NULL) {
+#if !PLATFORM_PC
         if (packet->getDisplayListObj() != NULL) {
             packet->getDisplayListObj()->callDL();
         }
+#endif
 
         packet->drawFast();
         packet = (J3DShapePacket*)packet->getNextPacket();

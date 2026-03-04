@@ -1608,39 +1608,40 @@ int mDoGph_Painter() {
                     sa_new.sa_flags = SA_NODEFER;
                     sigaction(SIGSEGV, &sa_new, &sa_segv_old);
                     sigaction(SIGABRT, &sa_new, &sa_abrt_old);
-                    if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {
-                        /* Sky */
-                        dComIfGd_drawOpaListSky();
-                        dComIfGd_drawXluListSky();
-                        GXSetClipMode(GX_CLIP_ENABLE);
 
-                        /* Background / terrain */
-                        dComIfGd_drawOpaListBG();
-                        dComIfGd_drawOpaListDarkBG();
-                        dComIfGd_drawOpaListMiddle();
+                    /* Per-draw-list crash protection: if one list crashes,
+                     * subsequent lists can still execute and produce dl_draws. */
+#define PAL_SAFE_DRAW(label, code) \
+    if (sigsetjmp(s_painter_jmpbuf, 1) == 0) { code; } \
+    else { static int c = 0; if (c++ < 3) fprintf(stderr, "[PAL] draw crash: " label "\n"); }
 
-                        /* Opaque objects */
-                        dComIfGd_drawOpaList();
-                        dComIfGd_drawOpaListDark();
-                        dComIfGd_drawOpaListPacket();
+                    /* Sky */
+                    PAL_SAFE_DRAW("OpaListSky", dComIfGd_drawOpaListSky());
+                    PAL_SAFE_DRAW("XluListSky", dComIfGd_drawXluListSky());
+                    GXSetClipMode(GX_CLIP_ENABLE);
 
-                        /* Translucent background */
-                        dComIfGd_drawXluListBG();
-                        dComIfGd_drawXluListDarkBG();
+                    /* Background / terrain */
+                    PAL_SAFE_DRAW("OpaListBG", dComIfGd_drawOpaListBG());
+                    PAL_SAFE_DRAW("OpaListDarkBG", dComIfGd_drawOpaListDarkBG());
+                    PAL_SAFE_DRAW("OpaListMiddle", dComIfGd_drawOpaListMiddle());
 
-                        /* Translucent objects */
-                        dComIfGd_drawXluList();
-                        dComIfGd_drawXluListDark();
+                    /* Opaque objects */
+                    PAL_SAFE_DRAW("OpaList", dComIfGd_drawOpaList());
+                    PAL_SAFE_DRAW("OpaListDark", dComIfGd_drawOpaListDark());
+                    PAL_SAFE_DRAW("OpaListPacket", dComIfGd_drawOpaListPacket());
 
-                        /* Late 3D */
-                        dComIfGd_drawOpaList3Dlast();
-                    } else {
-                        static int s_painter_crash_count = 0;
-                        if (s_painter_crash_count < 5) {
-                            fprintf(stderr, "[PAL] 3D draw list crash caught (count=%d)\n", s_painter_crash_count);
-                        }
-                        s_painter_crash_count++;
-                    }
+                    /* Translucent background */
+                    PAL_SAFE_DRAW("XluListBG", dComIfGd_drawXluListBG());
+                    PAL_SAFE_DRAW("XluListDarkBG", dComIfGd_drawXluListDarkBG());
+
+                    /* Translucent objects */
+                    PAL_SAFE_DRAW("XluList", dComIfGd_drawXluList());
+                    PAL_SAFE_DRAW("XluListDark", dComIfGd_drawXluListDark());
+
+                    /* Late 3D */
+                    PAL_SAFE_DRAW("OpaList3Dlast", dComIfGd_drawOpaList3Dlast());
+
+#undef PAL_SAFE_DRAW
                     sigaction(SIGSEGV, &sa_segv_old, NULL);
                     sigaction(SIGABRT, &sa_abrt_old, NULL);
                 }
@@ -1663,15 +1664,36 @@ int mDoGph_Painter() {
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
-        ortho.setPort();
+        /* Wrap 2D/item draws with crash protection — NULL packet
+         * pointers or uninitialized display list objects can crash. */
+        {
+            struct sigaction sa_new, sa_segv_old2, sa_abrt_old2;
+            memset(&sa_new, 0, sizeof(sa_new));
+            sa_new.sa_handler = pal_painter_crash_handler;
+            sigemptyset(&sa_new.sa_mask);
+            sa_new.sa_flags = SA_NODEFER;
+            sigaction(SIGSEGV, &sa_new, &sa_segv_old2);
+            sigaction(SIGABRT, &sa_new, &sa_abrt_old2);
+            if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {
+                J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
+                ortho.setPort();
 
-        dComIfGd_draw2DOpa();
-        dComIfGd_draw2DXlu();
-        dComIfGd_draw2DOpaTop();
+                dComIfGd_draw2DOpa();
+                dComIfGd_draw2DXlu();
+                dComIfGd_draw2DOpaTop();
 
-        /* --- Item/3D model draw list (with proper camera setup) --- */
-        drawItem3D();
+                /* --- Item/3D model draw list (with proper camera setup) --- */
+                drawItem3D();
+            } else {
+                static int s_2d_crash_count = 0;
+                if (s_2d_crash_count < 5) {
+                    fprintf(stderr, "[PAL] 2D/item draw crash caught (count=%d)\n", s_2d_crash_count);
+                }
+                s_2d_crash_count++;
+            }
+            sigaction(SIGSEGV, &sa_segv_old2, NULL);
+            sigaction(SIGABRT, &sa_abrt_old2, NULL);
+        }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */
         mDoGph_gInf_c::calcFade();
