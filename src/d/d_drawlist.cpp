@@ -1804,12 +1804,18 @@ void dDlst_list_c::entryZSortXluDrawList(J3DDrawBuffer* param_0, J3DPacket* para
 
 
 void dDlst_list_c::drawOpaDrawList(J3DDrawBuffer* pDrawBuf) {
+#if PLATFORM_PC
+    if (pDrawBuf == NULL) return;
+#endif
     J3DShape::resetVcdVatCache();
     j3dSys.setDrawModeOpaTexEdge();
     pDrawBuf->draw();
 }
 
 void dDlst_list_c::drawXluDrawList(J3DDrawBuffer* pDrawBuf) {
+#if PLATFORM_PC
+    if (pDrawBuf == NULL) return;
+#endif
     J3DShape::resetVcdVatCache();
     j3dSys.setDrawModeXlu();
     pDrawBuf->draw();
