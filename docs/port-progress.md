@@ -7,7 +7,7 @@
 
 | Field | Value |
 |---|---|
-| **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free in 227ms) |
+| **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
 | **Blocking Issue** | OpaListBG draw list crashes on play-scene frames (permanently suppressed for CI stability). Root cause: uninitialized kankyo/lighting state accessed during J3D draw buffer flush. 3D draws only on frames 128-130 before suppression kicks in. Next: fix the draw list crash root cause to sustain 3D rendering across all frames. |

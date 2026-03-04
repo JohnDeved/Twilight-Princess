@@ -1555,9 +1555,11 @@ int mDoGph_Painter() {
         /* Ensure __GDCurrentDL is valid at the start of each frame.
          * endDL() may have set it to NULL during previous-frame model setup. */
         pal_gd_reset_dummy();
-        /* Capture J3D entry count from previous frame's Draw pass (which runs
-         * AFTER Paint), then reset for the next cycle.  Reading entryNum here
-         * reflects models registered by the last Draw pass. */
+        /* Capture J3D entry count from the previous frame's complete cycle
+         * (Paint+Execute+Draw all happen sequentially within one frame,
+         * with Draw running last).  entryNum here reflects models that were
+         * registered during the previous frame's Draw pass.  Reset it for
+         * the next cycle so Paint draws from the fresh buffer. */
         static int s_prev_j3d_entries = 0;
         s_prev_j3d_entries = J3DDrawBuffer::entryNum;
         J3DDrawBuffer::entryNum = 0;

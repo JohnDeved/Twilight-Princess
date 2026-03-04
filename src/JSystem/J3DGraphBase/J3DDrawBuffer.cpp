@@ -230,13 +230,16 @@ void J3DDrawBuffer::drawHead() const {
     u32 size = mEntryTableSize;
     J3DPacket** buf = mpBuffer;
 #if PLATFORM_PC
+    /* entryTableSize should never exceed 0x10000 (default is 0x20); a larger
+     * value indicates corruption.  buf==NULL means allocBuffer was never called. */
     if (buf == NULL || size == 0 || size > 0x10000) return;
 #endif
 
     for (u32 i = 0; i < size; i++) {
         for (J3DPacket* packet = buf[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
-            /* Validate packet pointer */
+            /* Addresses below 4KB fall within the OS NULL-page guard region
+             * and indicate a corrupted linked-list pointer. */
             if ((uintptr_t)packet < 0x1000) break;
 #endif
             packet->draw();
