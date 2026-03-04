@@ -9,9 +9,11 @@ Parses stdout for:
     - tev_config_summary: unique TEV combiner configurations
     - draw_path_summary: categorized draw skip/success counts
     - collision_stub_calls: call frequency for collision stubs
+    - dl_validation: DL vertex stride/index/bulk-copy validation
 
 Parses stderr for:
     - j3d_draw_diag: per-frame dl_draws, dl_verts, j3d_entries
+    - bg_draw_entry / bg_kankyo_stats: BG actor draw lifecycle
     - render frame_stats: periodic draw_calls/verts
 
 Compares against baseline thresholds and flags regressions.
@@ -58,6 +60,7 @@ def main():
     tev_config = None
     draw_path = None
     collision = None
+    dl_validation = None
     milestones = []
 
     for obj in stdout_objs:
@@ -67,12 +70,17 @@ def main():
             draw_path = obj['draw_path_summary']
         if 'collision_stub_calls' in obj:
             collision = obj['collision_stub_calls']
+        if 'dl_validation' in obj:
+            dl_validation = obj['dl_validation']
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
 
     # j3d_draw_diag from stderr
     j3d_diag_frames = {}
     frame_stats = {}
+    bg_draw_entries = []
+    bg_kankyo_stats = []
+    kankyo_crash_count = 0
     for obj in stderr_objs:
         if 'j3d_draw_diag' in obj:
             d = obj['j3d_draw_diag']
@@ -81,8 +89,22 @@ def main():
         if 'render' in obj and obj.get('render') == 'frame_stats':
             frame = obj.get('frame', 0)
             frame_stats[frame] = obj
+        if 'bg_draw_entry' in obj:
+            bg_draw_entries.append(obj['bg_draw_entry'])
+        if 'bg_kankyo_stats' in obj:
+            bg_kankyo_stats.append(obj['bg_kankyo_stats'])
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
+
+    # Count kankyo crash lines in stderr
+    if stderr_log:
+        try:
+            with open(stderr_log, 'r', errors='replace') as f:
+                for line in f:
+                    if 'BG kankyo crash' in line or 'BG draw crash' in line:
+                        kankyo_crash_count += 1
+        except FileNotFoundError:
+            pass
 
     # ================================================================
     # Report
@@ -131,6 +153,22 @@ def main():
     else:
         warnings.append("No draw_path_summary found in stdout")
 
+    print("\n=== DL Validation ===")
+    if dl_validation:
+        print(f"  Total DL draws: {dl_validation.get('total_draws', dl_validation.get('draws', 0))}")
+        print(f"  Total DL verts: {dl_validation.get('total_verts', dl_validation.get('verts', 0))}")
+        print(f"  DL calls: {dl_validation.get('calls', 0)}")
+        print(f"  Stride-zero skips: {dl_validation.get('stride_zero', 0)}")
+        print(f"  Overflow skips: {dl_validation.get('overflow', 0)}")
+        print(f"  Bulk copy OK: {dl_validation.get('bulk_copy_ok', 0)}")
+        print(f"  Bulk copy fail: {dl_validation.get('bulk_copy_fail', 0)}")
+        if dl_validation.get('stride_zero', 0) > 100:
+            warnings.append(f"High stride-zero skips: {dl_validation['stride_zero']}")
+        if dl_validation.get('bulk_copy_fail', 0) > 0:
+            warnings.append(f"Bulk copy failures: {dl_validation['bulk_copy_fail']}")
+    else:
+        warnings.append("No dl_validation found in stdout")
+
     print("\n=== Collision Stub Calls ===")
     if collision:
         total_calls = sum(collision.values())
@@ -142,6 +180,45 @@ def main():
             print("  (All collision stubs are dead code during noop test)")
     else:
         warnings.append("No collision_stub_calls found in stdout")
+
+    print("\n=== 3D Rendering Stability ===")
+    # Check BG draw lifecycle
+    bg_draw_count = len(bg_draw_entries)
+    print(f"  BG draw frames: {bg_draw_count}")
+    if bg_draw_count > 0:
+        bg_rooms = set(e.get('roomNo', -1) for e in bg_draw_entries)
+        print(f"  BG rooms drawn: {sorted(bg_rooms)}")
+
+    # Check kankyo crash dependency
+    total_kankyo_faults = sum(s.get('faults', 0) for s in bg_kankyo_stats)
+    total_kankyo_successes = sum(s.get('successes', 0) for s in bg_kankyo_stats)
+    print(f"  Kankyo faults: {total_kankyo_faults}")
+    print(f"  Kankyo successes: {total_kankyo_successes}")
+    print(f"  Kankyo crash lines: {kankyo_crash_count}")
+    if kankyo_crash_count > 0:
+        errors.append(f"REGRESSION: {kankyo_crash_count} kankyo crash-recovery events (should be 0 with clean bypass)")
+
+    # Check dl_draws across sustained frame range
+    if j3d_diag_frames:
+        play_frames = {f: d for f, d in j3d_diag_frames.items() if 130 <= f <= 400}
+        if play_frames:
+            dl_draws_list = [(f, d.get('dl_draws', 0)) for f, d in sorted(play_frames.items())]
+            nonzero_frames = [(f, d) for f, d in dl_draws_list if d > 0]
+            print(f"  Play frames with dl_draws > 0: {len(nonzero_frames)}/{len(dl_draws_list)}")
+            if nonzero_frames:
+                first_f, first_d = nonzero_frames[0]
+                last_f, last_d = nonzero_frames[-1]
+                print(f"  dl_draws active: frames {first_f}-{last_f}")
+                print(f"  dl_draws range: [{min(d for _,d in nonzero_frames)}, {max(d for _,d in nonzero_frames)}]")
+            # Warn if dl_draws is not sustained across play frames
+            if len(nonzero_frames) < 5:
+                warnings.append(f"Low dl_draws stability: only {len(nonzero_frames)} frames with draws "
+                               f"(target: sustained across 130-400)")
+            # Report dominant blocker
+            zero_frames = len(dl_draws_list) - len(nonzero_frames)
+            if zero_frames > len(dl_draws_list) * 0.5:
+                warnings.append(f"Dominant blocker: {zero_frames}/{len(dl_draws_list)} play frames have 0 dl_draws "
+                               f"— scene transition unloads BG before stable rendering window")
 
     print("\n=== J3D Draw Diagnostics ===")
     if j3d_diag_frames:
@@ -172,9 +249,6 @@ def main():
                 print(f"  Peak j3d_entries in play: {max_j3d}")
             if max_dl_draws > 0:
                 print(f"  Peak dl_draws in play: {max_dl_draws}")
-            # Note: j3d_entries/dl_draws may be 0 in noop mode — these
-            # metrics are primarily meaningful in softpipe (Phase 2).
-            # The TEV flush path (ok_submitted above) tracks actual draws.
     else:
         warnings.append("No j3d_draw_diag found in stderr")
 

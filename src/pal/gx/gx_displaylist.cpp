@@ -42,6 +42,8 @@ static int s_dl_stride_zero = 0;      /* vert_size == 0 skips */
 static int s_dl_overflow = 0;         /* buffer overflow skips */
 static int s_dl_bulk_copy_ok = 0;     /* successful bulk copies */
 static int s_dl_bulk_copy_fail = 0;   /* bulk copy buffer overflows */
+static int s_dl_total_draws = 0;      /* cumulative draw count (not reset per frame) */
+static int s_dl_total_verts = 0;      /* cumulative vert count (not reset per frame) */
 
 /* ================================================================ */
 /* Big-endian byte stream reader                                    */
@@ -691,6 +693,8 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
     /* Begin draw call */
     s_dl_draw_count++;
     s_dl_vert_count += nverts;
+    s_dl_total_draws++;
+    s_dl_total_verts += nverts;
     pal_gx_begin(prim, (GXVtxFmt)vtxfmt, nverts);
 
     /* FAST PATH: Bulk-copy vertex data from DL into draw state buffer.
@@ -735,9 +739,9 @@ void pal_gx_dl_reset_counters() {
 }
 
 void pal_gx_dl_report_validation() {
-    fprintf(stdout, "{\"dl_validation\":{\"draws\":%d,\"verts\":%d,\"calls\":%d,"
+    fprintf(stdout, "{\"dl_validation\":{\"total_draws\":%d,\"total_verts\":%d,\"calls\":%d,"
             "\"stride_zero\":%d,\"overflow\":%d,\"bulk_copy_ok\":%d,\"bulk_copy_fail\":%d}}\n",
-            s_dl_draw_count, s_dl_vert_count, s_dl_call_count,
+            s_dl_total_draws, s_dl_total_verts, s_dl_call_count,
             s_dl_stride_zero, s_dl_overflow, s_dl_bulk_copy_ok, s_dl_bulk_copy_fail);
 }
 

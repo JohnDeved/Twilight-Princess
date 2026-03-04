@@ -822,6 +822,8 @@ void main01(void) {
                 pal_collision_stub_report();
                 pal_gx_dl_report_validation();
                 pal_verify_summary();
+                fflush(stdout);
+                fflush(stderr);
                 _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
         }
