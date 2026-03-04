@@ -210,6 +210,9 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 }
 
 void J3DMatPacket::draw() {
+#if PLATFORM_PC
+    if (mpMaterial == NULL) return;
+#endif
     mpMaterial->load();
 #if PLATFORM_PC
     /* On PC, display lists are empty because GD functions are stubs.
