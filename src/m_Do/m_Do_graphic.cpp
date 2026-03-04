@@ -1556,6 +1556,9 @@ int mDoGph_Painter() {
         /* Ensure __GDCurrentDL is valid at the start of each frame.
          * endDL() may have set it to NULL during previous-frame model setup. */
         pal_gd_reset_dummy();
+        /* Reset the cumulative J3D draw buffer entry counter per frame
+         * so j3d_draw_diag reports per-frame model registration count. */
+        J3DDrawBuffer::entryNum = 0;
 #endif
         if (dComIfGp_getWindowNum() != 0) {
             dDlst_window_c* window_p = dComIfGp_getWindow(0);
