@@ -192,6 +192,45 @@ if ! python3 tools/verify_port.py "$TMP_DIR/milestones.log" \
 fi
 echo ""
 
+# --- Step 6 (optional): GDB crash report ---
+if [ "$CRASH_REPORT" -eq 1 ]; then
+    if ! command -v gdb &>/dev/null; then
+        echo "━━━ Step 6: GDB crash report (SKIPPED — gdb not found) ━━━"
+        echo "  Install: sudo apt-get install gdb"
+        echo ""
+    else
+        CRASH_REPORT_FRAMES="${FRAMES}"
+        CRASH_UNIQUE_ARG=""
+        [ "$CRASH_UNIQUE" -eq 1 ] && CRASH_UNIQUE_ARG="--unique"
+        echo "━━━ Step 6: GDB crash report ($CRASH_REPORT_FRAMES frames) ━━━"
+        echo "  Running binary under GDB to collect all crash stack traces..."
+        echo "  (This may take a few minutes)"
+        echo ""
+        CRASH_OUT="$TMP_DIR/crash-report.txt"
+        if tools/crash-report.sh \
+            --binary build/tp-pc \
+            --frames "$CRASH_REPORT_FRAMES" \
+            ${CRASH_UNIQUE_ARG} \
+            --out "$CRASH_OUT"; then
+            echo ""
+            echo "  ✅ Crash report saved to: $CRASH_OUT"
+            # Extract crash summary line for the final report
+            CRASH_SUMMARY=$(grep -m1 "^Total crashes:" "$CRASH_OUT" 2>/dev/null || echo "")
+            UNIQUE_SUMMARY=$(grep -m1 "^Unique crash sites:" "$CRASH_OUT" 2>/dev/null || echo "")
+            echo "  $CRASH_SUMMARY"
+            echo "  $UNIQUE_SUMMARY"
+            # Show crash site summary table
+            echo ""
+            echo "  Crash site breakdown:"
+            grep -A50 "^Crash site summary" "$CRASH_OUT" 2>/dev/null | head -20 | sed 's/^/    /'
+        else
+            echo "  ⚠️  Crash report failed"
+            PASS=0
+        fi
+        echo ""
+    fi
+fi
+
 # --- Summary ---
 echo "╔══════════════════════════════════════════════════════════════╗"
 if [ "$PASS" -eq 1 ]; then
@@ -206,6 +245,9 @@ echo "║    milestone-summary.json  — parsed milestones"
 echo "║    regression-report.json  — regression check"
 echo "║    verify-report.json      — rendering verification"
 echo "║    verify/                 — captured frame BMPs"
+if [ "$CRASH_REPORT" -eq 1 ]; then
+echo "║    crash-report.txt        — GDB crash stack traces"
+fi
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

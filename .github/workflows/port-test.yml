@@ -183,6 +183,18 @@ jobs:
             --render-baseline tests/render-baseline.json \
             --check-all || true
 
+      - name: Validate draw-call telemetry
+        if: always()
+        run: |
+          # Run the draw-call and J3D telemetry validator.
+          # Extracts peak dl_draws, chain-invalid counts, and J3D flow stalls.
+          # TP_TELEMETRY_PEAK_DL_MIN=500: warn if peak dl_draws drops below 500
+          # (protects against regressions of the vrbox cast fix that produced 7615 draws).
+          # Does not hard-fail CI so a regression shows as a warning in the PR comment.
+          python3 tools/validate_telemetry.py milestones_logic.log milestones_logic.log \
+            > telemetry-validation.txt 2>&1 || true
+          cat telemetry-validation.txt
+
       - name: Check milestone regression
         id: regression
         if: always()
@@ -611,6 +623,7 @@ jobs:
             milestone-summary.json
             regression-report.json
             verify-report.json
+            telemetry-validation.txt
             verify_output/
             verify_png/
             logo_render.bmp

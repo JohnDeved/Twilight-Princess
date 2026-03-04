@@ -310,7 +310,7 @@ def main():
                       f"j3d_entries=[{min(j3d_vals)},{max(j3d_vals)}] "
                       f"({len(frames_in_window)} frames)")
 
-        # Regression checks
+        # Regression checks — play window (frames 130-400)
         play_frames = {f: d for f, d in j3d_diag_frames.items() if 130 <= f <= 400}
         if play_frames:
             max_j3d = max(d.get('j3d_entries', 0) for d in play_frames.values())
@@ -319,6 +319,33 @@ def main():
                 print(f"  Peak j3d_entries in play: {max_j3d}")
             if max_dl_draws > 0:
                 print(f"  Peak dl_draws in play: {max_dl_draws}")
+
+        # ── Peak dl_draws regression gate (all frames) ──────────────────────
+        # We track the maximum dl_draws ever seen across all frames to protect
+        # against regressions like the vrbox J3DModel→J3DModelData cast that
+        # produced 7615 draws on frames 128-129.  A drop to 0 means the render
+        # pipeline is producing a black screen.
+        #
+        # Threshold:  TP_TELEMETRY_PEAK_DL_MIN  (default 500)
+        # Enforce:    TP_TELEMETRY_ENFORCE_PEAK_DL=1  (default: warning only)
+        peak_dl_draws = max(
+            (d.get('dl_draws', 0) for d in j3d_diag_frames.values()), default=0)
+        peak_dl_frame = (
+            max(j3d_diag_frames.keys(),
+                key=lambda f: j3d_diag_frames[f].get('dl_draws', 0))
+            if j3d_diag_frames else None)
+        peak_dl_min = int(os.getenv("TP_TELEMETRY_PEAK_DL_MIN", "500"))
+        enforce_peak_dl = os.getenv("TP_TELEMETRY_ENFORCE_PEAK_DL", "0") == "1"
+        print(f"  Peak dl_draws (all frames): {peak_dl_draws}"
+              + (f" at frame {peak_dl_frame}" if peak_dl_frame is not None else ""))
+        if peak_dl_draws < peak_dl_min:
+            msg = (f"Peak dl_draws regression: {peak_dl_draws} < {peak_dl_min} "
+                   f"(set TP_TELEMETRY_PEAK_DL_MIN to adjust, "
+                   f"TP_TELEMETRY_ENFORCE_PEAK_DL=1 to hard-fail)")
+            if enforce_peak_dl:
+                errors.append(msg)
+            else:
+                warnings.append(msg)
     else:
         warnings.append("No j3d_draw_diag found in stderr")
 
