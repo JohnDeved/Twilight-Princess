@@ -58,10 +58,16 @@ static J3DPacket* dKyw_setDrawPacketListXluBg(J3DPacket* i_packet, int i_type) {
 }
 
 void dKankyo_sun_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawSun(j3dSys.getViewMtx(), mPos, mColor, &mpResMoon);
 }
 
 void dKankyo_sunlenz_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawLenzflare(j3dSys.getViewMtx(), mPositions, mColor, &mpResBall);
 }
 
@@ -70,6 +76,9 @@ RAIN_EFF::~RAIN_EFF() {}
 RAIN_EFF::RAIN_EFF() {}
 
 void dKankyo_rain_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawSibuki(j3dSys.getViewMtx(), &mpTex);
     dKyr_drawRain(j3dSys.getViewMtx(), &mpTex);
 }
@@ -79,6 +88,9 @@ SNOW_EFF::~SNOW_EFF() {}
 SNOW_EFF::SNOW_EFF() {}
 
 void dKankyo_snow_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawSnow(j3dSys.getViewMtx(), &mpTex);
 }
 
@@ -87,6 +99,9 @@ STAR_EFF::~STAR_EFF() {}
 STAR_EFF::STAR_EFF() {}
 
 void dKankyo_star_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawStar(j3dSys.getViewMtx(), &mpTex);
 }
 
@@ -95,6 +110,9 @@ CLOUD_EFF::~CLOUD_EFF() {}
 CLOUD_EFF::CLOUD_EFF() {}
 
 void dKankyo_cloud_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     drawCloudShadow(j3dSys.getViewMtx(), &mpResTex);
 }
 
@@ -103,6 +121,9 @@ HOUSI_EFF::~HOUSI_EFF() {}
 HOUSI_EFF::HOUSI_EFF() {}
 
 void dKankyo_housi_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_drawHousi(j3dSys.getViewMtx(), &mpResTex);
 }
 
@@ -111,6 +132,9 @@ VRKUMO_EFF::~VRKUMO_EFF() {}
 VRKUMO_EFF::VRKUMO_EFF() {}
 
 void dKankyo_vrkumo_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     drawVrkumo(j3dSys.getViewMtx(), mColor, &mpResCloudtx_01);
 }
 
@@ -119,6 +143,9 @@ EF_ODOUR_EFF::~EF_ODOUR_EFF() {}
 EF_ODOUR_EFF::EF_ODOUR_EFF() {}
 
 void dKankyo_odour_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_odour_draw(j3dSys.getViewMtx(), &mpResTex);
 }
 
@@ -127,6 +154,9 @@ EF_MUD_EFF::~EF_MUD_EFF() {}
 EF_MUD_EFF::EF_MUD_EFF() {}
 
 void dKankyo_mud_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_mud_draw(j3dSys.getViewMtx(), &mpMoyaRes);
 }
 
@@ -135,6 +165,9 @@ EF_EVIL_EFF::~EF_EVIL_EFF() {}
 EF_EVIL_EFF::EF_EVIL_EFF() {}
 
 void dKankyo_evil_Packet::draw() {
+#if PLATFORM_PC
+    return;
+#endif
     dKyr_evil_draw(j3dSys.getViewMtx(), &mpMoyaRes);
 }
 

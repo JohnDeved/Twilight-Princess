@@ -10,7 +10,7 @@
 | **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
-| **Blocking Issue** | Frames 128-129 produce 7,615 dl_draws (vrbox cast fix working). Frames 130+ crash at phase=60 in J3DMatPacket::draw() for kankyo model actors (cloud/vrkumo/housi). Likely cause: j3dSys stale state after first flush cycle, or dKankyo_*_Packet::draw() using GCN-specific API. Next: use crash-report.sh --actionable to get exact faulting lines, add PLATFORM_PC bypass for kankyo packet draw methods. |
+| **Blocking Issue** | Frames 128-129 produce 7,615 dl_draws (vrbox cast fix working). Frames 130+ crash because dKankyo_*_Packet::draw() methods call GCN-only GX APIs. All 11 dKankyo packet draw() methods now have PLATFORM_PC early-return stubs. Monitoring for dScnPly_Execute cascade suppression resolution at frame 131. |
 | **Goal Milestones (new)** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ (still black output in play-window captures) |
 | **Peak dl_draws** | 7,615 (frames 128-129, vrbox cast fix); frames 130+ regress to 11-13 due to kankyo crashes |
 
@@ -18,8 +18,8 @@
 
 | Area | Description | Est. Effort | Priority |
 |---|---|---|---|
-| **Kankyo crashes** | Fix dKankyo_*_Packet::draw() for cloud/vrkumo/housi: add PLATFORM_PC bypass (skip GCN lighting/packet calls, just do model entry). Use `tools/crash-report.sh --actionable` to get exact faulting lines. | 0.5 session | **P0** |
-| **j3dSys stale state** | Investigate why frame 130+ crashes even without kankyo actors. j3dSys.mModelDrawMtx may be stale after first flush cycle. Check mCurrentViewNo / mDrawMtx[*mCurrentViewNo] validity at J3DShape::setArrayAndBindPipeline. | 0.5 session | **P0** |
+| **Kankyo packet stubs** | ✅ DONE: All 11 dKankyo_*_Packet::draw() methods (sun/sunlenz/rain/snow/star/cloud/housi/vrkumo/odour/mud/evil) have PLATFORM_PC early-return stubs (temporary bypass, weather effects disabled on PC). Should fix phase=60 draw-list crashes and prevent dScnPly_Execute cascade suppression at frame 131. | 0.5 session | **P0** |
+| **j3dSys stale state** | Investigate why frame 130+ may still crash after kankyo stub fix. j3dSys.mModelDrawMtx may be stale after first flush cycle. Check mCurrentViewNo / mDrawMtx[*mCurrentViewNo] validity at J3DShape::setArrayAndBindPipeline. | 0.5 session | **P0** |
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
 | **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
 | **Lighting** | Ambient/diffuse/specular from GX light state into shaders | 2 sessions | P2 |
