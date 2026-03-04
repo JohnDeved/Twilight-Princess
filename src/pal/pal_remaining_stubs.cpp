@@ -416,7 +416,13 @@ void mDoHIO_updateChild(s8) {}
 #include "JSystem/JHostIO/JHIComm.h"
 #include "JSystem/JHostIO/JHIhioASync.h"
 
-void JORInit() {}
+void JORInit() {
+    /* Create a static dummy JORServer so inline functions like JOR_INIT()
+     * can safely call getInstance()->setEventFunc(NULL) without NPE. */
+    static char s_jorserver_buf[sizeof(JORServer)] __attribute__((aligned(16)));
+    memset(s_jorserver_buf, 0, sizeof(s_jorserver_buf));
+    JORServer::instance = (JORServer*)s_jorserver_buf;
+}
 
 u32 JORMessageBox(const char*, const char*, u32) { return 0; }
 
@@ -474,7 +480,9 @@ void JHICommBufReader::readEnd() {}
 
 u32 JHIEventLoop() { return 0; }
 
-template<> JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>::instance = NULL;
+static char s_jhi_buf[sizeof(JHIComPortManager<JHICmnMem>)] __attribute__((aligned(16)));
+template<> JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>::instance =
+    (JHIComPortManager<JHICmnMem>*)s_jhi_buf;
 
 /* ================================================================ */
 /* Audio debug stubs                                                */

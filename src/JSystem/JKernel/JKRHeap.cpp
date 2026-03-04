@@ -114,7 +114,13 @@ bool JKRHeap::initArena(char** memory, u32* size, int maxHeaps) {
 
     mUserRamStart = arenaLo;
     mUserRamEnd = arenaHi;
+#if PLATFORM_PC
+    /* On PC, there is no physical boot info at address 0.
+     * Use the arena size as the total memory size. */
+    mMemorySize = (uintptr_t)arenaHi - (uintptr_t)arenaLo;
+#else
     mMemorySize = codeStart->memorySize;
+#endif
 
     OSSetArenaLo(arenaHi);
     OSSetArenaHi(arenaHi);

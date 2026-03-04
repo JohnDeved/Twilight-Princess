@@ -62,12 +62,20 @@ void mDoDvdThd::suspend() {
 
 #if DEBUG
 void mDoDvdHack::__DVDFSInit() {
+#if PLATFORM_PC
+    /* On PC, physical address 0 does not map to boot info. Skip FST init. */
+    BootInfo = NULL;
+    FstStart = NULL;
+    MaxEntryNum = 0;
+    FstStringStart = NULL;
+#else
     BootInfo = (OSBootInfo*)OSPhysicalToCached(0);
     FstStart = (FSTEntry*)BootInfo->FSTLocation;
     if (FstStart) {
         MaxEntryNum = FstStart->nextEntryOrLength;
         FstStringStart = (char*)FstStart + (MaxEntryNum* sizeof(FSTEntry));
     }
+#endif
 }
 
 const char* mDoDvdHack::EntryToName(s32 entry) {
@@ -77,6 +85,9 @@ const char* mDoDvdHack::EntryToName(s32 entry) {
     if (entry == 0) {
         return "/";
     }
+#if PLATFORM_PC
+    if (FstStart == NULL) return "*NO_FST*";
+#endif
     return FstStringStart + (FstStart[entry].isDirAndStringOff & ~0xff000000);
 }
 
