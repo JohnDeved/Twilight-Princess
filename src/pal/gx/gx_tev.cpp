@@ -1160,11 +1160,141 @@ void pal_tev_submit_test_quad(void) {
     fprintf(stderr, "{\"tev\":\"test_quad_submitted\"}\n");
 }
 
+/* ================================================================ */
+/* TEV combiner state tracking (Task 1)                             */
+/* Logs unique TEV combiner tuples seen across the run.             */
+/* ================================================================ */
+
+#define TEV_TRACK_MAX 128
+
+struct TevConfigKey {
+    int num_stages;
+    int color_a[4], color_b[4], color_c[4], color_d[4]; /* first 4 stages */
+    int alpha_a[4], alpha_b[4], alpha_c[4], alpha_d[4];
+    int tex_map[4];
+    int preset;
+};
+
+static TevConfigKey s_tev_configs[TEV_TRACK_MAX];
+static uint32_t     s_tev_config_hits[TEV_TRACK_MAX];
+static int          s_tev_config_count = 0;
+
+static void tev_track_config(int preset) {
+    TevConfigKey key;
+    memset(&key, 0, sizeof(key));
+    key.num_stages = g_gx_state.num_tev_stages;
+    if (key.num_stages == 0) key.num_stages = 1;
+    key.preset = preset;
+    int ns = (key.num_stages > 4) ? 4 : key.num_stages;
+    for (int s = 0; s < ns; s++) {
+        const GXTevStage* st = &g_gx_state.tev_stages[s];
+        key.color_a[s] = st->color_a;
+        key.color_b[s] = st->color_b;
+        key.color_c[s] = st->color_c;
+        key.color_d[s] = st->color_d;
+        key.alpha_a[s] = st->alpha_a;
+        key.alpha_b[s] = st->alpha_b;
+        key.alpha_c[s] = st->alpha_c;
+        key.alpha_d[s] = st->alpha_d;
+        key.tex_map[s] = st->tex_map;
+    }
+    /* Find existing entry */
+    for (int i = 0; i < s_tev_config_count; i++) {
+        if (memcmp(&s_tev_configs[i], &key, sizeof(key)) == 0) {
+            s_tev_config_hits[i]++;
+            return;
+        }
+    }
+    /* New unique config */
+    if (s_tev_config_count < TEV_TRACK_MAX) {
+        s_tev_configs[s_tev_config_count] = key;
+        s_tev_config_hits[s_tev_config_count] = 1;
+        s_tev_config_count++;
+    }
+}
+
+/* ================================================================ */
+/* Draw path failure counters (Task 2)                              */
+/* Categorize why draw entries fail to produce actual draws.        */
+/* ================================================================ */
+
+static uint32_t s_skip_not_ready     = 0; /* s_tev_ready == 0 */
+static uint32_t s_skip_no_verts      = 0; /* verts_written == 0 */
+static uint32_t s_skip_bad_layout    = 0; /* build_vertex_layout returned 0 */
+static uint32_t s_skip_bad_stride    = 0; /* calc_raw_vertex_stride returned 0 */
+static uint32_t s_skip_invalid_prog  = 0; /* program handle invalid */
+static uint32_t s_skip_passclr_fill  = 0; /* J2D constant-color fill skipped */
+static uint32_t s_skip_passclr_alpha = 0; /* transparent PASSCLR fill skipped */
+static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
+static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
+static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
+
+void pal_tev_report_diagnostics(void) {
+    /* TEV config summary */
+    fprintf(stdout, "{\"tev_config_summary\":{\"unique_configs\":%d,\"configs\":[",
+            s_tev_config_count);
+    /* Sort by hit count descending */
+    int order[TEV_TRACK_MAX];
+    for (int i = 0; i < s_tev_config_count; i++) order[i] = i;
+    for (int i = 0; i < s_tev_config_count - 1; i++) {
+        for (int j = i + 1; j < s_tev_config_count; j++) {
+            if (s_tev_config_hits[order[j]] > s_tev_config_hits[order[i]]) {
+                int tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+            }
+        }
+    }
+    for (int i = 0; i < s_tev_config_count && i < 20; i++) {
+        int idx = order[i];
+        const TevConfigKey* k = &s_tev_configs[idx];
+        if (i > 0) fprintf(stdout, ",");
+        fprintf(stdout, "{\"hits\":%u,\"preset\":\"%s\",\"stages\":%d,"
+                "\"s0\":{\"c\":[%d,%d,%d,%d],\"a\":[%d,%d,%d,%d],\"tex\":%d}",
+                s_tev_config_hits[idx],
+                (k->preset >= 0 && k->preset < GX_TEV_SHADER_COUNT) ? s_fs_names[k->preset] : "?",
+                k->num_stages,
+                k->color_a[0], k->color_b[0], k->color_c[0], k->color_d[0],
+                k->alpha_a[0], k->alpha_b[0], k->alpha_c[0], k->alpha_d[0],
+                k->tex_map[0]);
+        if (k->num_stages >= 2) {
+            fprintf(stdout, ",\"s1\":{\"c\":[%d,%d,%d,%d],\"a\":[%d,%d,%d,%d],\"tex\":%d}",
+                    k->color_a[1], k->color_b[1], k->color_c[1], k->color_d[1],
+                    k->alpha_a[1], k->alpha_b[1], k->alpha_c[1], k->alpha_d[1],
+                    k->tex_map[1]);
+        }
+        fprintf(stdout, "}");
+    }
+    fprintf(stdout, "]}}\n");
+
+    /* Draw path failure summary */
+    fprintf(stdout, "{\"draw_path_summary\":{"
+            "\"ok_submitted\":%u,"
+            "\"skip_not_ready\":%u,"
+            "\"skip_no_verts\":%u,"
+            "\"skip_bad_layout\":%u,"
+            "\"skip_bad_stride\":%u,"
+            "\"skip_invalid_prog\":%u,"
+            "\"skip_passclr_fill\":%u,"
+            "\"skip_passclr_alpha\":%u,"
+            "\"skip_passclr_env\":%u,"
+            "\"skip_tvb_alloc\":%u}}\n",
+            s_ok_submitted,
+            s_skip_not_ready,
+            s_skip_no_verts,
+            s_skip_bad_layout,
+            s_skip_bad_stride,
+            s_skip_invalid_prog,
+            s_skip_passclr_fill,
+            s_skip_passclr_alpha,
+            s_skip_passclr_env,
+            s_skip_tvb_alloc);
+    fflush(stdout);
+}
+
 void pal_tev_flush_draw(void) {
-    if (!s_tev_ready) return;
+    if (!s_tev_ready) { s_skip_not_ready++; return; }
 
     const GXDrawState* ds = &g_gx_state.draw;
-    if (ds->verts_written == 0 || ds->vtx_data_pos == 0) return;
+    if (ds->verts_written == 0 || ds->vtx_data_pos == 0) { s_skip_no_verts++; return; }
 
     static uint32_t s_total_draw_count = 0;
     s_total_draw_count++;
@@ -1172,6 +1302,9 @@ void pal_tev_flush_draw(void) {
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
+
+    /* Track unique TEV combiner configurations */
+    tev_track_config(preset);
 
     /* Diagnostic: log ALL draws for draw_count window 250-340 (title scene frame) */
     if (s_total_draw_count >= 250 && s_total_draw_count <= 340) {
@@ -1194,7 +1327,7 @@ void pal_tev_flush_draw(void) {
     }
 
     preset = fixup_preset_for_vertex(preset);
-    if (!bgfx::isValid(s_programs[preset])) return;
+    if (!bgfx::isValid(s_programs[preset])) { s_skip_invalid_prog++; return; }
 
     /* J2D constant-color fill detection — skip the entire draw.
      *
@@ -1214,7 +1347,7 @@ void pal_tev_flush_draw(void) {
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
         {
-            return;
+            s_skip_passclr_fill++; return;
         }
     }
 
@@ -1233,7 +1366,7 @@ void pal_tev_flush_draw(void) {
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_RASC)
         {
-            return;
+            s_skip_passclr_alpha++; return;
         }
     }
 
@@ -1247,18 +1380,18 @@ void pal_tev_flush_draw(void) {
         }
         if (s_skip_passclr && preset == GX_TEV_SHADER_PASSCLR &&
             s_total_draw_count > 200) {
-            return;
+            s_skip_passclr_env++; return;
         }
     }
 
     /* 2. Build vertex layout (always Float for pos/texcoord) */
     bgfx::VertexLayout layout;
     uint32_t bgfx_stride = build_vertex_layout(layout);
-    if (bgfx_stride == 0) return;
+    if (bgfx_stride == 0) { s_skip_bad_layout++; return; }
 
     /* Raw stride matches the actual GX vertex data byte layout */
     uint32_t raw_stride = calc_raw_vertex_stride();
-    if (raw_stride == 0) return;
+    if (raw_stride == 0) { s_skip_bad_stride++; return; }
 
     /* 3. Check if we need to inject constant color when vertex color is missing.
      * PASSCLR: inject from TEV registers or material color.
@@ -1390,7 +1523,7 @@ void pal_tev_flush_draw(void) {
                     s_total_draw_count, (unsigned)nverts, bgfx_stride);
             s_tvb_fail++;
         }
-        return;
+        s_skip_tvb_alloc++; return;
     }
     bgfx::allocTransientVertexBuffer(&tvb, nverts, layout);
 
@@ -1873,6 +2006,7 @@ void pal_tev_flush_draw(void) {
      * after all scene content in view 0. */
     bgfx::ViewId view_id = g_gx_state.fade_overlay_active ? 1 : 0;
     bgfx::submit(view_id, s_programs[preset]);
+    s_ok_submitted++;
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

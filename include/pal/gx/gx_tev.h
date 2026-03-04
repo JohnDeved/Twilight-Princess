@@ -55,6 +55,13 @@ int pal_tev_is_ready(void);
 /* Diagnostic: submit a test quad directly through bgfx */
 void pal_tev_submit_test_quad(void);
 
+/**
+ * Report TEV config and draw path diagnostics.
+ * Emits JSON summaries of unique TEV combiner configurations seen
+ * and categorized draw path failure/skip counts.
+ */
+void pal_tev_report_diagnostics(void);
+
 #ifdef __cplusplus
 }
 #endif

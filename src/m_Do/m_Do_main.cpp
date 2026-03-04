@@ -43,9 +43,11 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/gx/gx_tev.h"
 #include "pal/pal_verify.h"
 #include <stdlib.h>
 #include <time.h>
+extern "C" { void pal_collision_stub_report(void); }
 #endif
 
 class mDoMain_HIO_c : public mDoHIO_entry_c {
@@ -786,6 +788,8 @@ void main01(void) {
                             frame, elapsed_ms);
                     pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
                     gx_stub_report();
+                    pal_tev_report_diagnostics();
+                    pal_collision_stub_report();
                     pal_verify_summary();
                     _Exit(0);
                 }
@@ -813,6 +817,8 @@ void main01(void) {
             if (frame >= max_frames) {
                 pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
                 gx_stub_report();
+                pal_tev_report_diagnostics();
+                pal_collision_stub_report();
                 pal_verify_summary();
                 _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
