@@ -239,6 +239,14 @@ int fpcBs_Delete(base_process_class* i_proc) {
         pal_error(PAL_ERR_NULL_PTR, "fpcBs_Delete: proc/methods");
         return 1;
     }
+    /* Skip profiles already known to crash — no sigsetjmp overhead. */
+    if (pal_profile_is_suppressed(i_proc->profname)) {
+        /* Treat as "done" — free the process without calling its destructor. */
+        fpcBs_DeleteAppend(i_proc);
+        i_proc->type = 0;
+        cMl::free(i_proc);
+        return 1;
+    }
     /* Wrap the delete method with crash protection — actors with
      * unswapped data or uninitialized state can crash during deletion. */
     {
@@ -250,7 +258,8 @@ int fpcBs_Delete(base_process_class* i_proc) {
         if (sigsetjmp(jb, 1) == 0) {
             result = fpcMtd_Delete(i_proc->methods, i_proc);
         } else {
-            fprintf(stderr, "[PAL] SIGSEGV caught in Delete (prof=%d id=%u)\n",
+            pal_profile_crash_increment(i_proc->profname);
+            fprintf(stderr, "[PAL] SIGSEGV caught in Delete (prof=%d id=%u) — permanently suppressed\n",
                     i_proc->profname, (unsigned)i_proc->id);
             result = 1; /* treat as "done" to free the process */
         }

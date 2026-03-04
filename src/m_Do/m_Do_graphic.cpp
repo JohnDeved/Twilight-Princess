@@ -1606,18 +1606,22 @@ int mDoGph_Painter() {
                 dKy_setLight();
 
                 /* Wrap 3D draw list flush with global crash handler —
-                 * no per-frame sigaction overhead. */
+                 * no per-frame sigaction overhead.  Each draw list that
+                 * crashes once is permanently skipped (zero signal work
+                 * on subsequent frames). */
                 {
                     pal_crash_handler_init();
 
-                    /* Per-draw-list crash protection: if one list crashes,
-                     * subsequent lists can still execute and produce dl_draws. */
 #define PAL_SAFE_DRAW(label, code) \
-    { sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
-      pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
-      if (sigsetjmp(_jb, 1) == 0) { code; } \
-      else { static int c = 0; if (c++ < 3) fprintf(stderr, "[PAL] draw crash: " label "\n"); } \
-      pal_crash_jmpbuf = _prev; }
+    { static int _suppressed = 0; \
+      if (!_suppressed) { \
+        sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
+        pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
+        if (sigsetjmp(_jb, 1) == 0) { code; } \
+        else { _suppressed = 1; \
+          fprintf(stderr, "[PAL] draw list crash: " label " — permanently skipped\n"); } \
+        pal_crash_jmpbuf = _prev; \
+      } }
 
                     /* Sky */
                     PAL_SAFE_DRAW("OpaListSky", dComIfGd_drawOpaListSky());
@@ -1667,32 +1671,32 @@ int mDoGph_Painter() {
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        /* Wrap 2D/item draws with global crash handler — no per-frame
-         * sigaction overhead. */
+        /* Wrap 2D/item draws with global crash handler.
+         * Permanently skip after first crash — zero overhead on subsequent frames. */
         {
-            pal_crash_handler_init();
-            sigjmp_buf jb;
-            sigjmp_buf* prev_target = pal_crash_jmpbuf;
-            pal_crash_jmpbuf = &jb;
-            pal_crash_occurred = 0;
-            if (sigsetjmp(jb, 1) == 0) {
-                J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
-                ortho.setPort();
+            static int s_2d_suppressed = 0;
+            if (!s_2d_suppressed) {
+                pal_crash_handler_init();
+                sigjmp_buf jb;
+                sigjmp_buf* prev_target = pal_crash_jmpbuf;
+                pal_crash_jmpbuf = &jb;
+                pal_crash_occurred = 0;
+                if (sigsetjmp(jb, 1) == 0) {
+                    J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
+                    ortho.setPort();
 
-                dComIfGd_draw2DOpa();
-                dComIfGd_draw2DXlu();
-                dComIfGd_draw2DOpaTop();
+                    dComIfGd_draw2DOpa();
+                    dComIfGd_draw2DXlu();
+                    dComIfGd_draw2DOpaTop();
 
-                /* --- Item/3D model draw list (with proper camera setup) --- */
-                drawItem3D();
-            } else {
-                static int s_2d_crash_count = 0;
-                if (s_2d_crash_count < 5) {
-                    fprintf(stderr, "[PAL] 2D/item draw crash caught (count=%d)\n", s_2d_crash_count);
+                    /* --- Item/3D model draw list (with proper camera setup) --- */
+                    drawItem3D();
+                } else {
+                    s_2d_suppressed = 1;
+                    fprintf(stderr, "[PAL] 2D/item draw crash — permanently skipped\n");
                 }
-                s_2d_crash_count++;
+                pal_crash_jmpbuf = prev_target;
             }
-            pal_crash_jmpbuf = prev_target;
         }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */
