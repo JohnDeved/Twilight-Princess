@@ -260,7 +260,7 @@ def main():
             strict_sustain = os.getenv("TP_TELEMETRY_ENFORCE_DL_SUSTAIN", "0") == "1"
             sustain_min = int(os.getenv("TP_TELEMETRY_DL_SUSTAIN_MIN", "3"))
             # Set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to promote packet-flow
-            # stalls to hard failures (use after packet-chain fixes land).
+            # stalls to hard failures (enable when packet-flow is expected stable).
             if strict_flow and max_consecutive_stalled_frames >= 20:
                 errors.append(f"REGRESSION: {max_consecutive_stalled_frames} consecutive frames with "
                              f"j3d_entries>0 but dl_draws==0")
@@ -268,7 +268,7 @@ def main():
                 warnings.append(f"Packet-flow blocker: {max_consecutive_stalled_frames} consecutive frames with "
                                f"j3d_entries>0 but dl_draws==0 (set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to fail)")
             # Set TP_TELEMETRY_ENFORCE_DL_SUSTAIN=1 to require a sustained
-            # run of nonzero play-window draws after packet-flow fixes land.
+            # run of nonzero play-window draws once packet-flow is expected stable.
             if strict_sustain and max_consecutive_nonzero_draws < sustain_min:
                 errors.append(f"REGRESSION: sustained play-window draws too short "
                              f"(max consecutive j3d_entries>0 && dl_draws>0 = "
