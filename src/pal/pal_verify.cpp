@@ -32,7 +32,7 @@ extern "C" {
 
 #define VERIFY_MAX_CAPTURES 32
 #define GOAL_MILESTONE_FRAME_START 130
-/* Phase 2 (pixel test) runs only 130 frames (0-129).
+/* Phase 2 (pixel test) runs 145 frames (0-144).
  * GOAL_INTRO_VISIBLE is pixel-data-driven. Use a threshold that falls
  * within the play window (frame 127+ = first 3D room render) while
  * being safely past the logo phase (frames 0-126). */

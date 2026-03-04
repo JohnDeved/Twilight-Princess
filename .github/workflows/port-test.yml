@@ -119,7 +119,8 @@ jobs:
           # Runs with Xvfb + softpipe for pixel verification of logo/title.
           # Limited to 145 frames — captures play-scene BG geometry at frames 127-129
           # which is where the 3D room geometry first renders (after f82ef2a2 kankyo stubs).
-          # 145 frames also ensures frame 130+ is reached for GOAL_INTRO_VISIBLE.
+          # GOAL_INTRO_VISIBLE triggers at frame >= 127 (GOAL_PIXEL_MILESTONE_FRAME_START)
+          # with pct_nonblack > 0; 145 frames provides headroom beyond that threshold.
           echo "=== Phase 2: Pixel test (softpipe) ==="
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
