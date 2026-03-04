@@ -1611,7 +1611,7 @@ int mDoGph_Painter() {
                     memset(&sa_new, 0, sizeof(sa_new));
                     sa_new.sa_handler = pal_painter_crash_handler;
                     sigemptyset(&sa_new.sa_mask);
-                    sa_new.sa_flags = SA_NODEFER;
+                    sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
                     sigaction(SIGSEGV, &sa_new, &sa_segv_old);
                     sigaction(SIGABRT, &sa_new, &sa_abrt_old);
 
@@ -1660,11 +1660,12 @@ int mDoGph_Painter() {
             static int s_3d_diag_frame = 0;
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
+            int dl_calls = pal_gx_dl_get_call_count();
             if (s_3d_diag_frame < 10 || (s_3d_diag_frame >= 120 && s_3d_diag_frame <= 200) || (s_3d_diag_frame % 30 == 0 && s_3d_diag_frame < 600)) {
                 u32 gh_free = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getTotalFreeSize() : 0;
                 u32 gh_size = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getHeapSize() : 0;
-                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",
-                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, gh_free, gh_size, J3DDrawBuffer::entryNum);
+                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",
+                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, J3DDrawBuffer::entryNum);
             }
             s_3d_diag_frame++;
         }
@@ -1677,7 +1678,7 @@ int mDoGph_Painter() {
             memset(&sa_new, 0, sizeof(sa_new));
             sa_new.sa_handler = pal_painter_crash_handler;
             sigemptyset(&sa_new.sa_mask);
-            sa_new.sa_flags = SA_NODEFER;
+            sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
             sigaction(SIGSEGV, &sa_new, &sa_segv_old2);
             sigaction(SIGABRT, &sa_new, &sa_abrt_old2);
             if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {

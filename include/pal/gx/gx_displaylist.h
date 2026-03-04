@@ -27,6 +27,7 @@ void pal_gx_call_display_list(const void* list, u32 nbytes);
 /** Display list draw diagnostics — count draw primitives and vertices per frame */
 int pal_gx_dl_get_draw_count(void);
 int pal_gx_dl_get_vert_count(void);
+int pal_gx_dl_get_call_count(void);
 void pal_gx_dl_reset_counters(void);
 
 #ifdef __cplusplus

@@ -62,7 +62,7 @@ int fpcDw_Execute(base_process_class* i_proc) {
             memset(&sa_new, 0, sizeof(sa_new));
             sa_new.sa_handler = draw_sigsegv_handler;
             sigemptyset(&sa_new.sa_mask);
-            sa_new.sa_flags = SA_NODEFER;
+            sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
             sigaction(SIGSEGV, &sa_new, &sa_old_segv);
             sigaction(SIGABRT, &sa_new, &sa_old_abrt);
 

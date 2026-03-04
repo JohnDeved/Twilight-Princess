@@ -297,6 +297,10 @@ int daBg_c::draw() {
 
 #if PLATFORM_PC
     static int s_bg_draw_frame = 0;
+    /* Log BG draw entry every frame for frames 128-145, then every 30th */
+    if (s_bg_draw_frame < 20 || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200)) {
+        fprintf(stderr, "{\"bg_draw_entry\":{\"frame\":%d,\"roomNo\":%d}}\n", s_bg_draw_frame, roomNo);
+    }
     /* Emit bg_draw_diag JSON for first 5 BG draws, frames 127-145, and every 30th frame */
     bool bg_diag = (s_bg_draw_frame < 5) || (s_bg_draw_frame >= 127 && s_bg_draw_frame <= 145) || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200);
     if (bg_diag) {

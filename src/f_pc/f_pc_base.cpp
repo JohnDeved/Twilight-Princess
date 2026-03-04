@@ -18,8 +18,22 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stdlib.h>
 static volatile sig_atomic_t s_exec_crash = 0;
 static sigjmp_buf s_exec_jmpbuf;
+/* Alternate signal stack to avoid corrupting main stack canaries
+ * when siglongjmp recovers from SIGSEGV/SIGABRT. */
+static char s_alt_stack[65536]; /* 64KB alternate signal stack */
+static int s_alt_stack_installed = 0;
+static void pal_install_alt_stack(void) {
+    if (s_alt_stack_installed) return;
+    stack_t ss;
+    ss.ss_sp = s_alt_stack;
+    ss.ss_size = sizeof(s_alt_stack);
+    ss.ss_flags = 0;
+    sigaltstack(&ss, NULL);
+    s_alt_stack_installed = 1;
+}
 static void exec_sigsegv_handler(int sig) {
     (void)sig;
     s_exec_crash = 1;
@@ -76,14 +90,16 @@ int fpcBs_Execute(base_process_class* i_proc) {
 
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
-    /* Wrap Execute with SIGSEGV protection so one crashed actor doesn't
-     * take down the whole process. */
+    /* Wrap Execute with SIGSEGV/SIGABRT protection so one crashed actor doesn't
+     * take down the whole process. Uses SA_ONSTACK to avoid corrupting
+     * main stack canaries (which trigger __fortify_fail → abort). */
     {
+        pal_install_alt_stack();
         struct sigaction sa_new, sa_old_segv, sa_old_abrt;
         memset(&sa_new, 0, sizeof(sa_new));
         sa_new.sa_handler = exec_sigsegv_handler;
         sigemptyset(&sa_new.sa_mask);
-        sa_new.sa_flags = SA_NODEFER;
+        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
         sigaction(SIGSEGV, &sa_new, &sa_old_segv);
         sigaction(SIGABRT, &sa_new, &sa_old_abrt);
         s_exec_crash = 0;
@@ -167,11 +183,12 @@ int fpcBs_Delete(base_process_class* i_proc) {
     /* Wrap the delete method with crash protection — actors with
      * unswapped data or uninitialized state can crash during deletion. */
     {
+        pal_install_alt_stack();
         struct sigaction sa_new, sa_segv_old, sa_abrt_old;
         memset(&sa_new, 0, sizeof(sa_new));
         sa_new.sa_handler = exec_sigsegv_handler;
         sigemptyset(&sa_new.sa_mask);
-        sa_new.sa_flags = SA_NODEFER;
+        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
         sigaction(SIGSEGV, &sa_new, &sa_segv_old);
         sigaction(SIGABRT, &sa_new, &sa_abrt_old);
         s_exec_crash = 0;

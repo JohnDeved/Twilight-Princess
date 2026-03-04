@@ -827,6 +827,7 @@ static int s_dl_call_count = 0;
 
 int pal_gx_dl_get_draw_count() { return s_dl_draw_count; }
 int pal_gx_dl_get_vert_count() { return s_dl_vert_count; }
+int pal_gx_dl_get_call_count() { return s_dl_call_count; }
 void pal_gx_dl_reset_counters() {
     s_dl_draw_count = 0;
     s_dl_vert_count = 0;
