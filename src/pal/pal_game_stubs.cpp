@@ -218,8 +218,10 @@ dBgp_c::packet_c::packet_c() {}
 dBgp_c::packet_c::~packet_c() {}
 
 /* dStage_roomControl_c static member */
+#if DEBUG
 void dStage_roomControl_c::setBgp(int, void*) {}
 void* dStage_roomControl_c::mBgp[64];
+#endif
 
 /* dBgS — collision system stubs */
 #include "d/d_bg_s.h"

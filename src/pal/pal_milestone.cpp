@@ -60,6 +60,10 @@ void pal_milestone_check_scene(int profname) {
         pal_milestone("PLAY_SCENE", MILESTONE_PLAY_SCENE,
                       profname == PROC_OPENING_SCENE ? "PROC_OPENING_SCENE created" : "PROC_PLAY_SCENE created");
     }
+    /* Play/Opening scene implies stage data is loaded */
+    if ((profname == PROC_PLAY_SCENE || profname == PROC_OPENING_SCENE) && !pal_milestone_was_reached(MILESTONE_STAGE_LOADED)) {
+        pal_milestone("STAGE_LOADED", MILESTONE_STAGE_LOADED, "play/opening scene stage data loaded");
+    }
     /* PROC_TITLE = 0x2E1 = 737 */
     if (profname == 737 && !pal_milestone_was_reached(MILESTONE_TITLE_SCENE)) {
         pal_milestone("TITLE_SCENE", MILESTONE_TITLE_SCENE, "PROC_TITLE created");

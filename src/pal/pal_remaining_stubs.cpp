@@ -383,24 +383,28 @@ void COrthoDivider::divide(Mtx44&, int, int) const {}
 CPerspDivider::CPerspDivider(const Mtx44&, int, int) : CProjectionDivider(0, 0) {}
 void CPerspDivider::divide(Mtx44&, int, int) const {}
 
-/* dBgS_HIO */
+/* dBgS_HIO — only exists in DEBUG builds */
+#if DEBUG
 dBgS_HIO::~dBgS_HIO() {}
 int dBgS_HIO::ChkCheckCounter() { return 0; }
 int dBgS_HIO::ChkGroundCheckTimer() { return 0; }
 int dBgS_HIO::ChkLineOff() { return 0; }
 int dBgS_HIO::ChkLineTimer() { return 0; }
+#endif
 
-/* Collision counters and switches */
+/* Collision counters and switches (not DEBUG-gated in header) */
 int g_ground_counter = 0;
 int g_line_counter = 0;
 OSStopwatch s_ground_sw;
 OSStopwatch s_line_sw;
 
-/* fpcDbSv — debug service */
+/* fpcDbSv — debug service (DEBUG-only in header) */
+#if DEBUG
 const char* fpcDbSv_getNameString(short) { return ""; }
 extern "C" {
 int g_fpcDbSv_service = 0;
 }
+#endif
 
 /* Various global stubs */
 u8 g_printOtherHeapDebug = 0;
@@ -575,20 +579,26 @@ dVibTest_c::dVibTest_c() : field_0x4(0), m_pattern(0), m_pattern2(0), field_0xa(
 void dVibTest_c::listenPropertyEvent(const JORPropertyEvent*) {}
 void dVibTest_c::genMessage(JORMContext*) {}
 
-/* dMeter_drawHIO_c */
+/* dMeter_drawHIO_c — DEBUG-only */
+#if DEBUG
 void dMeter_drawHIO_c::listenPropertyEvent(const JORPropertyEvent*) {}
+#endif
 
-/* daNpcCd HIO */
+/* daNpcCd HIO — DEBUG-only */
+#if DEBUG
 void daNpcCd_HIO_Jnt_c::genMessage(JORMContext*) {}
 void daNpcCd_HIO_Child_c::genMessage(JORMContext*) {}
 void daNpcCd_HIO_c::genMessage(JORMContext*) {}
+#endif
 
-/* daNpcCd2 HIO */
+/* daNpcCd2 HIO — NOT DEBUG-gated */
 void daNpcCd2_HIO_Jnt_c::genMessage(JORMContext*) {}
 void daNpcCd2_HIO_c::genMessage(JORMContext*) {}
 
-/* dBgS_HIO — genMessage was missing (vtable anchor) */
+/* dBgS_HIO — genMessage was missing (vtable anchor), DEBUG-only */
+#if DEBUG
 void dBgS_HIO::genMessage(JORMContext*) {}
+#endif
 
 /* dGov_HIO_c — defined locally in d_gameover.cpp, provide genMessage in that file */
 
@@ -601,7 +611,9 @@ dMenu_FmapMap_c* dMenu_FmapMap_c::mMySelfPointer = NULL;
 dMpath_HIO_n::list_s dMfm_HIO_c::l_list = { NULL, 0 };
 dMfm_HIO_c* dMfm_HIO_c::mMySelfPointer = NULL;
 const void* dMfm_HIO_prm_res_dst_s::m_res = NULL;
+#if DEBUG
 u8 dScnLogo_c::mOpeningCut = 0;
+#endif
 u8 fapGm_HIO_c::m_CpuTimerOff = 0;
 u8 fapGm_HIO_c::m_CpuTimerOn = 0;
 u8 fapGm_HIO_c::m_CpuTimerStart = 0;
@@ -628,10 +640,8 @@ void dMw_HIO_c::update() {}
 /* ================================================================ */
 /* Other stubs                                                      */
 /* ================================================================ */
-extern "C" {
-void* OSCachedToUncached(void* caddr) { return caddr; }
-void* OSPhysicalToCached(u32 paddr) { return (void*)(uintptr_t)paddr; }
-}
+/* NOTE: OSPhysicalToCached and OSCachedToUncached are macros in
+ * non-DEBUG builds (revolution/os.h). No function stubs needed. */
 
 #include "JSystem/JKernel/JKRAramHeap.h"
 u32 JKRAramHeap::getUsedSize(u8) { return 0; }

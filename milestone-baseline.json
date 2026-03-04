@@ -1,5 +1,5 @@
 {
-  "milestones_reached_count": 12,
+  "milestones_reached_count": 16,
   "milestones_reached": [
     "BOOT_START",
     "HEAP_INIT",
@@ -9,11 +9,15 @@
     "FIRST_FRAME",
     "DVD_READ_OK",
     "LOGO_SCENE",
+    "TITLE_SCENE",
+    "PLAY_SCENE",
+    "STAGE_LOADED",
     "SCENE_CREATED",
     "RENDER_FRAME",
     "FRAMES_60",
+    "FRAMES_300",
     "TEST_COMPLETE"
   ],
   "updated": "2026-03-04",
-  "note": "After link error fixes and startup crash fixes. 200 frames in ~232s. Missing TITLE_SCENE, PLAY_SCENE, FRAMES_300 vs previous baseline (scene transition timing)."
+  "note": "16/16 milestones. Build fix: #if DEBUG guards for dBgS_HIO, daNpcCd_HIO, dMeter_drawHIO, fpcDbSv, mOpeningCut, setBgp/mBgp stubs. Removed OSPhysicalToCached/OSCachedToUncached function stubs (macros active in non-DEBUG). Added STAGE_LOADED trigger. 400 frames in ~340s."
 }
