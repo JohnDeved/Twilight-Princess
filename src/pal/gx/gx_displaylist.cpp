@@ -685,134 +685,23 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
     s_dl_vert_count += nverts;
     pal_gx_begin(prim, (GXVtxFmt)vtxfmt, nverts);
 
-    /* Feed vertex data byte-by-byte to the state machine.
-     * The display list stores vertices in big-endian format with
-     * the component layout matching the current vertex descriptor.
-     * We read each component according to its type and size. */
-    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
-    const GXVtxAttrFmtEntry* fmt = g_gx_state.vtx_attr_fmt[vtxfmt];
-
-    for (u16 v = 0; v < nverts; v++) {
-        /* For each active attribute, read and write its components */
-        for (int attr = GX_VA_PNMTXIDX; attr < GX_MAX_VTXATTR; attr++) {
-            if (desc[attr].type == GX_NONE) continue;
-
-            if (desc[attr].type == GX_INDEX8) {
-                u8 idx = dl_read_u8(r);
-                pal_gx_write_vtx_u8(idx);
-                continue;
-            }
-            if (desc[attr].type == GX_INDEX16) {
-                u16 idx = dl_read_u16(r);
-                pal_gx_write_vtx_u16(idx);
-                continue;
-            }
-
-            /* Direct mode — read components based on attribute type */
-            int num_comps = 1;
-            if (attr == GX_VA_POS) {
-                num_comps = (fmt[attr].cnt == GX_POS_XYZ) ? 3 : 2;
-            } else if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
-                num_comps = 3;
-                if (attr == GX_VA_NBT && fmt[attr].cnt == GX_NRM_NBT3) num_comps = 9;
-            } else if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
-                /* Color components — read as u32 (RGBA8) or u16 (RGB565) etc. */
-                switch (fmt[attr].comp_type) {
-                case GX_RGB8:
-                case GX_RGBX8: {
-                    u8 cr = dl_read_u8(r);
-                    u8 cg = dl_read_u8(r);
-                    u8 cb = dl_read_u8(r);
-                    u8 ca = (fmt[attr].comp_type == GX_RGBX8) ? dl_read_u8(r) : 0xFF;
-                    /* Write bytes in RGBA order for bgfx Color0 attribute */
-                    pal_gx_write_vtx_u8(cr);
-                    pal_gx_write_vtx_u8(cg);
-                    pal_gx_write_vtx_u8(cb);
-                    pal_gx_write_vtx_u8(ca);
-                    continue;
-                }
-                case GX_RGBA8: {
-                    u8 cr = dl_read_u8(r);
-                    u8 cg = dl_read_u8(r);
-                    u8 cb = dl_read_u8(r);
-                    u8 ca = dl_read_u8(r);
-                    /* Write bytes in RGBA order for bgfx Color0 attribute */
-                    pal_gx_write_vtx_u8(cr);
-                    pal_gx_write_vtx_u8(cg);
-                    pal_gx_write_vtx_u8(cb);
-                    pal_gx_write_vtx_u8(ca);
-                    continue;
-                }
-                case GX_RGB565: {
-                    u16 rgb = dl_read_u16(r);
-                    pal_gx_write_vtx_u16(rgb);
-                    continue;
-                }
-                case GX_RGBA4: {
-                    u16 rgba = dl_read_u16(r);
-                    pal_gx_write_vtx_u16(rgba);
-                    continue;
-                }
-                case GX_RGBA6: {
-                    /* 24-bit color */
-                    u8 b0 = dl_read_u8(r);
-                    u8 b1 = dl_read_u8(r);
-                    u8 b2 = dl_read_u8(r);
-                    /* Write bytes in RGBA order: expand 6-bit channels
-                     * b0[7:2]=R, b0[1:0]:b1[7:6]=G, b1[5:0]:b2[7:6]=B, b2[5:0]=A */
-                    pal_gx_write_vtx_u8(b0);
-                    pal_gx_write_vtx_u8(b1);
-                    pal_gx_write_vtx_u8(b2);
-                    pal_gx_write_vtx_u8(0xFF);
-                    continue;
-                }
-                default: {
-                    /* Default: read 4 bytes as RGBA, write in byte order */
-                    u8 cr = dl_read_u8(r);
-                    u8 cg = dl_read_u8(r);
-                    u8 cb = dl_read_u8(r);
-                    u8 ca = dl_read_u8(r);
-                    pal_gx_write_vtx_u8(cr);
-                    pal_gx_write_vtx_u8(cg);
-                    pal_gx_write_vtx_u8(cb);
-                    pal_gx_write_vtx_u8(ca);
-                    continue;
-                }
-                }
-            } else if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
-                num_comps = (fmt[attr].cnt == GX_TEX_ST) ? 2 : 1;
-            } else if (attr == GX_VA_PNMTXIDX || (attr >= GX_VA_TEX0MTXIDX && attr <= GX_VA_TEX7MTXIDX)) {
-                /* Matrix index — 1 byte */
-                u8 idx = dl_read_u8(r);
-                pal_gx_write_vtx_u8(idx);
-                continue;
-            }
-
-            /* Read numeric components based on component type */
-            for (int c = 0; c < num_comps; c++) {
-                switch (fmt[attr].comp_type) {
-                case GX_U8:
-                    pal_gx_write_vtx_u8(dl_read_u8(r));
-                    break;
-                case GX_S8:
-                    pal_gx_write_vtx_s8((s8)dl_read_u8(r));
-                    break;
-                case GX_U16:
-                    pal_gx_write_vtx_u16(dl_read_u16(r));
-                    break;
-                case GX_S16:
-                    pal_gx_write_vtx_s16((s16)dl_read_u16(r));
-                    break;
-                case GX_F32:
-                    pal_gx_write_vtx_f32(dl_read_f32(r));
-                    break;
-                default:
-                    pal_gx_write_vtx_f32(dl_read_f32(r));
-                    break;
-                }
-            }
+    /* FAST PATH: Bulk-copy vertex data from DL into draw state buffer.
+     * The per-component parse loop is O(nverts * nattrs) with function call
+     * overhead per component. For large models (13000+ vertices), this takes
+     * minutes. Instead, memcpy the raw DL data directly and let the TEV
+     * flush path handle byte-swapping during vertex layout conversion.
+     *
+     * The raw DL vertex data is big-endian with the component layout matching
+     * the current vertex descriptor — exactly what the draw state expects. */
+    {
+        GXDrawState* ds = &g_gx_state.draw;
+        if (ds->vtx_data && ds->vtx_data_pos + total_bytes <= ds->vtx_data_size) {
+            memcpy(ds->vtx_data + ds->vtx_data_pos, r->data + r->pos, total_bytes);
+            ds->vtx_data_pos += total_bytes;
+            ds->verts_written = nverts;
+            ds->vtx_data_be = 1;  /* Mark as big-endian from DL bulk copy */
         }
-        g_gx_state.draw.verts_written++;
+        r->pos += total_bytes;
     }
 
     /* End draw call — this flushes to bgfx via TEV pipeline */

@@ -584,6 +584,7 @@ void pal_gx_begin(GXPrimitive prim, GXVtxFmt fmt, u16 nverts) {
     g_gx_state.draw.verts_written = 0;
     g_gx_state.draw.vtx_data_pos = 0;
     g_gx_state.draw.active = 1;
+    g_gx_state.draw.vtx_data_be = 0;
 }
 
 void pal_gx_end(void) {

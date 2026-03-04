@@ -175,6 +175,7 @@ typedef struct {
     u32         vtx_data_size;
 
     u8          active;  /* 1 while between GXBegin and GXEnd */
+    u8          vtx_data_be;  /* 1 if vtx_data is big-endian (from DL bulk copy) */
 } GXDrawState;
 
 /* ================================================================ */

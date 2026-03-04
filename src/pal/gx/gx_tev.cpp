@@ -708,6 +708,26 @@ static float read_gx_component(const uint8_t* src, GXCompType type, uint8_t frac
 }
 
 /**
+ * Read a GX component from big-endian source data (display list inline vertices).
+ * Used when DIRECT-mode vertex data comes from DL bulk-copy (raw big-endian bytes).
+ */
+static float read_gx_component_be(const uint8_t* src, GXCompType type, uint8_t frac) {
+    float scale = (frac > 0) ? (1.0f / (float)(1 << frac)) : 1.0f;
+    switch (type) {
+    case GX_S16: { int16_t v = (int16_t)((src[0] << 8) | src[1]); return (float)v * scale; }
+    case GX_U16: { uint16_t v = (uint16_t)((src[0] << 8) | src[1]); return (float)v * scale; }
+    case GX_S8:  return (float)(*(const int8_t*)src) * scale;
+    case GX_U8:  return (float)(*src) * scale;
+    case GX_F32: {
+        uint32_t bits = ((uint32_t)src[0] << 24) | ((uint32_t)src[1] << 16) |
+                        ((uint32_t)src[2] << 8) | (uint32_t)src[3];
+        float v; memcpy(&v, &bits, 4); return v;
+    }
+    default: return 0.0f;
+    }
+}
+
+/**
  * Convert one vertex from raw GX format to the bgfx float layout.
  * Walks through each attribute, converting integer components to float
  * with frac-bit scaling applied.
@@ -730,7 +750,12 @@ static const uint8_t* resolve_attr_data(int attr, const uint8_t* src, uint32_t* 
         return NULL;
     }
     if (type == GX_INDEX16) {
-        uint16_t idx; memcpy(&idx, src + *si, 2); (*si) += 2;
+        /* DL vertex data is stored in big-endian from bulk memcpy.
+         * Byte-swap the u16 index for correct attribute resolution. */
+        uint16_t idx;
+        uint8_t b0 = src[*si], b1 = src[*si + 1];
+        idx = (uint16_t)((b0 << 8) | b1);
+        (*si) += 2;
         const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
         if (arr->base_ptr && arr->stride > 0)
             return (const uint8_t*)arr->base_ptr + (uint32_t)idx * arr->stride;
@@ -768,6 +793,14 @@ static uint32_t raw_attr_size(int attr) {
     return 0;
 }
 
+/* Select read_gx_component or read_gx_component_be based on attribute type
+ * and endianness of vertex data.  INDEXED data comes from already-swapped
+ * arrays (native endian).  DIRECT data from DL bulk copy is big-endian. */
+#define READ_COMP(data, csz, c, type, frac, attr_type) \
+    ((g_gx_state.draw.vtx_data_be && (attr_type) == GX_DIRECT) \
+        ? read_gx_component_be((data) + (c) * (csz), (type), (frac)) \
+        : read_gx_component((data) + (c) * (csz), (type), (frac)))
+
 static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
@@ -798,7 +831,7 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         }
         if (data) {
             for (int c = 0; c < ncomps; c++) {
-                float v = read_gx_component(data + c * csz, pt, frac);
+                float v = READ_COMP(data, csz, c, pt, frac, desc[GX_VA_POS].type);
                 memcpy(dst + di, &v, 4);
                 di += 4;
             }
@@ -822,7 +855,7 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         }
         if (data) {
             for (int c = 0; c < 3; c++) {
-                float v = read_gx_component(data + c * csz, nt, frac);
+                float v = READ_COMP(data, csz, c, nt, frac, desc[GX_VA_NRM].type);
                 memcpy(dst + di, &v, 4);
                 di += 4;
             }
@@ -871,7 +904,7 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
             }
             if (data) {
                 for (int c = 0; c < ncomps; c++) {
-                    float v = read_gx_component(data + c * csz, tt, frac);
+                    float v = READ_COMP(data, csz, c, tt, frac, desc[GX_VA_TEX0 + i].type);
                     memcpy(dst + di, &v, 4);
                     di += 4;
                 }
@@ -1559,7 +1592,7 @@ void pal_tev_flush_draw(void) {
             if (desc[GX_VA_POS].type == GX_DIRECT) si += npos * csz;
             if (pos_data) {
                 for (int c = 0; c < npos; c++) {
-                    float v = read_gx_component(pos_data + c * csz, pt, frac);
+                    float v = READ_COMP(pos_data, csz, c, pt, frac, desc[GX_VA_POS].type);
                     memcpy(dst + di, &v, 4);
                     di += 4;
                 }
@@ -1605,7 +1638,7 @@ void pal_tev_flush_draw(void) {
                     if (desc[GX_VA_TEX0 + i].type == GX_DIRECT) si += ntc * tc_sz;
                     if (tc_data) {
                         for (int c = 0; c < ntc; c++) {
-                            float v = read_gx_component(tc_data + c * tc_sz, tt, tf);
+                            float v = READ_COMP(tc_data, tc_sz, c, tt, tf, desc[GX_VA_TEX0 + i].type);
                             memcpy(dst + di, &v, 4);
                             di += 4;
                         }
@@ -1828,11 +1861,12 @@ void pal_tev_flush_draw(void) {
                             }
                             /* Read first vertex texcoord */
                             if (desc[GX_VA_TEX0 + tci].type == GX_DIRECT && tc_off + 4 <= raw_stride) {
-                                tc0_u = read_gx_component(ds->vtx_data + tc_off, tt, tf);
-                                tc0_v = read_gx_component(ds->vtx_data + tc_off + gx_comp_size(tt), tt, tf);
+                                auto rd = ds->vtx_data_be ? read_gx_component_be : read_gx_component;
+                                tc0_u = rd(ds->vtx_data + tc_off, tt, tf);
+                                tc0_v = rd(ds->vtx_data + tc_off + gx_comp_size(tt), tt, tf);
                                 if (nverts >= 2) {
-                                    tc1_u = read_gx_component(ds->vtx_data + raw_stride + tc_off, tt, tf);
-                                    tc1_v = read_gx_component(ds->vtx_data + raw_stride + tc_off + gx_comp_size(tt), tt, tf);
+                                    tc1_u = rd(ds->vtx_data + raw_stride + tc_off, tt, tf);
+                                    tc1_v = rd(ds->vtx_data + raw_stride + tc_off + gx_comp_size(tt), tt, tf);
                                 }
                             }
                             break;

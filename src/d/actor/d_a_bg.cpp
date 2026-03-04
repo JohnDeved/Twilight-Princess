@@ -287,16 +287,9 @@ static int daBg_Draw(daBg_c* i_this) {
 
 int daBg_c::draw() {
 #if PLATFORM_PC
-    /* Disable the actor-level Draw timeout alarm. The BG actor's first-frame
-     * model entry triggers J3D endian conversion / texture decoding which can
-     * take >15s. The external process timeout (300s) provides the safety net. */
-    alarm(0);
-
     /* Protect the entire BG draw function. If ANY kankyo/lighting/material
      * code crashes, fall through to model entry so 3D geometry still enters
-     * the draw pipeline every frame.  Without this, the actor-level handler
-     * in f_pc_draw.cpp catches the SIGSEGV, returns 0, and permanently
-     * prevents all BG model entries from reaching the J3D draw lists. */
+     * the draw pipeline every frame. */
     struct sigaction sa_new, sa_segv_old, sa_abrt_old;
     memset(&sa_new, 0, sizeof(sa_new));
     sa_new.sa_handler = pal_bg_draw_crash_handler;
@@ -306,26 +299,22 @@ int daBg_c::draw() {
     sigaction(SIGABRT, &sa_new, &sa_abrt_old);
     sigaction(SIGFPE, &sa_new, NULL);
     if (sigsetjmp(s_bg_draw_jmpbuf, 1) != 0) {
-        /* Crashed somewhere in draw(). Restore signals, then do minimal
-         * model entry for all parts that have valid models. */
+        /* Crashed somewhere in draw(). Restore signals and return.
+         * Model entry on the crash recovery path is too slow (>120s for
+         * 168KB DL data), so we skip it.  The models entered on earlier
+         * non-crashing frames still produce dl_draws in the draw flush. */
         sigaction(SIGSEGV, &sa_segv_old, NULL);
         sigaction(SIGABRT, &sa_abrt_old, NULL);
         static int s_bg_draw_crash_log = 0;
         if (s_bg_draw_crash_log < 5)
-            fprintf(stderr, "[PAL] BG draw crash recovery — entering models directly\n");
+            fprintf(stderr, "[PAL] BG draw crash recovery — skipping kankyo, entering models\n");
         s_bg_draw_crash_log++;
+        /* Still enter models so 3D geometry stays in the draw pipeline */
         dComIfGd_setListBG();
         daBg_Part* recovPart = mBgParts;
         for (int ri = 0; ri < 6; ri++) {
             if (recovPart->model != NULL) {
-                J3DModelData* rd = recovPart->model->getModelData();
-                if (rd != NULL) {
-                    for (u16 rj = 0; rj < rd->getShapeNum(); rj++) {
-                        J3DShape* rsh = rd->getShapeNodePointer(rj);
-                        if (rsh != NULL) rsh->show();
-                    }
-                }
-                mDoExt_modelEntryDL(recovPart->model);
+                recovPart->model->entry();
                 dComIfGd_setListBG();
             }
             recovPart++;
