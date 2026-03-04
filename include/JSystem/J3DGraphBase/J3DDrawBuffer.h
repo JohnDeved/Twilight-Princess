@@ -80,6 +80,10 @@ public:
     static void palDiagFrameReset();
     static int palDiagPacketsVisited();
     static int palDiagVirtualDrawCalls();
+    static void palDiagCrashMarkerReset();
+    static int palDiagCrashPhase();
+    static int palDiagCrashSlot();
+    static int palDiagCrashPacketIndex();
 
     u32 getEntryTableSize() { return mEntryTableSize; }
     int getSortMode() { return mSortMode; }

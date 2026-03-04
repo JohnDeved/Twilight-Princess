@@ -1627,12 +1627,16 @@ int mDoGph_Painter() {
         _suppressed = 0; \
       } \
       if (!_suppressed) { \
+        J3DDrawBuffer::palDiagCrashMarkerReset(); \
         sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
         pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
         if (sigsetjmp(_jb, 1) == 0) { code; } \
         else { _suppressed = 1; _retry_frame = s_drawlist_frame + (retry_frames); \
-          fprintf(stderr, "[PAL] draw list crash: " label " — suppressed%s\n", \
-                  (retry_frames) > 0 ? " (will retry)" : " permanently"); } \
+          fprintf(stderr, "[PAL] draw list crash: " label " — suppressed%s (phase=%d slot=%d pkt=%d)\n", \
+                  (retry_frames) > 0 ? " (will retry)" : " permanently", \
+                  J3DDrawBuffer::palDiagCrashPhase(), \
+                  J3DDrawBuffer::palDiagCrashSlot(), \
+                  J3DDrawBuffer::palDiagCrashPacketIndex()); } \
         pal_crash_jmpbuf = _prev; \
       } }
 

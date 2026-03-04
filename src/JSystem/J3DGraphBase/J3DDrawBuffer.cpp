@@ -12,6 +12,24 @@
 #include <stdio.h>
 static int s_pal_diag_packets_visited = 0;
 static int s_pal_diag_virtual_draw_calls = 0;
+static int s_pal_diag_crash_phase = 0;
+static int s_pal_diag_crash_slot = -1;
+static int s_pal_diag_crash_packet_index = -1;
+enum {
+    /* Stable phase ids for telemetry parsing; coarse steps use +10 spacing and
+     * draw-call boundaries use adjacent ids (before/after). */
+    CRASH_PHASE_HEAD_ENTER = 10,
+    CRASH_PHASE_HEAD_SLOT_BEGIN = 20,
+    CRASH_PHASE_HEAD_CHAIN_VALIDATE = 30,
+    CRASH_PHASE_HEAD_PACKET_ITER = 40,
+    CRASH_PHASE_HEAD_BEFORE_DRAW = 60,
+    CRASH_PHASE_HEAD_AFTER_DRAW = 61,
+    CRASH_PHASE_TAIL_ENTER = 70,
+    CRASH_PHASE_TAIL_SLOT_BEGIN = 80,
+    CRASH_PHASE_TAIL_PACKET_ITER = 81,
+    CRASH_PHASE_TAIL_BEFORE_DRAW = 82,
+    CRASH_PHASE_TAIL_AFTER_DRAW = 83,
+};
 
 static inline int pal_drawbuffer_chain_contains(J3DPacket* head, J3DPacket* target) {
     enum { MAX_ENTRY_CHAIN_SCAN = 0x10000 };
@@ -42,6 +60,9 @@ void J3DDrawBuffer::palDiagFrameReset() {
 #if PLATFORM_PC
     s_pal_diag_packets_visited = 0;
     s_pal_diag_virtual_draw_calls = 0;
+    s_pal_diag_crash_phase = 0;
+    s_pal_diag_crash_slot = -1;
+    s_pal_diag_crash_packet_index = -1;
 #endif
 }
 
@@ -58,6 +79,38 @@ int J3DDrawBuffer::palDiagVirtualDrawCalls() {
     return s_pal_diag_virtual_draw_calls;
 #else
     return 0;
+#endif
+}
+
+void J3DDrawBuffer::palDiagCrashMarkerReset() {
+#if PLATFORM_PC
+    s_pal_diag_crash_phase = 0;
+    s_pal_diag_crash_slot = -1;
+    s_pal_diag_crash_packet_index = -1;
+#endif
+}
+
+int J3DDrawBuffer::palDiagCrashPhase() {
+#if PLATFORM_PC
+    return s_pal_diag_crash_phase;
+#else
+    return 0;
+#endif
+}
+
+int J3DDrawBuffer::palDiagCrashSlot() {
+#if PLATFORM_PC
+    return s_pal_diag_crash_slot;
+#else
+    return -1;
+#endif
+}
+
+int J3DDrawBuffer::palDiagCrashPacketIndex() {
+#if PLATFORM_PC
+    return s_pal_diag_crash_packet_index;
+#else
+    return -1;
 #endif
 }
 
@@ -307,6 +360,9 @@ void J3DDrawBuffer::drawHead() const {
     u32 size = mEntryTableSize;
     J3DPacket** buf = mpBuffer;
 #if PLATFORM_PC
+    s_pal_diag_crash_phase = CRASH_PHASE_HEAD_ENTER;
+    s_pal_diag_crash_slot = -1;
+    s_pal_diag_crash_packet_index = -1;
     /* Cap TOTAL probe output to avoid stderr flood in CI; 80 samples across
      * the run is enough to cover >2 frames of a 38-entry packet chain and
      * capture the repeated corruption pattern without log spam. */
@@ -318,6 +374,9 @@ void J3DDrawBuffer::drawHead() const {
 
     for (u32 i = 0; i < size; i++) {
 #if PLATFORM_PC
+        s_pal_diag_crash_phase = CRASH_PHASE_HEAD_SLOT_BEGIN;
+        s_pal_diag_crash_slot = i;
+        s_pal_diag_crash_packet_index = -1;
         if (buf[i] != NULL) {
             /* Validate chain shape before virtual dispatch to isolate list/link
              * corruption without relying on signal recovery. */
@@ -338,6 +397,7 @@ void J3DDrawBuffer::drawHead() const {
             int self_loop = 0;
             int vptr_low = 0;
             while (cursor != NULL && chain_len < MAX_CHAIN_LENGTH) {
+                s_pal_diag_crash_phase = CRASH_PHASE_HEAD_CHAIN_VALIDATE;
                 if ((uintptr_t)cursor < NULL_PAGE_GUARD_SIZE) {
                     invalid_ptr = 1;
                     break;
@@ -367,6 +427,8 @@ void J3DDrawBuffer::drawHead() const {
 #endif
         for (J3DPacket* packet = buf[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
+            s_pal_diag_crash_phase = CRASH_PHASE_HEAD_PACKET_ITER;
+            s_pal_diag_crash_packet_index++;
             /* Addresses below 4KB fall within the OS NULL-page guard region
              * and indicate a corrupted linked-list pointer. */
             if ((uintptr_t)packet < 0x1000) break;
@@ -390,24 +452,42 @@ void J3DDrawBuffer::drawHead() const {
                 }
             }
             s_pal_diag_virtual_draw_calls++;
+            s_pal_diag_crash_phase = CRASH_PHASE_HEAD_BEFORE_DRAW;
 #endif
             packet->draw();
+#if PLATFORM_PC
+            s_pal_diag_crash_phase = CRASH_PHASE_HEAD_AFTER_DRAW;
+#endif
         }
     }
 }
 
 void J3DDrawBuffer::drawTail() const {
 #if PLATFORM_PC
+    s_pal_diag_crash_phase = CRASH_PHASE_TAIL_ENTER;
+    s_pal_diag_crash_slot = -1;
+    s_pal_diag_crash_packet_index = -1;
     if (mpBuffer == NULL || mEntryTableSize == 0 || mEntryTableSize > 0x10000) return;
 #endif
     for (int i = mEntryTableSize - 1; i >= 0; i--) {
+#if PLATFORM_PC
+        s_pal_diag_crash_phase = CRASH_PHASE_TAIL_SLOT_BEGIN;
+        s_pal_diag_crash_slot = i;
+        s_pal_diag_crash_packet_index = -1;
+#endif
         for (J3DPacket* packet = mpBuffer[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
+            s_pal_diag_crash_phase = CRASH_PHASE_TAIL_PACKET_ITER;
+            s_pal_diag_crash_packet_index++;
             if ((uintptr_t)packet < 0x1000) break;
             s_pal_diag_packets_visited++;
             s_pal_diag_virtual_draw_calls++;
+            s_pal_diag_crash_phase = CRASH_PHASE_TAIL_BEFORE_DRAW;
 #endif
             packet->draw();
+#if PLATFORM_PC
+            s_pal_diag_crash_phase = CRASH_PHASE_TAIL_AFTER_DRAW;
+#endif
         }
     }
 }

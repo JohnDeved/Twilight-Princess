@@ -10,7 +10,7 @@
 | **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
-| **Blocking Issue** | Packet chain is now structurally valid (`j3d_chain_invalid=0`), but draw-list crashes/suppression still stop play-window packet dispatch (`j3d_entries≈38`, `dl_draws=0` for most frames). Next: close the draw dispatch funnel gap (packet visit → virtual draw → GX draw → TEV submit), then resolve depth/blend submit-state gap and pixel visibility. |
+| **Blocking Issue** | Packet chain is now structurally valid (`j3d_chain_invalid=0`), but Opa/Xlu BG draw-list execution still crashes before sustained packet traversal (`pkt_visited=0` in most stalled play frames). Next: use drawHead crash-phase markers to isolate setup-vs-iteration faults, then close the dispatch funnel (packet visit → virtual draw → GX draw → TEV submit), then resolve depth/blend submit-state gap and pixel visibility. |
 | **Goal Milestones (new)** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ (still black output in play-window captures) |
 
 ## Remaining Work Estimate
