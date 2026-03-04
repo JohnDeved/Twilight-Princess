@@ -19,6 +19,17 @@
 #include <cstring>
 #if PLATFORM_PC
 #include <cstdio>
+#include <signal.h>
+#include <setjmp.h>
+
+/* Crash-protected block for BG draw: wraps kankyo/lighting calls that may
+ * SIGSEGV on PC (e.g. settingTevStruct, setLightTevColorType_MAJI).
+ * If they crash, execution continues to mDoExt_modelEntryDL so 3D geometry
+ * still enters the draw pipeline. */
+static sigjmp_buf s_bg_draw_jmpbuf;
+static void pal_bg_draw_crash_handler(int sig) {
+    siglongjmp(s_bg_draw_jmpbuf, 1);
+}
 #endif
 
 const char* daBg_c::setArcName() {
@@ -275,6 +286,54 @@ static int daBg_Draw(daBg_c* i_this) {
 }
 
 int daBg_c::draw() {
+#if PLATFORM_PC
+    /* Disable the actor-level Draw timeout alarm. The BG actor's first-frame
+     * model entry triggers J3D endian conversion / texture decoding which can
+     * take >15s. The external process timeout (300s) provides the safety net. */
+    alarm(0);
+
+    /* Protect the entire BG draw function. If ANY kankyo/lighting/material
+     * code crashes, fall through to model entry so 3D geometry still enters
+     * the draw pipeline every frame.  Without this, the actor-level handler
+     * in f_pc_draw.cpp catches the SIGSEGV, returns 0, and permanently
+     * prevents all BG model entries from reaching the J3D draw lists. */
+    struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+    memset(&sa_new, 0, sizeof(sa_new));
+    sa_new.sa_handler = pal_bg_draw_crash_handler;
+    sigemptyset(&sa_new.sa_mask);
+    sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
+    sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+    sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+    sigaction(SIGFPE, &sa_new, NULL);
+    if (sigsetjmp(s_bg_draw_jmpbuf, 1) != 0) {
+        /* Crashed somewhere in draw(). Restore signals, then do minimal
+         * model entry for all parts that have valid models. */
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+        static int s_bg_draw_crash_log = 0;
+        if (s_bg_draw_crash_log < 5)
+            fprintf(stderr, "[PAL] BG draw crash recovery — entering models directly\n");
+        s_bg_draw_crash_log++;
+        dComIfGd_setListBG();
+        daBg_Part* recovPart = mBgParts;
+        for (int ri = 0; ri < 6; ri++) {
+            if (recovPart->model != NULL) {
+                J3DModelData* rd = recovPart->model->getModelData();
+                if (rd != NULL) {
+                    for (u16 rj = 0; rj < rd->getShapeNum(); rj++) {
+                        J3DShape* rsh = rd->getShapeNodePointer(rj);
+                        if (rsh != NULL) rsh->show();
+                    }
+                }
+                mDoExt_modelEntryDL(recovPart->model);
+                dComIfGd_setListBG();
+            }
+            recovPart++;
+        }
+        dComIfGd_setList();
+        return 1;
+    }
+#endif
     dScnKy_env_light_c* kankyo = dKy_getEnvlight();
 
     int roomNo = fopAcM_GetParam(this);
@@ -380,9 +439,36 @@ int daBg_c::draw() {
             }
 
             static int l_tevStrType[6] = {32, 33, 34, 35, 35, 32};
+#if PLATFORM_PC
+            /* Protect kankyo/lighting calls — they access environmental state
+             * that may crash on PC.  If they SIGSEGV, skip them and proceed
+             * to mDoExt_modelEntryDL so 3D geometry still enters the pipeline. */
+            {
+                struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+                memset(&sa_new, 0, sizeof(sa_new));
+                sa_new.sa_handler = pal_bg_draw_crash_handler;
+                sigemptyset(&sa_new.sa_mask);
+                sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
+                sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+                sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+                if (sigsetjmp(s_bg_draw_jmpbuf, 1) == 0) {
+                    g_env_light.settingTevStruct(l_tevStrType[i], NULL, bgPart->tevstr);
+                    g_env_light.setLightTevColorType_MAJI(bg_model, bgPart->tevstr);
+                    dKy_bg_MAxx_proc(bg_model);
+                } else {
+                    static int s_bg_kankyo_crash = 0;
+                    if (s_bg_kankyo_crash < 3)
+                        fprintf(stderr, "[PAL] BG kankyo crash (part %d), skipped to model entry\n", i);
+                    s_bg_kankyo_crash++;
+                }
+                sigaction(SIGSEGV, &sa_segv_old, NULL);
+                sigaction(SIGABRT, &sa_abrt_old, NULL);
+            }
+#else
             g_env_light.settingTevStruct(l_tevStrType[i], NULL, bgPart->tevstr);
             g_env_light.setLightTevColorType_MAJI(bg_model, bgPart->tevstr);
             dKy_bg_MAxx_proc(bg_model);
+#endif
 
             if (bg_model != NULL) {
                 modelData = bg_model->getModelData();
@@ -522,13 +608,33 @@ int daBg_c::draw() {
     }
 
     dComIfGd_setList();
+#if PLATFORM_PC
+    {
+        struct sigaction sa_new, sa_segv_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_bg_draw_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        if (sigsetjmp(s_bg_draw_jmpbuf, 1) == 0) {
+            g_env_light.settingTevStruct(0x10, NULL, dComIfGp_roomControl_getTevStr(roomNo));
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+    }
+#else
     g_env_light.settingTevStruct(0x10, NULL, dComIfGp_roomControl_getTevStr(roomNo));
+#endif
 
     dBgp_c* bgp = dStage_roomControl_c::getBgp(roomNo);
     if (bgp != NULL) {
         bgp->draw(this);
     }
 
+#if PLATFORM_PC
+    /* Restore original signal handlers now that all crash-prone code is done */
+    sigaction(SIGSEGV, &sa_segv_old, NULL);
+    sigaction(SIGABRT, &sa_abrt_old, NULL);
+#endif
     return 1;
 }
 
