@@ -768,13 +768,19 @@ void main01(void) {
                 }
                 /* Per-frame timeout: if a single frame took > 60s, the softpipe
                  * renderer is stuck on complex geometry.  Exit cleanly instead
-                 * of blocking CI for 20+ minutes. */
+                 * of blocking CI for 20+ minutes.
+                 * Only applies when DISPLAY is set (softpipe mode). Under noop
+                 * renderer (Phase 1), slow frames are expected during J3D model
+                 * processing and should not cause an exit. */
                 static int s_headless_cached = -1;
+                static int s_is_softpipe = -1;
                 if (s_headless_cached < 0) {
                     const char* hl = getenv("TP_HEADLESS");
                     s_headless_cached = (hl && hl[0] == '1') ? 1 : 0;
+                    const char* dpy = getenv("DISPLAY");
+                    s_is_softpipe = (dpy && dpy[0] != '\0') ? 1 : 0;
                 }
-                if (elapsed_ms > 60000 && s_headless_cached) {
+                if (elapsed_ms > 60000 && s_headless_cached && s_is_softpipe) {
                     fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
                             "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
                             frame, elapsed_ms);
