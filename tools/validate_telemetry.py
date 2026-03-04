@@ -80,6 +80,7 @@ def main():
     frame_stats = {}
     bg_draw_entries = []
     bg_kankyo_stats = []
+    chain_invalid = []
     kankyo_crash_count = 0
     zblend_prop_by_frame = {}
     for obj in stderr_objs:
@@ -94,6 +95,8 @@ def main():
             bg_draw_entries.append(obj['bg_draw_entry'])
         if 'bg_kankyo_stats' in obj:
             bg_kankyo_stats.append(obj['bg_kankyo_stats'])
+        if 'j3d_chain_invalid' in obj:
+            chain_invalid.append(obj['j3d_chain_invalid'])
         if 'zblend_prop' in obj:
             p = obj['zblend_prop']
             zblend_prop_by_frame[p.get('frame', 0)] = p
@@ -202,6 +205,13 @@ def main():
     if kankyo_crash_count > 0:
         errors.append(f"REGRESSION: {kankyo_crash_count} kankyo crash-recovery events "
                      f"(should be 0 — clean bypass replaces signal-based recovery)")
+    print(f"  Invalid J3D chains detected: {len(chain_invalid)}")
+    if chain_invalid:
+        first_bad = chain_invalid[0]
+        print(f"  First invalid chain: slot={first_bad.get('slot')} len={first_bad.get('len')} "
+              f"invalid_ptr={first_bad.get('invalid_ptr')} self_loop={first_bad.get('self_loop')} "
+              f"vptr_low={first_bad.get('vptr_low')}")
+        warnings.append(f"Detected {len(chain_invalid)} invalid packet-chain checks in drawHead")
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:

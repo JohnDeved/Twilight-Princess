@@ -202,6 +202,20 @@ int J3DDrawBuffer::entryImm(J3DPacket* pPacket, u16 index) {
     J3D_ASSERT_NULLPTR(394, pPacket != NULL);
     J3D_ASSERT_RANGE(395, index < mEntryTableSize);
 
+#if PLATFORM_PC
+    {
+        static int s_entry_probe_count = 0;
+        if (s_entry_probe_count < 80) {
+            const void* vptr = *(const void* const*)pPacket;
+            fprintf(stderr,
+                    "{\"j3d_entry_probe\":{\"idx\":%u,\"probe\":%d,"
+                    "\"packet\":\"%p\",\"vptr\":\"%p\",\"prev_head\":\"%p\"}}\n",
+                    (unsigned)index, s_entry_probe_count,
+                    (void*)pPacket, vptr, (void*)mpBuffer[index]);
+            s_entry_probe_count++;
+        }
+    }
+#endif
     pPacket->setNextPacket(mpBuffer[index]);
     mpBuffer[index] = pPacket;
     return 1;
@@ -243,6 +257,43 @@ void J3DDrawBuffer::drawHead() const {
 #endif
 
     for (u32 i = 0; i < size; i++) {
+#if PLATFORM_PC
+        if (buf[i] != NULL) {
+            /* Validate chain shape before virtual dispatch to isolate list/link
+             * corruption without relying on signal recovery. */
+            const J3DPacket* cursor = buf[i];
+            int chain_len = 0;
+            int invalid_ptr = 0;
+            int self_loop = 0;
+            int vptr_low = 0;
+            while (cursor != NULL && chain_len < 512) {
+                if ((uintptr_t)cursor < 0x1000) {
+                    invalid_ptr = 1;
+                    break;
+                }
+                const void* vptr = *(const void* const*)cursor;
+                if ((uintptr_t)vptr < 0x100000)
+                    vptr_low = 1;
+                const J3DPacket* next = cursor->getNextPacket();
+                if (next == cursor) {
+                    self_loop = 1;
+                    break;
+                }
+                cursor = next;
+                chain_len++;
+            }
+            if (chain_len >= 512)
+                self_loop = 1;
+            if (invalid_ptr || self_loop || vptr_low) {
+                fprintf(stderr,
+                        "{\"j3d_chain_invalid\":{\"slot\":%u,\"len\":%d,"
+                        "\"invalid_ptr\":%d,\"self_loop\":%d,\"vptr_low\":%d,"
+                        "\"head\":\"%p\"}}\n",
+                        i, chain_len, invalid_ptr, self_loop, vptr_low, (void*)buf[i]);
+                continue;
+            }
+        }
+#endif
         for (J3DPacket* packet = buf[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
             /* Addresses below 4KB fall within the OS NULL-page guard region
