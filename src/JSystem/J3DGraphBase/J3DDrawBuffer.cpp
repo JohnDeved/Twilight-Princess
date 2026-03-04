@@ -10,6 +10,30 @@
 #include "JSystem/JKernel/JKRHeap.h"
 #if PLATFORM_PC
 #include <stdio.h>
+
+static inline int pal_drawbuffer_chain_contains(J3DPacket* head, J3DPacket* target) {
+    enum { MAX_ENTRY_CHAIN_SCAN = 0x10000 };
+    J3DPacket* it = head;
+    int depth = 0;
+    for (; it != NULL && depth < MAX_ENTRY_CHAIN_SCAN; depth++) {
+        if ((uintptr_t)it < 0x1000)
+            return 1;
+        if (it == target)
+            return 1;
+        J3DPacket* next = it->getNextPacket();
+        if (next == it)
+            return 1;
+        it = next;
+    }
+    return 0;
+}
+
+static inline void pal_drawbuffer_prepend(J3DPacket** head, J3DPacket* packet) {
+    if (pal_drawbuffer_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
 #endif
 
 void J3DDrawBuffer::calcZRatio() {
@@ -193,8 +217,12 @@ int J3DDrawBuffer::entryNonSort(J3DMatPacket* pMatPacket) {
     pMatPacket->drawClear();
     pMatPacket->getShapePacket()->drawClear();
 
+#if PLATFORM_PC
+    pal_drawbuffer_prepend(&mpBuffer[0], pMatPacket);
+#else
     pMatPacket->setNextPacket(mpBuffer[0]);
     mpBuffer[0] = pMatPacket;
+#endif
     return 1;
 }
 
@@ -220,9 +248,11 @@ int J3DDrawBuffer::entryImm(J3DPacket* pPacket, u16 index) {
             s_entry_probe_count++;
         }
     }
-#endif
+    pal_drawbuffer_prepend(&mpBuffer[index], pPacket);
+#else
     pPacket->setNextPacket(mpBuffer[index]);
     mpBuffer[index] = pPacket;
+#endif
     return 1;
 }
 
@@ -273,9 +303,9 @@ void J3DDrawBuffer::drawHead() const {
                  * mappings for this process are far above low-memory legacy
                  * ranges; <1MB is treated as suspicious (not a hard ABI rule). */
                 MIN_VALID_VPTR = 0x100000,
-                /* Safety cap for runaway/cyclic lists. Normal chains are far
-                 * smaller (~tens of packets), so 512 indicates corruption. */
-                MAX_CHAIN_LENGTH = 512,
+                /* Large safety cap: play-scene chains can contain thousands of
+                 * packets; use 64K to catch runaways without false positives. */
+                MAX_CHAIN_LENGTH = 0x10000,
             };
             const J3DPacket* cursor = buf[i];
             int chain_len = 0;
@@ -300,8 +330,6 @@ void J3DDrawBuffer::drawHead() const {
                 cursor = next;
                 chain_len++;
             }
-            if (chain_len >= MAX_CHAIN_LENGTH)
-                self_loop = 1;
             if (invalid_ptr || self_loop || vptr_low) {
                 fprintf(stderr,
                         "{\"j3d_chain_invalid\":{\"slot\":%u,\"len\":%d,"

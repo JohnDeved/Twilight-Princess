@@ -211,9 +211,9 @@ def main():
         print(f"  First invalid chain: slot={first_bad.get('slot')} len={first_bad.get('len')} "
               f"invalid_ptr={first_bad.get('invalid_ptr')} self_loop={first_bad.get('self_loop')} "
               f"vptr_low={first_bad.get('vptr_low')}")
-        warnings.append(f"Detected {len(chain_invalid)} invalid packet chains in drawHead "
-                        f"(first: slot={first_bad.get('slot')} invalid_ptr={first_bad.get('invalid_ptr')} "
-                        f"self_loop={first_bad.get('self_loop')} vptr_low={first_bad.get('vptr_low')})")
+        errors.append(f"REGRESSION: detected {len(chain_invalid)} invalid packet chains in drawHead "
+                      f"(first: slot={first_bad.get('slot')} invalid_ptr={first_bad.get('invalid_ptr')} "
+                      f"self_loop={first_bad.get('self_loop')} vptr_low={first_bad.get('vptr_low')})")
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:

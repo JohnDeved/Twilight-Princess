@@ -10,14 +10,14 @@
 | **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
-| **Blocking Issue** | OpaListBG draw list crashes on play-scene frames (permanently suppressed for CI stability). Root cause: uninitialized kankyo/lighting state accessed during J3D draw buffer flush. 3D draws only on frames 128-130 before suppression kicks in. Next: fix the draw list crash root cause to sustain 3D rendering across all frames. |
+| **Blocking Issue** | `J3DDrawBuffer` packet-link corruption in play-scene draw buffers (`j3d_chain_invalid`: slot-0 runaway/self-loop). 3D entries are present but fail before virtual dispatch reaches draw methods. Next: validate chain-fix efficacy across full play window, then resolve depth/blend submit-state gap and pixel visibility. |
 | **Goal Milestones (new)** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ (still black output in play-window captures) |
 
 ## Remaining Work Estimate
 
 | Area | Description | Est. Effort | Priority |
 |---|---|---|---|
-| **Scene stability** | Fix OpaListBG/XluListBG/XluListSky draw list crashes — initialize kankyo/lighting state or bypass cleanly | 1-2 sessions | **P0** |
+| **Scene stability** | Eliminate J3DDrawBuffer packet-chain corruption so play-scene entries dispatch to packet draw methods consistently | 0.5-1 session | **P0** |
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
 | **Draw drop-off** | j3d_entries→dl_draws categorization — why 64 entries produce only 2 draws | 1 session | P1 |
 | **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
