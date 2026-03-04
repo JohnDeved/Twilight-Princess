@@ -1555,8 +1555,11 @@ int mDoGph_Painter() {
         /* Ensure __GDCurrentDL is valid at the start of each frame.
          * endDL() may have set it to NULL during previous-frame model setup. */
         pal_gd_reset_dummy();
-        /* Reset the cumulative J3D draw buffer entry counter per frame
-         * so j3d_draw_diag reports per-frame model registration count. */
+        /* Capture J3D entry count from previous frame's Draw pass (which runs
+         * AFTER Paint), then reset for the next cycle.  Reading entryNum here
+         * reflects models registered by the last Draw pass. */
+        static int s_prev_j3d_entries = 0;
+        s_prev_j3d_entries = J3DDrawBuffer::entryNum;
         J3DDrawBuffer::entryNum = 0;
 #endif
         if (dComIfGp_getWindowNum() != 0) {
@@ -1665,7 +1668,7 @@ int mDoGph_Painter() {
                 u32 gh_free = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getTotalFreeSize() : 0;
                 u32 gh_size = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getHeapSize() : 0;
                 fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",
-                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, J3DDrawBuffer::entryNum);
+                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, s_prev_j3d_entries);
             }
             s_3d_diag_frame++;
         }

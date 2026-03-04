@@ -217,6 +217,9 @@ J3DDrawBuffer::drawFunc J3DDrawBuffer::drawFuncTable[2] = {
 int J3DDrawBuffer::entryNum;
 
 void J3DDrawBuffer::draw() const {
+#if PLATFORM_PC
+    if (mDrawMode >= 2 || mpBuffer == NULL) return;
+#endif
     J3D_ASSERT_RANGE(411, mDrawMode < J3DDrawBufDrawMode_MAX);
 
     drawFunc func = drawFuncTable[mDrawMode];
@@ -226,17 +229,30 @@ void J3DDrawBuffer::draw() const {
 void J3DDrawBuffer::drawHead() const {
     u32 size = mEntryTableSize;
     J3DPacket** buf = mpBuffer;
+#if PLATFORM_PC
+    if (buf == NULL || size == 0 || size > 0x10000) return;
+#endif
 
     for (u32 i = 0; i < size; i++) {
         for (J3DPacket* packet = buf[i]; packet != NULL; packet = packet->getNextPacket()) {
+#if PLATFORM_PC
+            /* Validate packet pointer */
+            if ((uintptr_t)packet < 0x1000) break;
+#endif
             packet->draw();
         }
     }
 }
 
 void J3DDrawBuffer::drawTail() const {
+#if PLATFORM_PC
+    if (mpBuffer == NULL || mEntryTableSize == 0 || mEntryTableSize > 0x10000) return;
+#endif
     for (int i = mEntryTableSize - 1; i >= 0; i--) {
         for (J3DPacket* packet = mpBuffer[i]; packet != NULL; packet = packet->getNextPacket()) {
+#if PLATFORM_PC
+            if ((uintptr_t)packet < 0x1000) break;
+#endif
             packet->draw();
         }
     }
