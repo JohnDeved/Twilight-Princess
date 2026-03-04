@@ -2052,6 +2052,42 @@ void pal_tev_flush_draw(void) {
         }
     }
 
+    /* Play-window per-frame state dump: log first 5 draws of each frame once
+     * the play scene starts (identified by the first draw of a new frame in
+     * the play-window total-draw range).  Resets every frame boundary so CI
+     * always captures depth/blend state bits from the first BG draws of
+     * frames 127+ to diagnose the Z/Blend propagation gap. */
+    {
+        static int  s_play_dump_active = 0; /* 1 when dump is armed for current frame */
+        static int  s_play_dump_count  = 0; /* draws logged in current frame */
+
+        /* New frame boundary: gx_frame_draw_calls was just reset to 0 and this
+         * is the first draw (gx_frame_draw_calls == 0 at entry to this block,
+         * incremented below).  Use s_total_draw_count threshold to restrict to
+         * play-window frames (beyond the logo+title block of ~5000 draws). */
+        if (gx_frame_draw_calls == 0 && s_total_draw_count > 5000) {
+            s_play_dump_active = 1;
+            s_play_dump_count  = 0;
+        }
+        if (s_play_dump_active && s_play_dump_count < 5) {
+            s_play_dump_count++;
+            fprintf(stderr, "{\"play_state\":{\"draw_id\":%u,\"frame_dc\":%u,"
+                    "\"preset\":\"%s\",\"state\":\"0x%016llX\","
+                    "\"depth_bits\":%d,\"blend_bits\":%d,"
+                    "\"write_rgb\":%d,\"write_a\":%d,"
+                    "\"z_en\":%d,\"z_upd\":%d,\"blend_mode\":%d}}\n",
+                    s_total_draw_count, (unsigned)gx_frame_draw_calls,
+                    (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                    (unsigned long long)state,
+                    (int)((state & BGFX_STATE_DEPTH_TEST_MASK)  != 0),
+                    (int)((state & BGFX_STATE_BLEND_MASK)        != 0),
+                    (int)((state & BGFX_STATE_WRITE_RGB)         != 0),
+                    (int)((state & BGFX_STATE_WRITE_A)           != 0),
+                    g_gx_state.z_compare_enable, g_gx_state.z_update_enable,
+                    g_gx_state.blend_mode);
+        }
+    }
+
     /* Apply scissor if set to a non-fullscreen region */
     if (g_gx_state.sc_wd > 0 && g_gx_state.sc_ht > 0) {
         bgfx::setScissor(

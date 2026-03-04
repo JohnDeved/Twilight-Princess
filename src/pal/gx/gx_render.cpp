@@ -159,6 +159,13 @@ int pal_render_init(void) {
         }
     }
 
+    /* Increase transient buffer pools to handle sustained high-draw frames.
+     * Default 6MB TVB exhausts after ~7 frames of 7615 dl_draws × ~80-byte
+     * vertex stride.  32MB provides headroom for sustained play-scene rendering
+     * without alloc FAIL stalls.  TIB scaled proportionally from 2MB → 8MB. */
+    init.limits.transientVbSize = 32u * 1024u * 1024u;  /* 32 MB (was 6 MB) */
+    init.limits.transientIbSize =  8u * 1024u * 1024u;  /*  8 MB (was 2 MB) */
+
     if (!bgfx::init(init)) {
         if (!s_using_noop) {
             fprintf(stderr, "{\"render\":\"opengl_failed\",\"fallback\":\"Noop\"}\n");
