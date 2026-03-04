@@ -6,6 +6,9 @@
 #include "JSystem/JSupport/JSURandomInputStream.h"
 #include "JSystem/JUtility/JUTTexture.h"
 #include <dolphin/types.h>
+#if PLATFORM_PC
+#include <dolphin/gx.h>
+#endif
 
 void J2DPictureEx::initiate(ResTIMG const* param_0, ResTLUT const* param_1) {
     u32 texGenNum = mMaterial->getTexGenBlock()->getTexGenNum();
@@ -80,6 +83,30 @@ bool J2DPictureEx::prepareTexture(u8 param_0) {
 void J2DPictureEx::drawSelf(f32 param_0, f32 param_1, f32 (*param_2)[3][4]) {
     if (mMaterial != NULL) {
         mMaterial->setGX();
+#if PLATFORM_PC
+        /* J2DTevBlock::setGX() loads TEV registers from material data (default zeros).
+         * The TEV formula [C0,C1,TEXC,ZERO] lerps between C0/C1 using texture —
+         * with both at zero RGB, output is always black.  Apply the pane's
+         * mBlack / mWhite so the lerp produces visible content. */
+        GXSetTevColor(GX_TEVREG0, mBlack);
+        GXSetTevColor(GX_TEVREG1, mWhite);
+
+        /* BPK animation diagnostic: log mBlack/mWhite to confirm whether
+         * J2DAnmColorKey is driving these values per-frame.  Throttled to
+         * first 200 draws to avoid log spam. */
+        {
+            static u32 s_bpk_log_count = 0;
+            if (s_bpk_log_count < 200) {
+                fprintf(stderr,
+                    "[PAL] J2DPictureEx::drawSelf draw#%u mBlack=(%u,%u,%u,%u) "
+                    "mWhite=(%u,%u,%u,%u)\n",
+                    s_bpk_log_count,
+                    mBlack.r, mBlack.g, mBlack.b, mBlack.a,
+                    mWhite.r, mWhite.g, mWhite.b, mWhite.a);
+                s_bpk_log_count++;
+            }
+        }
+#endif
         GXClearVtxDesc();
         GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
         GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);
@@ -397,6 +424,10 @@ void J2DPictureEx::draw(f32 param_0, f32 param_1, f32 width, f32 height, bool pa
     }
 
     mMaterial->setGX();
+#if PLATFORM_PC
+    GXSetTevColor(GX_TEVREG0, mBlack);
+    GXSetTevColor(GX_TEVREG1, mWhite);
+#endif
     makeMatrix(param_0, param_1, 0.0f, 0.0f);
     GXLoadPosMtxImm(mPositionMtx, GX_PNMTX0);
     GXSetCurrentMtx(GX_PNMTX0);
@@ -516,6 +547,10 @@ void J2DPictureEx::drawOut(JGeometry::TBox2<f32> const& param_0,
     }
 
     mMaterial->setGX();
+#if PLATFORM_PC
+    GXSetTevColor(GX_TEVREG0, mBlack);
+    GXSetTevColor(GX_TEVREG1, mWhite);
+#endif
     GXClearVtxDesc();
     GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
     GXSetVtxDesc(GX_VA_CLR0, GX_DIRECT);

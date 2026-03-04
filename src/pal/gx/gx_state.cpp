@@ -25,6 +25,54 @@ GXStateMachine g_gx_state;
 static u8 s_vtx_buf[GX_VTX_BUF_SIZE];
 
 /* ================================================================ */
+/* Texture pointer table                                            */
+/* ================================================================ */
+/* On PC, 64-bit pointers can't fit in BP command's 24-bit data field.
+ * This table maps compact IDs (used in BP commands) to actual pointers.
+ * Used by J3DGDSetTexImgPtr (register) and dl_handle_bp_reg (resolve). */
+#define TEX_PTR_TABLE_SIZE 4096
+static void* s_tex_ptr_table[TEX_PTR_TABLE_SIZE];
+static u32   s_tex_ptr_count = 0;
+
+u32 pal_gx_tex_ptr_register(void* ptr) {
+    /* Check if already registered */
+    for (u32 i = 0; i < s_tex_ptr_count; i++) {
+        if (s_tex_ptr_table[i] == ptr) return i;
+    }
+    /* Add new entry */
+    if (s_tex_ptr_count < TEX_PTR_TABLE_SIZE) {
+        u32 id = s_tex_ptr_count++;
+        s_tex_ptr_table[id] = ptr;
+        return id;
+    }
+    /* Table full — return sentinel that will resolve to NULL */
+    return 0xFFFFFF;
+}
+
+void* pal_gx_tex_ptr_resolve(u32 id) {
+    if (id < s_tex_ptr_count) return s_tex_ptr_table[id];
+    return NULL;
+}
+
+/* ================================================================ */
+/* TLUT (palette) tracking per texmap                               */
+/* ================================================================ */
+/* GXLoadTlut is called with texMapID, storing palette ptr per slot.
+ * When a CI texture is loaded to that slot, the palette is copied. */
+static struct {
+    void* ptr;
+    u32   fmt;
+    u16   num_entries;
+} s_tlut_state[GX_MAX_TEXMAP];
+
+void pal_gx_load_tlut(void* lut_data, u32 fmt, u16 n_entries, u32 texmap_id) {
+    if (texmap_id >= GX_MAX_TEXMAP) return;
+    s_tlut_state[texmap_id].ptr = lut_data;
+    s_tlut_state[texmap_id].fmt = fmt;
+    s_tlut_state[texmap_id].num_entries = n_entries;
+}
+
+/* ================================================================ */
 /* Initialize                                                       */
 /* ================================================================ */
 
@@ -293,8 +341,59 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         bind->wrap_s = (GXTexWrapMode)data[24];
         bind->wrap_t = (GXTexWrapMode)data[25];
         bind->mipmap = data[26];
+
+        /* Filter settings (set by GXInitTexObjLOD) */
+        if (data[29] == 0xAB) {
+            bind->min_filt = (GXTexFilter)data[27];
+            bind->mag_filt = (GXTexFilter)data[28];
+        }
+
+        /* For CI textures, copy TLUT data from the per-slot tracker */
+        GXTexFmt fmt = bind->format;
+        if (fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2) {
+            bind->tlut_ptr = s_tlut_state[id].ptr;
+            bind->tlut_fmt = s_tlut_state[id].fmt;
+        } else {
+            bind->tlut_ptr = NULL;
+            bind->tlut_fmt = 0;
+        }
+
         bind->valid = 1;
+    } else {
+        /* Log when GXLoadTexObj is called without PC-initialized texobj */
+        static int s_no_tp_count = 0;
+        if (s_no_tp_count < 5) {
+            s_no_tp_count++;
+            fprintf(stderr, "{\"gx_load_tex_obj_no_tp\":{\"id\":%d,\"data0\":%d,\"data1\":%d,"
+                    "\"w\":%u,\"h\":%u,\"ptr\":\"%p\"}}\n",
+                    (int)id, data[0], data[1],
+                    (unsigned)bind->width, (unsigned)bind->height, bind->image_ptr);
+        }
     }
+}
+
+void pal_gx_set_tex_img(GXTexMapID id, void* image_ptr, u16 width, u16 height, GXTexFmt format) {
+    if ((unsigned)id >= GX_MAX_TEXMAP) return;
+    GXTexBinding* bind = &g_gx_state.tex_bindings[id];
+    bind->image_ptr = image_ptr;
+    bind->width = width;
+    bind->height = height;
+    bind->format = format;
+    bind->valid = 1;
+}
+
+void pal_gx_set_tex_lookup_mode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t,
+                                GXTexFilter min_filt, GXTexFilter mag_filt,
+                                f32 min_lod, f32 max_lod, f32 lod_bias) {
+    if ((unsigned)id >= GX_MAX_TEXMAP) return;
+    GXTexBinding* bind = &g_gx_state.tex_bindings[id];
+    bind->wrap_s = wrap_s;
+    bind->wrap_t = wrap_t;
+    bind->min_filt = min_filt;
+    bind->mag_filt = mag_filt;
+    bind->min_lod = min_lod;
+    bind->max_lod = max_lod;
+    bind->lod_bias = lod_bias;
 }
 
 void pal_gx_set_num_tex_gens(u8 n) {

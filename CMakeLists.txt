@@ -51,12 +51,12 @@ set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
-set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
+set(SDL_AUDIO ON CACHE BOOL "" FORCE)
 set(SDL_GPU OFF CACHE BOOL "" FORCE)
 set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
-set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
-set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK ON CACHE BOOL "" FORCE)
+set(SDL_HAPTIC ON CACHE BOOL "" FORCE)
 set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
 set(SDL_POWER OFF CACHE BOOL "" FORCE)
 set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
@@ -121,6 +121,8 @@ message(STATUS "PC port: ${NUM_GAME_SOURCES} game source files from splits.txt")
 set(PAL_SOURCES
     src/pal/pal_crash.cpp
     src/pal/pal_endian.cpp
+    src/pal/pal_j3d_swap.cpp
+    src/pal/pal_error.cpp
     src/pal/pal_milestone.cpp
     src/pal/pal_os_stubs.cpp
     src/pal/pal_gx_stubs.cpp
@@ -130,14 +132,17 @@ set(PAL_SOURCES
     src/pal/pal_remaining_stubs.cpp
     src/pal/pal_profile_list.cpp
     src/pal/pal_window.cpp
+    src/pal/pal_input.cpp
+    src/pal/pal_audio.cpp
+    src/pal/pal_save.cpp
     src/pal/gx/gx_stub_tracker.cpp
     src/pal/gx/gx_fifo.cpp
-    src/pal/gx/gx_bgfx.cpp
+    src/pal/gx/gx_render.cpp
     src/pal/gx/gx_state.cpp
     src/pal/gx/gx_texture.cpp
     src/pal/gx/gx_tev.cpp
     src/pal/gx/gx_displaylist.cpp
-    src/pal/gx/gx_screenshot.cpp
+    src/pal/gx/gx_capture.cpp
     src/pal/pal_verify.cpp
 )
 
@@ -146,6 +151,21 @@ set(PAL_SOURCES
 # Instead of compiling it, we call ModuleProlog directly (which sets g_fpcPf_ProfileList_p)
 # via a stub in pal_remaining_stubs.cpp that only includes profiles already compiled.
 set(REL_SOURCES
+    src/d/actor/d_a_title.cpp
+    src/d/actor/d_a_obj_ikada.cpp
+    src/d/actor/d_a_shop_item.cpp
+    src/d/actor/d_a_swc00.cpp
+    src/d/actor/d_a_andsw2.cpp
+    src/d/actor/d_a_npc_mk.cpp
+    src/d/actor/d_a_kytag01.cpp
+    src/d/actor/d_a_tag_event.cpp
+    src/d/actor/d_a_tag_msg.cpp
+    src/d/actor/d_a_vrbox.cpp
+    src/d/actor/d_a_vrbox2.cpp
+    src/d/actor/d_a_alldie.cpp
+    src/d/actor/d_a_bg.cpp
+    src/d/actor/d_a_bg_obj.cpp
+    src/d/actor/d_a_set_bgobj.cpp
 )
 
 # --- Include directories ---
@@ -170,6 +190,7 @@ target_link_libraries(tp-pc PRIVATE bgfx bimg bx SDL3::SDL3-static)
 target_compile_definitions(tp-pc PRIVATE
     __REVOLUTION_SDK__
     WIDESCREEN_SUPPORT=1
+    TP_DEFAULT_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     $<$<CONFIG:Debug>:DEBUG=1>
     $<$<NOT:$<CONFIG:Debug>>:DEBUG=0>
 )
@@ -198,13 +219,30 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-format
         -fpermissive
         -fno-exceptions
+        -fno-reorder-blocks-and-partition
+    )
+    # GCC auto-vectorizes matrix ops with movaps/movdqa (aligned SSE stores).
+    # The x86-64 ABI guarantees 16-byte stack alignment, but some decompiled
+    # functions violate this through deep call chains.  Tell GCC that the
+    # incoming stack may only be 8-byte aligned so it generates safe code
+    # (movups/movdqu instead of movaps/movdqa).
+    set_source_files_properties(src/pal/pal_math_stubs.cpp PROPERTIES
+        COMPILE_OPTIONS "-mincoming-stack-boundary=3"
+    )
+    # GCC 13.3 has a code-generation bug in the 5-parameter mDoMtx_lookAt:
+    # it splits the function's epilogue into .text.unlikely, but with
+    # -fno-reorder-blocks-and-partition the section is emitted empty.
+    # The call to the empty section resolves to an unrelated function,
+    # and the epilogue (stack restore + ret) is lost, causing SIGSEGV.
+    # Compiling at -O0 prevents function splitting entirely.
+    set_source_files_properties(src/m_Do/m_Do_mtx.cpp PROPERTIES
+        COMPILE_OPTIONS "-O0"
     )
 endif()
 
 # --- Game data setup (auto-download if ROMS_TOKEN is available) ---
-# Creates a 'setup_game_data' target that downloads and extracts the disc image.
-# Run: cmake --build build --target setup_game_data
-# Or:  ninja -C build setup_game_data
+# Automatically downloads and extracts the disc image before building tp-pc.
+# Can also be run manually: ninja -C build setup_game_data
 find_package(Python3 COMPONENTS Interpreter QUIET)
 find_program(GH_CLI gh)
 if(Python3_FOUND AND GH_CLI AND DEFINED ENV{ROMS_TOKEN})
@@ -220,9 +258,10 @@ if(Python3_FOUND AND GH_CLI AND DEFINED ENV{ROMS_TOKEN})
         COMMENT "Downloading and extracting game data..."
         VERBATIM
     )
-    # Check if data/ exists; if not, remind the user
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/res")
-        message(STATUS "PC port: Game data not found in data/ — run 'ninja setup_game_data' to download")
+        # Auto-download: make tp-pc depend on game data setup
+        add_dependencies(tp-pc setup_game_data)
+        message(STATUS "PC port: Game data will be auto-downloaded before build (ROMS_TOKEN set)")
     else()
         message(STATUS "PC port: Game data found in data/")
     endif()

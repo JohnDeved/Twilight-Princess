@@ -95,8 +95,33 @@ public:
         mFader = fader;
     }
 
-    static int startFadeOut(int param_0) { return JFWDisplay::getManager()->startFadeOut(param_0); }
-    static int startFadeIn(int param_0) { return JFWDisplay::getManager()->startFadeIn(param_0); }
+    static int startFadeOut(int param_0) {
+#if PLATFORM_PC
+        /* On PC, use the darwFilter-based fade.  The JFW fader renders via
+         * J2D fillBox whose vertex alpha gets forced to 255, making the
+         * overlay permanently opaque black instead of semi-transparent. */
+        if (param_0 <= 0) param_0 = 1;
+        mFade = 1;
+        mFadeSpeed = 1.0f / (f32)param_0;
+        mFadeRate = 0.0f;
+        mFadeColor.r = 0; mFadeColor.g = 0; mFadeColor.b = 0;
+        return 1;
+#else
+        return JFWDisplay::getManager()->startFadeOut(param_0);
+#endif
+    }
+    static int startFadeIn(int param_0) {
+#if PLATFORM_PC
+        if (param_0 <= 0) param_0 = 1;
+        mFade = 1;
+        mFadeSpeed = -1.0f / (f32)param_0;
+        mFadeRate = 1.0f;
+        mFadeColor.r = 0; mFadeColor.g = 0; mFadeColor.b = 0;
+        return 1;
+#else
+        return JFWDisplay::getManager()->startFadeIn(param_0);
+#endif
+    }
     static void setFadeColor(JUtility::TColor& color) { mFader->setColor(color); }
     static void setClearColor(JUtility::TColor color) { JFWDisplay::getManager()->setClearColor(color); }
     static void setBackColor(GXColor& color) { mBackColor = color; }

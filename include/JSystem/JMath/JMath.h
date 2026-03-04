@@ -3,6 +3,7 @@
 
 #include <dolphin/mtx.h>
 #include <cmath>
+#include <cstring>
 
 void JMAMTXApplyScale(const Mtx, Mtx, f32, f32, f32);
 void JMAEulerToQuat(s16 param_0, s16 param_1, s16 param_2, Quaternion* param_3);
@@ -138,6 +139,8 @@ inline void gekko_ps_copy3(__REGISTER void* dst, __REGISTER const void* src) {
         psq_st src0, 0(dst), 0, 0
         stfs src1, 8(dst)
     };
+#else
+    memcpy(dst, src, 12);
 #endif
 }
 
@@ -154,6 +157,8 @@ inline void gekko_ps_copy6(__REGISTER void* dst, __REGISTER const void* src) {
         psq_st src1, 8(dst), 0, 0
         psq_st src2, 16(dst), 0, 0
     };
+#else
+    memcpy(dst, src, 24);
 #endif
 }
 
@@ -179,6 +184,8 @@ inline void gekko_ps_copy12(__REGISTER void* dst, __REGISTER const void* src) {
         psq_st src4, 32(dst), 0, 0
         psq_st src5, 40(dst), 0, 0
     };
+#else
+    memcpy(dst, src, 48);
 #endif
 }
 
@@ -210,6 +217,8 @@ inline void gekko_ps_copy16(__REGISTER void* dst, __REGISTER const void* src) {
         psq_st src6, 48(dst), 0, 0
         psq_st src7, 56(dst), 0, 0
     };
+#else
+    memcpy(dst, src, 64);
 #endif
 }
 
@@ -234,6 +243,10 @@ namespace JMathInlineVEC {
             ps_add sumz, az, bz
             psq_st sumz, 8(ab), 1, 0
         }
+    #else
+        ab->x = a->x + b->x;
+        ab->y = a->y + b->y;
+        ab->z = a->z + b->z;
     #endif
     }
 
@@ -254,6 +267,10 @@ namespace JMathInlineVEC {
             ps_sub subz, az, bz
             psq_st subz, 8(ab), 1, 0
         }
+    #else
+        ab->x = a->x - b->x;
+        ab->y = a->y - b->y;
+        ab->z = a->z - b->z;
     #endif
     }
 
@@ -271,6 +288,8 @@ namespace JMathInlineVEC {
             ps_sum0 res, res, x_y, x_y
         }
         return res;
+    #else
+        return v->x * v->x + v->y * v->y + v->z * v->z;
     #endif
     }
 
@@ -291,6 +310,8 @@ namespace JMathInlineVEC {
             ps_sum0 res, otheryz, thisyz, thisyz
         };
         return res;
+    #else
+        return a->x * b->x + a->y * b->y + a->z * b->z;
     #endif
     }
 };

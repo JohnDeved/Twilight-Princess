@@ -32,7 +32,7 @@
 #include "revolution/gd/GDBase.h"
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
-#include "pal/gx/gx_bgfx.h"
+#include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
 
@@ -71,8 +71,8 @@ GXFifoObj* GXInit(void* base, u32 size) {
     /* Initialize GX state machine */
     pal_gx_state_init();
 
-    /* Initialize bgfx rendering backend */
-    pal_gx_bgfx_init();
+    /* Initialize rendering backend */
+    pal_render_init();
 
     return &s_gx_fifo;
 }
@@ -310,8 +310,18 @@ void GXInitTexObjCI(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
 void GXInitTexObjLOD(GXTexObj* obj, GXTexFilter min_filt, GXTexFilter mag_filt,
                      f32 min_lod, f32 max_lod, f32 lod_bias, GXBool bias_clamp,
                      GXBool do_edge_lod, GXAnisotropy max_aniso) {
-    (void)obj; (void)min_filt; (void)mag_filt; (void)min_lod; (void)max_lod;
-    (void)lod_bias; (void)bias_clamp; (void)do_edge_lod; (void)max_aniso;
+    (void)bias_clamp; (void)do_edge_lod; (void)max_aniso;
+    if (!obj) return;
+    /* Store filter/LOD in the GXTexObj's reserved bytes (offset 27-31).
+     *   offset 27: min_filt (u8)
+     *   offset 28: mag_filt (u8)
+     *   offset 29: has_lod marker (0xAB) */
+    u8* data = (u8*)obj;
+    if (data[0] == 'T' && data[1] == 'P') {
+        data[27] = (u8)min_filt;
+        data[28] = (u8)mag_filt;
+        data[29] = 0xAB; /* marker: LOD data present */
+    }
 }
 void GXInitTexObjData(GXTexObj* obj, void* image_ptr) { (void)obj; (void)image_ptr; }
 void GXInitTexObjWrapMode(GXTexObj* obj, GXTexWrapMode s, GXTexWrapMode t) { (void)obj; (void)s; (void)t; }
@@ -321,10 +331,27 @@ void* GXGetTexObjUserData(const GXTexObj* obj) { (void)obj; return NULL; }
 void GXLoadTexObjPreLoaded(GXTexObj* obj, GXTexRegion* region, GXTexMapID id) { (void)obj; (void)region; (void)id; }
 void GXLoadTexObj(GXTexObj* obj, GXTexMapID id) { pal_gx_load_tex_obj(obj, id); }
 void GXInitTlutObj(GXTlutObj* tlut_obj, void* lut, GXTlutFmt fmt, u16 n_entries) {
-    if (tlut_obj) memset(tlut_obj, 0, sizeof(GXTlutObj));
-    (void)lut; (void)fmt; (void)n_entries;
+    if (tlut_obj) {
+        memset(tlut_obj, 0, sizeof(GXTlutObj));
+        /* Store palette data in the GXTlutObj's 16-byte space:
+         *   offset 0-7: lut pointer (void*, 8 bytes on 64-bit)
+         *   offset 8-11: fmt (u32)
+         *   offset 12-13: n_entries (u16) */
+        memcpy((u8*)tlut_obj, &lut, sizeof(void*));
+        memcpy((u8*)tlut_obj + 8, &fmt, 4);
+        memcpy((u8*)tlut_obj + 12, &n_entries, 2);
+    }
 }
-void GXLoadTlut(GXTlutObj* tlut_obj, u32 tlut_name) { (void)tlut_obj; (void)tlut_name; }
+void GXLoadTlut(GXTlutObj* tlut_obj, u32 tlut_name) {
+    if (!tlut_obj) return;
+    void* lut_ptr;
+    u32 fmt;
+    u16 n_entries;
+    memcpy(&lut_ptr, (u8*)tlut_obj, sizeof(void*));
+    memcpy(&fmt, (u8*)tlut_obj + 8, 4);
+    memcpy(&n_entries, (u8*)tlut_obj + 12, 2);
+    pal_gx_load_tlut(lut_ptr, fmt, n_entries, tlut_name);
+}
 void GXInitTexCacheRegion(GXTexRegion* region, u8 is_32b_mipmap, u32 tmem_even,
                           GXTexCacheSize size_even, u32 tmem_odd, GXTexCacheSize size_odd) {
     if (region) memset(region, 0, sizeof(GXTexRegion));
@@ -467,7 +494,15 @@ void GXSetTevAlphaOp(GXTevStageID stage, GXTevOp op, GXTevBias bias,
                      GXTevScale scale, GXBool clamp, GXTevRegID out_reg) {
     pal_gx_set_tev_alpha_op(stage, op, bias, scale, clamp, out_reg);
 }
-void GXSetTevColor(GXTevRegID id, GXColor color) { pal_gx_set_tev_color(id, color); }
+void GXSetTevColor(GXTevRegID id, GXColor color) {
+    static int s_tc_log = 0;
+    if (s_tc_log < 10) {
+        s_tc_log++;
+        fprintf(stderr, "{\"GXSetTevColor\":{\"id\":%d,\"rgba\":[%d,%d,%d,%d]}}\n",
+                (int)id, (int)color.r, (int)color.g, (int)color.b, (int)color.a);
+    }
+    pal_gx_set_tev_color(id, color);
+}
 void GXSetTevColorS10(GXTevRegID id, GXColorS10 color) {
     GXColor c;
     c.r = (u8)(color.r < 0 ? 0 : (color.r > 255 ? 255 : color.r));
@@ -608,18 +643,10 @@ void GXSetCopyFilter(GXBool aa, const u8 sample_pattern[12][2], GXBool vf, const
 void GXSetDispCopyGamma(GXGamma gamma) { (void)gamma; }
 void GXCopyDisp(void* dest, GXBool clear) {
     (void)dest; (void)clear;
-    /* When the GX shim is active (bgfx initialized), this presents
-     * the rendered frame. Fire RENDER_FRAME milestone only when the frame
-     * is valid — no GX stubs were hit and real draw calls were submitted,
-     * ensuring a valid verifiable image was produced. */
-    if (gx_shim_active) {
-        pal_gx_end_frame();
-        if (!pal_milestone_was_reached(MILESTONE_RENDER_FRAME)
-            && gx_stub_frame_is_valid()) {
-            pal_milestone("RENDER_FRAME", MILESTONE_RENDER_FRAME,
-                          "first stub-free frame with valid draw calls");
-        }
-    }
+    /* Frame submission happens in mDoGph_Painter via pal_render_end_frame().
+     * GXCopyDisp is called from JFWDisplay::exchangeXfb_double during
+     * beginRender (before draw calls), so submitting here would create
+     * duplicate bgfx frames or submit before any draws. */
 }
 void GXCopyTex(void* dest, GXBool clear) { (void)dest; (void)clear; }
 void GXClearBoundingBox(void) {}
@@ -758,7 +785,11 @@ GXRenderModeObj GXNtsc480IntDf = {
 /* GD (Graphics Display List) functions                             */
 /* ================================================================ */
 
-void GDInitGDLObj(GDLObj* dl, void* start, u32 length) { (void)dl; (void)start; (void)length; }
+void GDInitGDLObj(GDLObj* dl, void* start, u32 length) {
+    dl->start = (u8*)start;
+    dl->ptr   = (u8*)start;
+    dl->top   = (u8*)start + length;
+}
 void GDFlushCurrToMem(void) {}
 void GDPadCurr32(void) {}
 void GDOverflowed(void) {}
@@ -769,46 +800,72 @@ GDOverflowCb GDGetOverflowCallback(void) { return NULL; }
 /* GX Vertex data I/O (normally inline/macro, may need symbols)     */
 /* ================================================================ */
 
-void GXPosition3f32(f32 x, f32 y, f32 z) { (void)x; (void)y; (void)z; }
-void GXPosition3s16(s16 x, s16 y, s16 z) { (void)x; (void)y; (void)z; }
-void GXPosition3u16(u16 x, u16 y, u16 z) { (void)x; (void)y; (void)z; }
-void GXPosition3s8(s8 x, s8 y, s8 z) { (void)x; (void)y; (void)z; }
-void GXPosition3u8(u8 x, u8 y, u8 z) { (void)x; (void)y; (void)z; }
-void GXPosition2f32(f32 x, f32 y) { (void)x; (void)y; }
-void GXPosition2s16(s16 x, s16 y) { (void)x; (void)y; }
-void GXPosition2u16(u16 x, u16 y) { (void)x; (void)y; }
-void GXPosition2s8(s8 x, s8 y) { (void)x; (void)y; }
-void GXPosition2u8(u8 x, u8 y) { (void)x; (void)y; }
-void GXPosition1x8(u8 index) { (void)index; }
-void GXPosition1x16(u16 index) { (void)index; }
+/* ---------------------------------------------------------------- */
+/* GX direct vertex submission — write raw data to vertex buffer    */
+/* These mirror what gx_displaylist.cpp does for DL vertex data.    */
+/* The TEV flush path reads this raw data and converts to float.    */
+/* ---------------------------------------------------------------- */
 
-void GXNormal3f32(f32 nx, f32 ny, f32 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal3s16(s16 nx, s16 ny, s16 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal3s8(s8 nx, s8 ny, s8 nz) { (void)nx; (void)ny; (void)nz; }
-void GXNormal1x8(u8 index) { (void)index; }
-void GXNormal1x16(u16 index) { (void)index; }
+void GXPosition3f32(f32 x, f32 y, f32 z) { pal_gx_write_vtx_f32(x); pal_gx_write_vtx_f32(y); pal_gx_write_vtx_f32(z); }
+void GXPosition3s16(s16 x, s16 y, s16 z) { pal_gx_write_vtx_s16(x); pal_gx_write_vtx_s16(y); pal_gx_write_vtx_s16(z); }
+void GXPosition3u16(u16 x, u16 y, u16 z) { pal_gx_write_vtx_u16(x); pal_gx_write_vtx_u16(y); pal_gx_write_vtx_u16(z); }
+void GXPosition3s8(s8 x, s8 y, s8 z) { pal_gx_write_vtx_s8(x); pal_gx_write_vtx_s8(y); pal_gx_write_vtx_s8(z); }
+void GXPosition3u8(u8 x, u8 y, u8 z) { pal_gx_write_vtx_u8(x); pal_gx_write_vtx_u8(y); pal_gx_write_vtx_u8(z); }
+void GXPosition2f32(f32 x, f32 y) { pal_gx_write_vtx_f32(x); pal_gx_write_vtx_f32(y); }
+void GXPosition2s16(s16 x, s16 y) { pal_gx_write_vtx_s16(x); pal_gx_write_vtx_s16(y); }
+void GXPosition2u16(u16 x, u16 y) { pal_gx_write_vtx_u16(x); pal_gx_write_vtx_u16(y); }
+void GXPosition2s8(s8 x, s8 y) { pal_gx_write_vtx_s8(x); pal_gx_write_vtx_s8(y); }
+void GXPosition2u8(u8 x, u8 y) { pal_gx_write_vtx_u8(x); pal_gx_write_vtx_u8(y); }
+void GXPosition1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXPosition1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXColor4u8(u8 r, u8 g, u8 b, u8 a) { (void)r; (void)g; (void)b; (void)a; }
-void GXColor3u8(u8 r, u8 g, u8 b) { (void)r; (void)g; (void)b; }
-void GXColor1u32(u32 clr) { (void)clr; }
-void GXColor1u16(u16 clr) { (void)clr; }
-void GXColor1x8(u8 index) { (void)index; }
-void GXColor1x16(u16 index) { (void)index; }
+void GXNormal3f32(f32 nx, f32 ny, f32 nz) { pal_gx_write_vtx_f32(nx); pal_gx_write_vtx_f32(ny); pal_gx_write_vtx_f32(nz); }
+void GXNormal3s16(s16 nx, s16 ny, s16 nz) { pal_gx_write_vtx_s16(nx); pal_gx_write_vtx_s16(ny); pal_gx_write_vtx_s16(nz); }
+void GXNormal3s8(s8 nx, s8 ny, s8 nz) { pal_gx_write_vtx_s8(nx); pal_gx_write_vtx_s8(ny); pal_gx_write_vtx_s8(nz); }
+void GXNormal1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXNormal1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXTexCoord2f32(f32 s, f32 t) { (void)s; (void)t; }
-void GXTexCoord2s16(s16 s, s16 t) { (void)s; (void)t; }
-void GXTexCoord2u16(u16 s, u16 t) { (void)s; (void)t; }
-void GXTexCoord2s8(s8 s, s8 t) { (void)s; (void)t; }
-void GXTexCoord2u8(u8 s, u8 t) { (void)s; (void)t; }
-void GXTexCoord1f32(f32 s) { (void)s; }
-void GXTexCoord1s16(s16 s) { (void)s; }
-void GXTexCoord1u16(u16 s) { (void)s; }
-void GXTexCoord1s8(s8 s) { (void)s; }
-void GXTexCoord1u8(u8 s) { (void)s; }
-void GXTexCoord1x8(u8 index) { (void)index; }
-void GXTexCoord1x16(u16 index) { (void)index; }
+void GXColor4u8(u8 r, u8 g, u8 b, u8 a) {
+    /* Write bytes in RGBA order (bgfx expects R at byte[0]).
+     * On GCN, u32 big-endian stores [R,G,B,A] which matches.
+     * On PC, we write bytes explicitly to avoid little-endian u32 reversal. */
+    pal_gx_write_vtx_u8(r);
+    pal_gx_write_vtx_u8(g);
+    pal_gx_write_vtx_u8(b);
+    pal_gx_write_vtx_u8(a);
+}
+void GXColor3u8(u8 r, u8 g, u8 b) {
+    pal_gx_write_vtx_u8(r);
+    pal_gx_write_vtx_u8(g);
+    pal_gx_write_vtx_u8(b);
+    pal_gx_write_vtx_u8(0xFF);
+}
+void GXColor1u32(u32 clr) {
+    /* GCN u32 color layout: 0xRRGGBBAA (R=high byte, A=low byte).
+     * Write bytes in RGBA order to match bgfx Color0 attribute layout. */
+    pal_gx_write_vtx_u8((u8)(clr >> 24));
+    pal_gx_write_vtx_u8((u8)(clr >> 16));
+    pal_gx_write_vtx_u8((u8)(clr >> 8));
+    pal_gx_write_vtx_u8((u8)(clr));
+}
+void GXColor1u16(u16 clr) { pal_gx_write_vtx_u16(clr); }
+void GXColor1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXColor1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
-void GXMatrixIndex1x8(u8 index) { (void)index; }
+void GXTexCoord2f32(f32 s, f32 t) { pal_gx_write_vtx_f32(s); pal_gx_write_vtx_f32(t); }
+void GXTexCoord2s16(s16 s, s16 t) { pal_gx_write_vtx_s16(s); pal_gx_write_vtx_s16(t); }
+void GXTexCoord2u16(u16 s, u16 t) { pal_gx_write_vtx_u16(s); pal_gx_write_vtx_u16(t); }
+void GXTexCoord2s8(s8 s, s8 t) { pal_gx_write_vtx_s8(s); pal_gx_write_vtx_s8(t); }
+void GXTexCoord2u8(u8 s, u8 t) { pal_gx_write_vtx_u8(s); pal_gx_write_vtx_u8(t); }
+void GXTexCoord1f32(f32 s) { pal_gx_write_vtx_f32(s); }
+void GXTexCoord1s16(s16 s) { pal_gx_write_vtx_s16(s); }
+void GXTexCoord1u16(u16 s) { pal_gx_write_vtx_u16(s); }
+void GXTexCoord1s8(s8 s) { pal_gx_write_vtx_s8(s); }
+void GXTexCoord1u8(u8 s) { pal_gx_write_vtx_u8(s); }
+void GXTexCoord1x8(u8 index) { pal_gx_write_vtx_u8(index); }
+void GXTexCoord1x16(u16 index) { pal_gx_write_vtx_u16(index); }
+
+void GXMatrixIndex1x8(u8 index) { pal_gx_write_vtx_u8(index); }
 
 } /* extern "C" */
 

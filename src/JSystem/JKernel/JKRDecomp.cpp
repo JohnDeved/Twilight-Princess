@@ -206,14 +206,26 @@ void JKRDecomp::decodeSZS(u8* src_buffer, u8* dst_buffer, u32 srcSize, u32 dstSi
     s32 chunkBitsLeft = 0;
     s32 chunkBits;
 
-    decompEnd = dst_buffer + *(int*)(src_buffer + 4) - dstSize;
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* Read decompressed size as big-endian (Yaz0 header is always BE) */
+    u32 decompSize = READU32_BE(src_buffer, 4);
+#else
+    u32 decompSize = *(u32*)(src_buffer + 4);
+#endif
+    decompEnd = dst_buffer + decompSize - dstSize;
 
     if (srcSize == 0) {
         return;
     }
+#if PLATFORM_PC || PLATFORM_NX_HB
+    if (dstSize > decompSize) {
+        return;
+    }
+#else
     if (dstSize > *(u32*)src_buffer) {
         return;
     }
+#endif
 
     u8* curSrcPos = src_buffer + 0x10;
     do {

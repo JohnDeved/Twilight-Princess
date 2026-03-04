@@ -117,19 +117,7 @@ void dMeter2Info_onWide2D() {}
 void dMeter2Info_offWide2D() {}
 
 /* ================================================================ */
-/* dMeter_map_HIO_c                                                 */
-/* ================================================================ */
-
-/* Stub constructor and static member */
-#include "d/d_meter_map.h"
-
-dMeter_map_HIO_c::dMeter_map_HIO_c() {}
-
-dMeter_map_HIO_c* dMeter_map_HIO_c::mMySelfPointer = NULL;
-
-void dMeter_map_HIO_c::listenPropertyEvent(const JORPropertyEvent*) {}
-void dMeter_map_HIO_c::genMessage(JORMContext*) {}
-void dMeter_map_HIO_c::update() {}
+/* dMeter_map_HIO_c — real implementation now in d_meter_map.cpp */
 
 /* ================================================================ */
 /* dMsgObject_c::setWord / setSelectWord                            */

@@ -3,9 +3,17 @@
 //
 
 #include "JSystem/JSystem.h" // IWYU pragma: keep
+#include "global.h"
 
 #include "JSystem/J3DGraphBase/J3DGD.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
+#if PLATFORM_PC || PLATFORM_NX_HB
+#include "JSystem/J3DGraphBase/J3DSys.h"
+#include "JSystem/J3DGraphBase/J3DTexture.h"
+extern "C" {
+#include "pal/gx/gx_state.h"
+}
+#endif
 
 void J3DGDSetGenMode(u8 nTexGens, u8 nChans, u8 nTevs, u8 nInds,
                      GXCullMode cm) {
@@ -52,6 +60,22 @@ void J3DGDSetLightDir(GXLightID light, f32 nx, f32 ny, f32 nz) {
 }
 
 void J3DGDSetVtxAttrFmtv(GXVtxFmt vtxfmt, const GXVtxAttrFmtList* list, bool param_2) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly set vertex attribute formats in the GX state machine.
+     * The CP VAT register commands written by J3DGDWriteCPCmd go to the FIFO
+     * which is never processed. */
+    for (const GXVtxAttrFmtList* p = list; p->attr != GX_VA_NULL; ++p) {
+        GXCompCnt cnt = (GXCompCnt)p->cnt;
+        /* Handle NBT special case matching the else-path below */
+        if ((p->attr == GX_VA_NRM || p->attr == GX_VA_NBT) && cnt == GX_NRM_NBT3) {
+            cnt = GX_NRM_NBT;
+        } else if (p->attr == GX_VA_NRM && param_2) {
+            cnt = GX_NRM_NBT;
+        }
+        pal_gx_set_vtx_attr_fmt(vtxfmt, (GXAttr)p->attr, cnt, (GXCompType)p->type, p->frac);
+    }
+    return;
+#endif
     u32 posCnt = GX_POS_XYZ;
     u32 posType = GX_F32;
     u32 posFrac = 0;
@@ -340,6 +364,12 @@ void J3DGDSetTexLookupMode(GXTexMapID id, GXTexWrapMode wrap_s,
                            GXTexFilter mag_filt, f32 min_lod, f32 max_lod,
                            f32 lod_bias, u8 bias_clamp, u8 do_edge_lod,
                            GXAnisotropy max_aniso) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, set texture lookup mode in GX state AND write BP commands to DL.
+     * The BP commands are needed for per-material DL replay. */
+    pal_gx_set_tex_lookup_mode(id, wrap_s, wrap_t, min_filt, mag_filt,
+                                min_lod, max_lod, lod_bias);
+#endif
     J3DGDWriteBPCmd(BP_TEX_MODE0(wrap_s, wrap_t, mag_filt == TRUE, GX2HWFiltConv[min_filt], !do_edge_lod, (u8)(32.0f * lod_bias), max_aniso, bias_clamp, J3DGDTexMode0Ids[id]));
     J3DGDWriteBPCmd(BP_TEX_MODE1((u8)(16.0f * min_lod), (u8)(16.0f * max_lod), J3DGDTexMode1Ids[id]));
 }
@@ -349,19 +379,69 @@ void J3DGDSetTexImgAttr(GXTexMapID id, u16 width, u16 height, GXTexFmt format) {
 }
 
 void J3DGDSetTexImgPtr(GXTexMapID id, void* image_ptr) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, the GCN physical address (OSCachedToPhysical >> 5) is meaningless.
+     * Instead, register the pointer in a lookup table and store the table index
+     * in the BP command's 24-bit data field. During DL replay, the display list
+     * parser resolves the index back to the actual pointer. */
+    extern u32 pal_gx_tex_ptr_register(void* ptr);
+    u32 ptr_id = pal_gx_tex_ptr_register(image_ptr);
+    J3DGDWriteBPCmd((u32)J3DGDTexImage3Ids[id] << 24 | (ptr_id & 0x00FFFFFF));
+    return;
+#endif
     J3DGDWriteBPCmd(BP_IMAGE_PTR(OSCachedToPhysical(image_ptr) >> 5, J3DGDTexImage3Ids[id]));
 }
 
 void J3DGDSetTexImgPtrRaw(GXTexMapID id, u32 image_ptr_raw) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, resolve the texture index to an actual image pointer,
+     * register it in the pointer table, and write the BP command. */
+    if ((unsigned)id < GX_MAX_TEXMAP && j3dSys.getTexture()) {
+        ResTIMG* timg = j3dSys.getTexture()->getResTIMG(image_ptr_raw);
+        if (timg) {
+            void* img = (u8*)timg + timg->imageOffset;
+            extern u32 pal_gx_tex_ptr_register(void* ptr);
+            u32 ptr_id = pal_gx_tex_ptr_register(img);
+            J3DGDWriteBPCmd((u32)J3DGDTexImage3Ids[id] << 24 | (ptr_id & 0x00FFFFFF));
+        }
+    }
+    return;
+#endif
     GDOverflowCheck(5);
     J3DGDWriteBPCmd(BP_IMAGE_PTR(image_ptr_raw, J3DGDTexImage3Ids[id]));
 }
 
 void J3DGDSetTexTlut(GXTexMapID id, u32 tmem_addr, GXTlutFmt format) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, store the palette format for CI texture decoding.
+     * The palette data pointer was already set by J3DGDLoadTlut. */
+    if ((unsigned)id < GX_MAX_TEXMAP) {
+        g_gx_state.tex_bindings[id].tlut_fmt = (u32)format;
+    }
+#endif
     J3DGDWriteBPCmd(BP_TEX_TLUT((tmem_addr - 0x80000) >> 9, format, J3DGDTexTlutIds[id]));
 }
 
 void J3DGDLoadTlut(void* tlut_ptr, u32 tmem_addr, GXTlutSize size) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, store the palette pointer for CI texture decoding.
+     * OSCachedToPhysical would truncate the 64-bit pointer, so skip BP commands.
+     * Derive texmap ID from TMEM address: tmem = (texmap << 13) + 0xf0000 */
+    if (tlut_ptr && tmem_addr >= 0xf0000) {
+        u32 texmap_id = (tmem_addr - 0xf0000) >> 13;
+        /* size: GX_TLUT_16=1, GX_TLUT_256=16, entries = size * 16 */
+        u16 n_entries = (u16)(size * 16);
+        /* Format is not known here — it's set later by J3DGDSetTexTlut.
+         * Store 0 as placeholder; tex_binding.tlut_fmt is updated separately. */
+        pal_gx_load_tlut(tlut_ptr, 0, n_entries, texmap_id);
+        /* Also set directly on the tex binding for DL replay path */
+        if (texmap_id < GX_MAX_TEXMAP) {
+            g_gx_state.tex_bindings[texmap_id].tlut_ptr = tlut_ptr;
+        }
+    }
+    (void)size;
+    return;
+#endif
     ASSERTMSGLINE(735, !(tmem_addr & 0x1ff), "GDLoadTlut: invalid TMEM pointer");
     ASSERTMSGLINE(736, size <= 0x400, "GDLoadTlut: invalid TLUT size");
 
@@ -608,6 +688,11 @@ void J3DGDSetFogRangeAdj(GXBool enable, u16 center, GXFogAdjTable* table) {
 }
 
 void J3DFifoLoadPosMtxImm(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, directly update the GX state matrix instead of writing to FIFO.
+     * The FIFO buffer is never processed, so matrix loads would be lost. */
+    pal_gx_load_pos_mtx_imm(mtx, id);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 12);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -621,9 +706,13 @@ void J3DFifoLoadPosMtxImm(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32ptr(&mtx[2][3]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxImm(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_gx_load_nrm_mtx_imm(mtx, id);
+#else
     J3DFifoWriteXFCmdHdr(id * 3 + 0x400, 9);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -634,9 +723,18 @@ void J3DFifoLoadNrmMtxImm(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][0]);
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxImm3x3(Mtx3P mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* Convert 3x3 to 3x4 for pal_gx_load_nrm_mtx_imm */
+    f32 mtx34[3][4];
+    mtx34[0][0] = mtx[0][0]; mtx34[0][1] = mtx[0][1]; mtx34[0][2] = mtx[0][2]; mtx34[0][3] = 0.0f;
+    mtx34[1][0] = mtx[1][0]; mtx34[1][1] = mtx[1][1]; mtx34[1][2] = mtx[1][2]; mtx34[1][3] = 0.0f;
+    mtx34[2][0] = mtx[2][0]; mtx34[2][1] = mtx[2][1]; mtx34[2][2] = mtx[2][2]; mtx34[2][3] = 0.0f;
+    pal_gx_load_nrm_mtx_imm(mtx34, id);
+#else
     J3DFifoWriteXFCmdHdr(id * 3 + 0x400, 9);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -647,9 +745,13 @@ void J3DFifoLoadNrmMtxImm3x3(Mtx3P mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][0]);
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
+#endif
 }
 
 void J3DFifoLoadNrmMtxToTexMtx(MtxP mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    pal_gx_load_tex_mtx_imm(mtx, (u32)(GX_TEXMTX0 + id), GX_MTX3x4);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 12);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -663,9 +765,17 @@ void J3DFifoLoadNrmMtxToTexMtx(MtxP mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32(0.0f);
+#endif
 }
 
 void J3DFifoLoadNrmMtxToTexMtx3x3(Mtx3P mtx, u32 id) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    f32 mtx34[3][4];
+    mtx34[0][0] = mtx[0][0]; mtx34[0][1] = mtx[0][1]; mtx34[0][2] = mtx[0][2]; mtx34[0][3] = 0.0f;
+    mtx34[1][0] = mtx[1][0]; mtx34[1][1] = mtx[1][1]; mtx34[1][2] = mtx[1][2]; mtx34[1][3] = 0.0f;
+    mtx34[2][0] = mtx[2][0]; mtx34[2][1] = mtx[2][1]; mtx34[2][2] = mtx[2][2]; mtx34[2][3] = 0.0f;
+    pal_gx_load_tex_mtx_imm(mtx34, (u32)(GX_TEXMTX0 + id), GX_MTX3x4);
+#else
     J3DFifoWriteXFCmdHdr(4 * id, 0xc);
     J3DGXCmd1f32ptr(&mtx[0][0]);
     J3DGXCmd1f32ptr(&mtx[0][1]);
@@ -679,6 +789,7 @@ void J3DFifoLoadNrmMtxToTexMtx3x3(Mtx3P mtx, u32 id) {
     J3DGXCmd1f32ptr(&mtx[2][1]);
     J3DGXCmd1f32ptr(&mtx[2][2]);
     J3DGXCmd1f32(0.0f);
+#endif
 }
 
 static u8 J3DTexImage1Ids[8] = {

@@ -10,12 +10,16 @@
 #include <stdint.h>
 #if PLATFORM_PC
 #include "pal/pal_endian.h"
+#include <stdlib.h>
 #endif
 
 JKRMemArchive::JKRMemArchive(s32 entryNum, JKRArchive::EMountDirection mountDirection)
     : JKRArchive(entryNum, MOUNT_MEM) {
     mIsMounted = false;
     mMountDirection = mountDirection;
+#if PLATFORM_PC
+    mRepackedFiles = NULL;
+#endif
     if (!open(entryNum, mMountDirection)) {
         return;
     }
@@ -30,6 +34,9 @@ JKRMemArchive::JKRMemArchive(s32 entryNum, JKRArchive::EMountDirection mountDire
 JKRMemArchive::JKRMemArchive(void* buffer, u32 bufferSize, JKRMemBreakFlag param_3)
     : JKRArchive((s32)buffer, MOUNT_MEM) {
     mIsMounted = false;
+#if PLATFORM_PC
+    mRepackedFiles = NULL;
+#endif
     if (!open(buffer, bufferSize, param_3)) {
         return;
     }
@@ -47,6 +54,12 @@ JKRMemArchive::~JKRMemArchive() {
             if (mArcHeader)
                 JKRFreeToHeap(mHeap, mArcHeader);
         }
+#if PLATFORM_PC
+        if (mRepackedFiles) {
+            free(mRepackedFiles);
+            mRepackedFiles = NULL;
+        }
+#endif
 
         sVolumeList.remove(&mFileLoaderLink);
         mIsMounted = false;
@@ -99,6 +112,16 @@ bool JKRMemArchive::open(s32 entryNum, JKRArchive::EMountDirection mountDirectio
         mNodes = (SDIDirEntry *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->node_offset);
         mFiles = (SDIFileEntry *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->file_entry_offset);
         mStringTable = (char *)((u8 *)&mArcInfoBlock->num_nodes + mArcInfoBlock->string_table_offset);
+#if PLATFORM_PC
+        /* Use separately-allocated repacked file entries to avoid
+         * overwriting the string table (20-byte disc → 24-byte native).
+         * Store on instance for proper lifetime management. */
+        void* repacked = pal_swap_rarc_get_repacked_files();
+        if (repacked) {
+            mFiles = (SDIFileEntry *)repacked;
+            mRepackedFiles = repacked;
+        }
+#endif
 
         mArchiveData =
             (u8 *)((uintptr_t)mArcHeader + mArcHeader->header_length + mArcHeader->file_data_offset);

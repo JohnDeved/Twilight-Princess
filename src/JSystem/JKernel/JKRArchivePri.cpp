@@ -36,6 +36,10 @@ bool JKRArchive::isSameName(JKRArchive::CArcName& name, u32 nameOffset, u16 name
     u16 hash = name.getHash();
     if (hash != nameHash)
         return false;
+#if PLATFORM_PC
+    if (mStringTable == NULL) return false;
+    if (nameOffset >= mArcInfoBlock->string_table_length) return false;
+#endif
     return strcmp(mStringTable + nameOffset, name.getString()) == 0;
 }
 
@@ -128,6 +132,9 @@ JKRArchive::SDIFileEntry* JKRArchive::findIdxResource(u32 fileIndex) const {
 
 JKRArchive::SDIFileEntry* JKRArchive::findNameResource(const char* name) const {
     SDIFileEntry* fileEntry = mFiles;
+#if PLATFORM_PC
+    if (fileEntry == NULL || mArcInfoBlock == NULL || mStringTable == NULL) return NULL;
+#endif
 
     CArcName arcName(name);
     for (int i = 0; i < mArcInfoBlock->num_file_entries; i++) {

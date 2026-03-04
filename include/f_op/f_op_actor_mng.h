@@ -13,11 +13,25 @@
 #include "m_Do/m_Do_hostIO.h"
 #include "SSystem/SComponent/c_phase.h"
 
+#if PLATFORM_PC
+/* On modern C++ compilers (GCC/Clang C++11+), placement new with () is
+ * value-initialization, which zero-initializes ALL POD members including
+ * inherited base class fields (profname, methods, draw_tag, actor_tag, etc.).
+ * On CodeWarrior (GCN), new (ptr) T() did NOT zero-initialize POD members.
+ * Use default-initialization (no parentheses) on PC to match GCN behavior
+ * and preserve base class fields set by fpcBs_Create/fopAc_Create. */
+#define fopAcM_ct(ptr, ClassName)                                           \
+    if (!fopAcM_CheckCondition(ptr, fopAcCnd_INIT_e)) {                     \
+        new (ptr) ClassName;                                                \
+        fopAcM_OnCondition(ptr, fopAcCnd_INIT_e);                           \
+    }
+#else
 #define fopAcM_ct(ptr, ClassName)                                           \
     if (!fopAcM_CheckCondition(ptr, fopAcCnd_INIT_e)) {                     \
         new (ptr) ClassName();                                              \
         fopAcM_OnCondition(ptr, fopAcCnd_INIT_e);                           \
     }
+#endif
 
 #define fopAcM_RegisterDeleteID(i_this, actor_name_str)                     \
     ("Delete -> " actor_name_str "(id=%d)\n", fopAcM_GetID(i_this))
@@ -574,6 +588,10 @@ fpc_ProcID fopAcM_createChildFromOffset(s16 i_procName, fpc_ProcID i_parentID, u
                                         const cXyz* i_scale, s8 i_argument, createFunc i_createFunc);
 
 void fopAcM_DeleteHeap(fopAc_ac_c* i_actor);
+
+#if PLATFORM_PC
+void fopAcM_cleanupPendingSolidHeap(void);
+#endif
 
 s32 fopAcM_callCallback(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback, JKRHeap* i_heap);
 

@@ -254,7 +254,11 @@ void J2DAnmTransformKey::calcTransform(f32 param_0, u16 param_1,
 void J2DAnmColor::searchUpdateMaterialID(J2DScreen* pScreen) {
     if (pScreen != NULL && pScreen->mNameTable != NULL) {
         for (u16 entry = 0; entry < this->getUpdateMaterialNum(); entry++) {
-            s32 idx = pScreen->mNameTable->getIndex(this->field_0x20.getName(entry));
+            const char* name = this->field_0x20.getName(entry);
+#if PLATFORM_PC
+            if (name == NULL) { mUpdateMaterialID[entry] = 0xFFFF; continue; }
+#endif
+            s32 idx = pScreen->mNameTable->getIndex(name);
             if (idx != -1) {
                 mUpdateMaterialID[entry] = idx;
             } else {
@@ -565,7 +569,11 @@ void J2DAnmTextureSRTKey::calcTransform(f32 param_0, u16 param_1, J3DTextureSRTI
 void J2DAnmTextureSRTKey::searchUpdateMaterialID(J2DScreen* pScreen) {
     if (pScreen != NULL && pScreen->mNameTable != NULL) {
         for (u16 entry = 0; entry < this->getUpdateMaterialNum(); entry++) {
-            s32 idx = pScreen->mNameTable->getIndex(field_0x34.getName(entry));
+            const char* name = field_0x34.getName(entry);
+#if PLATFORM_PC
+            if (name == NULL) { mUpdateMaterialID[entry] = 0xFFFF; continue; }
+#endif
+            s32 idx = pScreen->mNameTable->getIndex(name);
             if (idx != -1) {
                 mUpdateMaterialID[entry] = idx;
             } else {
@@ -578,7 +586,11 @@ void J2DAnmTextureSRTKey::searchUpdateMaterialID(J2DScreen* pScreen) {
 void J2DAnmTexPattern::searchUpdateMaterialID(J2DScreen* pScreen) {
     if (pScreen != NULL && pScreen->mNameTable != NULL && pScreen->mTexRes != NULL) {
         for (u16 entry = 0; entry < this->getUpdateMaterialNum(); entry++) {
-            s32 idx = pScreen->mNameTable->getIndex(field_0x20.getName(entry));
+            const char* name = field_0x20.getName(entry);
+#if PLATFORM_PC
+            if (name == NULL) { mUpdateMaterialID[entry] = 0xFFFF; continue; }
+#endif
+            s32 idx = pScreen->mNameTable->getIndex(name);
             if (idx != -1) {
                 mUpdateMaterialID[entry] = idx;
             } else {
@@ -824,7 +836,11 @@ void J2DAnmTevRegKey::getTevKonstReg(u16 param_0, GXColor* pColor) const {
 void J2DAnmTevRegKey::searchUpdateMaterialID(J2DScreen* pScreen) {
     if (pScreen != NULL && pScreen->mNameTable != NULL) {
         for (u16 i = 0; i < getCRegUpdateMaterialNum(); i++) {
-            s32 idx = pScreen->mNameTable->getIndex(mCRegNameTab.getName(i));
+            const char* name = mCRegNameTab.getName(i);
+#if PLATFORM_PC
+            if (name == NULL) { mCRegUpdateMaterialID[i] = 0xFFFF; continue; }
+#endif
+            s32 idx = pScreen->mNameTable->getIndex(name);
             if (idx != -1) {
                 mCRegUpdateMaterialID[i] = idx;
             } else {
@@ -832,7 +848,11 @@ void J2DAnmTevRegKey::searchUpdateMaterialID(J2DScreen* pScreen) {
             }
         }
         for (u16 i = 0; i < getKRegUpdateMaterialNum(); i++) {
-            s32 idx = pScreen->mNameTable->getIndex(mKRegNameTab.getName(i));
+            const char* name = mKRegNameTab.getName(i);
+#if PLATFORM_PC
+            if (name == NULL) { mKRegUpdateMaterialID[i] = 0xFFFF; continue; }
+#endif
+            s32 idx = pScreen->mNameTable->getIndex(name);
             if (idx != -1) {
                 mKRegUpdateMaterialID[i] = idx;
             } else {

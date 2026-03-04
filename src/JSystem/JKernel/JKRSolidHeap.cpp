@@ -16,6 +16,15 @@ JKRSolidHeap* JKRSolidHeap::create(u32 size, JKRHeap* heap, bool useErrorHandler
 
     if (size == -1) {
         size = heap->getMaxAllocatableSize(0x10);
+#if PLATFORM_PC
+        /* On 64-bit, CMemBlock is >16 bytes, so the content pointer inside
+         * a free block may not be 16-byte aligned. allocFromHead adds padding
+         * for alignment that getMaxAllocatableSize doesn't account for.
+         * Subtract alignment overhead to prevent allocation failure. */
+        if (size > 0x20) {
+            size -= 0x10;
+        }
+#endif
     }
 
     u32 alignedSize = ALIGN_PREV(size, 0x10);

@@ -72,6 +72,10 @@ int fpcPi_Change(process_priority_class* i_procPriority, fpc_ProcID i_layerID, u
     base_process_class* process = (base_process_class*)i_procPriority->base.mpTagData;
     BOOL changed = FALSE;
 
+#if PLATFORM_PC
+    if (process == NULL)
+        return 0;
+#endif
     if (process->state.init_state == 3)
         return 0;
 

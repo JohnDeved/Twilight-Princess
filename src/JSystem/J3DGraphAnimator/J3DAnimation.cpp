@@ -984,8 +984,15 @@ J3DAnmColor::J3DAnmColor() : field_0xc(0), field_0xe(0), field_0x10(0),
 
 
 void J3DAnmColor::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
+#if PLATFORM_PC
+    if (pMatTable == NULL || pMatTable->getMaterialName() == NULL) return;
+#endif
     for (u16 i = 0; i < mUpdateMaterialNum; i++) {
-        int index = pMatTable->getMaterialName()->getIndex(mUpdateMaterialName.getName(i));
+        const char* name = mUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mUpdateMaterialID[i] = 0xffff; continue; }
+#endif
+        int index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mUpdateMaterialID[i] = index;
         } else {
@@ -1183,9 +1190,16 @@ void J3DAnmTexPattern::getTexNo(u16 index, u16* pTexNo) const {
 
 void J3DAnmTexPattern::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
     J3D_ASSERT_NULLPTR(1790, pMatTable != NULL);
+#if PLATFORM_PC
+    if (pMatTable == NULL || pMatTable->getMaterialName() == NULL) return;
+#endif
 
     for (u16 i = 0; i < mUpdateMaterialNum; i++) {
-        s32 index = pMatTable->getMaterialName()->getIndex(mUpdateMaterialName.getName(i));
+        const char* name = mUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mUpdateMaterialID[i] = -1; continue; }
+#endif
+        s32 index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mUpdateMaterialID[i] = index;
         } else {
@@ -1201,9 +1215,16 @@ void J3DAnmTexPattern::searchUpdateMaterialID(J3DModelData* pModelData) {
 
 void J3DAnmTextureSRTKey::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
     J3D_ASSERT_NULLPTR(1832, pMatTable != NULL);
+#if PLATFORM_PC
+    if (pMatTable == NULL || pMatTable->getMaterialName() == NULL) return;
+#endif
 
     for (u16 i = 0; i < getUpdateMaterialNum(); i++) {
-        s32 index = pMatTable->getMaterialName()->getIndex(mUpdateMaterialName.getName(i));
+        const char* name = mUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mUpdateMaterialID[i] = -1; continue; }
+#endif
+        s32 index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mUpdateMaterialID[i] = index;
         } else {
@@ -1212,7 +1233,11 @@ void J3DAnmTextureSRTKey::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
     }
 
     for (u16 i = 0; i < getPostUpdateMaterialNum(); i++) {
-        s32 index = pMatTable->getMaterialName()->getIndex(mPostUpdateMaterialName.getName(i));
+        const char* name = mPostUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mPostUpdateMaterialID[i] = -1; continue; }
+#endif
+        s32 index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mPostUpdateMaterialID[i] = index;
         } else {
@@ -1394,9 +1419,16 @@ void J3DAnmTevRegKey::getTevKonstReg(u16 index, GXColor* pColor) const {
 
 void J3DAnmTevRegKey::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
     J3D_ASSERT_NULLPTR(2083, pMatTable != NULL);
+#if PLATFORM_PC
+    if (pMatTable == NULL || pMatTable->getMaterialName() == NULL) return;
+#endif
 
     for (u16 i = 0; i < mCRegUpdateMaterialNum; i++) {
-        s32 index = pMatTable->getMaterialName()->getIndex(mCRegUpdateMaterialName.getName(i));
+        const char* name = mCRegUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mCRegUpdateMaterialID[i] = -1; continue; }
+#endif
+        s32 index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mCRegUpdateMaterialID[i] = index;
         } else {
@@ -1405,7 +1437,11 @@ void J3DAnmTevRegKey::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
     }
 
     for (u16 i = 0; i < mKRegUpdateMaterialNum; i++) {
-        s32 index = pMatTable->getMaterialName()->getIndex(mKRegUpdateMaterialName.getName(i));
+        const char* name = mKRegUpdateMaterialName.getName(i);
+#if PLATFORM_PC
+        if (name == NULL) { mKRegUpdateMaterialID[i] = -1; continue; }
+#endif
+        s32 index = pMatTable->getMaterialName()->getIndex(name);
         if (index != -1) {
             mKRegUpdateMaterialID[i] = index;
         } else {

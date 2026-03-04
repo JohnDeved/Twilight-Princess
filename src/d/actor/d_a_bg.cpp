@@ -17,6 +17,9 @@
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "JSystem/J3DGraphAnimator/J3DMaterialAnm.h"
 #include <cstring>
+#if PLATFORM_PC
+#include <cstdio>
+#endif
 
 const char* daBg_c::setArcName() {
     static char arcName[32];
@@ -284,10 +287,52 @@ int daBg_c::draw() {
     int sp38 = 0;
 
     dDlst_window_c* sp34 = dComIfGp_getWindow(0);
+#if PLATFORM_PC
+    if (sp34 == NULL) return 1;
+#endif
     camera_class* sp30 = dComIfGp_getCamera(sp34->getCameraID());
 
     dComIfGd_setListBG();
     mDoLib_clipper::changeFar(1000000.0f);
+
+#if PLATFORM_PC
+    static int s_bg_draw_frame = 0;
+    /* Log BG draw entry every frame for frames 128-145, then every 30th */
+    if (s_bg_draw_frame < 20 || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200)) {
+        fprintf(stderr, "{\"bg_draw_entry\":{\"frame\":%d,\"roomNo\":%d}}\n", s_bg_draw_frame, roomNo);
+    }
+    /* Emit bg_draw_diag JSON for first 5 BG draws, frames 127-145, and every 30th frame */
+    bool bg_diag = (s_bg_draw_frame < 5) || (s_bg_draw_frame >= 127 && s_bg_draw_frame <= 145) || (s_bg_draw_frame % 30 == 0 && s_bg_draw_frame < 200);
+    if (bg_diag) {
+        daBg_Part* diagPart = mBgParts;
+        for (int di = 0; di < 6; di++) {
+            J3DModel* dm = diagPart->model;
+            int shapes = 0, hidden = 0, mats = 0;
+            bool has_sdl = false;
+            bool locked = false;
+            if (dm != NULL) {
+                J3DModelData* dd = dm->getModelData();
+                if (dd != NULL) {
+                    shapes = dd->getShapeNum();
+                    mats = dd->getMaterialNum();
+                    if (mats > 0 && dd->getMaterialNodePointer(0) != NULL)
+                        has_sdl = dd->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL;
+                    locked = dd->isLocked();
+                    for (int sj = 0; sj < shapes; sj++) {
+                        J3DShape* sh = dd->getShapeNodePointer(sj);
+                        if (sh && sh->checkFlag(0x0001)) hidden++;
+                    }
+                }
+            }
+            fprintf(stderr, "{\"bg_draw_diag\":{\"frame\":%d,\"part\":%d,\"model_null\":%s,"
+                    "\"shapes\":%d,\"hidden\":%d,\"mats\":%d,\"has_sdl\":%s,\"locked\":%s}}\n",
+                    s_bg_draw_frame, di, dm == NULL ? "true" : "false",
+                    shapes, hidden, mats, has_sdl ? "true" : "false", locked ? "true" : "false");
+            diagPart++;
+        }
+    }
+    s_bg_draw_frame++;
+#endif
 
     J3DModelData* modelData;
     for (int i = 0; i < 6; i++) {
@@ -317,12 +362,21 @@ int daBg_c::draw() {
             for (u16 j = 0; j < modelData->getShapeNum(); j++) {
                 J3DShape* shape = modelData->getShapeNodePointer(j);
 
+#if PLATFORM_PC
+                /* On PC, skip frustum clipping for BG shapes. The camera
+                 * crashes during Execute (prof=781) every frame, so view_setup
+                 * uses stale/default lookat data. With incorrect camera
+                 * position, all shapes get clipped. Force-show them so the
+                 * J3D draw pipeline can produce dl_draws. */
+                shape->show();
+#else
                 if (mDoLib_clipper::clip(j3dSys.getViewMtx(), (Vec*)shape->getMin(),
                                          (Vec*)shape->getMax())) {
                     shape->hide();
                 } else {
                     shape->show();
                 }
+#endif
             }
 
             static int l_tevStrType[6] = {32, 33, 34, 35, 35, 32};
@@ -332,6 +386,9 @@ int daBg_c::draw() {
 
             if (bg_model != NULL) {
                 modelData = bg_model->getModelData();
+#if PLATFORM_PC
+                if (modelData == NULL) goto bg_draw_entry;
+#endif
 
                 for (u16 j = 0; j < modelData->getMaterialNum(); j++) {
                     const char* name;
@@ -340,7 +397,13 @@ int daBg_c::draw() {
 
                     mat = modelData->getMaterialNodePointer(j);
                     nametab = modelData->getMaterialName();
+#if PLATFORM_PC
+                    if (nametab == NULL || mat == NULL) continue;
+#endif
                     name = nametab->getName(j);
+#if PLATFORM_PC
+                    if (name == NULL) continue;
+#endif
 
                     if (!memcmp(&name[3], "MA12", 4)) {
                         if (g_env_light.wether_pat1 == 6) {
@@ -368,8 +431,15 @@ int daBg_c::draw() {
                         bgPart->tevstr->Material_id |= (u8)j;
                     }
 
+#if PLATFORM_PC
+                    const char* stageName = dComIfGp_getStartStageName();
+                    if (stageName != NULL &&
+                        (!strcmp(stageName, "F_SP127") ||
+                         !strcmp(stageName, "R_SP127")))
+#else
                     if (!strcmp(dComIfGp_getStartStageName(), "F_SP127") ||
                         !strcmp(dComIfGp_getStartStageName(), "R_SP127"))
+#endif
                     {
                         if (!memcmp(&name[3], "MA00_Enkei_Tree_Color", 21) ||
                             !memcmp(&name[3], "MA00_Gake", 9) || !memcmp(&name[3], "MA00_Kusa", 9))
@@ -440,6 +510,9 @@ int daBg_c::draw() {
                     }
                 }
             }
+#if PLATFORM_PC
+            bg_draw_entry:
+#endif
 
             mDoExt_modelEntryDL(bg_model);
             dComIfGd_setListBG();
@@ -490,7 +563,16 @@ static int daBg_Execute(daBg_c* i_this) {
 }
 
 int daBg_c::isDelete() {
+#if PLATFORM_PC
+    /* On PC the BG actor holds room geometry and must stay alive for its Draw
+     * to call mDoExt_modelEntryDL every frame.  The room manager already
+     * protects BG actors from objectDeleteJugge (d_s_room.cpp), but other
+     * framework paths call fpcDt_Delete which checks isDelete().  Return 0 to
+     * keep the actor in the draw queue permanently. */
+    return 0;
+#else
     return 1;
+#endif
 }
 
 static int daBg_IsDelete(daBg_c* i_this) {
@@ -513,6 +595,15 @@ int daBg_c::create() {
     field_0x5f0 = 0;
     field_0x5f1 = 0;
     dBgp_c* bgp = dStage_roomControl_c::getBgp(roomNo);
+
+#if PLATFORM_PC
+    static int s_bg_create_log = 0;
+    if (s_bg_create_log < 10) {
+        fprintf(stderr, "{\"bg_create\":{\"roomNo\":%d,\"heap\":%p,\"bgp\":%p,\"call\":%d}}\n",
+                roomNo, (void*)this->heap, (void*)bgp, s_bg_create_log);
+        s_bg_create_log++;
+    }
+#endif
 
     if (this->heap == NULL) {
         fopAcM_ct(this, daBg_c);
@@ -607,6 +698,13 @@ int daBg_c::create() {
     }
 
     if (bgp != NULL) {
+#if PLATFORM_PC
+        static int s_bgp_exec_log = 0;
+        if (s_bgp_exec_log < 10) {
+            fprintf(stderr, "{\"bgp_exec\":{\"call\":%d}}\n", s_bgp_exec_log);
+            s_bgp_exec_log++;
+        }
+#endif
         if (!bgp->execute(false)) {
             return cPhs_INIT_e;
         }
@@ -614,6 +712,9 @@ int daBg_c::create() {
 
     dComIfGp_roomControl_onStatusFlag(roomNo, 0x10);
     OS_REPORT("<BG> room%d\n", roomNo);
+#if PLATFORM_PC
+    fprintf(stderr, "{\"bg_create_complete\":{\"roomNo\":%d}}\n", roomNo);
+#endif
     return cPhs_COMPLEATE_e;
 }
 

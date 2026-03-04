@@ -11,6 +11,10 @@
 #include "JSystem/JSupport/JSUMemoryStream.h"
 #include <dolphin/types.h>
 
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
+
 J2DScreen::J2DScreen()
     : J2DPane(NULL, true, 'root', JGeometry::TBox2<f32>(JGeometry::TVec2<f32>(0, 0), JGeometry::TVec2<f32>(640, 480))), mColor() {
     field_0x4 = -1;
@@ -51,6 +55,11 @@ bool J2DScreen::setPriority(char const* resName, u32 param_1, JKRArchive* p_arch
 
     void* res = JKRGetNameResource(resName, p_archive);
     if (res != NULL) {
+#if PLATFORM_PC
+        /* BLO layout data is big-endian from the GCN/Wii disc.
+         * Byte-swap in-place before the J2D parser reads it. */
+        pal_blo_swap(res, p_archive->getExpandedResSize(res));
+#endif
         JSUMemoryInputStream stream(res, p_archive->getExpandedResSize(res));
         return setPriority(&stream, param_1, p_archive);
     }
@@ -191,6 +200,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DPane(p_basePane, p_stream, 1);
         break;
     case 'WIN2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DWindowEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -198,6 +213,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DWindow(p_basePane, p_stream, mMaterials);
         break;
     case 'PIC2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DPictureEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -205,6 +226,12 @@ J2DPane* J2DScreen::createPane(J2DScrnBlockHeader const& header, JSURandomInputS
         newPane = new J2DPicture(p_basePane, p_stream, mMaterials);
         break;
     case 'TBX2':
+#if PLATFORM_PC
+        if (mMaterials == NULL) {
+            newPane = new J2DPane(p_basePane, p_stream, 1);
+            break;
+        }
+#endif
         if (param_3 & 0x1F0000) {
             newPane = new J2DTextBoxEx(p_basePane, p_stream, param_3, mMaterials);
             break;
@@ -360,8 +387,13 @@ bool J2DScreen::createMaterial(JSURandomInputStream* p_stream, u32 param_1, JKRA
         }
 
         if (param_1 & 0x1F0000) {
+#if PLATFORM_PC
+            /* On PC, pal_blo_swap already converted offsets to native endian */
+            u32 offset = *(u32*)(buffer + 0x14);
+#else
             u32 offset =
                 buffer[0x14] << 0x18 | buffer[0x15] << 0x10 | buffer[0x16] << 8 | buffer[0x17];
+#endif
             ResNTAB* sec_s = (ResNTAB*)(buffer + offset);
             u16 entryNum = sec_s->mEntryNum;
             u16 lastOffset = sec_s->mEntries[entryNum - 1].mOffs;

@@ -26,6 +26,9 @@ public:
     /* 0x4 */ s8 id;
     /* 0x8 */ dScnPly_reg_childHIO_c mChildReg[26];
 #else
+    #if DEBUG
+    void genMessage(JORMContext*) {}
+    #endif
     /* 0x4 */ u8 field_0x4[0x8 - 0x4];
 #endif
 };

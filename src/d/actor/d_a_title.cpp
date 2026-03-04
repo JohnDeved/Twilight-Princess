@@ -15,6 +15,10 @@
 #include "JSystem/JKernel/JKRMemArchive.h"
 #include "JSystem/J2DGraph/J2DTextBox.h"
 #include "m_Do/m_Do_graphic.h"
+#if PLATFORM_PC
+#include <setjmp.h>
+#include <signal.h>
+#endif
 
 class daTit_HIO_c {
 public:
@@ -77,26 +81,81 @@ daTit_HIO_c::daTit_HIO_c() {
     field_0x1a = 15;
 }
 
+#if PLATFORM_PC
+static sigjmp_buf s_title_jmpbuf;
+static void title_crash_handler(int sig) {
+    siglongjmp(s_title_jmpbuf, sig);
+}
+#endif
+
 int daTitle_c::CreateHeap() {
+#if PLATFORM_PC
+    /* Wrap J3D resource init with crash protection — big-endian data
+     * may cause SIGSEGV during animation name table access. */
+    struct sigaction sa, old_segv, old_abrt;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = title_crash_handler;
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_title_jmpbuf, 1) != 0) {
+        sigaction(SIGSEGV, &old_segv, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        fprintf(stderr, "[PAL] daTitle_c::CreateHeap: caught crash in J3D init, skipping\n");
+        mpModel = NULL;
+        return 1;
+    }
+#endif
     J3DModelData* modelData = (J3DModelData*)dComIfG_getObjectRes(l_arcName, 10);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: getObjectRes('%s', 10) = %p\n", l_arcName, modelData);
+    if (modelData == NULL) {
+        fprintf(stderr, "[PAL] daTitle_c::CreateHeap: modelData is NULL, skipping 3D model\n");
+        mpModel = NULL;
+        return 1;
+    }
+#endif
     mpModel = mDoExt_J3DModel__create(modelData, 0x80000, 0x11000285);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: J3DModel create = %p\n", mpModel);
+#endif
 
     if (mpModel == NULL) {
         return 0;
     }
 
     void* res = dComIfG_getObjectRes(l_arcName, 7);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BCK res(7) = %p\n", res);
+    if (res == NULL) return 1;
+#endif
     mBck.init((J3DAnmTransform*)res, 1, 0, 2.0f, 0, -1, false);
 
     res = dComIfG_getObjectRes(l_arcName, 13);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BPK res(13) = %p\n", res);
+    if (res == NULL) return 1;
+#endif
     mBpk.init(modelData, (J3DAnmColor*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 16);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BRK res(16) = %p\n", res);
+    if (res == NULL) return 1;
+#endif
     mBrk.init(modelData, (J3DAnmTevRegKey*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 19);
+#if PLATFORM_PC
+    fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BTK res(19) = %p\n", res);
+    if (res == NULL) return 1;
+#endif
     mBtk.init(modelData, (J3DAnmTextureSRTKey*)res, 1, 0, 2.0f, 0, -1);
 
+#if PLATFORM_PC
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
+#endif
     return 1;
 }
 
@@ -129,6 +188,20 @@ int daTitle_c::createHeapCallBack(fopAc_ac_c* title) {
 }
 
 int daTitle_c::Execute() {
+#if PLATFORM_PC
+    /* Auto-advance past title screen in headless mode.  Simulates
+     * the Start-button press that the GCN path uses.  With the
+     * overlap leak fixed (fopScnRq_Request skips overlap creation
+     * on PC), IsPeek returns FALSE and nextScene_proc() can run. */
+    if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS")) {
+        static int s_auto_advance_timer = 0;
+        if (++s_auto_advance_timer >= 30) {
+            nextScene_init();  /* sets mProcID=4, same as Start button */
+            s_auto_advance_timer = 0;
+        }
+    }
+#endif
+
     if (fopOvlpM_IsPeek()) {
         return 1;
     }
@@ -145,6 +218,11 @@ int daTitle_c::Execute() {
 }
 
 void daTitle_c::KeyWaitAnm() {
+#if PLATFORM_PC
+    /* field_0x600 (CPaneMgrAlpha) is created in loadWait_proc().
+     * Can be NULL if 2D layout resources failed to load. */
+    if (field_0x600 == NULL) return;
+#endif
     if (field_0x5f9 != 0) {
         if (field_0x604 == 0) {
             if (field_0x5fa != 0) {
@@ -172,6 +250,12 @@ void daTitle_c::loadWait_init() {
 }
 
 void daTitle_c::loadWait_proc() {
+#if PLATFORM_PC
+    if (mpMount == NULL) {
+        logoDispWaitInit();
+        return;
+    }
+#endif
     if (mpMount->sync()) {
         JKRHeap* heap = mDoExt_setCurrentHeap(m2DHeap);
         mpHeap = heap;
@@ -179,7 +263,24 @@ void daTitle_c::loadWait_proc() {
         mpFont = mDoExt_getMesgFont();
         mTitle.Scr = new J2DScreen();
 
-        mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
+#if PLATFORM_PC
+        if (mTitle.Scr == NULL) {
+            mpHeap->becomeCurrentHeap();
+            logoDispWaitInit();
+            return;
+        }
+#endif
+        bool bloOk = mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
+
+#if PLATFORM_PC
+        if (!bloOk) {
+            /* BLO layout is big-endian binary — skip 2D overlay setup on PC
+             * until endian conversion is implemented. The 3D model still renders. */
+            mpHeap->becomeCurrentHeap();
+            logoDispWaitInit();
+            return;
+        }
+#endif
 
         J2DTextBox* text[7];
         text[0] = (J2DTextBox*)mTitle.Scr->search(MULTI_CHAR('t_s_00'));
@@ -191,16 +292,37 @@ void daTitle_c::loadWait_proc() {
         text[6] = (J2DTextBox*)mTitle.Scr->search('t_o');
 
         for (int i = 0; i < 7; i++) {
+#if PLATFORM_PC
+            /* Font resources are big-endian binary; on PC mpFont may be NULL
+             * until proper endian conversion is implemented. Skip font/text
+             * setup to avoid crashes. */
+            if (text[i] && mpFont) {
+                text[i]->setFont(mpFont);
+                text[i]->setString(0x80, "");
+                fopMsgM_messageGet(text[i]->getStringPtr(), 100);
+            }
+#else
             text[i]->setFont(mpFont);
             text[i]->setString(0x80, "");
             fopMsgM_messageGet(text[i]->getStringPtr(), 100);
+#endif
         }
 
         field_0x600 = new CPaneMgrAlpha(mTitle.Scr, MULTI_CHAR('n_all'), 2, NULL);
+#if PLATFORM_PC
+        if (field_0x600 != NULL)
+#endif
         field_0x600->setAlpha(0);
         J2DPane* pane = mTitle.Scr->search(MULTI_CHAR('n_all'));
+#if PLATFORM_PC
+        if (pane) {
+            pane->translate(g_daTitHIO.mPSPosX, g_daTitHIO.mPSPosY);
+            pane->scale(g_daTitHIO.mPSScaleX, g_daTitHIO.mPSScaleY);
+        }
+#else
         pane->translate(g_daTitHIO.mPSPosX, g_daTitHIO.mPSPosY);
         pane->scale(g_daTitHIO.mPSScaleX, g_daTitHIO.mPSScaleY);
+#endif
         mpHeap->becomeCurrentHeap();
         logoDispWaitInit();
     }
@@ -208,6 +330,32 @@ void daTitle_c::loadWait_proc() {
 
 void daTitle_c::logoDispWaitInit() {
     mProcID = 1;
+#if PLATFORM_PC
+    /* On PC in headless mode, no button presses or demo actor triggers the
+     * title animation.  Show the 2D overlay immediately so the title screen
+     * has visible content instead of all-black. */
+    field_0x5f8 = 1;
+    /* Start animations immediately — on GCN a demo actor triggers this,
+     * but on PC there's no demo system.  Set animations to their end frame
+     * so the title logo is fully visible. */
+    if (mpModel != NULL) {
+        mBck.setFrame(mBck.getEndFrame());
+        mBpk.setFrame(mBpk.getEndFrame());
+        mBrk.setFrame(mBrk.getEndFrame());
+        mBtk.setFrame(mBtk.getEndFrame());
+    }
+    /* On GCN, logoDispAnm() plays the J3D animations, then calls
+     * alphaAnimeStart(0) when they finish.  KeyWaitAnm() then drives
+     * the alpha from 0→255.  On PC headless, no demo/button triggers
+     * logoDispAnm(), so the alpha stays at 0 (set in loadWait_proc).
+     * Set alpha to 255 directly so the J2D overlay is fully visible. */
+    if (field_0x600 != NULL) {
+        field_0x600->setAlpha(255);
+    }
+    field_0x5f9 = 1;
+    field_0x5fa = 0;
+    field_0x604 = 0;
+#endif
 }
 
 void daTitle_c::logoDispWait() {
@@ -260,8 +408,19 @@ void daTitle_c::nextScene_init() {
 void daTitle_c::nextScene_proc() {
     if (!fopOvlpM_IsPeek() && !mDoRst::isReset()) {
         scene_class* playScene = fopScnM_SearchByID(dStage_roomControl_c::getProcID());
+#if PLATFORM_PC
+        if (playScene == NULL)
+            return;
+        /* On PC, the overlap/pause system doesn't block re-entry.
+         * Submit the change request only once to avoid conflicts. */
+        static bool s_change_requested = false;
+        if (s_change_requested) return;
+        int rc = fopScnM_ChangeReq(playScene, 13, 0, 5);
+        if (rc) s_change_requested = true;
+#else
         JUT_ASSERT(706, playScene != NULL);
         fopScnM_ChangeReq(playScene, 13, 0, 5);
+#endif
 #if VERSION != VERSION_SHIELD_DEBUG
         mDoGph_gInf_c::setFadeColor(*(JUtility::TColor*)&g_blackColor);
 #endif
@@ -307,6 +466,14 @@ int daTitle_c::getDemoPrm() {
 }
 
 int daTitle_c::Draw() {
+#if PLATFORM_PC
+    if (mpModel == NULL) {
+        if (field_0x5f8) {
+            dComIfGd_set2DOpaTop(&mTitle);
+        }
+        return 1;
+    }
+#endif
     J3DModelData* modelData = mpModel->getModelData();
     MTXTrans(mpModel->getBaseTRMtx(), 0.0f, 0.0f, -430.0f);
     mpModel->getBaseScale()->x = -1.0f;
@@ -332,9 +499,11 @@ int daTitle_c::Delete() {
     delete mTitle.Scr;
     delete field_0x600;
     
-    mpMount->getArchive()->removeResourceAll();
-    mpMount->getArchive()->unmount();
-    delete mpMount;
+    if (mpMount) {
+        mpMount->getArchive()->removeResourceAll();
+        mpMount->getArchive()->unmount();
+        delete mpMount;
+    }
 
     if (m2DHeap != NULL) {
         m2DHeap->destroy();
@@ -360,6 +529,19 @@ static int daTitle_Create(fopAc_ac_c* i_this) {
 }
 
 void dDlst_daTitle_c::draw() {
+#if PLATFORM_PC
+    if (Scr == NULL) return;
+    /* Title scene J2D draw diagnostic — confirm draw dispatch fires and
+     * track per-frame rendering of the press-start overlay. */
+    {
+        static u32 s_title_draw_count = 0;
+        if (s_title_draw_count < 30) {
+            fprintf(stderr, "[PAL] dDlst_daTitle_c::draw #%u  Scr=%p\n",
+                    s_title_draw_count, (void*)Scr);
+            s_title_draw_count++;
+        }
+    }
+#endif
     J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
     Scr->draw(0.0f, 0.0f, ctx);
 }

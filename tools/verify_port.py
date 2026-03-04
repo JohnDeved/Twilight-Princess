@@ -25,10 +25,15 @@ Exit codes:
     2 = input error
 """
 import json
+import re
 import sys
 import argparse
 import struct
 from pathlib import Path
+
+
+# ANSI escape code pattern for stripping terminal colors from log lines
+_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
 
 
 def parse_log(logfile):
@@ -43,9 +48,9 @@ def parse_log(logfile):
     milestones = []
     stubs = []
 
-    with open(logfile) as f:
+    with open(logfile, errors='replace') as f:
         for line in f:
-            line = line.strip()
+            line = _ANSI_ESCAPE.sub('', line.strip())
             if not line.startswith("{"):
                 continue
             try:

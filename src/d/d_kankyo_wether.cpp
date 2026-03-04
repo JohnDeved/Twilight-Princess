@@ -415,10 +415,22 @@ static void wether_move_sun() {
     s32 sunVisible = false;
     if (dComIfGp_checkStatus(1) && !g_env_light.hide_vrbox) {
         roomRead_class* room = dComIfGp_getStageRoom();
+#if PLATFORM_PC
+        /* On PC, room data may not be loaded (no room file for title screen).
+         * Guard all room data accesses. */
+        if (room != NULL && room->m_entries != NULL && room->num > 0) {
+            int stayNo = dComIfGp_roomControl_getStayNo();
+            if (stayNo >= 0 && stayNo < room->num && room->m_entries[stayNo] != NULL) {
+                sunVisible = dStage_roomRead_dt_c_GetVrboxswitch(
+                    *room->m_entries[stayNo]);
+            }
+        }
+#else
         if (room != NULL && room->num > dComIfGp_roomControl_getStayNo()) {
             sunVisible = dStage_roomRead_dt_c_GetVrboxswitch(
                 *room->m_entries[dComIfGp_roomControl_getStayNo()]);
         }
+#endif
 
         // Stage is Hero Shade arena
         if (!strcmp(dComIfGp_getStartStageName(), "F_SP200")) {
@@ -1015,6 +1027,23 @@ static void wether_move_evil() {
 void dKyw_wether_move_draw() {
     g_env_light.moya_se = 0;
 
+#if PLATFORM_PC
+    /* On PC, room data may not be loaded (title screen / opening scene).
+     * The weather effects access room entries (m_entries[stayNo]) which
+     * crash if the room data hasn't been loaded from disc. Skip weather
+     * effects when room data is unavailable. */
+    {
+        roomRead_class* room = dComIfGp_getStageRoom();
+        if (room == NULL || room->m_entries == NULL || room->num == 0) {
+            return;
+        }
+        int stayNo = dComIfGp_roomControl_getStayNo();
+        if (stayNo < 0 || stayNo >= room->num || room->m_entries[stayNo] == NULL) {
+            return;
+        }
+    }
+#endif
+
     if (strcmp(dComIfGp_getStartStageName(), "Name")) {
         wether_move_sun();
         wether_move_rain();
@@ -1032,6 +1061,18 @@ void dKyw_wether_move_draw() {
 }
 
 void dKyw_wether_move_draw2() {
+#if PLATFORM_PC
+    {
+        roomRead_class* room = dComIfGp_getStageRoom();
+        if (room == NULL || room->m_entries == NULL || room->num == 0) {
+            return;
+        }
+        int stayNo = dComIfGp_roomControl_getStayNo();
+        if (stayNo < 0 || stayNo >= room->num || room->m_entries[stayNo] == NULL) {
+            return;
+        }
+    }
+#endif
     wether_move_vrkumo();
 }
 

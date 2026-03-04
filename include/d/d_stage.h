@@ -23,6 +23,14 @@ struct dStage_nodeHeader {
     /* 0x8 */ u32 m_offset;
 };
 
+/* On 64-bit PC, m_offset stays as a relative offset (not resolved to pointer).
+ * Use this macro to get the actual data pointer from a node + file base. */
+#if PLATFORM_PC
+#define DSTAGE_NODE_PTR(node, base, type) ((type*)((u8*)(base) + (node)->m_offset))
+#else
+#define DSTAGE_NODE_PTR(node, base, type) ((type*)(node)->m_offset)
+#endif
+
 // made up name
 struct dStage_fileHeader {
     /* 0x0 */ int m_chunkCount;
@@ -917,7 +925,22 @@ public:
     /* vt[40] */ virtual void setPlightNumInfo(int i_PlightNumInfo) { mPlightNumInfo = i_PlightNumInfo; }
     /* vt[41] */ virtual int getPlightNumInfo(void) const { return mPlightNumInfo; }
     /* vt[46] */ virtual void setStagInfo(stage_stag_info_class* i_StagInfo) { mStagInfo = i_StagInfo; }
+#if PLATFORM_PC
+    /* vt[47] */ virtual stage_stag_info_class* getStagInfo(void) const {
+        if (!mStagInfo) {
+            /* On PC, stage binary parsing is skipped (64-bit pointer truncation).
+             * Return a static default to prevent NULL dereferences in the
+             * many call sites that access getStagInfo() without checking. */
+            static stage_stag_info_class s_defaultStagInfo = {};
+            s_defaultStagInfo.mNear = 1.0f;
+            s_defaultStagInfo.mFar = 20000.0f;
+            return &s_defaultStagInfo;
+        }
+        return mStagInfo;
+    }
+#else
     /* vt[47] */ virtual stage_stag_info_class* getStagInfo(void) const { return mStagInfo; }
+#endif
     /* vt[48] */ virtual void setSclsInfo(stage_scls_info_dummy_class* i_SclsInfo) { mSclsInfo = i_SclsInfo; }
     /* vt[49] */ virtual stage_scls_info_dummy_class* getSclsInfo(void) const { return mSclsInfo; }
     /* vt[50] */ virtual void setPntInfo(dStage_dPnt_c* i_PntInfo) { mPntInfo = i_PntInfo; }

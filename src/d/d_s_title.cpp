@@ -15,7 +15,7 @@ scene_process_profile_definition g_profile_WARNING_SCENE = {
     fpcPi_CURRENT_e,        // mListPrio
     PROC_WARNING_SCENE,     // mProcName               
     &g_fpcNd_Method.base,  // sub_method                  
-    0x204,                  // mSize        
+    sizeof(scene_class),    // mSize        
     0,                      // mSizeOther              
     0,                      // mParameters              
     &g_fopScn_Method.base, // sub_method                   
@@ -28,7 +28,7 @@ scene_process_profile_definition g_profile_WARNING2_SCENE = {
     fpcPi_CURRENT_e,        // mListPrio    
     PROC_WARNING2_SCENE,    // mProcName                     
     &g_fpcNd_Method.base,  // sub_method                       
-    0x204,                  // mSize             
+    sizeof(scene_class),    // mSize             
     0,                      // mSizeOther                
     0,                      // mParameters                
     &g_fopScn_Method.base, // sub_method                        

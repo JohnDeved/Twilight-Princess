@@ -12,6 +12,10 @@
 #include "f_pc/f_pc_executor.h"
 #include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_debug_sv.h"
+#if PLATFORM_PC
+#include <cstdio>
+#include <cstdint>
+#endif
 
 BOOL fpcCtRq_isCreatingByID(create_tag* i_createTag, fpc_ProcID* i_id) {
     fpc_ProcID id = ((create_request*)i_createTag->base.mpTagData)->id;
@@ -81,6 +85,10 @@ BOOL fpcCtRq_IsDoing(create_request* i_request) {
 
 BOOL fpcCtRq_Do(create_request* i_request) {
     int phase = cPhs_COMPLEATE_e;
+
+#if PLATFORM_PC
+    if (i_request == NULL) return 1;
+#endif
 
     if (i_request->methods != NULL) {
         if (i_request->methods->phase_handler != NULL) {

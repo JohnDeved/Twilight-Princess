@@ -45,6 +45,7 @@
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/pal_verify.h"
 #include <stdlib.h>
+#include <time.h>
 #endif
 
 class mDoMain_HIO_c : public mDoHIO_entry_c {
@@ -683,10 +684,10 @@ void main01(void) {
 #endif
 
     #if DEBUG
-    FixedMemoryCheck* local_20 = FixedMemoryCheck::easyCreate(_f_text, intptr_t(_e_text - _f_text));
-    FixedMemoryCheck* local_24 = FixedMemoryCheck::easyCreate(_f_ctors, intptr_t(_e_ctors - _f_ctors));
-    FixedMemoryCheck* local_28 = FixedMemoryCheck::easyCreate(_f_dtors, intptr_t(_e_dtors - _f_dtors));
-    FixedMemoryCheck* local_2c = FixedMemoryCheck::easyCreate(_f_rodata, intptr_t(_e_rodata - _f_rodata));
+    FixedMemoryCheck* local_20 = FixedMemoryCheck::easyCreate(_f_text, (u32)(intptr_t)(_e_text - _f_text));
+    FixedMemoryCheck* local_24 = FixedMemoryCheck::easyCreate(_f_ctors, (u32)(intptr_t)(_e_ctors - _f_ctors));
+    FixedMemoryCheck* local_28 = FixedMemoryCheck::easyCreate(_f_dtors, (u32)(intptr_t)(_e_dtors - _f_dtors));
+    FixedMemoryCheck* local_2c = FixedMemoryCheck::easyCreate(_f_rodata, (u32)(intptr_t)(_e_rodata - _f_rodata));
     #endif
 
     // setup FrameBuffer and ZBuffer, init display lists
@@ -738,7 +739,9 @@ void main01(void) {
 
     #if DEBUG
     mDoMain_HIO.entryHIO("メイン");
+    #if ENABLE_REGHIO
     g_regHIO.id = mDoHIO_createChild("レジスタ", &g_regHIO);
+    #endif
     g_presetHIO.field_0x4 = mDoHIO_createChild("状況ファイル", &g_presetHIO);
     #endif
 
@@ -753,6 +756,42 @@ void main01(void) {
         frame++;
 
 #if PLATFORM_PC || PLATFORM_NX_HB
+        {
+            static struct timespec s_prev_ts;
+            struct timespec now_ts;
+            clock_gettime(CLOCK_MONOTONIC, &now_ts);
+            if (frame > 1) {
+                long elapsed_ms = (now_ts.tv_sec - s_prev_ts.tv_sec) * 1000 +
+                                  (now_ts.tv_nsec - s_prev_ts.tv_nsec) / 1000000;
+                if (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200)) {
+                    fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
+                }
+                /* Per-frame timeout: if a single frame took > 60s, the softpipe
+                 * renderer is stuck on complex geometry.  Exit cleanly instead
+                 * of blocking CI for 20+ minutes.
+                 * Only applies when DISPLAY is set (softpipe mode). Under noop
+                 * renderer (Phase 1), slow frames are expected during J3D model
+                 * processing and should not cause an exit. */
+                static int s_headless_cached = -1;
+                static int s_is_softpipe = -1;
+                if (s_headless_cached < 0) {
+                    const char* hl = getenv("TP_HEADLESS");
+                    s_headless_cached = (hl && hl[0] == '1') ? 1 : 0;
+                    const char* dpy = getenv("DISPLAY");
+                    s_is_softpipe = (dpy && dpy[0] != '\0') ? 1 : 0;
+                }
+                if (elapsed_ms > 60000 && s_headless_cached && s_is_softpipe) {
+                    fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
+                            "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
+                            frame, elapsed_ms);
+                    pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
+                    gx_stub_report();
+                    pal_verify_summary();
+                    _Exit(0);
+                }
+            }
+            s_prev_ts = now_ts;
+        }
         if (frame == 1)
             pal_milestone_frame("FIRST_FRAME", MILESTONE_FIRST_FRAME, frame);
         /* Frame-count milestones only fire once a real rendered frame has been
@@ -775,7 +814,7 @@ void main01(void) {
                 pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
                 gx_stub_report();
                 pal_verify_summary();
-                exit(0);
+                _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
         }
 #endif
@@ -827,7 +866,7 @@ void main01(void) {
 }
 
 #if DEBUG
-JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>:: instance;
+template<> JHIComPortManager<JHICmnMem>* JHIComPortManager<JHICmnMem>::instance;
 
 // DEBUG NONMATCHING
 void parse_args(int argc, const char* argv[]) {

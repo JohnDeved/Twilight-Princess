@@ -11,16 +11,30 @@
 #include "f_pc/f_pc_node.h"
 #include "f_pc/f_pc_debug_sv.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#if PLATFORM_PC
+#include "f_pc/f_pc_create_req.h"
+#include <cstdio>
+#define FPCDT_MAX_DRAIN_ITERATIONS 64
+#endif
 
 BOOL fpcDt_IsComplete() {
     return fpcDtTg_IsEmpty();
 }
 
 int fpcDt_deleteMethod(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc == NULL) return 1;
+#endif
     fpc_ProcID id = i_proc->id;
     layer_class* layer = i_proc->delete_tag.layer;
     s16 profname = i_proc->profname;
 
+#if PLATFORM_PC
+    if (layer == NULL) {
+        fpcBs_Delete(i_proc);
+        return 1;
+    }
+#endif
     fpcLy_SetCurrentLayer(layer);
     fpcLnTg_QueueTo(&i_proc->line_tag_);
 
@@ -43,6 +57,16 @@ void fpcDt_Handler() {
 }
 
 int fpcDt_ToQueue(base_process_class* i_proc) {
+#if PLATFORM_PC
+    if (i_proc->profname == 732) {
+        static int s_bg_delete_log = 0;
+        if (s_bg_delete_log < 5) {
+            fprintf(stderr, "{\"bg_delete_attempt\":{\"prof\":732,\"unk0xA\":%d,\"call\":%d}}\n",
+                    (int)i_proc->unk_0xA, s_bg_delete_log);
+            s_bg_delete_log++;
+        }
+    }
+#endif
     if (i_proc->unk_0xA != 1 && fpcBs_IsDelete(i_proc) == 1) {
         if (fpcPi_IsInQueue(&i_proc->priority) == 1) {
             fpcPi_Delete(&i_proc->priority);
@@ -50,8 +74,11 @@ int fpcDt_ToQueue(base_process_class* i_proc) {
 
         i_proc->delete_tag.layer = i_proc->layer_tag.layer;
         fpcDtTg_ToDeleteQ(&i_proc->delete_tag);
+#if PLATFORM_PC
+        if (i_proc->layer_tag.layer != NULL)
+#endif
         fpcLy_DeletingMesg(i_proc->layer_tag.layer);
-#if DEBUG
+#if DEBUG && VERSION == VERSION_SHIELD_DEBUG
         i_proc->delete_tag.unk_0x1c = 60;
 #endif
         return 1;
@@ -115,8 +142,25 @@ int fpcDt_Delete(void* i_proc) {
             return 0;
         }
 #endif
+#if PLATFORM_PC
+        /* On PC the overlap/pause system that normally drains the creation
+         * queue over multiple frames is not active.  When a child process
+         * is still mid-creation, run fpcCtRq_Handler() in a bounded loop
+         * to drain pending creation phases before giving up.  This is the
+         * PC-equivalent of the GCN fopScnPause_Enable lifecycle sync. */
+        if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE) {
+            for (int drain = 0; drain < FPCDT_MAX_DRAIN_ITERATIONS; drain++) {
+                fpcCtRq_Handler();
+                if (fpcCt_IsDoing((base_process_class*)i_proc) != TRUE)
+                    break;
+            }
+            if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE)
+                return 0;
+        }
+#else
         if (fpcCt_IsDoing((base_process_class*)i_proc) == TRUE)
             return 0;
+#endif
 
         if (((base_process_class*)i_proc)->state.init_state == 3)
             return 0;

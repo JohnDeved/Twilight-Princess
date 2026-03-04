@@ -11,6 +11,7 @@
 #include "dolphin/types.h"
 #include "revolution/gx/GXEnum.h"
 #include "revolution/gx/GXStruct.h"
+#include "revolution/gx/GXGeometry.h"
 #include "revolution/gd/GDBase.h"
 #include "revolution/os/OSModule.h"
 #include "dolphin/dvd.h"
@@ -27,15 +28,43 @@ void GXPeekZ(u16 x, u16 y, u32* z) { if (z) *z = 0; }
 void GXSetCoPlanar(u8 enable) { (void)enable; }
 
 /* --- GD extras --- */
+static u8 s_gd_dummy_buf[4096] __attribute__((aligned(32)));
+static GDLObj s_gd_dummy_dl;
 GDLObj* __GDCurrentDL = NULL;
 
+/* Initialize the dummy GDLObj on startup. Block load() methods (TevBlock,
+ * ColorBlock, etc.) call GDGetCurrOffset/GDOverflowCheck which dereference
+ * __GDCurrentDL. On GCN these are only called inside beginDL/endDL, but on
+ * PC we call load() directly from J3DMatPacket::draw. The writes are no-ops
+ * (GX state is set by J3DGDSet* → GX stubs), but __GDCurrentDL must be valid. */
+static void __attribute__((constructor)) pal_gd_init_dummy(void) {
+    s_gd_dummy_dl.start  = s_gd_dummy_buf;
+    s_gd_dummy_dl.length = sizeof(s_gd_dummy_buf);
+    s_gd_dummy_dl.ptr    = s_gd_dummy_buf;
+    s_gd_dummy_dl.top    = s_gd_dummy_buf + sizeof(s_gd_dummy_buf);
+    __GDCurrentDL = &s_gd_dummy_dl;
+}
+
+/* Reset the dummy GDLObj pointer so it never overflows.
+ * Called from J3DMatPacket::draw before block load() on PC.
+ * Also re-points __GDCurrentDL if it was set to NULL by endDL(). */
+void pal_gd_reset_dummy(void) {
+    s_gd_dummy_dl.ptr = s_gd_dummy_buf;
+    __GDCurrentDL = &s_gd_dummy_dl;
+}
+
 void GDSetArray(GXAttr attr, void* base_ptr, u8 stride) {
-    (void)attr; (void)base_ptr; (void)stride;
+    /* Wire through to GX state so indexed vertex access works */
+    GXSetArray(attr, base_ptr, stride);
 }
 void GDSetArrayRaw(GXAttr attr, u32 base_ptr_raw, u8 stride) {
-    (void)attr; (void)base_ptr_raw; (void)stride;
+    /* Raw address — can't resolve on PC. Set NULL so callers detect it. */
+    GXSetArray(attr, NULL, stride);
 }
-void GDSetVtxDescv(const GXVtxDescList* attrPtr) { (void)attrPtr; }
+void GDSetVtxDescv(const GXVtxDescList* attrPtr) {
+    /* Wire through to GX state so display list parser knows vertex layout */
+    GXSetVtxDescv(attrPtr);
+}
 
 /* --- DVD extras --- */
 BOOL DVDCheckDiskAsync(DVDCommandBlock* block, DVDCBCallback callback) {
@@ -184,5 +213,68 @@ namespace JStudio_JParticle {
     JPABaseEmitter* TCreateObject::emitter_create(u32 id) { (void)id; return NULL; }
     void TCreateObject::emitter_destroy(JPABaseEmitter* emitter) { (void)emitter; }
 }
+
+/* --- CARD extras (extern "C" in revolution/card.h) --- */
+#include "revolution/card.h"
+s32 CARDGetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
+    (void)chan; (void)fileNo; (void)stat;
+    return -1; /* CARD_RESULT_NOCARD */
+}
+s32 CARDSetStatus(s32 chan, s32 fileNo, CARDStat* stat) {
+    (void)chan; (void)fileNo; (void)stat;
+    return -1; /* CARD_RESULT_NOCARD */
+}
+
+/* --- Matrix extras (extern "C" in revolution/mtx.h) --- */
+#include "revolution/mtx.h"
+void PSMTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
+    (void)m; (void)srcBase; (void)dstBase; (void)count;
+}
+
+/* --- Debug viewer (C++ linkage) --- */
+#include "SSystem/SComponent/c_xyz.h"
+void dDbVw_drawCircle(int i_bufferType, cXyz& i_pos, f32 i_radius,
+                      const GXColor& i_color, u8 i_clipZ, u8 i_width) {
+    (void)i_bufferType; (void)i_pos; (void)i_radius;
+    (void)i_color; (void)i_clipZ; (void)i_width;
+}
+
+/* --- HIO static member — now defined in f_ap_game.cpp --- */
+
+/* --- JORReflexible virtual methods (DEBUG build only) --- */
+#if DEBUG
+#include "JSystem/JHostIO/JORReflexible.h"
+
+void JORReflexible::listen(u32, const JOREvent*) {}
+void JORReflexible::genObjectInfo(const JORGenEvent*) {}
+void JORReflexible::listenNodeEvent(const JORNodeEvent*) {}
+void JORReflexible::listenPropertyEvent(const JORPropertyEvent*) {}
+
+JORServer* JORReflexible::getJORServer() { return NULL; }
+
+/* mDoHIO stubs — m_Do_hostIO.cpp not in Shield splits */
+#include "m_Do/m_Do_hostIO.h"
+void mDoHIO_deleteChild(s8) {}
+
+mDoHIO_root_c mDoHIO_root;
+void mDoHIO_root_c::update() {}
+void mDoHIO_root_c::deleteChild(s8) {}
+void mDoHIO_root_c::updateChild(s8) {}
+void mDoHIO_root_c::genMessage(JORMContext*) {}
+mDoHIO_root_c::~mDoHIO_root_c() {}
+
+s8 mDoHIO_subRoot_c::createChild(const char*, JORReflexible*) { return -1; }
+void mDoHIO_subRoot_c::genMessage(JORMContext*) {}
+void mDoHIO_subRoot_c::updateChild(s8) {}
+void mDoHIO_subRoot_c::deleteChild(s8) {}
+mDoHIO_subRoot_c::~mDoHIO_subRoot_c() {}
+
+mDoHIO_child_c::~mDoHIO_child_c() {}
+
+mDoHIO_entry_c::mDoHIO_entry_c() : mNo(-1), mCount(0) {}
+mDoHIO_entry_c::~mDoHIO_entry_c() {}
+void mDoHIO_entry_c::entryHIO(const char*) {}
+void mDoHIO_entry_c::removeHIO() {}
+#endif
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

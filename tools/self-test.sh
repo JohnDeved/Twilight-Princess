@@ -72,6 +72,24 @@ echo "  Skip build: $SKIP_BUILD"
 echo "  Output dir: $TMP_DIR"
 echo ""
 
+# --- Step 0: Game data ---
+if [ ! -d data/res ]; then
+    if [ -n "${ROMS_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
+        echo "━━━ Step 0: Downloading game data ━━━"
+        python3 tools/setup_game_data.py \
+            --data-dir data \
+            --rom-dir orig/GZ2E01 \
+            --extract-dir build/extract/GZ2E01 \
+            --tools-dir build/tools
+        echo "  ✅ Game data ready"
+    else
+        echo "  ⚠  Game data not found (set ROMS_TOKEN + install gh CLI to auto-download)"
+    fi
+else
+    echo "  ✅ Game data found"
+fi
+echo ""
+
 # --- Step 1: Build ---
 if [ "$SKIP_BUILD" -eq 0 ]; then
     echo "━━━ Step 1/5: Build ━━━"
@@ -105,7 +123,29 @@ export TP_VERIFY=1
 export TP_VERIFY_DIR="$TMP_DIR/verify"
 export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,300,600,1200,1800"
 
+# Start Xvfb for software OpenGL rendering (no GPU needed)
+XVFB_PID=""
+if ! xdpyinfo -display :99 >/dev/null 2>&1; then
+    Xvfb :99 -screen 0 640x480x24 &
+    XVFB_PID=$!
+    # Wait for Xvfb to be ready
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        xdpyinfo -display :99 >/dev/null 2>&1 && break
+        sleep 1
+    done
+    export DISPLAY=:99
+else
+    export DISPLAY=:99
+fi
+
+# Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
+export GALLIUM_DRIVER="${GALLIUM_DRIVER:-softpipe}"
+export LIBGL_ALWAYS_SOFTWARE=1
+
 timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
+if [ -n "$XVFB_PID" ]; then
+    kill "$XVFB_PID" 2>/dev/null || true
+fi
 echo "  ✅ Test run completed"
 echo ""
 

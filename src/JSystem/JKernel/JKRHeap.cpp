@@ -10,6 +10,9 @@
 #include "JSystem/JUtility/JUTException.h"
 #include <stdint.h>
 #include <cstring>
+#if PLATFORM_PC
+#include <stdlib.h>
+#endif
 
 #if DEBUG
 u8 JKRValue_DEBUGFILL_NOTUSE = 0xFD;
@@ -475,7 +478,13 @@ bool JKRHeap::isSubHeap(JKRHeap* heap) const {
 }
 
 void* operator new(size_t size) {
+#if PLATFORM_PC
+    void* mem = JKRHeap::alloc(size, 4, NULL);
+    if (!mem) mem = malloc(size);
+    return mem;
+#else
     return JKRHeap::alloc(size, 4, NULL);
+#endif
 }
 
 void* operator new(size_t size, int alignment) {
@@ -487,7 +496,13 @@ void* operator new(size_t size, JKRHeap* heap, int alignment) {
 }
 
 void* operator new[](size_t size) {
+#if PLATFORM_PC
+    void* mem = JKRHeap::alloc(size, 4, NULL);
+    if (!mem) mem = malloc(size);
+    return mem;
+#else
     return JKRHeap::alloc(size, 4, NULL);
+#endif
 }
 
 void* operator new[](size_t size, int alignment) {
@@ -498,12 +513,48 @@ void* operator new[](size_t size, JKRHeap* heap, int alignment) {
     return JKRHeap::alloc(size, alignment, heap);
 }
 
+#if PLATFORM_PC
+static void jkr_safe_delete(void* ptr) {
+    if (!ptr) return;
+    JKRHeap* heap = JKRHeap::findFromRoot(ptr);
+    if (heap) {
+        heap->free(ptr);
+    } else {
+        ::free(ptr);
+    }
+}
+#endif
+
 void operator delete(void* ptr) {
+#if PLATFORM_PC
+    jkr_safe_delete(ptr);
+#else
     JKRHeap::free(ptr, NULL);
+#endif
 }
 
 void operator delete[](void* ptr) {
+#if PLATFORM_PC
+    jkr_safe_delete(ptr);
+#else
     JKRHeap::free(ptr, NULL);
+#endif
+}
+
+void operator delete(void* ptr, size_t) {
+#if PLATFORM_PC
+    jkr_safe_delete(ptr);
+#else
+    JKRHeap::free(ptr, NULL);
+#endif
+}
+
+void operator delete[](void* ptr, size_t) {
+#if PLATFORM_PC
+    jkr_safe_delete(ptr);
+#else
+    JKRHeap::free(ptr, NULL);
+#endif
 }
 
 s32 fillcheck_dispcount = 100;

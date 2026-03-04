@@ -10,6 +10,10 @@
 #include <cstring>
 #include "global.h"
 
+#if PLATFORM_PC
+extern "C" void pal_gd_reset_dummy(void);
+#endif
+
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
     mMaxSize = ALIGN_NEXT(maxSize, 0x20);
     mpDisplayList[0] = new (0x20) char[mMaxSize];
@@ -64,6 +68,9 @@ void J3DDisplayListObj::swapBuffer() {
 }
 
 void J3DDisplayListObj::callDL() const {
+#if PLATFORM_PC
+    if (mpDisplayList[0] == NULL || mSize == 0) return;
+#endif
     GXCallDisplayList(mpDisplayList[0], mSize);
 }
 
@@ -83,7 +90,14 @@ u32 J3DDisplayListObj::endDL() {
     OSRestoreInterrupts(sInterruptFlag);
     mSize = GDGetGDLObjOffset(&sGDLObj);
     GDFlushCurrToMem();
+#if PLATFORM_PC
+    /* On PC, never leave __GDCurrentDL as NULL.  Block load() methods
+     * (called outside beginDL/endDL) dereference it.  Redirect to the
+     * always-valid dummy buffer instead. */
+    pal_gd_reset_dummy();
+#else
     GDSetCurrent(NULL);
+#endif
     return mSize;
 }
 
@@ -207,16 +221,85 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 }
 
 void J3DMatPacket::draw() {
+#if PLATFORM_PC
+    if (mpMaterial == NULL) return;
+    /* Ensure __GDCurrentDL is valid BEFORE any material/block code runs.
+     * endDL() may have set it to NULL on a previous frame; mpMaterial->load()
+     * and block load() methods dereference __GDCurrentDL via GD helpers. */
+    pal_gd_reset_dummy();
+#endif
     mpMaterial->load();
+#if PLATFORM_PC
+    /* On PC, display lists are empty because GD functions are stubs.
+     * Directly load the material's TEV/color/texgen state here instead
+     * of replaying the empty DL. This sets the GX state for rendering. */
+    {
+        static int s_mat_block_diag = 0;
+        if (s_mat_block_diag < 10) {
+            J3DTevBlock* tev = mpMaterial->getTevBlock();
+            J3DIndBlock* ind = mpMaterial->getIndBlock();
+            J3DPEBlock* pe = mpMaterial->getPEBlock();
+            J3DTexGenBlock* tg = mpMaterial->getTexGenBlock();
+            J3DColorBlock* col = mpMaterial->getColorBlock();
+            J3DShapePacket* sp = getShapePacket();
+            fprintf(stderr, "{\"mat_block_diag\":{\"idx\":%d,\"tev\":%d,\"ind\":%d,\"pe\":%d,\"tg\":%d,\"col\":%d,\"pkt\":%d,\"shp\":%d,\"mdl\":%d,\"mtx\":%d,\"mode\":%u}}\n",
+                    (int)mpMaterial->getIndex(),
+                    tev != NULL ? 1 : 0, ind != NULL ? 1 : 0,
+                    pe != NULL ? 1 : 0, tg != NULL ? 1 : 0,
+                    col != NULL ? 1 : 0,
+                    sp != NULL ? 1 : 0,
+                    (sp != NULL && sp->getShape() != NULL) ? 1 : 0,
+                    (sp != NULL && sp->getModel() != NULL) ? 1 : 0,
+                    (sp != NULL && sp->mpMtxBuffer != NULL) ? 1 : 0,
+                    (unsigned)mpMaterial->getMaterialMode());
+            s_mat_block_diag++;
+        }
+    }
+    pal_gd_reset_dummy();
+    if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
+    if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();
+    if (mpMaterial->getPEBlock() != NULL)  mpMaterial->getPEBlock()->load();
+    if (mpMaterial->getTexGenBlock() != NULL) mpMaterial->getTexGenBlock()->load();
+    if (mpMaterial->getColorBlock() != NULL) mpMaterial->getColorBlock()->load();
+#else
     callDL();
+#endif
 
     J3DShapePacket* packet = getShapePacket();
+#if PLATFORM_PC
+    if (packet == NULL) return;
+    {
+        J3DShape* shp = packet->getShape();
+        if (shp == NULL) return;
+        J3DModel* mdl = packet->getModel();
+        J3DMtxBuffer* mtx = packet->mpMtxBuffer;
+        static int s_shp_trace = 0;
+        if (s_shp_trace < 10) {
+            fprintf(stderr, "{\"shp_pkt_trace\":{\"mat_idx\":%d,\"shp\":%d,\"mdl\":%d,\"mtx\":%d,\"hidden\":%d}}\n",
+                    (int)mpMaterial->getIndex(),
+                    shp != NULL ? 1 : 0,
+                    mdl != NULL ? 1 : 0,
+                    mtx != NULL ? 1 : 0,
+                    packet->checkFlag(J3DShpFlag_Hidden) ? 1 : 0);
+            s_shp_trace++;
+        }
+        if (mdl == NULL || mtx == NULL) return;
+    }
+#endif
     packet->getShape()->loadPreDrawSetting();
 
     while (packet != NULL) {
+#if PLATFORM_PC
+        if (packet->getShape() == NULL || packet->getModel() == NULL ||
+            packet->mpMtxBuffer == NULL) {
+            packet = (J3DShapePacket*)packet->getNextPacket();
+            continue;
+        }
+#else
         if (packet->getDisplayListObj() != NULL) {
             packet->getDisplayListObj()->callDL();
         }
+#endif
 
         packet->drawFast();
         packet = (J3DShapePacket*)packet->getNextPacket();
@@ -314,6 +397,10 @@ int J3DShapePacket::newDifferedDisplayList(u32 diffFlags) {
 }
 
 void J3DShapePacket::prepareDraw() const {
+#if PLATFORM_PC
+    if (mpModel == NULL || mpMtxBuffer == NULL || mpShape == NULL) return;
+    if (mpModel->getVertexBuffer() == NULL) return;
+#endif
     mpModel->getVertexBuffer()->setArray();
     j3dSys.setModel(mpModel);
     j3dSys.setShapePacket((J3DShapePacket*)this);
@@ -344,6 +431,9 @@ void J3DShapePacket::prepareDraw() const {
         mpShape->setNrmMtx(mpMtxBuffer->mpBumpMtxArr[1][mpShape->getBumpMtxOffset()]);
     }
 
+#if PLATFORM_PC
+    if (mpModel->getModelData() == NULL) return;
+#endif
     mpModel->getModelData()->syncJ3DSysFlags();
 }
 

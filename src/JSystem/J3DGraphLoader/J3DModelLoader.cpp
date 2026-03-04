@@ -14,6 +14,9 @@
 #include "JSystem/JUtility/JUTNameTab.h"
 #include "JSystem/JKernel/JKRHeap.h"
 #include "JSystem/JSupport/JSupport.h"
+#if PLATFORM_PC
+#include "pal/pal_j3d_swap.h"
+#endif
 
 J3DModelLoader::J3DModelLoader() :
                 mpModelData(NULL),
@@ -28,10 +31,13 @@ J3DModelLoader::J3DModelLoader() :
 
 J3DModelData* J3DModelLoaderDataBase::load(void const* i_data, u32 i_flags) {
     J3D_ASSERT_NULLPTR(52, i_data);
-    const J3DModelFileData* header = (const J3DModelFileData*)i_data;
     if (i_data == NULL) {
         return NULL;
     }
+#if PLATFORM_PC
+    pal_j3d_swap_model(const_cast<void*>(i_data), 0x800000);
+#endif
+    const J3DModelFileData* header = (const J3DModelFileData*)i_data;
     if (header->mMagic1 == 'J3D1' && header->mMagic2 == 'bmd1') {
         JUT_PANIC(64, "Error : version error.");
         return NULL;
@@ -50,10 +56,13 @@ J3DModelData* J3DModelLoaderDataBase::load(void const* i_data, u32 i_flags) {
 
 J3DModelData* J3DModelLoaderDataBase::loadBinaryDisplayList(const void* i_data, u32 flags) {
     J3D_ASSERT_NULLPTR(138, i_data);
-    const J3DModelFileData* header = (const J3DModelFileData*)i_data;
     if (!i_data) {
         return NULL;
     }
+#if PLATFORM_PC
+    pal_j3d_swap_model(const_cast<void*>(i_data), 0x800000);
+#endif
+    const J3DModelFileData* header = (const J3DModelFileData*)i_data;
     if (header->mMagic1 == 'J3D2' && (header->mMagic2 == 'bdl3' || header->mMagic2 == 'bdl4')) {
         J3DModelLoader_v26 loader;
         return loader.loadBinaryDisplayList(i_data, flags);

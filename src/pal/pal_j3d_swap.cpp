@@ -1,0 +1,1956 @@
+/**
+ * @file pal_j3d_swap.cpp
+ * @brief J3D binary format endian conversion for little-endian PC.
+ *
+ * Byte-swaps J3D model and animation binary files from big-endian (GameCube/Wii)
+ * to little-endian (PC) in-place. The J3D format uses block-based layout:
+ *
+ *   File Header (0x20 bytes):
+ *     u32 magic1 ('J3D2'/'J3D1'), u32 magic2 ('bmd3'/'bdl3'/etc.),
+ *     u32 fileSize, u32 blockNum, padding[0x10]
+ *
+ *   Each Block:
+ *     u32 blockType (FCC), u32 blockSize, then block-specific data
+ *
+ * The block-specific data contains u32 offset fields (relative to block start)
+ * and u16/u32 count fields that all need byte-swapping.
+ */
+
+#include "global.h"
+#include "pal/pal_j3d_swap.h"
+
+#if PLATFORM_PC
+
+#include "pal/pal_endian.h"
+#include "pal/pal_error.h"
+#include <cstdio>
+#include <cstring>
+
+/* FCC (Four Character Code) - big-endian byte order */
+#define FCC(a,b,c,d) (((u32)(a)<<24)|((u32)(b)<<16)|((u32)(c)<<8)|(u32)(d))
+
+static inline u16 r16(const void* p) {
+    const u8* b = (const u8*)p;
+    return (u16)((b[0] << 8) | b[1]);
+}
+
+static inline u32 r32(const void* p) {
+    const u8* b = (const u8*)p;
+    return ((u32)b[0] << 24) | ((u32)b[1] << 16) | ((u32)b[2] << 8) | (u32)b[3];
+}
+
+static inline void w16(void* p, u16 v) {
+    u8* b = (u8*)p;
+    b[0] = (u8)(v & 0xFF);
+    b[1] = (u8)(v >> 8);
+}
+
+static inline void w32(void* p, u32 v) {
+    u8* b = (u8*)p;
+    b[0] = (u8)(v & 0xFF);
+    b[1] = (u8)((v >> 8) & 0xFF);
+    b[2] = (u8)((v >> 16) & 0xFF);
+    b[3] = (u8)(v >> 24);
+}
+
+/* Read a big-endian u64 from raw bytes */
+static inline u64 r64(const void* p) {
+    const u8* b = (const u8*)p;
+    return ((u64)b[0] << 56) | ((u64)b[1] << 48) | ((u64)b[2] << 40) | ((u64)b[3] << 32)
+         | ((u64)b[4] << 24) | ((u64)b[5] << 16) | ((u64)b[6] << 8) | (u64)b[7];
+}
+
+/* Write a native u64 in little-endian byte order */
+static inline void w64(void* p, u64 v) {
+    u8* b = (u8*)p;
+    b[0] = (u8)(v & 0xFF);
+    b[1] = (u8)((v >> 8) & 0xFF);
+    b[2] = (u8)((v >> 16) & 0xFF);
+    b[3] = (u8)((v >> 24) & 0xFF);
+    b[4] = (u8)((v >> 32) & 0xFF);
+    b[5] = (u8)((v >> 40) & 0xFF);
+    b[6] = (u8)((v >> 48) & 0xFF);
+    b[7] = (u8)(v >> 56);
+}
+
+/* Swap N consecutive u32 values starting at byte offset from base */
+static void swap_u32_array(u8* base, u32 offset, int count) {
+    for (int i = 0; i < count; i++) {
+        u8* p = base + offset + i * 4;
+        u32 v = r32(p);
+        w32(p, v);
+    }
+}
+
+/* Swap N consecutive u64 values starting at byte offset from base */
+static void swap_u64_array(u8* base, u32 offset, int count) {
+    for (int i = 0; i < count; i++) {
+        u8* p = base + offset + i * 8;
+        u64 v = r64(p);
+        w64(p, v);
+    }
+}
+
+/* Swap N consecutive u16 values starting at byte offset from base */
+static void swap_u16_array(u8* base, u32 offset, int count) {
+    for (int i = 0; i < count; i++) {
+        u8* p = base + offset + i * 2;
+        u16 v = r16(p);
+        w16(p, v);
+    }
+}
+
+/* Swap a range of u16 values from startOff to endOff (exclusive) */
+static void swap_u16_range(u8* block, u32 startOff, u32 endOff) {
+    if (startOff == 0 || endOff <= startOff) return;
+    int count = (endOff - startOff) / 2;
+    swap_u16_array(block, startOff, count);
+}
+
+/* Swap a range of u32 values from startOff to endOff (exclusive) */
+static void swap_u32_range(u8* block, u32 startOff, u32 endOff) {
+    if (startOff == 0 || endOff <= startOff) return;
+    int count = (endOff - startOff) / 4;
+    swap_u32_array(block, startOff, count);
+}
+
+/*
+ * INF1 block layout (after 8-byte block header):
+ *   0x08: u16 flags, u16 padding
+ *   0x0C: u32 packetNum
+ *   0x10: u32 vtxNum
+ *   0x14: u32 hierarchyOffset
+ *
+ * Hierarchy data is u16 pairs (type, index) until terminator.
+ */
+static void swap_inf1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* flags */
+    swap_u32_array(block, 0x0C, 1); /* packetNum */
+    swap_u32_array(block, 0x10, 1); /* vtxNum */
+    swap_u32_array(block, 0x14, 1); /* hierarchyOffset */
+
+    /* Swap hierarchy entries (u16 type, u16 value pairs) */
+    u32 hierOff = *(u32*)(block + 0x14);
+    if (hierOff != 0 && hierOff < blockSize) {
+        u8* hier = block + hierOff;
+        while ((u32)(hier - block) + 4 <= blockSize) {
+            u16 type = r16(hier);
+            w16(hier, type);
+            u16 val = r16(hier + 2);
+            w16(hier + 2, val);
+            if (type == 0) break; /* terminator */
+            hier += 4;
+        }
+    }
+}
+
+/*
+ * VTX1 block layout (after 8-byte block header):
+ *   0x08: u32 vtxAttrFmtListOffset
+ *   0x0C: u32[13] array offsets (pos, nrm, nbt, clr0, clr1, tex0..7)
+ *
+ * VtxAttrFmtList: entries of (u32 attr, u32 compCnt, u32 compType, u8 frac, pad[3])
+ * Vertex data arrays need per-element swapping based on format.
+ */
+static void swap_vtx1(u8* block, u32 blockSize) {
+    /* Swap 14 u32 offset fields at 0x08..0x3C */
+    swap_u32_array(block, 0x08, 14);
+
+    /* Swap VtxAttrFmtList entries */
+    u32 fmtOff = *(u32*)(block + 0x08);
+    if (fmtOff != 0 && fmtOff < blockSize) {
+        u8* fmt = block + fmtOff;
+        while ((u32)(fmt - block) + 16 <= blockSize) {
+            u32 attr = r32(fmt);
+            w32(fmt, attr);
+            if (attr == 0xFF || attr == 26 /* GX_VA_NULL */) break;
+            swap_u32_array(fmt, 4, 2); /* compCnt, compType */
+            /* frac is u8, no swap needed */
+            fmt += 16;
+        }
+    }
+
+    /* Swap vertex data arrays based on component type from the format list.
+     * Vertex attributes can be f32, s16, s8, u8, etc. We need u32 swap for f32
+     * and u16 swap for s16/u16. The format list tells us the component type. */
+
+    /* First, build a map of attribute index → component type from format list */
+    u8 attrCompType[14]; /* 0=f32, 1=u8/s8, 2=u16/s16, 3=unknown */
+    for (int i = 0; i < 14; i++) attrCompType[i] = 3;
+
+    if (fmtOff != 0 && fmtOff < blockSize) {
+        u8* fmt = block + fmtOff;
+        while ((u32)(fmt - block) + 16 <= blockSize) {
+            u32 attr = *(u32*)fmt; /* already native-endian */
+            if (attr == 0xFF || attr == 26) break;
+            u32 compType = *(u32*)(fmt + 8); /* compType: 0=u8,1=s8,2=u16,3=s16,4=f32 */
+            /* Map to our VTX1 offset index:
+             * VTX1 data array offsets:
+             *   idx 1 = pos (0x0C), idx 2 = nrm (0x10), idx 3 = nbt (0x14)
+             *   idx 4 = clr0 (0x18), idx 5 = clr1 (0x1C)
+             *   idx 6-13 = tex0-7 (0x20-0x3C)
+             * GX_VA_POS=9, GX_VA_NRM=10, GX_VA_CLR0=11, GX_VA_CLR1=12,
+             * GX_VA_TEX0=13..GX_VA_TEX7=20, GX_VA_NBT=25 */
+            int idx = -1;
+            if (attr == 9) idx = 1;        /* GX_VA_POS */
+            else if (attr == 10) idx = 2;  /* GX_VA_NRM */
+            else if (attr == 25) idx = 3;  /* GX_VA_NBT */
+            else if (attr == 11) idx = 4;  /* GX_VA_CLR0 */
+            else if (attr == 12) idx = 5;  /* GX_VA_CLR1 */
+            else if (attr >= 13 && attr <= 20) idx = (int)(attr - 13 + 6); /* GX_VA_TEX0-7 */
+            if (idx >= 0 && idx < 14) {
+                if (compType == 4) attrCompType[idx] = 0; /* f32 */
+                else if (compType == 2 || compType == 3) attrCompType[idx] = 2; /* u16/s16 */
+                else attrCompType[idx] = 1; /* u8/s8 */
+            }
+            fmt += 16;
+        }
+    }
+
+    u32 offsets[14];
+    for (int i = 0; i < 14; i++) {
+        offsets[i] = *(u32*)(block + 0x08 + i * 4);
+    }
+
+    /* For each data array, swap based on component type */
+    for (int i = 1; i < 14; i++) { /* skip fmtList (index 0) */
+        if (offsets[i] == 0) continue;
+        /* Find end: next non-zero offset or blockSize */
+        u32 end = blockSize;
+        for (int j = i + 1; j < 14; j++) {
+            if (offsets[j] != 0) {
+                end = offsets[j];
+                break;
+            }
+        }
+        /* Color arrays (indices 4,5) are GXColor (4 bytes, RGBA) - no swap needed.
+         * NBT (index 3) is normal/binormal/tangent data, needs swap like normals. */
+        if (i == 4 || i == 5) continue;
+
+        if (attrCompType[i] == 0) {
+            /* f32 data: swap as u32 */
+            u32 count = (end - offsets[i]) / 4;
+            swap_u32_array(block, offsets[i], count);
+        } else if (attrCompType[i] == 2) {
+            /* s16/u16 data: swap as u16 */
+            swap_u16_range(block, offsets[i], end);
+        } else {
+            /* Unknown or u8: default to u32 swap (safest for f32) since
+             * most vertex attributes are f32 in Twilight Princess */
+            u32 count = (end - offsets[i]) / 4;
+            swap_u32_array(block, offsets[i], count);
+        }
+    }
+
+    /* VTX1 float range probe: log min/max of position data for first few models */
+    if (offsets[1] != 0 && attrCompType[1] == 0) {
+        static int s_vtx1_probe = 0;
+        if (s_vtx1_probe < 5) {
+            u32 posOff = offsets[1];
+            u32 posEnd = blockSize;
+            int posEndIdx = -1;
+            for (int j = 2; j < 14; j++) {
+                if (offsets[j] != 0) { posEnd = offsets[j]; posEndIdx = j; break; }
+            }
+            u32 nfloats = (posEnd - posOff) / 4;
+            if (nfloats >= 3) {
+                float* fdata = (float*)(block + posOff);
+                float fmin = fdata[0], fmax = fdata[0];
+                int bad_count = 0;
+                for (u32 fi = 1; fi < nfloats && fi < 10000; fi++) {
+                    if (fdata[fi] < fmin) fmin = fdata[fi];
+                    if (fdata[fi] > fmax) fmax = fdata[fi];
+                    if (fdata[fi] > 100000.0f || fdata[fi] < -100000.0f) bad_count++;
+                }
+                fprintf(stderr, "{\"vtx1_probe\":{\"nfloats\":%u,\"min\":%.4f,\"max\":%.4f,\"bad\":%d,\"posOff\":%u,\"posEnd\":%u,\"endIdx\":%d,\"sample\":[%.4f,%.4f,%.4f]}}\n",
+                        nfloats, fmin, fmax, bad_count, posOff, posEnd, posEndIdx, fdata[0], fdata[1], fdata[2]);
+            }
+            s_vtx1_probe++;
+        }
+    }
+}
+
+/*
+ * EVP1 block layout:
+ *   0x08: u16 count, u16 pad
+ *   0x0C: u32 mixMtxNumOffset
+ *   0x10: u32 mixIndexOffset
+ *   0x14: u32 mixWeightOffset
+ *   0x18: u32 invJointMtxOffset
+ */
+static void swap_evp1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* count */
+    swap_u32_array(block, 0x0C, 4); /* 4 offsets */
+
+    u16 count = *(u16*)(block + 0x08);
+
+    /* mixMtxNum: u8 array - no swap */
+    /* mixIndex: u16 array */
+    u32 mixIdxOff = *(u32*)(block + 0x10);
+    u32 mixWgtOff = *(u32*)(block + 0x14);
+    if (mixIdxOff != 0 && mixWgtOff != 0) {
+        swap_u16_range(block, mixIdxOff, mixWgtOff);
+    }
+    /* mixWeight: f32 array - swap as u32 */
+    u32 invMtxOff = *(u32*)(block + 0x18);
+    if (mixWgtOff != 0 && invMtxOff != 0) {
+        u32 cnt = (invMtxOff - mixWgtOff) / 4;
+        swap_u32_array(block, mixWgtOff, cnt);
+    }
+    /* invJointMtx: Mtx43 array (3x4 f32) = 12 floats per entry - swap as u32 */
+    if (invMtxOff != 0) {
+        u32 cnt = (blockSize - invMtxOff) / 4;
+        swap_u32_array(block, invMtxOff, cnt);
+    }
+}
+
+/*
+ * DRW1 block layout:
+ *   0x08: u16 count, u16 pad
+ *   0x0C: u32 drawMtxFlagOffset
+ *   0x10: u32 drawMtxIndexOffset
+ */
+static void swap_drw1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1);
+    swap_u32_array(block, 0x0C, 2);
+
+    u16 count = *(u16*)(block + 0x08);
+
+    /* drawMtxFlag: u8 array - no swap */
+    /* drawMtxIndex: u16 array */
+    u32 idxOff = *(u32*)(block + 0x10);
+    if (idxOff != 0) {
+        swap_u16_array(block, idxOff, count);
+    }
+}
+
+/*
+ * JNT1 block layout:
+ *   0x08: u16 jointNum, u16 pad
+ *   0x0C: u32 jointInitDataOffset
+ *   0x10: u32 indexTableOffset
+ *   0x14: u32 nameTableOffset
+ *
+ * JointInitData: per-joint struct, 0x40 bytes:
+ *   u16 flag, u8 calcType, u8 pad
+ *   f32 sx, sy, sz (scale)
+ *   s16 rx, ry, rz (rotation), s16 pad
+ *   f32 tx, ty, tz (translation)
+ *   f32 boundingSphereRadius
+ *   f32 bbMin[3], bbMax[3]
+ */
+static void swap_jnt1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1);
+    swap_u32_array(block, 0x0C, 3);
+
+    u16 jointNum = *(u16*)(block + 0x08);
+    u32 jntOff = *(u32*)(block + 0x0C);
+    u32 idxOff = *(u32*)(block + 0x10);
+    u32 nameOff = *(u32*)(block + 0x14);
+
+    /* Joint init data - 0x40 bytes per joint */
+    if (jntOff != 0) {
+        for (int i = 0; i < jointNum; i++) {
+            u8* j = block + jntOff + i * 0x40;
+            swap_u16_array(j, 0x00, 1);  /* flag */
+            /* u8 fields at 0x02, 0x03 - no swap */
+            swap_u32_array(j, 0x04, 3);  /* scale xyz (f32) */
+            swap_u16_array(j, 0x10, 4);  /* rot xyz + pad (s16) */
+            swap_u32_array(j, 0x18, 3);  /* translation xyz (f32) */
+            swap_u32_array(j, 0x24, 1);  /* boundingSphereRadius */
+            swap_u32_array(j, 0x28, 6);  /* bbMin + bbMax (f32) */
+        }
+    }
+
+    /* Index table: u16 array */
+    if (idxOff != 0) {
+        swap_u16_array(block, idxOff, jointNum);
+    }
+
+    /* Name table: JUTNameTab format - swap u16 count at start, then u16 offsets */
+    if (nameOff != 0 && nameOff < blockSize) {
+        u16 nameCount = r16(block + nameOff);
+        w16(block + nameOff, nameCount);
+        swap_u16_array(block, nameOff + 2, 1); /* pad */
+        /* Each entry: u16 hash, u16 stringOffset */
+        for (int i = 0; i < nameCount; i++) {
+            swap_u16_array(block, nameOff + 4 + i * 4, 2);
+        }
+    }
+}
+
+/*
+ * SHP1 block layout:
+ *   0x08: u16 shapeNum, u16 pad
+ *   0x0C: u32 shapeInitDataOffset
+ *   0x10: u32 indexTableOffset
+ *   0x14: u32 nameTableOffset (always 0)
+ *   0x18: u32 vtxDescListOffset
+ *   0x1C: u32 mtxTableOffset
+ *   0x20: u32 displayListDataOffset
+ *   0x24: u32 mtxInitDataOffset
+ *   0x28: u32 drawInitDataOffset
+ */
+static void swap_shp1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* shapeNum */
+    swap_u32_array(block, 0x0C, 8); /* 8 offset fields */
+
+    u16 shapeNum = *(u16*)(block + 0x08);
+    u32 shpInitOff = *(u32*)(block + 0x0C);
+    u32 idxTabOff  = *(u32*)(block + 0x10);
+    u32 vtxDescOff = *(u32*)(block + 0x18);
+    u32 mtxTabOff  = *(u32*)(block + 0x1C);
+    u32 dlDataOff  = *(u32*)(block + 0x20);
+    u32 mtxInitOff = *(u32*)(block + 0x24);
+    u32 drawInitOff = *(u32*)(block + 0x28);
+
+    /* ShapeInitData: 0x28 bytes per shape */
+    if (shpInitOff != 0) {
+        for (int i = 0; i < shapeNum; i++) {
+            u8* s = block + shpInitOff + i * 0x28;
+            /* u8 mode at 0x00, skip */
+            swap_u16_array(s, 0x02, 3); /* vtxDescIndex, mtxTableIndex, mtxInitIndex */
+            swap_u16_array(s, 0x08, 2); /* drawInitIndex, pad */
+            swap_u32_array(s, 0x0C, 1); /* boundingSphereRadius */
+            swap_u32_array(s, 0x10, 6); /* bbMin + bbMax (f32) */
+        }
+    }
+
+    /* Index table: u16 array */
+    if (idxTabOff != 0) {
+        swap_u16_array(block, idxTabOff, shapeNum);
+    }
+
+    /* VtxDescList: pairs of (u32 attr, u32 type), multiple lists back-to-back.
+     * Each list is terminated by GX_VA_NULL (0xFF). Swap all entries until
+     * we reach the end of the vtxDesc section. */
+    if (vtxDescOff != 0) {
+        /* Find the end of the vtxDesc section */
+        u32 vtxDescEnd = blockSize;
+        if (mtxTabOff > vtxDescOff && mtxTabOff < vtxDescEnd) vtxDescEnd = mtxTabOff;
+        if (dlDataOff > vtxDescOff && dlDataOff < vtxDescEnd) vtxDescEnd = dlDataOff;
+        if (mtxInitOff > vtxDescOff && mtxInitOff < vtxDescEnd) vtxDescEnd = mtxInitOff;
+        if (drawInitOff > vtxDescOff && drawInitOff < vtxDescEnd) vtxDescEnd = drawInitOff;
+
+        u8* vd = block + vtxDescOff;
+        while ((u32)(vd - block) + 8 <= vtxDescEnd) {
+            u32 attr = r32(vd);
+            w32(vd, attr);
+            u32 type = r32(vd + 4);
+            w32(vd + 4, type);
+            vd += 8;
+        }
+    }
+
+    /* MtxTable: u16 array. Find extent from mtxInit or draw data offsets */
+    if (mtxTabOff != 0) {
+        u32 mtxTabEnd = blockSize;
+        if (dlDataOff > mtxTabOff) mtxTabEnd = dlDataOff;
+        if (mtxInitOff > mtxTabOff && mtxInitOff < mtxTabEnd) mtxTabEnd = mtxInitOff;
+        if (drawInitOff > mtxTabOff && drawInitOff < mtxTabEnd) mtxTabEnd = drawInitOff;
+        swap_u16_range(block, mtxTabOff, mtxTabEnd);
+    }
+
+    /* DisplayList data: GX FIFO byte stream. The display list reader
+     * (pal_gx_call_display_list) already reads data in big-endian byte order,
+     * so DL packet data must NOT be byte-swapped. The J3DShapeDraw walker
+     * (countVertex/addTexMtxIndexInDL) is fixed to read BE u16 on PC. */
+
+    /* MtxInitData: u16 pairs (useCount, usedMtxIndex) */
+    if (mtxInitOff != 0) {
+        u32 end = drawInitOff > mtxInitOff ? drawInitOff : blockSize;
+        swap_u16_range(block, mtxInitOff, end);
+    }
+
+    /* DrawInitData: u32 pairs (drawListSize, drawListOffset) */
+    if (drawInitOff != 0) {
+        u32 end = blockSize;
+        int drawCount = (end - drawInitOff) / 8;
+        if (drawCount > shapeNum * 4) drawCount = shapeNum * 4;
+        swap_u32_array(block, drawInitOff, drawCount * 2);
+    }
+}
+
+/* Swap a JUTNameTab at the given offset */
+static void swap_name_table(u8* block, u32 nameOff, u32 blockSize) {
+    if (nameOff == 0 || nameOff >= blockSize) return;
+    u16 count = r16(block + nameOff);
+    w16(block + nameOff, count);
+    swap_u16_array(block, nameOff + 2, 1);
+    for (int i = 0; i < count; i++) {
+        swap_u16_array(block, nameOff + 4 + i * 4, 2);
+    }
+}
+
+/*
+ * MAT3 block layout:
+ *   0x08: u16 materialNum, u16 pad
+ *   0x0C-0x80: u32 offsets (29 offset fields for various material data)
+ */
+static void swap_mat3(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* materialNum */
+    /* 29 u32 offset fields at 0x0C..0x80 */
+    swap_u32_array(block, 0x0C, 30);
+
+    u16 matNum = *(u16*)(block + 0x08);
+
+    /* Material init data: complex struct per material.
+     * Each is variable-length with many u16 indices.
+     * The offset at 0x0C points to the material init data array.
+     * For now, swap the material ID array and name table. */
+
+    /* Material ID array at offset[1] (0x10) - u16 per material */
+    u32 matIdOff = *(u32*)(block + 0x10);
+    if (matIdOff != 0 && matIdOff < blockSize) {
+        /* Log pre-swap values for diagnostics */
+        static int s_matid_diag = 0;
+        if ((s_matid_diag < 60 || matNum >= 8) && matNum > 0) {
+            u16 pre0 = *(u16*)(block + matIdOff);
+            u16 pre1 = (matNum > 1 && matIdOff + 4 <= blockSize) ? *(u16*)(block + matIdOff + 2) : 0;
+            swap_u16_array(block, matIdOff, matNum);
+            u16 post0 = *(u16*)(block + matIdOff);
+            u16 post1 = (matNum > 1 && matIdOff + 4 <= blockSize) ? *(u16*)(block + matIdOff + 2) : 0;
+            u8 b0 = block[matIdOff], b1 = block[matIdOff+1];
+            fprintf(stderr, "{\"mat3_swap_matid\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u,\"pre0\":%u,\"pre1\":%u,\"post0\":%u,\"post1\":%u,\"bytes\":[%u,%u]}}\n",
+                    (unsigned)matNum, matIdOff, blockSize, (unsigned)pre0, (unsigned)pre1,
+                    (unsigned)post0, (unsigned)post1, (unsigned)b0, (unsigned)b1);
+            s_matid_diag++;
+        } else {
+            swap_u16_array(block, matIdOff, matNum);
+        }
+    } else {
+        fprintf(stderr, "{\"mat3_swap_matid_skip\":{\"matNum\":%u,\"matIdOff\":%u,\"blockSize\":%u}}\n",
+                (unsigned)matNum, matIdOff, blockSize);
+    }
+
+    /* Name table at offset[2] (0x14) */
+    u32 nameOff = *(u32*)(block + 0x14);
+    swap_name_table(block, nameOff, blockSize);
+
+    /* Material init data at offset[0] (0x0C)
+     * Each entry is 0x14C bytes for MAT3 v26, containing mixed u8 and u16 fields.
+     * We need to swap only the u16 index fields, NOT the u8 fields.
+     * See J3DMaterialInitData struct for exact layout. */
+    u32 matInitOff = *(u32*)(block + 0x0C);
+    if (matInitOff != 0 && matInitOff < blockSize && matNum > 0) {
+        u32 entrySize = 0x14C;  /* Standard J3DMaterialInitData size */
+        /* Calculate actual MaterialInitData entry count from section sizes.
+         * Multiple materials can share the same InitData entry via the remap table,
+         * so initCount may be LESS than matNum. Using matNum would overwrite
+         * the MaterialID remap table that follows. */
+        u32 initCount = matNum;
+        if (matIdOff > matInitOff) {
+            u32 initDataSize = matIdOff - matInitOff;
+            u32 calcCount = initDataSize / entrySize;
+            if (calcCount > 0 && calcCount <= (u32)matNum) {
+                initCount = calcCount;
+            } else if (calcCount == 0 && initDataSize > 0) {
+                /* Entry size might be smaller than 0x14C for some model variants */
+                entrySize = initDataSize;
+                initCount = 1;
+            }
+        }
+
+        for (u32 i = 0; i < initCount && i < 1024; i++) {
+            u32 e = matInitOff + i * entrySize;
+            if (e + entrySize > blockSize) break;
+            /* J3DMaterialInitData layout:
+             * 0x00-0x07: u8 fields (mode, cullIdx, chanNum, texGenNum, etc.) - NO SWAP
+             * 0x08: u16 mMatColorIdx[2]
+             * 0x0C: u16 mColorChanIdx[4]
+             * 0x14: u16 mAmbColorIdx[2] */
+            swap_u16_array(block, e + 0x08, 2);  /* mMatColorIdx[2] */
+            swap_u16_array(block, e + 0x0C, 4);  /* mColorChanIdx[4] */
+            swap_u16_array(block, e + 0x14, 2);  /* mAmbColorIdx[2] */
+            /* 0x18-0x27: u8 field_0x018[0x10] - NO SWAP */
+            /* 0x28: u16 mTexCoordIdx[8] */
+            swap_u16_array(block, e + 0x28, 8);
+            /* 0x38-0x47: u8 field_0x038[0x10] - NO SWAP */
+            /* 0x48: u16 mTexMtxIdx[8] */
+            swap_u16_array(block, e + 0x48, 8);
+            /* 0x58-0x83: u8 field_0x058[0x2c] - NO SWAP */
+            /* 0x84: u16 mTexNoIdx[8] */
+            swap_u16_array(block, e + 0x84, 8);
+            /* 0x94: u16 mTevKColorIdx[4] */
+            swap_u16_array(block, e + 0x94, 4);
+            /* 0x9C-0xAB: u8 mTevKColorSel[0x10] - NO SWAP */
+            /* 0xAC-0xBB: u8 mTevKAlphaSel[0x10] - NO SWAP */
+            /* 0xBC: u16 mTevOrderIdx[0x10] */
+            swap_u16_array(block, e + 0xBC, 0x10);
+            /* 0xDC: u16 mTevColorIdx[4] */
+            swap_u16_array(block, e + 0xDC, 4);
+            /* 0xE4: u16 mTevStageIdx[0x10] */
+            swap_u16_array(block, e + 0xE4, 0x10);
+            /* 0x104: u16 mTevSwapModeIdx[0x10] */
+            swap_u16_array(block, e + 0x104, 0x10);
+            /* 0x124: u16 mTevSwapModeTableIdx[4] */
+            swap_u16_array(block, e + 0x124, 4);
+            /* 0x12C-0x143: u8 field_0x12c[0x18] - NO SWAP */
+            /* 0x144: u16 mFogIdx, mAlphaCompIdx, mBlendIdx, mNBTScaleIdx */
+            swap_u16_array(block, e + 0x144, 4);
+        }
+    }
+
+    /* Remaining data tables (cull mode, colors, tex coord info, TEV stages, etc.)
+     * These contain a mix of u8, u16, u32 values. Swap based on known data sizes.
+     * The key tables for rendering: */
+
+    /* IndInitData (offset[3], 0x18): per-material indirect texture data.
+     * Each J3DIndInitData is 0x138 bytes:
+     *   0x00: u8 mEnabled, u8 mIndTexStageNum, u8 pad[2] — NO SWAP
+     *   0x04: J3DIndTexOrderInfo[3] (4 bytes each, all u8) — NO SWAP
+     *   0x10: u8 pad[4] — NO SWAP
+     *   0x14: J3DIndTexMtxInfo[3] (0x1C bytes each):
+     *     Mtx23 (6 x f32 = 24 bytes) + s8 field — swap f32s
+     *   0x68: J3DIndTexCoordScaleInfo[3] (4 bytes each, all u8) — NO SWAP
+     *   0x74: u8 pad[4] — NO SWAP
+     *   0x78: J3DIndTevStageInfo[0x10] (0x0C bytes each, all u8) — NO SWAP
+     */
+    u32 off;
+    off = *(u32*)(block + 0x18);
+    if (off != 0 && off < blockSize) {
+        u32 indSize = 0x138;
+        int indCount = matNum;
+        for (int i = 0; i < indCount && i < 1024; i++) {
+            u32 eoff = off + i * indSize;
+            if (eoff + indSize > blockSize) break;
+            /* J3DIndTexMtxInfo[0] at +0x14: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x14, 6);
+            /* J3DIndTexMtxInfo[1] at +0x30: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x30, 6);
+            /* J3DIndTexMtxInfo[2] at +0x4C: 6 f32 (Mtx23) */
+            swap_u32_array(block, eoff + 0x4C, 6);
+        }
+    }
+
+    /* CullMode (offset[4], 0x1C): u32 per entry */
+    off = *(u32*)(block + 0x1C);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 5; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        swap_u32_range(block, off, end);
+    }
+
+    /* MatColor (offset[5], 0x20): GXColor entries (4 bytes each, RGBA) - no swap */
+    /* ColorChanNum (offset[6], 0x24): u8 per entry - no swap */
+
+    /* ColorChanInfo (offset[7], 0x28): 8 bytes per entry, ALL u8 fields
+     * (mEnable, mMatSrc, mLightMask, mDiffuseFn, mAttnFn, mAmbSrc, pad[2])
+     * No byte swap needed for u8-only struct. */
+
+    /* AmbColor (offset[8], 0x2C): GXColor entries - no swap */
+
+    /* LightInfo (offset[9], 0x30): J3DLightInfo entries (0x34 bytes each).
+     * Layout: Vec mLightPosition (3 f32), Vec mLightDirection (3 f32),
+     *         GXColor mColor (4 u8), Vec mCosAtten (3 f32), Vec mDistAtten (3 f32).
+     * All Vec fields need f32 swap, GXColor does not. */
+    off = *(u32*)(block + 0x30);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 10; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        u32 lightSize = 0x34;
+        int lightCount = (end - off) / lightSize;
+        for (int i = 0; i < lightCount && i < 256; i++) {
+            u32 eoff = off + i * lightSize;
+            if (eoff + lightSize > blockSize) break;
+            /* Vec mLightPosition: 3 x f32 at +0x00 */
+            swap_u32_array(block, eoff + 0x00, 3);
+            /* Vec mLightDirection: 3 x f32 at +0x0C */
+            swap_u32_array(block, eoff + 0x0C, 3);
+            /* GXColor at +0x18: 4 u8 — NO SWAP */
+            /* Vec mCosAtten: 3 x f32 at +0x1C */
+            swap_u32_array(block, eoff + 0x1C, 3);
+            /* Vec mDistAtten: 3 x f32 at +0x28 */
+            swap_u32_array(block, eoff + 0x28, 3);
+        }
+    }
+
+    /* TexGenNum (offset[10], 0x34): u8 per entry - no swap */
+
+    /* TexCoordInfo (offset[11], 0x38): 4 bytes per entry (u8 type, u8 src, u8 mtx, u8 pad)
+     * All u8 fields — no byte swap needed. */
+
+    /* TexMtxInfo (offset[13], 0x40): large struct per entry, many f32 fields.
+     * Each TexMtxInfo is 0x64 bytes with mixed u8/s16/f32 fields.
+     * Layout per entry (0x64 bytes):
+     *   0x00: u8 mProjection, u8 mInfo, u8 pad, u8 pad — NO SWAP
+     *   0x04: Vec mCenter (3 x f32) — swap as u32
+     *   0x10: J3DTextureSRTInfo:
+     *     0x10: f32 scaleX — swap as u32
+     *     0x14: f32 scaleY — swap as u32
+     *     0x18: s16 rotation — swap as u16
+     *     0x1A: u16 pad — skip
+     *     0x1C: f32 translationX — swap as u32
+     *     0x20: f32 translationY — swap as u32
+     *   0x24: Mtx effectMtx (3x4 f32 = 48 bytes) — swap as u32
+     */
+    off = *(u32*)(block + 0x40);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 14; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        /* TexMtxInfo layout per entry (0x64 bytes):
+         * u8 type, u8 info, pad[2], f32 centerS, f32 centerT, f32 unknown,
+         * f32 scaleS, f32 scaleT, f32 rotation, f32 transS, f32 transT,
+         * f32 effectMtx[4][4] */
+        u32 entrySize = 0x64;
+        int numEntries = (end - off) / entrySize;
+        for (int i = 0; i < numEntries && i < 256; i++) {
+            u32 eoff = off + i * entrySize;
+            /* Skip first 4 bytes (u8 mProjection, u8 mInfo, pad[2]) */
+            /* Vec mCenter: 3 x f32 at +0x04 */
+            swap_u32_array(block, eoff + 0x04, 3);
+            /* J3DTextureSRTInfo at +0x10:
+             *   f32 scaleX, f32 scaleY at +0x10, +0x14 */
+            swap_u32_array(block, eoff + 0x10, 2);
+            /* s16 rotation at +0x18 */
+            swap_u16_array(block, eoff + 0x18, 1);
+            /* f32 translationX, translationY at +0x1C, +0x20 */
+            swap_u32_array(block, eoff + 0x1C, 2);
+            /* Mtx effectMtx: 12 x f32 at +0x24 */
+            swap_u32_array(block, eoff + 0x24, 12);
+        }
+    }
+
+    /* TexNo (offset[15], 0x48): u16 per entry */
+    off = *(u32*)(block + 0x48);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 16; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        swap_u16_range(block, off, end);
+    }
+
+    /* TevOrderInfo (offset[16], 0x4C): 4 bytes per entry (u8 fields) - no swap */
+
+    /* TevColor (offset[17], 0x50): GXColorS10 entries, 4 x s16 per entry */
+    off = *(u32*)(block + 0x50);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 18; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        swap_u16_range(block, off, end);
+    }
+
+    /* TevKColor (offset[18], 0x54): GXColor entries - no swap */
+
+    /* TevStageNum (offset[19], 0x58): u8 per entry - no swap */
+
+    /* TevStageInfo (offset[20], 0x5C): per-stage combiner settings.
+     * Each entry is 20 bytes of u8 fields - no swap needed. */
+
+    /* TevSwapMode, TevSwapTable, FogInfo, AlphaCompInfo, BlendInfo, ZMode:
+     * Most are u8/small structs. ZMode is 4 bytes (u8 fields). */
+
+    /* FogInfo (offset[24], 0x68): contains f32 fields
+     * Layout: u8 type, u8 enable, u16 pad, f32 startZ, f32 endZ,
+     *         f32 nearZ, f32 farZ, GXColor color (4 u8) = 0x2C bytes
+     * There may also be a fog adjustment table with u16 entries. */
+    off = *(u32*)(block + 0x68);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        for (int k = 25; k < 30; k++) {
+            u32 nextOff = *(u32*)(block + 0x0C + k * 4);
+            if (nextOff > off) { end = nextOff; break; }
+        }
+        u32 fogSize = 0x2C;
+        int numEntries = (end - off) / fogSize;
+        for (int i = 0; i < numEntries && i < 256; i++) {
+            u32 eoff = off + i * fogSize;
+            swap_u16_array(block, eoff + 2, 1);  /* pad u16 */
+            swap_u32_range(block, eoff + 4, eoff + 0x14); /* 4 f32 fields */
+            /* GXColor at +0x14 is 4 u8s, no swap */
+            /* Fog adj table entries at +0x18 are u16s */
+            swap_u16_range(block, eoff + 0x18, eoff + fogSize);
+        }
+    }
+
+    /* NBTScaleInfo (offset[29], 0x80): contains u8 enable + f32[3] scale */
+    off = *(u32*)(block + 0x80);
+    if (off != 0 && off < blockSize) {
+        u32 end = blockSize;
+        /* Each entry: u8 enable, pad[3], f32 sx, sy, sz = 16 bytes */
+        int count = (end - off) / 16;
+        for (int i = 0; i < count && i < 256; i++) {
+            swap_u32_array(block, off + i * 16 + 4, 3);
+        }
+    }
+}
+
+/*
+ * TEX1 block layout:
+ *   0x08: u16 textureNum, u16 pad
+ *   0x0C: u32 textureResOffset
+ *   0x10: u32 nameTableOffset
+ *
+ * TextureRes (ResTIMG): 0x20 bytes per texture header on disc.
+ */
+static void swap_tex1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* textureNum */
+    swap_u32_array(block, 0x0C, 2); /* 2 offsets */
+
+    u16 texNum = *(u16*)(block + 0x08);
+    u32 texResOff = *(u32*)(block + 0x0C);
+    u32 nameOff = *(u32*)(block + 0x10);
+
+    /* Swap ResTIMG headers (0x20 bytes each).
+     * Note: ResTIMG endian swap is already handled in JUTTexture.cpp for
+     * textures loaded via JUTTexture::storeTIMG(). But we also need to swap
+     * the u16/u32 fields here for the initial model loading to work. */
+    if (texResOff != 0) {
+        for (int i = 0; i < texNum; i++) {
+            u8* tex = block + texResOff + i * 0x20;
+            if ((u32)(tex - block) + 0x20 > blockSize) break;
+            /* ResTIMG layout (0x20 bytes per entry):
+             * 0x00: u8 format, u8 alphaEnabled
+             * 0x02: u16 width
+             * 0x04: u16 height
+             * 0x06: u8 wrapS, u8 wrapT
+             * 0x08: u8 indexTexture, u8 colorFormat
+             * 0x0A: u16 numColors
+             * 0x0C: u32 paletteOffset
+             * 0x10: u8 mipmapEnabled, u8 doEdgeLOD, u8 biasClamp, u8 maxAnisotropy
+             * 0x14: u8 minFilter, u8 magFilter, s8 minLOD, s8 maxLOD
+             * 0x18: u8 mipmapCount, u8 unknown
+             * 0x1A: s16 LODBias
+             * 0x1C: u32 imageOffset */
+            swap_u16_array(tex, 0x02, 2); /* width, height */
+            swap_u16_array(tex, 0x0A, 1); /* numColors */
+            swap_u32_array(tex, 0x0C, 1); /* paletteOffset */
+            swap_u16_array(tex, 0x1A, 1); /* LODBias */
+            swap_u32_array(tex, 0x1C, 1); /* imageOffset */
+        }
+    }
+
+    /* Name table */
+    swap_name_table(block, nameOff, blockSize);
+}
+
+/* MAT2 block layout - similar to MAT3 but older version with fewer fields */
+static void swap_mat2(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x08, 1); /* materialNum */
+    /* Fewer offsets than MAT3 - 24 u32 fields starting at 0x0C */
+    swap_u32_array(block, 0x0C, 26);
+
+    /* Material ID and name table at standard positions */
+    u16 matNum = *(u16*)(block + 0x08);
+    u32 matIdOff = *(u32*)(block + 0x10);
+    if (matIdOff != 0 && matIdOff < blockSize) {
+        swap_u16_array(block, matIdOff, matNum);
+    }
+    u32 nameOff = *(u32*)(block + 0x14);
+    swap_name_table(block, nameOff, blockSize);
+
+    /* Material init data */
+    u32 matInitOff = *(u32*)(block + 0x0C);
+    if (matInitOff != 0 && matIdOff != 0 && matInitOff < matIdOff) {
+        swap_u16_range(block, matInitOff, matIdOff);
+    }
+}
+
+/* Forward declaration */
+static void swap_anm_block(u8* block, u32 blockSize, u32 blockType);
+
+int pal_j3d_swap_model(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* buf = (u8*)data;
+
+    /* Check if file is big-endian by reading magic as big-endian bytes */
+    u32 magic1_be = r32(buf + 0x00);
+    u32 magic2_be = r32(buf + 0x04);
+
+    /* Expected big-endian FCC values */
+    int is_j3d = (magic1_be == FCC('J','3','D','2') || magic1_be == FCC('J','3','D','1'));
+    if (!is_j3d) return 0; /* Already swapped or not J3D */
+
+    /* Check if already in native byte order */
+    u32 magic1_native = *(u32*)(buf + 0x00);
+    if (magic1_native == FCC('J','3','D','2') || magic1_native == FCC('J','3','D','1')) {
+        return 0; /* Already native endian */
+    }
+
+    fprintf(stderr, "[pal_j3d] Swapping model: magic=%c%c%c%c type=%c%c%c%c size=%u\n",
+            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], size);
+
+    /* Swap file header */
+    swap_u32_array(buf, 0x00, 2);  /* magic1, magic2 */
+    swap_u32_array(buf, 0x08, 1);  /* fileSize */
+    swap_u32_array(buf, 0x0C, 1);  /* blockNum */
+
+    u32 fileSize = *(u32*)(buf + 0x08);
+    u32 blockNum = *(u32*)(buf + 0x0C);
+
+    /* Validate file size against buffer */
+    u32 effectiveSize = fileSize < size ? fileSize : size;
+    if (fileSize > size) {
+        fprintf(stderr, "[pal_j3d] WARNING: header fileSize %u > buffer size %u, using buffer size\n", fileSize, size);
+    }
+
+    if (blockNum > 64) {
+        fprintf(stderr, "[pal_j3d] Suspicious blockNum %u, aborting swap\n", blockNum);
+        return 0;
+    }
+
+    /* Walk blocks and swap each */
+    u8* blockPtr = buf + 0x20;
+    u32 blocks_swapped = 0;
+    u16 shp_count = 0, mat_count = 0;
+    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < effectiveSize; i++) {
+        /* Read block header in big-endian */
+        u32 blockType = r32(blockPtr);
+        u32 blockSize = r32(blockPtr + 4);
+
+        /* Swap block header */
+        w32(blockPtr, blockType);
+        w32(blockPtr + 4, blockSize);
+
+        /* Validate block size */
+        if (blockSize < 8) {
+            fprintf(stderr, "[pal_j3d] Block %u: size %u too small, stopping\n", i, blockSize);
+            break;
+        }
+        if ((u32)(blockPtr - buf) + blockSize > effectiveSize) {
+            fprintf(stderr, "[pal_j3d] Block %u: size %u exceeds buffer (offset %u + size %u > %u), stopping\n",
+                    i, blockSize, (u32)(blockPtr - buf), blockSize, effectiveSize);
+            break;
+        }
+        /* Block size must be 32-byte aligned in J3D format */
+        if (blockSize & 0x1F) {
+            char buf[80];
+            snprintf(buf, sizeof(buf), "block '%c%c%c%c' size %u not 32-byte aligned",
+                    (char)(blockType>>24), (char)(blockType>>16),
+                    (char)(blockType>>8), (char)blockType, blockSize);
+            pal_error(PAL_ERR_J3D_ENDIAN, buf);
+        }
+
+        /* Dispatch by block type (big-endian FCC) */
+        switch (blockType) {
+        case FCC('I','N','F','1'):
+            swap_inf1(blockPtr, blockSize);
+            break;
+        case FCC('V','T','X','1'):
+            swap_vtx1(blockPtr, blockSize);
+            break;
+        case FCC('E','V','P','1'):
+            swap_evp1(blockPtr, blockSize);
+            break;
+        case FCC('D','R','W','1'):
+            swap_drw1(blockPtr, blockSize);
+            break;
+        case FCC('J','N','T','1'):
+            swap_jnt1(blockPtr, blockSize);
+            break;
+        case FCC('S','H','P','1'):
+            swap_shp1(blockPtr, blockSize);
+            if (blockSize > 0x0A) shp_count = *(u16*)(blockPtr + 0x08); /* already swapped */
+            break;
+        case FCC('M','A','T','3'):
+            swap_mat3(blockPtr, blockSize);
+            if (blockSize > 0x0A) mat_count = *(u16*)(blockPtr + 0x08); /* already swapped */
+            break;
+        case FCC('M','A','T','2'):
+            swap_mat2(blockPtr, blockSize);
+            break;
+        case FCC('T','E','X','1'):
+            swap_tex1(blockPtr, blockSize);
+            break;
+        case FCC('M','D','L','3'):
+            /* MDL3 display list block - contains precompiled GX DLs.
+             * Complex format, skip for now. */
+            break;
+        /* Animation blocks */
+        case FCC('A','N','K','1'):
+        case FCC('A','N','F','1'):
+        case FCC('C','L','K','1'):
+        case FCC('C','L','F','1'):
+        case FCC('T','R','K','1'):
+        case FCC('T','R','F','1'):
+        case FCC('T','T','K','1'):
+        case FCC('T','P','T','1'):
+        case FCC('T','P','F','1'):
+        case FCC('P','A','K','1'):
+        case FCC('P','A','F','1'):
+        case FCC('V','A','K','1'):
+        case FCC('V','A','F','1'):
+        case FCC('X','A','K','1'):
+            swap_anm_block(blockPtr, blockSize, blockType);
+            break;
+        default:
+            fprintf(stderr, "[pal_j3d] Unknown block '%c%c%c%c' size=%u\n",
+                    (char)(blockType>>24), (char)(blockType>>16),
+                    (char)(blockType>>8), (char)blockType, blockSize);
+            break;
+        }
+
+        blocks_swapped++;
+        blockPtr += blockSize;
+    }
+
+    /* Per-model summary: emit JSON with model type, size, blocks, SHP1 shape count, MAT3 material count */
+    {
+        static int s_model_id = 0;
+        fprintf(stderr, "{\"model_swap\":{\"id\":%d,\"type\":\"%c%c%c%c\",\"size\":%u,\"blocks\":%u,\"swapped\":%u,\"shapes\":%u,\"materials\":%u}}\n",
+                s_model_id, buf[4], buf[5], buf[6], buf[7], size, blockNum, blocks_swapped,
+                (unsigned)shp_count, (unsigned)mat_count);
+        s_model_id++;
+    }
+    return 1;
+}
+
+/*
+ * Animation file format (J3D1/J3D2):
+ *   File header: u32 magic ('J3D1'), u32 type ('bck1' etc.), u32 fileSize, u32 blockNum
+ *   Blocks: same block header format as model files
+ *
+ * Animation blocks: ANK1, ANF1, CLK1, CLF1, TRK1, TRF1, TPT1, TPF1, PAK1, PAF1, VAK1, VAF1,
+ *                   TTK1, XAK1
+ *
+ * Most animation blocks have:
+ *   0x08: u8 loopMode, u8 pad
+ *   0x0A: u16 frameCount
+ *   0x0C: u16 entryCount, u16 pad
+ *   0x10+: u32 offset fields for data tables
+ *   Data tables: s16/f32 keyframe data
+ */
+/*
+ * ANK1/ANF1 (transform full/key) block layout:
+ *   0x08: u8 loopMode, u8 rotDecShift
+ *   0x0A: u16 frameCount
+ *   0x0C: u16 jointCount, u16 scaleCount
+ *   0x10: u16 rotCount, u16 transCount
+ *   0x14: u32 tableOffset       [0] - J3DAnmTransformKeyTable (u16 array)
+ *   0x18: u32 scaleValOffset    [1] - f32 array
+ *   0x1C: u32 rotValOffset      [2] - s16 array
+ *   0x20: u32 transValOffset    [3] - f32 array
+ */
+static void swap_ank1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameCount */
+    swap_u16_array(block, 0x0C, 2); /* jointCount, scaleCount */
+    swap_u16_array(block, 0x10, 2); /* rotCount, transCount */
+    swap_u32_array(block, 0x14, 4); /* 4 offsets */
+
+    u16 scaleNum = *(u16*)(block + 0x0E);
+    u16 rotNum   = *(u16*)(block + 0x10);
+    u16 transNum = *(u16*)(block + 0x12);
+    u32 tableOff = *(u32*)(block + 0x14);
+    u32 scaleOff = *(u32*)(block + 0x18);
+    u32 rotOff   = *(u32*)(block + 0x1C);
+    u32 transOff = *(u32*)(block + 0x20);
+
+    /* Table data: u16 values (J3DAnmTransformKeyTable entries) */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = scaleOff > tableOff ? scaleOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+
+    /* Scale values: f32 array → swap as u32 */
+    if (scaleOff != 0 && scaleOff < blockSize) {
+        swap_u32_array(block, scaleOff, scaleNum);
+    }
+
+    /* Rotation values: s16 array → swap as u16 */
+    if (rotOff != 0 && rotOff < blockSize) {
+        swap_u16_array(block, rotOff, rotNum);
+    }
+
+    /* Translation values: f32 array → swap as u32 */
+    if (transOff != 0 && transOff < blockSize) {
+        swap_u32_array(block, transOff, transNum);
+    }
+}
+
+/*
+ * CLK1/CLF1 (color key/full) block layout:
+ *   0x08: u8 loopMode, u8[3] pad
+ *   0x0C: s16 frameMax
+ *   0x0E: u16 updateMaterialNum
+ *   0x10: u16 rNum, u16 gNum
+ *   0x14: u16 bNum, u16 aNum
+ *   0x18: u32 tableOffset
+ *   0x1C: u32 updateMaterialIDOffset
+ *   0x20: u32 nameTabOffset
+ *   0x24: u32 rValOffset (s16)
+ *   0x28: u32 gValOffset (s16)
+ *   0x2C: u32 bValOffset (s16)
+ *   0x30: u32 aValOffset (s16)
+ */
+static void swap_color_anm(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0C, 1); /* frameMax */
+    swap_u16_array(block, 0x0E, 1); /* updateMaterialNum */
+    swap_u16_array(block, 0x10, 2); /* rNum, gNum */
+    swap_u16_array(block, 0x14, 2); /* bNum, aNum */
+    swap_u32_array(block, 0x18, 7); /* 7 offsets */
+
+    u32 tableOff = *(u32*)(block + 0x18);
+    u32 matIdOff = *(u32*)(block + 0x1C);
+    u32 nameOff  = *(u32*)(block + 0x20);
+    u32 rOff     = *(u32*)(block + 0x24);
+    u32 gOff     = *(u32*)(block + 0x28);
+    u32 bOff     = *(u32*)(block + 0x2C);
+    u32 aOff     = *(u32*)(block + 0x30);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = matIdOff > tableOff ? matIdOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+    /* Material ID: u16 array */
+    if (matIdOff != 0 && matIdOff < blockSize) {
+        u32 end = nameOff > matIdOff ? nameOff : blockSize;
+        swap_u16_range(block, matIdOff, end);
+    }
+    /* Name table */
+    swap_name_table(block, nameOff, blockSize);
+    /* Color values: all s16 → u16 swap */
+    if (rOff != 0 && rOff < blockSize) { u32 end = gOff > rOff ? gOff : blockSize; swap_u16_range(block, rOff, end); }
+    if (gOff != 0 && gOff < blockSize) { u32 end = bOff > gOff ? bOff : blockSize; swap_u16_range(block, gOff, end); }
+    if (bOff != 0 && bOff < blockSize) { u32 end = aOff > bOff ? aOff : blockSize; swap_u16_range(block, bOff, end); }
+    if (aOff != 0 && aOff < blockSize) { swap_u16_range(block, aOff, blockSize); }
+}
+
+/*
+ * CLK1/CLF1 (cluster key/full) block layout:
+ *   0x08: u8 loopMode
+ *   0x0A: s16 frameMax
+ *   0x0C: s32 field_0xc
+ *   0x10: u32 mTableOffset
+ *   0x14: u32 mWeightOffset
+ *   Table data is u16, weight data is f32 (swap as u32)
+ */
+static void swap_cluster_anm(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u32_array(block, 0x0C, 1); /* field_0xc */
+    swap_u32_array(block, 0x10, 2); /* 2 offsets */
+
+    u32 tableOff  = *(u32*)(block + 0x10);
+    u32 weightOff = *(u32*)(block + 0x14);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = weightOff > tableOff ? weightOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+    /* Weights: f32 values → swap as u32 */
+    if (weightOff != 0 && weightOff < blockSize) {
+        u32 count = (blockSize - weightOff) / 4;
+        if (count > 1024) count = 1024;
+        swap_u32_array(block, weightOff, count);
+    }
+}
+
+/*
+ * TRK1/TRF1 (TEV register key/full) block layout:
+ *   0x08: u8 loopMode, u8 pad
+ *   0x0A: s16 frameMax
+ *   0x0C-0x1E: u16 count fields (8 values)
+ *   0x20: u32 cRegTableOffset
+ *   0x24: u32 kRegTableOffset
+ *   0x28-0x54: u32 offsets for cReg/kReg material IDs, name tables, and 8 color channels
+ *   All color data is s16 → u16 swap
+ */
+static void swap_trk1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u16_array(block, 0x0C, 8); /* count fields at 0x0C-0x1E */
+    swap_u32_array(block, 0x20, 14); /* 14 offsets at 0x20-0x54 */
+
+    u32 cRegTableOff = *(u32*)(block + 0x20);
+    u32 kRegTableOff = *(u32*)(block + 0x24);
+    u32 cRegMatIdOff = *(u32*)(block + 0x28);
+    u32 kRegMatIdOff = *(u32*)(block + 0x2C);
+    u32 cRegNameOff  = *(u32*)(block + 0x30);
+    u32 kRegNameOff  = *(u32*)(block + 0x34);
+
+    /* Table data */
+    if (cRegTableOff != 0 && cRegTableOff < blockSize) {
+        u32 end = kRegTableOff > cRegTableOff ? kRegTableOff : blockSize;
+        swap_u16_range(block, cRegTableOff, end);
+    }
+    if (kRegTableOff != 0 && kRegTableOff < blockSize) {
+        u32 end = cRegMatIdOff > kRegTableOff ? cRegMatIdOff : blockSize;
+        swap_u16_range(block, kRegTableOff, end);
+    }
+    /* Material IDs */
+    if (cRegMatIdOff != 0 && cRegMatIdOff < blockSize) {
+        u32 end = kRegMatIdOff > cRegMatIdOff ? kRegMatIdOff : blockSize;
+        swap_u16_range(block, cRegMatIdOff, end);
+    }
+    if (kRegMatIdOff != 0 && kRegMatIdOff < blockSize) {
+        u32 end = cRegNameOff > kRegMatIdOff ? cRegNameOff : blockSize;
+        swap_u16_range(block, kRegMatIdOff, end);
+    }
+    /* Name tables */
+    swap_name_table(block, cRegNameOff, blockSize);
+    swap_name_table(block, kRegNameOff, blockSize);
+    /* 8 color value arrays (s16) at offsets 0x38-0x54 */
+    for (int c = 0; c < 8; c++) {
+        u32 valOff = *(u32*)(block + 0x38 + c * 4);
+        if (valOff == 0 || valOff >= blockSize) continue;
+        u32 end = blockSize;
+        for (int d = c + 1; d < 8; d++) {
+            u32 next = *(u32*)(block + 0x38 + d * 4);
+            if (next > valOff && next < end) end = next;
+        }
+        swap_u16_range(block, valOff, end);
+    }
+}
+
+/*
+ * TTK1 (texture SRT key) block layout:
+ *   0x08: u8 loopMode, u8 rotDecShift
+ *   0x0A: s16 frameMax
+ *   0x0C: u16 trackNum, u16 scaleNum
+ *   0x10: u16 rotNum, u16 transNum
+ *   0x14: u32 tableOffset         - u16 table
+ *   0x18: u32 updateMatIDOffset   - u16 array
+ *   0x1C: u32 nameTab1Offset      - name table
+ *   0x20: u32 updateTexMtxIDOffset - u8 array
+ *   0x24: u32 srtCenterOffset      - Vec (3x f32)
+ *   0x28: u32 scaleValOffset       - f32 array
+ *   0x2C: u32 rotValOffset         - s16 array
+ *   0x30: u32 transValOffset       - f32 array
+ *   Then post-update fields: u16 counts at 0x34-0x3A, more offsets at 0x3C+
+ */
+static void swap_ttk1(u8* block, u32 blockSize) {
+    swap_u16_array(block, 0x0A, 1); /* frameMax */
+    swap_u16_array(block, 0x0C, 2); /* trackNum, scaleNum */
+    swap_u16_array(block, 0x10, 2); /* rotNum, transNum */
+
+    /* Count offsets: 7 base + potential post-update offsets */
+    u32 numOffsets = 7;
+    /* Check for post-update data (TTK1 has u16 fields at 0x34-0x3A then more offsets) */
+    if (blockSize > 0x54) {
+        /* Swap u16 fields at 0x34-0x3A */
+        swap_u16_array(block, 0x34, 4);
+        numOffsets = 14; /* extended with post-update offsets */
+    }
+    swap_u32_array(block, 0x14, numOffsets);
+
+    u16 scaleNum = *(u16*)(block + 0x0E);
+    u16 rotNum   = *(u16*)(block + 0x10);
+    u16 transNum = *(u16*)(block + 0x12);
+
+    u32 tableOff      = *(u32*)(block + 0x14);
+    u32 updateMatOff   = *(u32*)(block + 0x18);
+    u32 nameTab1Off    = *(u32*)(block + 0x1C);
+    u32 texMtxIDOff    = *(u32*)(block + 0x20); /* u8 array */
+    u32 srtCenterOff   = *(u32*)(block + 0x24); /* Vec (f32) */
+    u32 scaleOff       = *(u32*)(block + 0x28);
+    u32 rotOff         = *(u32*)(block + 0x2C);
+    u32 transOff       = *(u32*)(block + 0x30);
+
+    /* Table: u16 values */
+    if (tableOff != 0 && tableOff < blockSize) {
+        u32 end = updateMatOff > tableOff ? updateMatOff : blockSize;
+        swap_u16_range(block, tableOff, end);
+    }
+
+    /* UpdateMaterialID: u16 array */
+    if (updateMatOff != 0 && updateMatOff < blockSize) {
+        u32 end = nameTab1Off > updateMatOff ? nameTab1Off : blockSize;
+        swap_u16_range(block, updateMatOff, end);
+    }
+
+    /* Name table 1 */
+    swap_name_table(block, nameTab1Off, blockSize);
+
+    /* texMtxID: u8 array - no swap */
+
+    /* SRT center: Vec (3x f32) per entry */
+    if (srtCenterOff != 0 && srtCenterOff < blockSize) {
+        u32 end = scaleOff > srtCenterOff ? scaleOff : blockSize;
+        u32 count = (end - srtCenterOff) / 4;
+        swap_u32_array(block, srtCenterOff, count);
+    }
+
+    /* Scale values: f32 array */
+    if (scaleOff != 0 && scaleOff < blockSize) {
+        swap_u32_array(block, scaleOff, scaleNum);
+    }
+
+    /* Rotation values: s16 array */
+    if (rotOff != 0 && rotOff < blockSize) {
+        swap_u16_array(block, rotOff, rotNum);
+    }
+
+    /* Translation values: f32 array */
+    if (transOff != 0 && transOff < blockSize) {
+        swap_u32_array(block, transOff, transNum);
+    }
+
+    /* Post-update name table and other offsets */
+    if (blockSize > 0x54) {
+        u32 nameTab2Off = *(u32*)(block + 0x44);
+        swap_name_table(block, nameTab2Off, blockSize);
+
+        /* Post-update material IDs */
+        u32 postMatOff = *(u32*)(block + 0x40);
+        if (postMatOff != 0 && postMatOff < blockSize) {
+            u32 end = nameTab2Off > postMatOff ? nameTab2Off : blockSize;
+            swap_u16_range(block, postMatOff, end);
+        }
+
+        /* Post-update SRT center: Vec (f32) */
+        u32 postCenterOff = *(u32*)(block + 0x4C);
+        if (postCenterOff != 0 && postCenterOff < blockSize) {
+            u32 end = blockSize;
+            u32 count = (end - postCenterOff) / 4;
+            if (count > 1024) count = 1024;
+            swap_u32_array(block, postCenterOff, count);
+        }
+    }
+}
+
+static void swap_anm_block(u8* block, u32 blockSize, u32 blockType) {
+    /* Common animation header: swap count fields */
+    if (blockSize < 0x10) return;
+
+    /* Use specialized handlers for known block types with f32 data */
+    if (blockType == FCC('A','N','K','1') || blockType == FCC('A','N','F','1')) {
+        swap_ank1(block, blockSize);
+        return;
+    }
+    if (blockType == FCC('T','T','K','1')) {
+        swap_ttk1(block, blockSize);
+        return;
+    }
+    /* PAK1/PAF1 = color animation (BPK/BPA files) */
+    if (blockType == FCC('P','A','K','1') || blockType == FCC('P','A','F','1')) {
+        swap_color_anm(block, blockSize);
+        return;
+    }
+    /* CLK1/CLF1 = cluster animation (BLK/BLA files) */
+    if (blockType == FCC('C','L','K','1') || blockType == FCC('C','L','F','1')) {
+        swap_cluster_anm(block, blockSize);
+        return;
+    }
+    if (blockType == FCC('T','R','K','1') || blockType == FCC('T','R','F','1')) {
+        swap_trk1(block, blockSize);
+        return;
+    }
+
+    /* Generic handler for blocks with all-u16 or all-s16 data:
+     * TPT1/TPF1 (tex pattern), VAK1/VAF1 */
+
+    /* Loop mode (u8) and padding - no swap */
+    swap_u16_array(block, 0x0A, 1); /* frameCount */
+    swap_u16_array(block, 0x0C, 2); /* entryCount + additional count */
+
+    /* Scan for u32 offsets starting at 0x10 */
+    u32 numOffsets = 0;
+    u32 firstDataOff = blockSize;
+
+    /* Count offset fields (they are between 0x10 and the first data section) */
+    for (u32 off = 0x10; off < blockSize && off < 0x60; off += 4) {
+        u32 val = r32(block + off);
+        if (val == 0 || (val >= 0x10 && val < blockSize)) {
+            numOffsets++;
+        } else {
+            break;
+        }
+    }
+
+    if (numOffsets == 0) numOffsets = (blockSize > 0x40) ? 12 : 4;
+    if (numOffsets > 20) numOffsets = 20;
+
+    /* Swap offset fields */
+    swap_u32_array(block, 0x10, numOffsets);
+
+    /* Read offsets and find first data section */
+    u32 offsets[20];
+    for (u32 i = 0; i < numOffsets && i < 20; i++) {
+        offsets[i] = *(u32*)(block + 0x10 + i * 4);
+        if (offsets[i] != 0 && offsets[i] < firstDataOff) {
+            firstDataOff = offsets[i];
+        }
+    }
+
+    /* Find the last (highest) non-zero offset — this is typically the name table.
+     * Animation blocks that reference materials by name (TRK1, CLK1, TPT1, TTK1, PAK1,
+     * TRK3, etc.) store a ResNTAB name table as the last data section. The name table
+     * contains ASCII string data that must NOT be bulk-swapped as u16. */
+    u32 lastOffset = 0;
+    int lastIdx = -1;
+    for (u32 i = 0; i < numOffsets && i < 20; i++) {
+        if (offsets[i] != 0 && offsets[i] > lastOffset) {
+            lastOffset = offsets[i];
+            lastIdx = (int)i;
+        }
+    }
+
+    /* Heuristic: check if the last section looks like a name table.
+     * A ResNTAB starts with u16 entryNum, u16 pad, then entries of {u16 hash, u16 offset}.
+     * The entry count should be small (<1000) and match the animation's entry count. */
+    bool lastIsNameTable = false;
+    if (lastIdx >= 0 && lastOffset + 4 < blockSize) {
+        u16 ntabCount = r16(block + lastOffset);
+        /* Name table entry count should be > 0, reasonable, and the section should be
+         * large enough to hold the entries + some string data */
+        u32 ntabMinSize = 4 + ntabCount * 4;
+        if (ntabCount > 0 && ntabCount < 1000 && lastOffset + ntabMinSize <= blockSize) {
+            lastIsNameTable = true;
+        }
+    }
+
+    /* Swap data sections: use swap_name_table for the name table, swap_u16_range for data */
+    for (u32 i = 0; i < numOffsets && i < 20; i++) {
+        if (offsets[i] == 0) continue;
+        u32 end = blockSize;
+        for (u32 j = 0; j < numOffsets && j < 20; j++) {
+            if (offsets[j] > offsets[i] && offsets[j] < end) {
+                end = offsets[j];
+            }
+        }
+        if (lastIsNameTable && (int)i == lastIdx) {
+            /* Name table: swap structured data, preserve ASCII strings */
+            swap_name_table(block, offsets[i], blockSize);
+        } else {
+            swap_u16_range(block, offsets[i], end);
+        }
+    }
+}
+
+int pal_j3d_swap_anim(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* buf = (u8*)data;
+    u32 magic_be = r32(buf);
+
+    if (magic_be != FCC('J','3','D','1') && magic_be != FCC('J','3','D','2')) {
+        /* Check for 16-bit byte-swapped magic: bytes [0x33,0x4A,0x31,0x44] = '3J1D'
+         * are [J,3,D,1] with each u16 pair byte-swapped.
+         * Undo the swap to see if it's J3D data: swap pairs [0,1] and [2,3]. */
+        u32 magic_unswapped = ((u32)buf[1]<<24) | ((u32)buf[0]<<16) | ((u32)buf[3]<<8) | (u32)buf[2];
+        if (magic_unswapped == FCC('J','3','D','1') || magic_unswapped == FCC('J','3','D','2')) {
+            /* Un-swap the entire file as u16 to undo the damage */
+            u32 fileSize_u16 = ((u32)buf[9]<<24) | ((u32)buf[8]<<16) | ((u32)buf[11]<<8) | (u32)buf[10];
+            u32 fixSize = fileSize_u16 < size ? fileSize_u16 : size;
+            for (u32 off = 0; off + 1 < fixSize; off += 2) {
+                u8 tmp = buf[off]; buf[off] = buf[off+1]; buf[off+1] = tmp;
+            }
+            /* Now retry the normal big-endian read */
+            magic_be = r32(buf);
+        } else {
+            return 0;
+        }
+    }
+
+    u32 magic_native = *(u32*)buf;
+    if (magic_native == FCC('J','3','D','1') || magic_native == FCC('J','3','D','2')) {
+        return 0;
+    }
+
+    /* Swap file header */
+    swap_u32_array(buf, 0x00, 2);
+    swap_u32_array(buf, 0x08, 1);
+    swap_u32_array(buf, 0x0C, 1);
+
+    u32 fileSize = *(u32*)(buf + 0x08);
+    u32 blockNum = *(u32*)(buf + 0x0C);
+    if (blockNum > 64) return 0;
+    u32 effectiveSize = fileSize < size ? fileSize : size;
+
+    u8* blockPtr = buf + 0x20;
+    for (u32 i = 0; i < blockNum && (u32)(blockPtr - buf) < effectiveSize; i++) {
+        u32 blockType = r32(blockPtr);
+        u32 blockSize = r32(blockPtr + 4);
+        w32(blockPtr, blockType);
+        w32(blockPtr + 4, blockSize);
+
+        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > effectiveSize) break;
+
+        swap_anm_block(blockPtr, blockSize, blockType);
+        blockPtr += blockSize;
+    }
+
+    return 1;
+}
+
+/*
+ * ResFONT (.bfn) binary format:
+ *   Header (0x20 bytes):
+ *     u64 magic ('FONT' or 'RFNT'), u32 filesize, u32 numBlocks, padding[0x10]
+ *   Blocks: INF1, WID1, GLY1, MAP1
+ *     Each block: u32 magic, u32 size, then type-specific data
+ */
+int pal_font_swap(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* buf = (u8*)data;
+
+    /* ResFONT magic is a u64. Check if first 4 bytes look like big-endian magic.
+     * Common font magics: 'FONT' (0x464F4E54), 'RFNT' (0x52464E54) */
+    u32 magic_be = r32(buf);
+    u32 magic_native = *(u32*)buf;
+
+    /* If native read matches a known FCC, already swapped */
+    if (magic_native == FCC('F','O','N','T') || magic_native == FCC('R','F','N','T') ||
+        magic_native == FCC('f','o','n','t'))
+    {
+        return 0;
+    }
+
+    /* Check if big-endian read matches */
+    if (magic_be != FCC('F','O','N','T') && magic_be != FCC('R','F','N','T') &&
+        magic_be != FCC('f','o','n','t'))
+    {
+        return 0; /* Not a font file */
+    }
+
+    fprintf(stderr, "[pal_font] Swapping font: magic=%c%c%c%c\n",
+            buf[0], buf[1], buf[2], buf[3]);
+
+    /* Swap file header */
+    swap_u32_array(buf, 0x00, 2);  /* magic (as two u32) */
+    swap_u32_array(buf, 0x08, 2);  /* filesize, numBlocks */
+
+    u32 numBlocks = *(u32*)(buf + 0x0C);
+    if (numBlocks > 64) {
+        fprintf(stderr, "[pal_font] Suspicious numBlocks %u, aborting\n", numBlocks);
+        return 0;
+    }
+
+    /* Walk blocks */
+    u8* blockPtr = buf + 0x20;
+    for (u32 i = 0; i < numBlocks && (u32)(blockPtr - buf) < size; i++) {
+        u32 blockType = r32(blockPtr);
+        u32 blockSize = r32(blockPtr + 4);
+
+        /* Swap block header */
+        w32(blockPtr, blockType);
+        w32(blockPtr + 4, blockSize);
+
+        if (blockSize < 8 || (u32)(blockPtr - buf) + blockSize > size) break;
+
+        switch (blockType) {
+        case FCC('I','N','F','1'):
+            /* INF1: u16 fontType, ascent, descent, width, leading, defaultCode */
+            swap_u16_array(blockPtr, 0x08, 6);
+            break;
+
+        case FCC('W','I','D','1'):
+            /* WID1: u16 startCode, endCode, then u8 width data */
+            swap_u16_array(blockPtr, 0x08, 2);
+            break;
+
+        case FCC('G','L','Y','1'):
+            /* GLY1: u16 startCode, endCode, cellWidth, cellHeight,
+             *       u32 textureSize, u16 textureFormat, numRows, numColumns,
+             *       textureWidth, textureHeight, padding */
+            swap_u16_array(blockPtr, 0x08, 2);  /* startCode, endCode */
+            swap_u16_array(blockPtr, 0x0C, 2);  /* cellWidth, cellHeight */
+            swap_u32_array(blockPtr, 0x10, 1);  /* textureSize */
+            swap_u16_array(blockPtr, 0x14, 6);  /* format, rows, cols, w, h, pad */
+            break;
+
+        case FCC('M','A','P','1'): {
+            /* MAP1: u16 mappingMethod, startCode, endCode, numEntries, mLeading */
+            swap_u16_array(blockPtr, 0x08, 5);
+            /* Map entries: u16 per entry */
+            u16 numEntries = *(u16*)(blockPtr + 0x0E);
+            if (numEntries > 0 && 0x12 + numEntries * 2 <= blockSize) {
+                swap_u16_array(blockPtr, 0x12, numEntries);
+            }
+            break;
+        }
+
+        default:
+            fprintf(stderr, "[pal_font] Unknown block '%c%c%c%c'\n",
+                    (char)(blockType>>24), (char)(blockType>>16),
+                    (char)(blockType>>8), (char)blockType);
+            break;
+        }
+
+        blockPtr += blockSize;
+    }
+
+    return 1;
+}
+
+/* ================================================================ */
+/* BLO layout endian swap                                           */
+/* ================================================================ */
+
+/**
+ * Swap a BLO (J2D screen layout) file from big-endian to little-endian in-place.
+ *
+ * BLO file structure:
+ *   File header (0x20):
+ *     u32 tag='SCRN', u32 type='blo1'/'blo2', u32 fileSize, u32 blockNum, pad[0x10]
+ *   Blocks:
+ *     u32 tag, s32 size, then block-specific data
+ *
+ * Block types: INF1, PAN1/PAN2, PIC1/PIC2, TBX1/TBX2, WIN1/WIN2,
+ *              BGN1, END1, EXT1, TEX1, FNT1, MAT1
+ */
+int pal_blo_swap(void* data, u32 size) {
+    if (!data || size < 0x20) return 0;
+
+    u8* p = (u8*)data;
+
+    /* Check if big-endian: first 4 bytes should be 'SCRN' = 0x5343524E in BE */
+    if (p[0] != 'S' || p[1] != 'C' || p[2] != 'R' || p[3] != 'N') {
+        return 0; /* not BLO or already swapped */
+    }
+
+    /* Swap file header (0x00-0x0F): tag, type, fileSize, blockNum */
+    swap_u32_array(p, 0, 4);
+
+    u32 blockNum = *(u32*)(p + 12);
+
+    /* Walk blocks starting at offset 0x20 */
+    u32 pos = 0x20;
+    for (u32 i = 0; i < blockNum && pos + 8 <= size; i++) {
+        /* Read block tag/size in big-endian BEFORE swapping */
+        u32 be_tag = r32(p + pos);
+        u32 be_size = r32(p + pos + 4);
+
+        /* Swap block header (tag + size) */
+        swap_u32_array(p, pos, 2);
+
+        if (be_size < 8 || pos + be_size > size) break;
+
+        u8* blk = p + pos;
+
+        /* INF1: screen info
+         *   +0x08: u16 width, u16 height, GXColor color (4×u8, no swap) */
+        if (be_tag == FCC('I','N','F','1')) {
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 2);  /* width, height */
+                /* +12: GXColor is {u8 r,g,b,a} — byte array, no swap */
+            }
+        }
+
+        /* PAN1: basic pane (blo1 format)
+         * Fields after 8-byte header are read by makePaneStream() via
+         * individual readS16/readU16/readU32/readU8 stream calls.
+         * The header (tag+size) is read as raw struct, already swapped above.
+         * Data fields: u8, u8, 2 skip, u32 infoTag, 4×s16 bounds, u16 rotZ, ...
+         * Stream reads need the data to be in native order. */
+        if (be_tag == FCC('P','A','N','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1); /* infoTag at +0x0C */
+                /* 4 x s16 bounds at +0x10 */
+                swap_u16_array(blk, 16, 4);
+                /* Optional u16 rotZ at +0x18 */
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+
+        /* PAN2: extended pane (blo2 format)
+         * J2DPaneInfo struct: 0x48 bytes read as raw struct.
+         * Layout (from struct definition):
+         *   +0x00: u32 mKind (already swapped as block tag)
+         *   +0x04: u32 mSize (already swapped)
+         *   +0x08: u16 field_0x8, u16 field_0xa
+         *   +0x0C: u8 mVisible, u8 mBasePosition, 2 pad
+         *   +0x10: u64 mInfoTag
+         *   +0x18: u64 mUserInfoTag
+         *   +0x20: 9×f32 (rotOffX/Y, scaleX/Y, rotX/Y/Z, transX/Y) */
+        if (be_tag == FCC('P','A','N','2')) {
+            if (be_size >= 0x44) {
+                swap_u16_array(blk, 8, 2);   /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x10, 1); /* mInfoTag */
+                swap_u64_array(blk, 0x18, 1); /* mUserInfoTag */
+                swap_u32_array(blk, 0x20, 9); /* 9 f32 values */
+            }
+        }
+
+        /* PIC1: basic picture — PAN1 header then picture-specific data.
+         * After pane header (variable length), picture data is read via
+         * individual stream reads. We swap the pane portion as PAN1. */
+        if (be_tag == FCC('P','I','C','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1); /* infoTag */
+                swap_u16_array(blk, 16, 4); /* bounds s16×4 */
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1); /* rotZ */
+            }
+        }
+
+        /* PIC2: extended picture — PAN2 sub-block then J2DScrnBlockPictureParameter.
+         * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
+         * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
+         * After PAN2 swap, derive PictureParameter offset from panHeader.mSize
+         * to handle variable-size PAN2 sub-blocks. */
+        if (be_tag == FCC('P','I','C','2')) {
+            /* PAN2 sub-block header at blk+8 (tag + size — needed for seek) */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
+            }
+            /* PictureParameter offset derived from swapped PAN2 sub-block size */
+            u32 pan2_size = *(u32*)(blk + 0x0C);  /* already swapped above */
+            u32 pic_off = 0x08 + pan2_size;        /* PAN2 sub-block starts at +0x08 */
+            if (pan2_size >= 0x48 && pic_off + 0x30 <= be_size) {
+                swap_u16_array(blk, pic_off, 12);  /* 12 u16s */
+                swap_u16_array(blk, pic_off + 0x18, 8);   /* 8 s16s (4 TVec2<s16>) */
+                /* +0x28: 4×GXColor corner colors — byte arrays, no swap */
+            }
+        }
+
+        /* TBX1: basic textbox — PAN1 header then textbox-specific data */
+        if (be_tag == FCC('T','B','X','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1);
+                swap_u16_array(blk, 16, 4);
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+
+        /* TBX2: extended textbox — PAN2 sub-block then J2DTextBoxInfo.
+         * The PAN2 sub-block has its own 8-byte header (tag+size) at blk+8,
+         * so J2DPaneInfo fields start at blk+0x10 (not blk+0x08).
+         * After PAN2 swap, derive TextBoxInfo offset from panHeader.mSize. */
+        if (be_tag == FCC('T','B','X','2')) {
+            /* PAN2 sub-block header + fields */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
+            }
+            /* TextBoxInfo offset derived from swapped PAN2 sub-block size */
+            u32 pan2_size = *(u32*)(blk + 0x0C);  /* already swapped above */
+            u32 tbi = 0x08 + pan2_size;            /* PAN2 sub-block starts at +0x08 */
+            if (pan2_size >= 0x48 && tbi + 0x20 <= be_size) {
+                swap_u16_array(blk, tbi, 5);           /* 5 u16s (field_0x0 through mLineSpace) */
+                swap_u16_array(blk, tbi + 10, 2);      /* fontSizeX/Y */
+                /* +0x0E: u8 mHBind, u8 mVBind — byte values, no swap */
+                /* +0x10: GXColor charColor, GXColor gradColor — byte arrays, no swap */
+                swap_u16_array(blk, tbi + 0x1C, 2);    /* field_0x1c, field_0x1e */
+            }
+            /* String length u16 after TextBoxInfo */
+            u32 str_off = tbi + 0x20;
+            if (str_off + 2 <= be_size) {
+                swap_u16_array(blk, str_off, 1);
+            }
+        }
+
+        /* WIN1/WIN2: window panes — similar structure to PAN/PIC */
+        if (be_tag == FCC('W','I','N','1')) {
+            if (be_size >= 0x14) {
+                swap_u32_array(blk, 12, 1);
+                swap_u16_array(blk, 16, 4);
+                if (be_size >= 0x1A)
+                    swap_u16_array(blk, 24, 1);
+            }
+        }
+        if (be_tag == FCC('W','I','N','2')) {
+            /* PAN2 sub-block header + fields */
+            if (be_size >= 0x50) {
+                swap_u32_array(blk, 0x08, 2);     /* PAN2 tag + size (u32 each) */
+                swap_u16_array(blk, 0x10, 2);     /* field_0x8, field_0xa */
+                swap_u64_array(blk, 0x18, 1);     /* mInfoTag */
+                swap_u64_array(blk, 0x20, 1);     /* mUserInfoTag */
+                swap_u32_array(blk, 0x28, 9);     /* 9 f32 (rotOff/scale/rot/trans) */
+            }
+        }
+
+        /* TEX1: texture resource list
+         *   +0x08: u16 count, 2 pad
+         *   +0x0C: u32 dataOffset (used by getResReference to seek to entries)
+         *   +dataOffset: J2DResReference data (u16 mCount, u16 mOffsets[]) */
+        if (be_tag == FCC('T','E','X','1')) {
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 1);  /* count */
+                swap_u32_array(blk, 12, 1); /* dataOffset */
+                /* Swap J2DResReference data at dataOffset */
+                u32 dOff = *(u32*)(blk + 12);
+                if (dOff && dOff + 2 <= be_size) {
+                    swap_u16_array(blk, dOff, 1); /* mCount */
+                    u16 refCnt = *(u16*)(blk + dOff);
+                    if (refCnt > 0 && dOff + 2 + refCnt * 2 <= be_size)
+                        swap_u16_array(blk, dOff + 2, refCnt); /* mOffsets[] */
+                }
+            } else if (be_size >= 0x0C) {
+                swap_u16_array(blk, 8, 1);
+            }
+        }
+
+        /* FNT1: font resource list — same layout as TEX1 */
+        if (be_tag == FCC('F','N','T','1')) {
+            if (be_size >= 0x10) {
+                swap_u16_array(blk, 8, 1);
+                swap_u32_array(blk, 12, 1);
+                /* Swap J2DResReference data at dataOffset */
+                u32 dOff = *(u32*)(blk + 12);
+                if (dOff && dOff + 2 <= be_size) {
+                    swap_u16_array(blk, dOff, 1);
+                    u16 refCnt = *(u16*)(blk + dOff);
+                    if (refCnt > 0 && dOff + 2 + refCnt * 2 <= be_size)
+                        swap_u16_array(blk, dOff + 2, refCnt);
+                }
+            } else if (be_size >= 0x0C) {
+                swap_u16_array(blk, 8, 1);
+            }
+        }
+
+        /* MAT1: material block — full struct-aware endian swap.
+         *   +0x08: u16 count, u16 pad
+         *   +0x0C..+0x64: 23 u32 offset fields (J2DMaterialBlock)
+         *   Then sub-arrays at each offset containing material data. */
+        if (be_tag == FCC('M','A','T','1')) {
+            if (be_size < 0x68) {
+                /* Too small for full header, just swap count */
+                if (be_size >= 0x0C)
+                    swap_u16_array(blk, 8, 1);
+            } else {
+                /* Swap count at +0x08 */
+                swap_u16_array(blk, 8, 1);
+
+                /* Swap 23 u32 offset fields at +0x0C..+0x64 */
+                swap_u32_array(blk, 0x0C, 23);
+
+                u16 matCount = *(u16*)(blk + 8);
+
+                /* Read all 23 offsets (now in native endian) */
+                u32 moff[23];
+                for (int j = 0; j < 23; j++)
+                    moff[j] = *(u32*)(blk + 0x0C + j * 4);
+
+                /* Find next offset boundary after o (for computing array sizes) */
+                auto next_bound = [&](u32 o) -> u32 {
+                    u32 next = be_size;
+                    for (int j = 0; j < 23; j++)
+                        if (moff[j] > o && moff[j] < next) next = moff[j];
+                    return next;
+                };
+
+                /* moff[0] (field_0x0C) → J2DMaterialInitData (0xE8 bytes each)
+                 * Contains many u16 index fields, u8 fields (no swap). */
+                if (moff[0] && moff[0] < be_size) {
+                    u32 cnt = (next_bound(moff[0]) - moff[0]) / 0xE8;
+                    for (u32 m = 0; m < cnt; m++) {
+                        u32 b = moff[0] + m * 0xE8;
+                        if (b + 0xE8 > be_size) break;
+                        /* u8 at 0x00-0x07: no swap */
+                        swap_u16_array(blk, b + 0x08, 2);    /* field_0x8[2] */
+                        swap_u16_array(blk, b + 0x0C, 4);    /* field_0xc[4] */
+                        swap_u16_array(blk, b + 0x14, 8);    /* field_0x14[8] */
+                        swap_u16_array(blk, b + 0x24, 0xA);  /* field_0x24[10] */
+                        swap_u16_array(blk, b + 0x38, 8);    /* field_0x38[8] */
+                        swap_u16_array(blk, b + 0x48, 1);    /* field_0x48 */
+                        swap_u16_array(blk, b + 0x4A, 4);    /* field_0x4a[4] */
+                        /* u8 at 0x52-0x71: no swap */
+                        swap_u16_array(blk, b + 0x72, 0x10); /* field_0x72[16] */
+                        swap_u16_array(blk, b + 0x92, 0x4);  /* field_0x92[4] */
+                        swap_u16_array(blk, b + 0x9A, 0x10); /* field_0x9a[16] */
+                        swap_u16_array(blk, b + 0xBA, 0x10); /* field_0xba[16] */
+                        swap_u16_array(blk, b + 0xDA, 0x4);  /* field_0xda[4] */
+                        swap_u16_array(blk, b + 0xE2, 1);    /* field_0xe2 */
+                        swap_u16_array(blk, b + 0xE4, 1);    /* field_0xe4 */
+                        swap_u16_array(blk, b + 0xE6, 1);    /* field_0xe6 */
+                    }
+                }
+
+                /* moff[1] (field_0x10) → u16 material index array */
+                if (moff[1] && moff[1] < be_size && matCount > 0) {
+                    u32 cnt = matCount;
+                    if (moff[1] + cnt * 2 > be_size)
+                        cnt = (be_size - moff[1]) / 2;
+                    swap_u16_array(blk, moff[1], cnt);
+                }
+
+                /* moff[2] (field_0x14) → ResNTAB name table
+                 * u16 entryNum, u16 pad, then Entry[]{u16 hash, u16 offs} */
+                if (moff[2] && moff[2] + 4 <= be_size) {
+                    swap_u16_array(blk, moff[2], 2); /* entryNum + pad */
+                    u16 entryNum = *(u16*)(blk + moff[2]);
+                    if (entryNum > 0 && moff[2] + 4 + entryNum * 4 <= be_size)
+                        swap_u16_array(blk, moff[2] + 4, entryNum * 2);
+                }
+
+                /* moff[3] (field_0x18) → J2DIndInitData (if present)
+                 * Contains Mtx23 (f32[2][3]) at +0x0C, 3 entries of 0x1C */
+                if (moff[3] && moff[3] < be_size) {
+                    for (int k = 0; k < 3; k++) {
+                        u32 mtxBase = moff[3] + 0x0C + k * 0x1C;
+                        if (mtxBase + 0x18 <= be_size)
+                            swap_u32_array(blk, mtxBase, 6); /* Mtx23 = 6 f32 */
+                    }
+                }
+
+                /* moff[4] (field_0x1C) → _GXCullMode (u32 each) */
+                if (moff[4] && moff[4] < be_size) {
+                    u32 cnt = (next_bound(moff[4]) - moff[4]) / 4;
+                    if (cnt > 0) swap_u32_array(blk, moff[4], cnt);
+                }
+
+                /* moff[5] (field_0x20) → GXColor: {u8,u8,u8,u8} no swap */
+                /* moff[6] (field_0x24) → u8 color chan counts: no swap */
+                /* moff[7] (field_0x28) → J2DColorChanInfo: all u8, no swap */
+                /* moff[8] (field_0x2C) → u8 tex gen counts: no swap */
+                /* moff[9] (field_0x30) → J2DTexCoordInfo: all u8, no swap */
+
+                /* moff[10] (field_0x34) → J2DTexMtxInfo (0x24 bytes each)
+                 * Contains Vec (3 f32) at +0x04, J2DTextureSRTInfo (5 f32) at +0x10 */
+                if (moff[10] && moff[10] < be_size) {
+                    u32 cnt = (next_bound(moff[10]) - moff[10]) / 0x24;
+                    for (u32 t = 0; t < cnt; t++) {
+                        u32 b = moff[10] + t * 0x24;
+                        if (b + 0x24 > be_size) break;
+                        swap_u32_array(blk, b + 0x04, 3); /* Vec center */
+                        swap_u32_array(blk, b + 0x10, 5); /* SRT info */
+                    }
+                }
+
+                /* moff[11] (field_0x38) → u16 texture numbers */
+                if (moff[11] && moff[11] < be_size) {
+                    u32 cnt = (next_bound(moff[11]) - moff[11]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[11], cnt);
+                }
+
+                /* moff[12] (field_0x3C) → u16 font numbers */
+                if (moff[12] && moff[12] < be_size) {
+                    u32 cnt = (next_bound(moff[12]) - moff[12]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[12], cnt);
+                }
+
+                /* moff[13] (field_0x40) → J2DTevOrderInfo: all u8, no swap */
+
+                /* moff[14] (field_0x44) → _GXColorS10 (4 × s16 = 8 bytes each) */
+                if (moff[14] && moff[14] < be_size) {
+                    u32 cnt = (next_bound(moff[14]) - moff[14]) / 2;
+                    if (cnt > 0) swap_u16_array(blk, moff[14], cnt);
+                }
+
+                /* moff[15] (field_0x48) → GXColor K-colors: {u8} no swap */
+                /* moff[16] (field_0x4C) → u8 TEV stage counts: no swap */
+                /* moff[17] (field_0x50) → J2DTevStageInfo: all u8, no swap */
+                /* moff[18] (field_0x54) → J2DTevSwapModeInfo: all u8, no swap */
+                /* moff[19] (field_0x58) → J2DTevSwapModeTableInfo: all u8, no swap */
+                /* moff[20] (field_0x5C) → J2DAlphaCompInfo: all u8, no swap */
+                /* moff[21] (field_0x60) → J2DBlendInfo: all u8, no swap */
+                /* moff[22] (field_0x64) → u8 dither: no swap */
+            }
+        }
+
+        /* BGN1/END1/EXT1: hierarchy markers — only header (already swapped) */
+
+        pos += be_size;
+    }
+
+    fprintf(stderr, "{\"blo_swap\":\"done\",\"size\":%u,\"blocks\":%u}\n", size, blockNum);
+    return 1;
+}
+
+#endif /* PLATFORM_PC */

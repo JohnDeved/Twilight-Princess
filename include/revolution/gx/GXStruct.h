@@ -45,7 +45,11 @@ typedef struct _GXTexRegion {
 } GXTexRegion;
 
 typedef struct _GXTlutObj {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    u32 dummy[4]; /* 16 bytes: ptr(8) + fmt(4) + n_entries(2) + pad(2) */
+#else
     u32 dummy[3];
+#endif
 } GXTlutObj;
 
 typedef struct _GXTlutRegion {

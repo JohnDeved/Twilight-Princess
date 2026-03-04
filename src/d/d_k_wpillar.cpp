@@ -110,6 +110,9 @@ static int dkWpillar_Execute(dkWpillar_c* i_this) {
 }
 
 int dkWpillar_c::draw() {
+#if PLATFORM_PC
+    if (mpModel == NULL) return 1;
+#endif
     g_env_light.settingTevStruct(0x10, &pos, &mTevstr);
     g_env_light.setLightTevColorType_MAJI(mpModel, &mTevstr);
 

@@ -78,7 +78,13 @@ int dEnvSe_c::execute_common(dStage_SoundInfo_c* i_soundInf, s8* param_1, u8 par
     int i = i_soundInf->num;
     stage_sound_data* data_p = i_soundInf->entries;
 
+#if PLATFORM_PC
+    camera_class* cam_ptr = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0));
+    if (!cam_ptr) return 1;  /* camera not ready */
+    cXyz cam_eye = cam_ptr->mCamera.Eye();
+#else
     cXyz cam_eye = dComIfGp_getCamera(dComIfGp_getPlayerCameraID(0))->mCamera.Eye();
+#endif
 
     if (param_2 == 0) {
         path_roomNo = -1;

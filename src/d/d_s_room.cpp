@@ -139,11 +139,31 @@ static int loadDemoArchive(int room_no) {
             dStage_Lbnk_dt_c* entries = lbnk->entries;
 
             if (entries != NULL) {
-                int bank = entries[dComIfG_play_c::getLayerNo(room_no)].bank;
+                int layerNo = dComIfG_play_c::getLayerNo(room_no);
+#if PLATFORM_PC
+                if (layerNo < 0 || layerNo >= 15 || lbnk->num <= 0) {
+                    return 0;
+                }
+#endif
+                int bank = entries[layerNo].bank;
 
                 if (bank != 0xff) {
+#if PLATFORM_PC
+                    if (bank < 0 || bank >= 100) {
+                        fprintf(stderr, "{\"loadDemoArchive\":{\"error\":\"bank_range\",\"bank\":%d,\"room\":%d,\"layer\":%d}}\n",
+                                bank, room_no, layerNo);
+                        return 0;
+                    }
+#endif
                     JUT_ASSERT(350, 0 <= bank && bank < 100);
-                    u8 bank2 = entries[dComIfG_play_c::getLayerNo(room_no)].bank2;
+                    u8 bank2 = entries[layerNo].bank2;
+#if PLATFORM_PC
+                    if (bank2 >= 100) {
+                        fprintf(stderr, "{\"loadDemoArchive\":{\"error\":\"bank2_range\",\"bank2\":%d,\"room\":%d}}\n",
+                                (int)bank2, room_no);
+                        return 0;
+                    }
+#endif
                     JUT_ASSERT(353, 0 <= bank2 && bank2 < 100);
 
                     sprintf(dStage_roomControl_c::getDemoArcName(), "Demo%02d_%02d", bank, bank2);
@@ -167,42 +187,107 @@ static bool objectSetCheck(room_of_scene_class* i_this) {
     BOOL status_flag_8 = dComIfGp_roomControl_checkStatusFlag(roomNo, 8);
     BOOL status_flag_20 = dComIfGp_roomControl_checkStatusFlag(roomNo, 0x20);
 
+#if PLATFORM_PC
+    {
+        static int s_osc_count = 0;
+        if (s_osc_count < 20 || s_osc_count % 30 == 0) {
+            fprintf(stderr, "{\"objectSetCheck\":{\"call\":%d,\"roomNo\":%d,\"flag8\":%d,\"flag20\":%d,\"state\":%d}}\n",
+                    s_osc_count, roomNo, (int)status_flag_8, (int)status_flag_20, i_this->field_0x1d4);
+        }
+        s_osc_count++;
+    }
+#endif
+
     if (i_this->field_0x1d4 == 0 || (i_this->field_0x1d4 > 0 && !status_flag_8)) {
         if (!status_flag_8) {
             switch (i_this->field_0x1d4) {
             case 0:
                 if (!resetArchiveBank(roomNo)) {
+#if PLATFORM_PC
+                    static int s_rab_log = 0;
+                    if (s_rab_log < 5) {
+                        fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"resetArchiveBank\",\"roomNo\":%d}}\n", roomNo);
+                        s_rab_log++;
+                    }
+#endif
                     return 0;
                 }
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"resetArchiveBank_OK\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 i_this->field_0x1d4++;
             case 1:
                 if (!setArchiveBank(roomNo)) {
+#if PLATFORM_PC
+                    static int s_sab_log = 0;
+                    if (s_sab_log < 5) {
+                        fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"setArchiveBank\",\"roomNo\":%d}}\n", roomNo);
+                        s_sab_log++;
+                    }
+#endif
                     return 0;
                 }
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"setArchiveBank_OK\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
                 if (i_this->mpDzrRes != NULL) {
+#if PLATFORM_PC
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"loadDemoArchive_start\",\"roomNo\":%d}}\n", roomNo);
+#endif
                     loadDemoArchive(roomNo);
+#if PLATFORM_PC
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"loadDemoArchive_done\",\"roomNo\":%d,\"demoArc\":\"%s\"}}\n",
+                            roomNo, dStage_roomControl_c::getDemoArcName());
+#endif
                 }
             default:
                 if (*dStage_roomControl_c::getDemoArcName() != '\0') {
                     int phase = dComIfG_syncObjectRes(dStage_roomControl_c::getDemoArcName());
+#if PLATFORM_PC
+                    fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"syncObjectRes\",\"name\":\"%s\",\"result\":%d}}\n",
+                            dStage_roomControl_c::getDemoArcName(), phase);
+#endif
 
                     if (phase < 0) {
                         #if VERSION == VERSION_WII_USA_R0
                         dStage_escapeRestart();
                         #endif
                     } else if (phase > 0) {
+#if PLATFORM_PC
+                        static int s_sync_drop = 0;
+                        if (s_sync_drop < 5) {
+                            fprintf(stderr, "{\"objectSetCheck_drop\":{\"reason\":\"syncObjectRes_pending\",\"name\":\"%s\"}}\n",
+                                    dStage_roomControl_c::getDemoArcName());
+                            s_sync_drop++;
+                        }
+#endif
                         return 0;
                     }
                 }
 
                 fopAcM_create(PROC_BG, roomNo, NULL, -1, NULL, NULL, -1);
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"fopAcM_create_PROC_BG\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dComIfGp_getPEvtManager()->demoInit();
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"demoInit_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dComIfGp_getPEvtManager()->roomInit(roomNo);
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"roomInit_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dStage_dt_c_roomReLoader(i_this->mpDzrRes, i_this->mpRoomDt, roomNo);
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"roomReLoader_done\",\"roomNo\":%d}}\n", roomNo);
+#endif
                 dComIfGp_ret_wp_set(roomNo);
                 i_this->field_0x1d4 = -1;
                 i_this->field_0x1d5 = 1;
+#if PLATFORM_PC
+                fprintf(stderr, "{\"objectSetCheck_progress\":{\"step\":\"complete\",\"roomNo\":%d}}\n", roomNo);
+#endif
             }
         }
     } else if (status_flag_8) {
@@ -346,6 +431,16 @@ static int phase_2(room_of_scene_class* i_this) {
     const char* arcName = setArcName(i_this);
     int rt = dComIfG_syncStageRes(arcName);
 
+#if PLATFORM_PC
+    {
+        static int s_ph2_log = 0;
+        if (s_ph2_log < 10) {
+            fprintf(stderr, "{\"room_phase2\":{\"step\":\"syncStageRes\",\"arc\":\"%s\",\"result\":%d}}\n", arcName, rt);
+        }
+        s_ph2_log++;
+    }
+#endif
+
     if (rt < 0) {
         #if VERSION == VERSION_WII_USA_R0
         dStage_escapeRestart();
@@ -359,6 +454,10 @@ static int phase_2(room_of_scene_class* i_this) {
     }
 
     int roomNo = fopScnM_GetParam(i_this);
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"createZone\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     #if DEBUG
     JKRExpHeap* block = dStage_roomControl_c::getMemoryBlock(roomNo);
@@ -374,13 +473,31 @@ static int phase_2(room_of_scene_class* i_this) {
         dComIfGp_roomControl_setZoneNo(roomNo, dComIfGs_createZone(roomNo));
     }
 
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"getStageRes\",\"roomNo\":%d}}\n", roomNo);
+#endif
+
     i_this->mpRoomDt = dComIfGp_roomControl_getStatusRoomDt(roomNo);
+#if PLATFORM_PC
+    if (i_this->mpRoomDt == NULL) {
+        fprintf(stderr, "{\"room_phase2\":{\"step\":\"ERROR_mpRoomDt_NULL\",\"roomNo\":%d}}\n", roomNo);
+        return cPhs_ERROR_e;
+    }
+#endif
     i_this->mpRoomDt->setRoomNo(roomNo);
     i_this->mpDzrRes = dComIfG_getStageRes(arcName, "room.dzr");
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"roomLoader\",\"roomNo\":%d,\"dzrRes\":\"%p\"}}\n", roomNo, (void*)i_this->mpDzrRes);
+#endif
 
     if (i_this->mpDzrRes != NULL) {
         dStage_dt_c_roomLoader(i_this->mpDzrRes, i_this->mpRoomDt, roomNo);
     }
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"heapSetup\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     JKRHeap* old_heap = NULL;
     JKRExpHeap* heap = dStage_roomControl_c::getMemoryBlock(roomNo);
@@ -403,6 +520,10 @@ static int phase_2(room_of_scene_class* i_this) {
     if (old_heap != NULL) {
         mDoExt_setCurrentHeap(old_heap);
     }
+
+#if PLATFORM_PC
+    fprintf(stderr, "{\"room_phase2\":{\"step\":\"complete\",\"roomNo\":%d}}\n", roomNo);
+#endif
 
     return cPhs_NEXT_e;
 }
@@ -434,7 +555,20 @@ static int dScnRoom_Create(scene_class* i_this) {
     };
 
     room_of_scene_class* room = static_cast<room_of_scene_class*>(i_this);
+#if PLATFORM_PC
+    int phase = room->field_0x1c4.id;
+    int result = dComLbG_PhaseHandler(&room->field_0x1c4, l_method, i_this);
+    int roomNo = fopScnM_GetParam(i_this);
+    static int s_create_log = 0;
+    if (s_create_log < 20) {
+        fprintf(stderr, "{\"room_create\":{\"roomNo\":%d,\"phase\":%d,\"result\":%d}}\n",
+                roomNo, phase, result);
+        s_create_log++;
+    }
+    return result;
+#else
     return dComLbG_PhaseHandler(&room->field_0x1c4, l_method, i_this);
+#endif
 }
 
 static scene_method_class l_dScnRoom_Method = {

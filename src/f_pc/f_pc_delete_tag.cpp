@@ -32,7 +32,7 @@ int fpcDtTg_Do(delete_tag_class* i_deleteTag, delete_tag_func i_func) {
 
         if (i_func(i_deleteTag->base.mpTagData) == 0) {
             fpcDtTg_ToDeleteQ(i_deleteTag);
-#if DEBUG
+#if DEBUG && VERSION == VERSION_SHIELD_DEBUG
             if (i_deleteTag->unk_0x1c-- <= 0) {
                 i_deleteTag->unk_0x1c = 0;
                 if (g_fpcDbSv_service[4] != NULL) {

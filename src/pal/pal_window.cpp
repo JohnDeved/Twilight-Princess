@@ -23,10 +23,12 @@ extern "C" {
 #endif
 
 #include "pal/pal_window.h"
+#include "pal/pal_input.h"
 
 static SDL_Window* s_window = NULL;
 static int s_headless = 0;
 static int s_initialized = 0;
+static int s_sdl_initialized = 0;
 static int s_quit_requested = 0;
 
 int pal_window_init(u32 width, u32 height, const char* title) {
@@ -37,30 +39,59 @@ int pal_window_init(u32 width, u32 height, const char* title) {
     s_headless = (headless_env && headless_env[0] == '1');
 
     if (s_headless) {
-        fprintf(stderr, "{\"pal_window\":\"headless\",\"skip\":true}\n");
-        s_initialized = 1;
-        return 1;
+        /* If DISPLAY is set (Xvfb), create a real window for OpenGL rendering
+         * via Mesa's software rasterizer — no GPU needed. */
+        const char* display = getenv("DISPLAY");
+        if (!display || display[0] == '\0') {
+            fprintf(stderr, "{\"window\":\"headless\",\"display\":null,"
+                    "\"note\":\"no Xvfb, renderer will use Noop\"}\n");
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"headless\",\"display\":\"%s\","
+                "\"note\":\"Xvfb detected, creating window for software OpenGL\"}\n",
+                display);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-        fprintf(stderr, "{\"pal_window\":\"sdl_init_failed\",\"error\":\"%s\"}\n", SDL_GetError());
+        if (s_headless) {
+            fprintf(stderr, "{\"window\":\"sdl_video_failed_headless\","
+                    "\"error\":\"%s\",\"fallback\":\"Noop\"}\n", SDL_GetError());
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"sdl_init_failed\",\"error\":\"%s\"}\n",
+                SDL_GetError());
         return 0;
     }
+    s_sdl_initialized = 1;
 
+    /* In headless mode with a display (Xvfb), create a normal window so
+     * OpenGL can render to it.  On Xvfb the window is invisible to the user.
+     * Without a display, the window was never created (handled above). */
     s_window = SDL_CreateWindow(
         title ? title : "Twilight Princess",
         (int)width, (int)height,
-        SDL_WINDOW_RESIZABLE
+        s_headless ? 0 : SDL_WINDOW_RESIZABLE
     );
 
     if (!s_window) {
-        fprintf(stderr, "{\"pal_window\":\"window_create_failed\",\"error\":\"%s\"}\n", SDL_GetError());
+        if (s_headless) {
+            fprintf(stderr, "{\"window\":\"create_failed_headless\","
+                    "\"error\":\"%s\",\"fallback\":\"Noop\"}\n", SDL_GetError());
+            SDL_Quit();
+            s_initialized = 1;
+            return 1;
+        }
+        fprintf(stderr, "{\"window\":\"create_failed\",\"error\":\"%s\"}\n",
+                SDL_GetError());
         SDL_Quit();
         return 0;
     }
 
     s_initialized = 1;
-    fprintf(stderr, "{\"pal_window\":\"ready\",\"width\":%u,\"height\":%u}\n", width, height);
+    fprintf(stderr, "{\"window\":\"ready\",\"width\":%u,\"height\":%u,"
+            "\"headless\":%d}\n", width, height, s_headless);
     return 1;
 }
 
@@ -71,6 +102,9 @@ int pal_window_poll(void) {
         return !s_quit_requested;
 
     while (SDL_PollEvent(&event)) {
+        /* Forward all events to input handler */
+        pal_input_handle_event(&event);
+
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 s_quit_requested = 1;
@@ -131,8 +165,9 @@ void pal_window_shutdown(void) {
         SDL_DestroyWindow(s_window);
         s_window = NULL;
     }
-    if (s_initialized && !s_headless) {
+    if (s_sdl_initialized) {
         SDL_Quit();
+        s_sdl_initialized = 0;
     }
     s_initialized = 0;
 }

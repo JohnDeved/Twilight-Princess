@@ -1,10 +1,17 @@
 #include "JSystem/JSystem.h" // IWYU pragma: keep
+#include "global.h"
 
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DVertex.h"
 #include "JSystem/J3DGraphBase/J3DFifo.h"
 #include <dolphin/gd.h>
+#include <dolphin/gx.h>
+#if PLATFORM_PC || PLATFORM_NX_HB
+extern "C" {
+#include "pal/gx/gx_state.h"
+}
+#endif
 
 void J3DGDSetVtxAttrFmtv(_GXVtxFmt, GXVtxAttrFmtList const*, bool);
 void J3DFifoLoadPosMtxImm(Mtx, u32);
@@ -44,6 +51,14 @@ void J3DShape::addTexMtxIndexInDL(GXAttr attr, u32 valueBase) {
     bool found = false;
 
     for (GXVtxDescList* vtxDesc = getVtxDesc(); vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        /* Guard against unswapped vtxDesc data — limit iteration to prevent
+         * walking past the end of the array (max 26 GX vertex attributes). */
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL || (u32)vtxDesc->type > 3)
+            continue;
+#endif
         if (vtxDesc->attr == GX_VA_PNMTXIDX)
             pnmtxidxOffs = stride;
 
@@ -73,6 +88,12 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
     s32 attrCount = 0;
 
     for (; vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL)
+            continue;
+#endif
         if (vtxDesc->attr == GX_VA_PNMTXIDX) {
             attrIdx = stride;
         }
@@ -88,6 +109,12 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
     vtxDesc = getVtxDesc();
     GXVtxDescList* dst = newVtxDesc;
     for (; vtxDesc->attr != GX_VA_NULL; vtxDesc++) {
+#if PLATFORM_PC
+        if ((vtxDesc - getVtxDesc()) >= 26)
+            break;
+        if ((u32)vtxDesc->attr >= GX_VA_NULL)
+            continue;
+#endif
         if ((attr < vtxDesc->attr) && !inserted) {
             dst->attr = attr;
             dst->type = GX_DIRECT;
@@ -99,6 +126,9 @@ void J3DShape::addTexMtxIndexInVcd(GXAttr attr) {
 
         dst->attr = vtxDesc->attr;
         dst->type = vtxDesc->type;
+#if PLATFORM_PC
+        if (vtxDesc->type <= 3)
+#endif
         stride = stride + kSize[vtxDesc->type];
         dst++;
     }
@@ -129,11 +159,81 @@ void J3DLoadCPCmd(u8 addr, u32 val) {
 }
 
 static void J3DLoadArrayBasePtr(GXAttr attr, void* data) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On 64-bit, the pointer can't fit in the 32-bit FIFO write.
+     * Directly update the array base in the GX state machine. */
+    extern GXStateMachine g_gx_state;
+    if ((unsigned)attr < GX_MAX_VTXATTR) {
+        g_gx_state.vtx_arrays[attr].base_ptr = data;
+    }
+#else
     u32 idx = (attr == GX_VA_NBT) ? 1 : (attr - GX_VA_POS);
     J3DLoadCPCmd(0xA0 + idx, ((uintptr_t)data & 0x7FFFFFFF));
+#endif
 }
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+static void J3DLoadArrayBasePtrWithStride(GXAttr attr, void* data, u8 stride) {
+    extern GXStateMachine g_gx_state;
+    if ((unsigned)attr < GX_MAX_VTXATTR) {
+        g_gx_state.vtx_arrays[attr].base_ptr = data;
+        g_gx_state.vtx_arrays[attr].stride = stride;
+    }
+}
+#endif
+
 void J3DShape::loadVtxArray() const {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, GDSetArray (called during makeVtxArrayCmd) is a no-op, so vertex
+     * array strides in g_gx_state are never set. We must set both base_ptr AND
+     * stride here. Compute strides from the vertex format list, matching the
+     * logic in makeVtxArrayCmd(). */
+    J3DLoadArrayBasePtr(GX_VA_POS, j3dSys.getVtxPos());
+    if (!mHasNBT) {
+        J3DLoadArrayBasePtr(GX_VA_NRM, j3dSys.getVtxNrm());
+    }
+    J3DLoadArrayBasePtr(GX_VA_CLR0, j3dSys.getVtxCol());
+
+    if (mVertexData) {
+        GXVtxAttrFmtList* vtxAttr = mVertexData->getVtxAttrFmtList();
+        for (; vtxAttr && vtxAttr->attr != GX_VA_NULL; vtxAttr++) {
+            u8 s = 0;
+            switch (vtxAttr->attr) {
+            case GX_VA_POS:
+                s = (vtxAttr->type == GX_F32) ? 12 : 6;
+                J3DLoadArrayBasePtrWithStride(GX_VA_POS, j3dSys.getVtxPos(), s);
+                break;
+            case GX_VA_NRM:
+                s = (vtxAttr->type == GX_F32) ? 12 : 6;
+                if (mHasNBT) s *= 3;
+                if (!mHasNBT) {
+                    J3DLoadArrayBasePtrWithStride(GX_VA_NRM, j3dSys.getVtxNrm(), s);
+                } else {
+                    J3DLoadArrayBasePtrWithStride(GX_VA_NRM,
+                        (void*)mVertexData->getVtxNBTArray(), s);
+                }
+                break;
+            case GX_VA_CLR0:
+                J3DLoadArrayBasePtrWithStride(GX_VA_CLR0, j3dSys.getVtxCol(), 4);
+                break;
+            case GX_VA_CLR1:
+                J3DLoadArrayBasePtrWithStride(GX_VA_CLR1,
+                    mVertexData->getVtxColorArray(1), 4);
+                break;
+            case GX_VA_TEX0: case GX_VA_TEX1: case GX_VA_TEX2: case GX_VA_TEX3:
+            case GX_VA_TEX4: case GX_VA_TEX5: case GX_VA_TEX6: case GX_VA_TEX7: {
+                s = (vtxAttr->type == GX_F32) ? 8 : 4;
+                void* tcArr = mVertexData->getVtxTexCoordArray(vtxAttr->attr - GX_VA_TEX0);
+                if (tcArr) {
+                    J3DLoadArrayBasePtrWithStride((GXAttr)vtxAttr->attr, tcArr, s);
+                }
+            } break;
+            default:
+                break;
+            }
+        }
+    }
+#else
     J3DLoadArrayBasePtr(GX_VA_POS, j3dSys.getVtxPos());
 
     if (!mHasNBT) {
@@ -141,6 +241,7 @@ void J3DShape::loadVtxArray() const {
     }
 
     J3DLoadArrayBasePtr(GX_VA_CLR0, j3dSys.getVtxCol());
+#endif
 }
 
 bool J3DShape::isSameVcdVatCmd(J3DShape* other) {
@@ -255,7 +356,24 @@ void J3DShape::loadCurrentMtx() const {
 
 void J3DShape::loadPreDrawSetting() const {
     if (sOldVcdVatCmd != mVcdVatCmd) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+        /* On PC, the VCD/VAT display list buffer is empty (GD write functions
+         * are stubs that don't write to the buffer). Instead of replaying
+         * the empty DL, directly set vertex descriptors and format from the
+         * shape's stored data — this is what the GCN DL would have done. */
+        if (mVtxDesc != NULL) {
+            GXClearVtxDesc();
+            GXSetVtxDescv(mVtxDesc);
+        }
+        if (mVertexData != NULL) {
+            GXVtxAttrFmtList* fmtList = mVertexData->getVtxAttrFmtList();
+            if (fmtList != NULL) {
+                GXSetVtxAttrFmtv(GX_VTXFMT0, fmtList);
+            }
+        }
+#else
         GXCallDisplayList(mVcdVatCmd, kVcdVatDLSize);
+#endif
         sOldVcdVatCmd = mVcdVatCmd;
     }
 
@@ -265,7 +383,13 @@ void J3DShape::loadPreDrawSetting() const {
 bool J3DShape::sEnvelopeFlag;
 
 void J3DShape::setArrayAndBindPipeline() const {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, force CPU matrix load pipeline (PNCPU=3). GPU-indexed matrix
+     * loads (PNGP=0) use J3DFifoLoadIndx which writes to FIFO, never processed. */
+    J3DShapeMtx::setCurrentPipeline(3);
+#else
     J3DShapeMtx::setCurrentPipeline((mFlags & 0x1C) >> 2);
+#endif
     loadVtxArray();
     j3dSys.setModelDrawMtx(mDrawMtx[*mCurrentViewNo]);
     j3dSys.setModelNrmMtx(mNrmMtx[*mCurrentViewNo]);
@@ -277,7 +401,22 @@ void J3DShape::setArrayAndBindPipeline() const {
 
 void J3DShape::drawFast() const {
     if (sOldVcdVatCmd != mVcdVatCmd) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+        /* On PC, directly set vertex descriptors from shape data
+         * (the VCD/VAT DL buffer is empty — GD writes are no-ops on PC) */
+        if (mVtxDesc != NULL) {
+            GXClearVtxDesc();
+            GXSetVtxDescv(mVtxDesc);
+        }
+        if (mVertexData != NULL) {
+            GXVtxAttrFmtList* fmtList = mVertexData->getVtxAttrFmtList();
+            if (fmtList != NULL) {
+                GXSetVtxAttrFmtv(GX_VTXFMT0, fmtList);
+            }
+        }
+#else
         GXCallDisplayList(mVcdVatCmd, kVcdVatDLSize);
+#endif
         sOldVcdVatCmd = mVcdVatCmd;
     }
 
@@ -285,6 +424,16 @@ void J3DShape::drawFast() const {
         mCurrentMtx.load();
 
     setArrayAndBindPipeline();
+#if PLATFORM_PC
+    {
+        static int s_shape_drawfast_log = 0;
+        if (s_shape_drawfast_log < 5) {
+            fprintf(stderr, "{\"shape_drawfast\":{\"mtxGroupNum\":%u,\"noMtx\":%d}}\n",
+                    mMtxGroupNum, checkFlag(J3DShpFlag_NoMtx) ? 1 : 0);
+            s_shape_drawfast_log++;
+        }
+    }
+#endif
     if (!checkFlag(J3DShpFlag_NoMtx)) {
         if (J3DShapeMtx::getLODFlag())
             J3DShapeMtx::resetMtxLoadCache();

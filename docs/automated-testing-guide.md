@@ -426,8 +426,8 @@ include/pal/pal_milestone.h          ← Milestone C API
 src/pal/pal_milestone.cpp            ← Milestone state management
 include/pal/pal_verify.h             ← Verification system C API
 src/pal/pal_verify.cpp               ← Verification system implementation
-include/pal/gx/gx_screenshot.h      ← Software framebuffer capture + hash
-src/pal/gx/gx_screenshot.cpp        ← Software framebuffer implementation
+include/pal/gx/gx_capture.h        ← bgfx frame capture buffer + hash
+src/pal/gx/gx_capture.cpp          ← bgfx frame capture implementation
 include/pal/gx/gx_stub_tracker.h    ← GX stub hit tracker
 src/pal/gx/gx_stub_tracker.cpp      ← Stub tracker implementation
 src/pal/pal_crash.cpp                ← Crash handler (signal → JSON)

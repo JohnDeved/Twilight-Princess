@@ -976,7 +976,9 @@ void dPa_control_c::level_c::execute(dPa_control_c::level_c::emitter_c* i_emitte
 }
 
 void dPa_control_c::level_c::execute() {
+    #if PLATFORM_WII || VERSION == VERSION_SHIELD_DEBUG
     JUT_ASSERT(2134, dComIfG_inf_c::baseCsr_c::getNavi() != NULL);
+    #endif
     #if PLATFORM_WII || VERSION == VERSION_SHIELD_DEBUG
     u32 prtclId = dComIfG_inf_c::baseCsr_c::getNavi()->getParticleId();
     u32 blurID = mDoGph_gInf_c::csr_c::getBlurID();
@@ -1189,6 +1191,13 @@ u8 dPa_control_c::getRM_ID(u16 param_0) {
 }
 
 void dPa_control_c::createCommon(void const* param_0) {
+#if PLATFORM_PC
+    /* JPC (particle) binary is big-endian and needs comprehensive endian conversion.
+     * For now, skip particle system init on PC to avoid crashes.
+     * Particles are cosmetic and not needed for scene rendering. */
+    (void)param_0;
+    return;
+#endif
 #if DEBUG
     s32 heapSize = m_resHeap->getSize((void*)param_0);
     // "Resident particle resource size"
@@ -1241,6 +1250,12 @@ void dPa_control_c::createRoomScene() {
 }
 
 bool dPa_control_c::readScene(u8 param_0, mDoDvdThd_toMainRam_c** param_1) {
+#if PLATFORM_PC
+    /* Particle system not initialized on PC */
+    (void)param_0;
+    *param_1 = NULL;
+    return 0;
+#endif
     if (param_0 == 0xff || param_0 == field_0x18) {
         return 0;
     }
@@ -1259,6 +1274,11 @@ bool dPa_control_c::readScene(u8 param_0, mDoDvdThd_toMainRam_c** param_1) {
 }
 
 void dPa_control_c::createScene(void const* param_0) {
+#if PLATFORM_PC
+    /* Particle system not initialized on PC — skip scene particle creation */
+    (void)param_0;
+    return;
+#endif
     for (int i = 0; i < field_0x1a; i++) {
         field_0x1c[i].createEmitter(mEmitterMng);
     }
@@ -1281,7 +1301,7 @@ bool dPa_control_c::removeRoomScene(bool param_0) {
         return false;
     }
 
-    mEmitterMng->clearResourceManager(true);
+    if (mEmitterMng) mEmitterMng->clearResourceManager(true);
     mDoExt_destroySolidHeap(mSceneHeap);
     mSceneHeap = NULL;
     mSceneResMng = NULL;
@@ -1303,7 +1323,7 @@ void dPa_control_c::removeScene(bool param_0) {
         field_0x1c[i].removeEmitter();
     }
 
-    mEmitterMng->forceDeleteAllEmitter();
+    if (mEmitterMng) mEmitterMng->forceDeleteAllEmitter();
     dPa_modelEcallBack::remove();
 
     if (getEmitterNum()) {
@@ -1316,6 +1336,7 @@ void dPa_control_c::cleanup() {
 }
 
 void dPa_control_c::calc3D() {
+    if (mEmitterMng == NULL) return;
     if (isStatus(2)) {
         offStatus(2);
     } else {
@@ -1327,6 +1348,7 @@ void dPa_control_c::calc3D() {
 }
 
 void dPa_control_c::calc2D() {
+    if (mEmitterMng == NULL) return;
     for (u8 i = 14; i <= 16; i++) {
         mEmitterMng->calc(i);
     }
@@ -1455,6 +1477,7 @@ JPABaseEmitter* dPa_control_c::set(u8 param_0, u16 param_1, cXyz const* i_pos,
                                    cXyz const* i_scale, u8 i_alpha, dPa_levelEcallBack* param_7,
                                    s8 param_8, _GXColor const* param_9, _GXColor const* param_10,
                                    cXyz const* param_11, f32 param_12) {
+    if (mEmitterMng == NULL) return NULL;
     u8 local_e0 = getRM_ID(param_1);
     JPAResourceManager* local_a8 = mEmitterMng->getResourceManager(local_e0);
     if (local_a8 == NULL) {

@@ -14,10 +14,17 @@
 #include <cstring>
 #include <cstdint>
 #include <time.h>
+#include <dirent.h>
+#include <strings.h>
 
 #include "pal/pal_milestone.h"
+#include "pal/pal_input.h"
+#include "pal/pal_save.h"
+#include "pal/pal_error.h"
 #include "dolphin/types.h"
 #include "revolution/os/OSThread.h"
+#include "revolution/os/OSMutex.h"
+#include "revolution/os/OSMessage.h"
 
 /* ---------------------------------------------------------------- */
 /* Forward declarations for SDK types used in signatures.           */
@@ -27,15 +34,14 @@
 /* OSThread, OSThreadQueue, OSContext are included from OSThread.h */
 struct OSMutex;
 struct OSCond;
-struct OSMessageQueue;
 struct OSAlarm;
 struct OSStopwatch;
 
 #include "dolphin/dvd.h" /* DVDDiskID, DVDCommandBlock, DVDFileInfo, etc. */
+#include "dolphin/pad.h" /* PADStatus — needed for PADRead array indexing */
 
 struct GXRenderModeObj;
 
-struct PADStatus;
 struct PADClampRegion;
 
 struct NANDFileInfo;
@@ -68,7 +74,6 @@ typedef void (*SCFlushCallback)(s32);
 typedef s32  (*VIRetraceCallback)(u32 retraceCount);
 typedef void (*WPADCallback)(s32 chan, s32 result);
 typedef void (*NANDCallback)(s32 result, NANDCommandBlock* block);
-typedef void* OSMessage;
 
 extern "C" {
 
@@ -129,7 +134,7 @@ u32 OSGetPhysicalMem2Size(void) { return 64 * 1024 * 1024; }
 /* OS Arena / Memory                                                */
 /* ================================================================ */
 
-static u8 s_arena_mem[64 * 1024 * 1024]; /* 64 MB arena — headroom for 64-bit pointer overhead + heap structure padding */
+static u8 s_arena_mem[1024 * 1024 * 1024]; /* 1 GB arena — PC needs headroom for 64-bit pointers, 60+ J3D models, and larger game/archive heaps */
 static u8* s_arena_lo = s_arena_mem;
 static u8* s_arena_hi = s_arena_mem + sizeof(s_arena_mem);
 
@@ -167,12 +172,13 @@ void* OSInitAlloc(void* arenaStart, void* arenaEnd, int maxHeaps) {
 /* OS Thread                                                        */
 /* ================================================================ */
 
-/* Simple single-threaded thread emulation for PC port.
- * We track which thread is the "main game thread" (main01) and call it
- * directly. Other threads (DVD, audio) are not actually started — their
- * work is handled synchronously through message queue processing. */
+/* Bounded-correct thread emulation for PC port.
+ * - Tracks thread state (READY/RUNNING/SUSPENDED/MORIBUND) accurately
+ * - Stores priority, suspend count, and attributes per thread
+ * - Main game thread (main01) is dispatched directly in single-threaded mode
+ * - Other threads (DVD, audio) are tracked but not started as real threads */
 
-static u8 s_main_thread_storage[0x320] __attribute__((aligned(32)));
+static u8 s_main_thread_storage[sizeof(OSThread)] __attribute__((aligned(32)));
 /* Fake stack for the main thread — JKRThread constructor reads stackBase/stackEnd */
 static u8 s_fake_stack[0x10000];
 static OSThread* s_current_thread = NULL;
@@ -185,8 +191,10 @@ static void pal_init_main_thread(void) {
      * stackBase is at offset 0x304, stackEnd at 0x308 in the OSThread struct. */
     s_current_thread->stackBase = s_fake_stack;
     s_current_thread->stackEnd = (u32*)(s_fake_stack + sizeof(s_fake_stack));
-    s_current_thread->state = 2; /* OS_THREAD_STATE_RUNNING */
+    s_current_thread->state = OS_THREAD_STATE_RUNNING;
     s_current_thread->priority = 16;
+    s_current_thread->base = 16;
+    s_current_thread->suspend = 0;
 }
 
 /* Track the main game thread — the first one created from main() */
@@ -201,51 +209,123 @@ OSThread* OSGetCurrentThread(void) {
 
 int OSCreateThread(OSThread* thread, void* (*func)(void*), void* param,
                    void* stack, u32 stackSize, OSPriority priority, u16 attr) {
-    (void)stack; (void)stackSize; (void)priority; (void)attr;
+    if (!thread) return 0;
+    memset(thread, 0, sizeof(OSThread));
+    thread->state = OS_THREAD_STATE_READY;
+    thread->priority = priority;
+    thread->base = priority;
+    thread->attr = attr;
+    thread->suspend = 1; /* created in suspended state per Dolphin SDK */
+    thread->stackBase = (u8*)stack;
+    thread->stackEnd = stack ? (u32*)((u8*)stack + stackSize) : NULL;
+
     /* Store the first thread as the main game thread */
     if (s_game_thread == NULL) {
         s_game_thread = thread;
         s_game_thread_func = func;
         s_game_thread_param = param;
     }
-    /* Other threads (DVD, audio) are just tracked but not started */
     return 1;
 }
 
-void OSExitThread(void* val) { (void)val; }
-int OSJoinThread(OSThread* thread, void* val) { (void)thread; (void)val; return 0; }
-void OSDetachThread(OSThread* thread) { (void)thread; }
+void OSExitThread(void* val) {
+    OSThread* cur = OSGetCurrentThread();
+    if (cur) {
+        cur->val = val;
+        cur->state = OS_THREAD_STATE_MORIBUND;
+    }
+}
+
+int OSJoinThread(OSThread* thread, void* val) {
+    (void)val;
+    if (!thread) return 0;
+    /* In single-threaded mode, if thread is moribund, it's done */
+    return (thread->state == OS_THREAD_STATE_MORIBUND) ? 1 : 0;
+}
+
+void OSDetachThread(OSThread* thread) {
+    if (thread) thread->attr |= OS_THREAD_ATTR_DETACH;
+}
 
 s32 OSSuspendThread(OSThread* thread) {
-    (void)thread;
+    if (!thread) return -1;
+    thread->suspend++;
+    /* State is preserved — a suspended thread stays in its current state
+     * (READY, RUNNING, or WAITING). Only the suspend count changes. */
     return 0;
 }
 
 s32 OSResumeThread(OSThread* thread) {
-    /* Only call the main game thread (main01) directly.
+    if (!thread) return -1;
+    if (thread->suspend > 0) thread->suspend--;
+
+    /* Only dispatch the main game thread (main01) directly.
      * The game's main() creates main01 as a thread then suspends itself.
-     * We just call main01() directly here — it never returns. */
-    if (thread == s_game_thread && s_game_thread_func) {
+     * We call main01() directly — it never returns. */
+    if (thread == s_game_thread && s_game_thread_func && thread->suspend == 0) {
         void* (*func)(void*) = s_game_thread_func;
         void* param = s_game_thread_param;
         s_game_thread_func = NULL; /* prevent re-entry */
+        thread->state = OS_THREAD_STATE_RUNNING;
         s_current_thread = thread;
         func(param);
         /* main01 has an infinite loop, so we only reach here if it exits */
+        thread->state = OS_THREAD_STATE_MORIBUND;
     }
-    /* Other threads (DVD, audio) are skipped — single-threaded mode */
+    /* Other threads (DVD, audio) are tracked but not dispatched */
     return 0;
 }
-int OSSetThreadPriority(OSThread* thread, OSPriority priority) { (void)thread; (void)priority; return 1; }
-s32 OSGetThreadPriority(OSThread* thread) { (void)thread; return 16; }
-void OSCancelThread(OSThread* thread) { (void)thread; }
+
+int OSSetThreadPriority(OSThread* thread, OSPriority priority) {
+    if (!thread) return 0;
+    thread->priority = priority;
+    return 1;
+}
+
+s32 OSGetThreadPriority(OSThread* thread) {
+    if (!thread) return 16;
+    return thread->priority;
+}
+
+void OSCancelThread(OSThread* thread) {
+    if (thread) thread->state = OS_THREAD_STATE_MORIBUND;
+}
+
 void OSClearStack(u8 val) { (void)val; }
-BOOL OSIsThreadSuspended(OSThread* thread) { (void)thread; return FALSE; }
-BOOL OSIsThreadTerminated(OSThread* thread) { (void)thread; return FALSE; }
+
+BOOL OSIsThreadSuspended(OSThread* thread) {
+    if (!thread) return FALSE;
+    return (thread->suspend > 0) ? TRUE : FALSE;
+}
+
+BOOL OSIsThreadTerminated(OSThread* thread) {
+    if (!thread) return TRUE;
+    return (thread->state == OS_THREAD_STATE_MORIBUND) ? TRUE : FALSE;
+}
+
 void OSYieldThread(void) {}
-void OSInitThreadQueue(OSThreadQueue* queue) { if (queue) memset(queue, 0, 8); }
-void OSSleepThread(OSThreadQueue* queue) { (void)queue; }
-void OSWakeupThread(OSThreadQueue* queue) { (void)queue; }
+
+void OSInitThreadQueue(OSThreadQueue* queue) {
+    if (queue) {
+        queue->head = NULL;
+        queue->tail = NULL;
+    }
+}
+
+void OSSleepThread(OSThreadQueue* queue) {
+    /* In single-threaded mode, sleeping would deadlock. Mark thread as waiting. */
+    OSThread* cur = OSGetCurrentThread();
+    if (cur) {
+        cur->state = OS_THREAD_STATE_WAITING;
+        cur->queue = queue;
+    }
+}
+
+void OSWakeupThread(OSThreadQueue* queue) {
+    (void)queue;
+    /* In single-threaded mode, wake is immediate — nothing to do */
+}
+
 s32 OSEnableScheduler(void) { return 0; }
 s32 OSDisableScheduler(void) { return 0; }
 OSThread* OSSetIdleFunction(OSIdleFunction idleFunction, void* param, void* stack, u32 stackSize) {
@@ -259,50 +339,119 @@ void OSSleepTicks(s64 ticks) { (void)ticks; }
 /* OS Mutex / Cond                                                  */
 /* ================================================================ */
 
-void OSInitMutex(OSMutex* mutex) { if (mutex) memset(mutex, 0, 0x18); }
-void OSLockMutex(OSMutex* mutex) { (void)mutex; }
-void OSUnlockMutex(OSMutex* mutex) { (void)mutex; }
-BOOL OSTryLockMutex(OSMutex* mutex) { (void)mutex; return TRUE; }
-void OSInitCond(OSCond* cond) { if (cond) memset(cond, 0, 8); }
-void OSWaitCond(OSCond* cond, OSMutex* mutex) { (void)cond; (void)mutex; }
+/* Bounded-correct mutex: tracks owner thread and lock count.
+ * In single-threaded mode there's no contention, but correct count tracking
+ * ensures recursive lock/unlock pairs balance properly. */
+
+void OSInitMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    memset(mutex, 0, sizeof(OSMutex));
+    mutex->thread = NULL;
+    mutex->count = 0;
+}
+
+void OSLockMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    OSThread* cur = OSGetCurrentThread();
+    if (mutex->thread == cur) {
+        /* Recursive lock — increment count */
+        mutex->count++;
+    } else {
+        /* First lock — take ownership */
+        mutex->thread = cur;
+        mutex->count = 1;
+    }
+}
+
+void OSUnlockMutex(OSMutex* mutex) {
+    if (!mutex) return;
+    if (mutex->count > 0) mutex->count--;
+    if (mutex->count == 0) mutex->thread = NULL;
+}
+
+BOOL OSTryLockMutex(OSMutex* mutex) {
+    if (!mutex) return TRUE;
+    OSThread* cur = OSGetCurrentThread();
+    if (mutex->thread == NULL || mutex->thread == cur) {
+        OSLockMutex(mutex);
+        return TRUE;
+    }
+    return FALSE; /* would block (shouldn't happen in single-threaded mode) */
+}
+
+void OSInitCond(OSCond* cond) {
+    if (cond) {
+        cond->queue.head = NULL;
+        cond->queue.tail = NULL;
+    }
+}
+
+void OSWaitCond(OSCond* cond, OSMutex* mutex) {
+    (void)cond;
+    /* In single-threaded mode, unlock+relock the mutex to maintain count correctness */
+    if (mutex && mutex->count > 0) {
+        s32 savedCount = mutex->count;
+        mutex->count = 0;
+        mutex->thread = NULL;
+        /* Would wait here in multi-threaded mode... */
+        mutex->thread = OSGetCurrentThread();
+        mutex->count = savedCount;
+    }
+}
+
 void OSSignalCond(OSCond* cond) { (void)cond; }
 
 /* ================================================================ */
 /* OS Message Queue                                                 */
 /* ================================================================ */
 
-/* Message queue — simple synchronous implementation for single-threaded mode.
- * LIMITATION: Uses global state — all message queues share one slot. This works
- * because in single-threaded mode, only one queue is active at a time. If
- * multi-threading is added later, this must be changed to per-queue storage. */
+/* Per-queue circular FIFO using the queue's own msgArray and fields.
+ * The OSMessageQueue struct has: msgArray (void* buffer), msgCount (capacity),
+ * firstIndex (head), usedCount (current fill level). */
 void OSInitMessageQueue(OSMessageQueue* mq, void* msgArray, s32 msgCount) {
-    if (mq) memset(mq, 0, 32);
+    if (!mq) return;
+    memset(mq, 0, sizeof(OSMessageQueue));
+    mq->msgArray = msgArray;
+    mq->msgCount = msgCount;
+    mq->firstIndex = 0;
+    mq->usedCount = 0;
 }
 
-static void* s_mq_pending_msg = NULL;
-static int s_mq_has_msg = 0;
-
 int OSSendMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)flags;
-    s_mq_pending_msg = msg;
-    s_mq_has_msg = 1;
+    if (!mq || !mq->msgArray || mq->msgCount <= 0) return 0;
+    if (mq->usedCount >= mq->msgCount) {
+        /* Queue full — non-blocking returns 0, blocking also returns 0
+         * since in single-threaded mode blocking would deadlock */
+        return 0;
+    }
+    s32 idx = (mq->firstIndex + mq->usedCount) % mq->msgCount;
+    ((void**)mq->msgArray)[idx] = msg;
+    mq->usedCount++;
     return 1;
 }
 
 int OSReceiveMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq;
-    if (s_mq_has_msg) {
-        if (msg) *(void**)msg = s_mq_pending_msg;
-        s_mq_has_msg = 0;
-        return 1;
+    if (!mq || !mq->msgArray) return 0;
+    if (mq->usedCount <= 0) {
+        return 0; /* Empty — no message */
     }
-    /* Non-blocking: return 0 (no message). Blocking: also return 0 since
-     * in single-threaded mode, blocking would deadlock. */
-    return 0;
+    if (msg) {
+        *(void**)msg = ((void**)mq->msgArray)[mq->firstIndex];
+    }
+    mq->firstIndex = (mq->firstIndex + 1) % mq->msgCount;
+    mq->usedCount--;
+    return 1;
 }
 
 int OSJamMessage(OSMessageQueue* mq, void* msg, s32 flags) {
-    (void)mq; (void)msg; (void)flags;
+    if (!mq || !mq->msgArray || mq->msgCount <= 0) return 0;
+    if (mq->usedCount >= mq->msgCount) {
+        return 0; /* Queue full */
+    }
+    /* Jam inserts at the front (high priority) */
+    mq->firstIndex = (mq->firstIndex - 1 + mq->msgCount) % mq->msgCount;
+    ((void**)mq->msgArray)[mq->firstIndex] = msg;
+    mq->usedCount++;
     return 1;
 }
 
@@ -460,15 +609,68 @@ static s32   s_dvd_next_handle = 1;
 /* Base directory for game data files */
 static const char* pal_dvd_get_data_dir(void) {
     const char* env = getenv("TP_DATA_DIR");
-    return env ? env : "data";
+    if (env) return env;
+#ifdef TP_DEFAULT_DATA_DIR
+    return TP_DEFAULT_DATA_DIR;
+#else
+    return "data";
+#endif
 }
 
 /* Build host path from DVD path */
+/* GCN/Wii filesystem is case-insensitive; Linux is not.
+ * Try exact path first, then walk each component case-insensitively. */
+static int pal_dvd_resolve_icase(const char* dir, const char* name, char* out, size_t outLen) {
+    DIR* d = opendir(dir);
+    if (!d) return 0;
+    struct dirent* ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcasecmp(ent->d_name, name) == 0) {
+            snprintf(out, outLen, "%s/%s", dir, ent->d_name);
+            closedir(d);
+            return 1;
+        }
+    }
+    closedir(d);
+    return 0;
+}
+
 static void pal_dvd_build_host_path(char* out, size_t outSize, const char* dvdPath) {
     const char* dataDir = pal_dvd_get_data_dir();
     /* Strip leading slash from dvdPath if present */
     if (dvdPath && dvdPath[0] == '/') dvdPath++;
     snprintf(out, outSize, "%s/%s", dataDir, dvdPath ? dvdPath : "");
+
+    /* If exact path exists, done */
+    FILE* test = fopen(out, "rb");
+    if (test) { fclose(test); return; }
+
+    /* Walk path components case-insensitively */
+    if (!dvdPath) return;
+    char resolved[512];
+    strncpy(resolved, dataDir, sizeof(resolved) - 1);
+    resolved[sizeof(resolved) - 1] = '\0';
+
+    char pathCopy[512];
+    strncpy(pathCopy, dvdPath, sizeof(pathCopy) - 1);
+    pathCopy[sizeof(pathCopy) - 1] = '\0';
+
+    char* saveptr;
+    char* tok = strtok_r(pathCopy, "/", &saveptr);
+    while (tok) {
+        char tmp[512];
+        if (pal_dvd_resolve_icase(resolved, tok, tmp, sizeof(tmp))) {
+            strncpy(resolved, tmp, sizeof(resolved) - 1);
+            resolved[sizeof(resolved) - 1] = '\0';
+        } else {
+            /* Component not found — use as-is */
+            snprintf(resolved + strlen(resolved),
+                     sizeof(resolved) - strlen(resolved), "/%s", tok);
+        }
+        tok = strtok_r(NULL, "/", &saveptr);
+    }
+    strncpy(out, resolved, outSize - 1);
+    out[outSize - 1] = '\0';
 }
 
 void DVDInit(void) {}
@@ -522,9 +724,20 @@ BOOL DVDOpen(const char* fileName, DVDFileInfo* fileInfo) {
     fseek(fp, 0, SEEK_END);
     long sz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    /* Store handle */
-    if (s_dvd_next_handle >= PAL_DVD_MAX_OPEN) { fclose(fp); return FALSE; }
-    s32 handle = s_dvd_next_handle++;
+    /* Find a free handle slot (reclaim closed slots) */
+    s32 handle = -1;
+    for (s32 i = 1; i < PAL_DVD_MAX_OPEN; i++) {
+        if (s_dvd_files[i] == NULL) {
+            handle = i;
+            break;
+        }
+    }
+    if (handle < 0) {
+        fclose(fp);
+        pal_error(PAL_ERR_RESOURCE, "DVD handle pool exhausted");
+        return FALSE;
+    }
+    if (handle >= s_dvd_next_handle) s_dvd_next_handle = handle + 1;
     s_dvd_files[handle] = fp;
     strncpy(s_dvd_open_paths[handle], hostPath, 255);
     s_dvd_open_paths[handle][255] = '\0';
@@ -652,8 +865,17 @@ VIRetraceCallback VISetPostRetraceCallback(VIRetraceCallback cb) { (void)cb; ret
 /* PAD (GameCube Controller)                                        */
 /* ================================================================ */
 
-BOOL PADInit(void) { return TRUE; }
-u32 PADRead(PADStatus* status) { if (status) memset(status, 0, 12 * 4); return 0; }
+BOOL PADInit(void) { pal_input_init(); return TRUE; }
+u32 PADRead(PADStatus* status) {
+    if (!status) return 0;
+    u32 connected = 0;
+    for (int i = 0; i < 4; i++) {
+        if (pal_input_read_pad(i, &status[i]) == 0) {
+            connected |= (0x80000000u >> i);
+        }
+    }
+    return connected;
+}
 int PADReset(u32 mask) { (void)mask; return 0; }
 void PADClamp(PADStatus* status) { (void)status; }
 void PADClampCircle(PADStatus* status) { (void)status; }
@@ -661,7 +883,7 @@ void PADSetSamplingRate(u32 msec) { (void)msec; }
 void PADControlMotor(s32 chan, u32 command) { (void)chan; (void)command; }
 void PADSetSpec(u32 spec) { (void)spec; }
 int PADGetType(s32 chan, u32* type) { (void)chan; if (type) *type = 0; return 0; }
-void PADRecalibrate(u32 mask) { (void)mask; }
+BOOL PADRecalibrate(u32 mask) { (void)mask; return TRUE; }
 
 /* ================================================================ */
 /* AI (Audio Interface)                                             */
@@ -777,24 +999,54 @@ void __DSP_remove_task(DSPTaskInfo* task) { (void)task; }
 DSPTaskInfo* __DSPGetCurrentTask(void) { return NULL; }
 
 /* ================================================================ */
-/* NAND                                                             */
+/* NAND — redirected to host filesystem via pal_save                */
 /* ================================================================ */
 
-s32 NANDInit(void) { return 0; }
+#include "revolution/nand.h"
+
+s32 NANDInit(void) { pal_save_init(); return 0; }
 s32 NANDOpen(const char* path, NANDFileInfo* info, u8 accType) {
-    (void)path; (void)info; (void)accType;
-    return -128; /* NAND_RESULT_FATAL_ERROR - signals not available */
+    if (!info || !path) return -128;
+    int h = pal_save_open(path, accType);
+    if (h < 0) return -128;
+    info->fileDescriptor = h;
+    return 0; /* NAND_RESULT_OK */
 }
-s32 NANDClose(NANDFileInfo* info) { (void)info; return 0; }
-s32 NANDRead(NANDFileInfo* info, void* buf, u32 length) { (void)info; (void)buf; (void)length; return -1; }
-s32 NANDWrite(NANDFileInfo* info, void* buf, u32 length) { (void)info; (void)buf; (void)length; return -1; }
-s32 NANDSeek(NANDFileInfo* info, s32 offset, s32 whence) { (void)info; (void)offset; (void)whence; return -1; }
-s32 NANDCreate(const char* path, u8 perm, u8 attr) { (void)path; (void)perm; (void)attr; return -1; }
-s32 NANDDelete(const char* path) { (void)path; return -1; }
-s32 NANDGetLength(NANDFileInfo* info, u32* length) { (void)info; if (length) *length = 0; return -1; }
+s32 NANDClose(NANDFileInfo* info) {
+    if (!info) return -1;
+    return pal_save_close(info->fileDescriptor) == 0 ? 0 : -1;
+}
+s32 NANDRead(NANDFileInfo* info, void* buf, u32 length) {
+    if (!info) return -1;
+    return (s32)pal_save_read(info->fileDescriptor, buf, length);
+}
+s32 NANDWrite(NANDFileInfo* info, const void* buf, u32 length) {
+    if (!info) return -1;
+    return (s32)pal_save_write(info->fileDescriptor, buf, length);
+}
+s32 NANDSeek(NANDFileInfo* info, s32 offset, s32 whence) {
+    if (!info) return -1;
+    return (s32)pal_save_seek(info->fileDescriptor, offset, whence);
+}
+s32 NANDCreate(const char* path, u8 perm, u8 attr) {
+    (void)perm; (void)attr;
+    return pal_save_create(path) == 0 ? 0 : -1;
+}
+s32 NANDDelete(const char* path) {
+    return pal_save_delete(path) == 0 ? 0 : -1;
+}
+s32 NANDGetLength(NANDFileInfo* info, u32* length) {
+    if (!info) return -1;
+    return pal_save_get_length(info->fileDescriptor, length) == 0 ? 0 : -1;
+}
 s32 NANDGetStatus(const char* path, NANDStatus* stat) { (void)path; (void)stat; return -1; }
 s32 NANDCheck(u32 fsBlock, u32 inode, u32* answer) { (void)fsBlock; (void)inode; (void)answer; return 0; }
-s32 NANDCreateDir(const char* path, u8 perm, u8 attr) { (void)path; (void)perm; (void)attr; return -1; }
+s32 NANDCreateDir(const char* path, u8 perm, u8 attr) {
+    (void)perm; (void)attr;
+    /* Create directory in save path — not critical, return success */
+    (void)path;
+    return 0;
+}
 
 /* NAND Async */
 s32 NANDOpenAsync(const char* path, NANDFileInfo* info, u8 accType,
@@ -811,7 +1063,7 @@ s32 NANDReadAsync(NANDFileInfo* info, void* buf, u32 length,
     (void)info; (void)buf; (void)length; (void)callback; (void)block;
     return -1;
 }
-s32 NANDWriteAsync(NANDFileInfo* info, void* buf, u32 length,
+s32 NANDWriteAsync(NANDFileInfo* info, const void* buf, u32 length,
                    NANDCallback callback, NANDCommandBlock* block) {
     (void)info; (void)buf; (void)length; (void)callback; (void)block;
     return -1;

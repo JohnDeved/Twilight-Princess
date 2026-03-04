@@ -28,11 +28,21 @@
 #include "d/actor/d_a_ykgr.h"
 #include <cstring>
 
+#if PLATFORM_PC
+#include <signal.h>
+#include <setjmp.h>
+#include <stdio.h>
+static sigjmp_buf s_predraw_jmpbuf;
+static void pal_predraw_crash_handler(int sig) {
+    siglongjmp(s_predraw_jmpbuf, sig);
+}
+#endif
+
 #if PLATFORM_WII
 #include "d/d_cursor_mng.h"
 #endif
 
-static void dScnPly_Create(scene_class*);
+static int dScnPly_Create(scene_class*);
 static int dScnPly_Delete(dScnPly_c*);
 static int dScnPly_IsDelete(dScnPly_c);
 static int dScnPly_Execute(dScnPly_c*);
@@ -100,10 +110,38 @@ void dScnPly_env_debugHIO_c::genMessage(JORMContext* ctx) {
 }
 
 static int dScnPly_Draw(dScnPly_c* i_this) {
+#if PLATFORM_PC
+    static int s_scnply_draw_count = 0;
+    s_scnply_draw_count++;
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d start\n", s_scnply_draw_count);
+    }
+#endif
     static s16 l_wipeType[] = {
         0x0000, 0x0000, 0x0011, 0x0002, 0x0002, 0x0001, 0x0003, 0x0001, 0x0004, 0x0004, 0x0005, 0x0005,
         0x0006, 0x0007, 0x0000, 0x0000, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0008, 0x0008,
     };
+
+#if PLATFORM_PC
+    /* Wrap pre-Draw calls with crash protection so that a crash in
+     * collision/BG processing doesn't prevent the Draw iterator from
+     * running (which is where BG actor registers shapes → dl_draws). */
+    {
+        static sigjmp_buf s_predraw_jmpbuf;
+        struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_predraw_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
+        sigaction(SIGSEGV, &sa_new, &sa_old_segv);
+        sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+        if (sigsetjmp(s_predraw_jmpbuf, 1) != 0) {
+            sigaction(SIGSEGV, &sa_old_segv, NULL);
+            sigaction(SIGABRT, &sa_old_abrt, NULL);
+            fprintf(stderr, "[PAL] dScnPly_Draw: crash in pre-Draw (Ccsp/Bgsp), skipping to Draw iterator\n");
+            goto draw_iterator;
+        }
+#endif
 
     dComIfG_Ccsp()->Move();
     dComIfG_Bgsp().ClrMoveFlag();
@@ -138,6 +176,12 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
     dMdl_mng_c::reset();
 
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step1: pre-BgMove\n", s_scnply_draw_count);
+    }
+#endif
+
     if (!dComIfGp_isPauseFlag() && dScnPly_c::pauseTimer == 0) {
         if (fpcM_GetName(i_this) == PROC_PLAY_SCENE) {
             dComIfGp_getVibration().Run();
@@ -157,15 +201,80 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
         }
     }
 
-    for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
-        fpcM_Draw(i->mpTagData);
+#if PLATFORM_PC
+        sigaction(SIGSEGV, &sa_old_segv, NULL);
+        sigaction(SIGABRT, &sa_old_abrt, NULL);
+    }
+    draw_iterator:
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step2: pre-DrawIter\n", s_scnply_draw_count);
+    }
+#endif
+
+    {
+        int draw_count = 0;
+        for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
+#if PLATFORM_PC
+            if (draw_count < 10 && s_scnply_draw_count <= 2) {
+                base_process_class* p = (base_process_class*)i->mpTagData;
+                if (p) fprintf(stderr, "{\"draw_iter\":{\"idx\":%d,\"prof\":%d,\"id\":%u}}\n",
+                        draw_count, p->profname, p->id);
+            }
+            draw_count++;
+#endif
+            fpcM_Draw(i->mpTagData);
+        }
+#if PLATFORM_PC
+        if (s_scnply_draw_count <= 2) {
+            fprintf(stderr, "{\"draw_iter_total\":{\"count\":%d}}\n", draw_count);
+        }
+#endif
     }
 
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step3: post-DrawIter\n", s_scnply_draw_count);
+    }
+#endif
+
+#if PLATFORM_PC
+    /* Wrap post-Draw calls with crash protection — these can crash
+     * due to uninitialized state (player, collision, etc.) in the
+     * opening scene. Skip them on crash so the frame completes. */
+    {
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_predraw_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_predraw_jmpbuf, 1) == 0) {
+            if (!dComIfGp_isPauseFlag()) {
+                dEyeHL_mng_c::update();
+                dComIfG_Ccsp()->Draw();
+                if (dComIfGp_getPlayer(0) != NULL)
+                    dComIfGp_getAttention()->Draw();
+            }
+        } else {
+            fprintf(stderr, "[PAL] dScnPly_Draw: crash in post-Draw (Ccsp/Attention), skipped\n");
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+    }
+#else
     if (!dComIfGp_isPauseFlag()) {
         dEyeHL_mng_c::update();
         dComIfG_Ccsp()->Draw();
         dComIfGp_getAttention()->Draw();
     }
+#endif
+
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d done\n", s_scnply_draw_count);
+    }
+#endif
 
     return 1;
 }
@@ -191,6 +300,9 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
     if (!dComIfGp_isPauseFlag()) {
         dDemo_c::update();
         dComIfGp_getEvent()->Step();
+#if PLATFORM_PC
+        if (dComIfGp_getPlayer(0) != NULL)
+#endif
         dComIfGp_getAttention()->Run();
     }
     return 1;
@@ -290,6 +402,12 @@ static int dScnPly_Delete(dScnPly_c* i_this) {
 
 bool dScnPly_c::resetGame() {
     if (fpcM_GetName(this) == PROC_OPENING_SCENE) {
+#if PLATFORM_PC
+        /* On PC, archive bank syncing and audio reset can block forever
+         * because DVD-thread resources may never finish loading and audio
+         * callback doesn't run. Skip these for opening scene. */
+        (void)dStage_roomControl_c::resetArchiveBank(0);
+#else
         if (!dStage_roomControl_c::resetArchiveBank(0)) {
             return false;
         }
@@ -297,6 +415,7 @@ bool dScnPly_c::resetGame() {
         if (!mDoAud_resetRecover()) {
             return false;
         }
+#endif
 
         if (mDoRst::isReset()) {
             field_0x1d4 = 1;
@@ -343,6 +462,7 @@ static int phase_00(dScnPly_c* i_this) {
 }
 
 static int phase_01(dScnPly_c* i_this) {
+#if !PLATFORM_PC
     mDoAud_setHour(dKy_getdaytime_hour());
     mDoAud_setMinute(dKy_getdaytime_minute());
     mDoAud_setWeekday(dKy_get_dayofweek());
@@ -363,6 +483,9 @@ static int phase_01(dScnPly_c* i_this) {
     } else {
         return cPhs_NEXT_e;
     }
+#else
+    return cPhs_NEXT_e;
+#endif
 }
 
 static int phase_0(dScnPly_c* i_this) {
@@ -521,9 +644,20 @@ static int phase_1(dScnPly_c* i_this) {
 static int phase_1_0(dScnPly_c* i_this) {
     static char camparamarc[10] = "CamParam";
 
+#if PLATFORM_PC
+    /* On PC, syncStageRes can return -1 (resource not registered) if stage
+     * archive loading failed due to setRes error. Treat -1 as "done" to
+     * avoid getting stuck in phase_1_0 forever. */
+    int stgSync = dComIfG_syncStageRes("Stg_00");
+    if (stgSync > 0) {
+        return cPhs_INIT_e;
+    }
+#else
     if (dComIfG_syncStageRes("Stg_00")) {
         return cPhs_INIT_e;
-    } else {
+    }
+#endif
+    {
         dStage_infoCreate();
         dComIfG_setObjectRes("Event", (u8)0, NULL);
         dComIfGp_setCameraParamFileName(0, camparamarc);
@@ -534,9 +668,23 @@ static int phase_1_0(dScnPly_c* i_this) {
 
 static int phase_2(dScnPly_c* i_this) {
     int tmp = dComIfG_syncAllObjectRes();
+#if PLATFORM_PC
+    /* On PC, some object resources may never finish loading (e.g. archives
+     * that depend on missing REL modules). After 120 frames, force progress
+     * to avoid getting stuck in phase_2 forever. */
+    static int s_phase2_wait = 0;
+    if (tmp >= 0 && tmp != 0) {
+        s_phase2_wait++;
+        if (s_phase2_wait <= 120) {
+            return cPhs_INIT_e;
+        }
+    }
+    s_phase2_wait = 0;
+#else
     if (tmp >= 0 && tmp != 0) {
         return cPhs_INIT_e;
     }
+#endif
 
     u8 particle_no = dStage_stagInfo_GetParticleNo(dComIfGp_getStage()->getStagInfo(),
                                                    dComIfG_play_c::getLayerNo(0));
@@ -550,9 +698,15 @@ static int phase_2(dScnPly_c* i_this) {
 }
 
 static int phase_3(dScnPly_c* i_this) {
-    if ((i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) || mDoAud_check1stDynamicWave()) {
+    if (i_this->sceneCommand != NULL && !i_this->sceneCommand->sync()) {
         return cPhs_INIT_e;
     }
+
+#if !PLATFORM_PC
+    if (mDoAud_check1stDynamicWave()) {
+        return cPhs_INIT_e;
+    }
+#endif
 
     if (i_this->field_0x1d0 != NULL && !i_this->field_0x1d0->sync()) {
         return cPhs_INIT_e;
@@ -625,12 +779,33 @@ static int phase_4(dScnPly_c* i_this) {
     mDoGph_gInf_c::setTickRate((OS_BUS_CLOCK / 4) / 30);
     g_envHIO.field_0x4 = -1;
     g_save_bit_HIO.field_0x4 = -1;
+#if PLATFORM_PC
+    /* On PC, the opening scene has no player actor. dAttention_c
+     * constructor accesses Always.arc animation resources that may
+     * have corrupt endian data, causing SIGSEGV cascades. Skip when
+     * no player exists. */
+    if (dComIfGp_getPlayer(0) != NULL)
+#endif
     new (dComIfGp_getAttention()) dAttention_c(dComIfGp_getPlayer(0), 0);
     dComIfGp_getVibration().Init();
     daYkgr_c::init();
 
     dComIfG_setBrightness(255);
     mDoGph_gInf_c::offFade();
+#if PLATFORM_PC
+    /* On PC, the overlap fade actor may not execute the fade-in transition
+     * correctly (timing differences, missing audio sync).  Force the fader
+     * to "fully black" state and start a fade-in (same pattern as
+     * dOvlpFd_startFadeIn). */
+    {
+        JUTFader* fader = mDoGph_gInf_c::getFader();
+        if (fader) {
+            fader->setStatus(JUTFader::UNKSTATUS_0, 0);
+            fader->setStatus(JUTFader::UNKSTATUS_0, -1);
+            fader->startFadeIn(30);
+        }
+    }
+#endif
     mDoAud_zelAudio_c::onBgmSet();
     dScnPly_c::pauseTimer = 0;
     dScnPly_c::nextPauseTimer = 0;
@@ -718,7 +893,7 @@ static int phase_compleate(void* i_this) {
     return cPhs_COMPLEATE_e;
 }
 
-static void dScnPly_Create(scene_class* i_this) {
+static int dScnPly_Create(scene_class* i_this) {
     static request_of_phase_process_fn l_method[] = {
         (request_of_phase_process_fn)phase_00,        (request_of_phase_process_fn)phase_1,
         (request_of_phase_process_fn)phase_1_0,       (request_of_phase_process_fn)phase_01,
@@ -728,7 +903,7 @@ static void dScnPly_Create(scene_class* i_this) {
         (request_of_phase_process_fn)phase_compleate,
     };
 
-    dComLbG_PhaseHandler(&static_cast<dScnPly_c*>(i_this)->field_0x1c4, l_method, i_this);
+    return dComLbG_PhaseHandler(&static_cast<dScnPly_c*>(i_this)->field_0x1c4, l_method, i_this);
 }
 
 static scene_method_class l_dScnPly_Method = {

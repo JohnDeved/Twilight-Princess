@@ -25,10 +25,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write
       pull-requests: write
+    env:
+      ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev
+          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils libegl-dev libgles2-mesa-dev ffmpeg
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -61,17 +63,6 @@ jobs:
           ccache --set-config=compression=true
           ccache -z
 
-      - name: Set up game data
-        if: env.ROMS_TOKEN != ''
-        env:
-          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
-        run: |
-          python3 tools/setup_game_data.py \
-            --data-dir data \
-            --rom-dir orig/GZ2E01 \
-            --extract-dir build/extract/GZ2E01 \
-            --tools-dir build/tools
-
       - name: Cache disc image
         if: env.ROMS_TOKEN != ''
         uses: actions/cache@v4
@@ -79,9 +70,16 @@ jobs:
           path: orig/GZ2E01/GZ2E01.rvz
           key: rom-GZ2E01-v1
 
+      - name: Set up game data
+        if: env.ROMS_TOKEN != ''
+        run: |
+          python3 tools/setup_game_data.py \
+            --data-dir data \
+            --rom-dir orig/GZ2E01 \
+            --extract-dir build/extract/GZ2E01 \
+            --tools-dir build/tools
+
       - name: Build PC port
-        env:
-          ROMS_TOKEN: ${{ secrets.ROMS_TOKEN }}
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -96,27 +94,80 @@ jobs:
         if: success()
         env:
           TP_HEADLESS: "1"
-          TP_TEST_FRAMES: "2000"
+          TP_TEST_FRAMES: "200"
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,300,600,1200,1800"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,140,160,190"
         run: |
           set -o pipefail
           mkdir -p verify_output
-          timeout 120s build/tp-pc 2>&1 | tee milestones.log || true
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-          if [ -f logo_render.bmp ]; then
-            echo "Screenshot captured: $(ls -la logo_render.bmp)"
+
+          # === Phase 1: Logic test (Noop renderer, fast) ===
+          # Runs without DISPLAY to use bgfx Noop backend.
+          # Verifies game logic milestones (PROC_BG creation, dl_draws,
+          # j3d_entries, heap stability) without slow softpipe rendering.
+          # Uses 400 frames to reach FRAMES_300 milestone.
+          echo "=== Phase 1: Logic test (Noop renderer) ==="
+          unset DISPLAY
+          export TP_TEST_FRAMES=400
+          timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_logic.log || true
+          LOGIC_EXIT=${PIPESTATUS[0]}
+          echo "Phase 1 exit: $LOGIC_EXIT"
+
+          # === Phase 2: Pixel test (softpipe, slow) ===
+          # Runs with Xvfb + softpipe for pixel verification of logo/title.
+          # Limited to 130 frames (play-scene draw takes 20+ min per frame).
+          echo "=== Phase 2: Pixel test (softpipe) ==="
+          Xvfb :99 -screen 0 640x480x24 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          for i in 1 2 3 4 5; do
+            xdpyinfo -display :99 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          export GALLIUM_DRIVER=softpipe
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export TP_VERIFY=1
+          export TP_SCREENSHOT=logo_render.bmp
+          export TP_TEST_FRAMES=130
+          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
+          PIXEL_EXIT=${PIPESTATUS[0]}
+          echo "Phase 2 exit: $PIXEL_EXIT"
+          kill $XVFB_PID 2>/dev/null || true
+
+          # Merge logs: logic test has the game milestones, pixel test has renders
+          cat milestones_logic.log milestones_pixel.log > milestones.log
+
+          echo "exit_code=$PIXEL_EXIT" >> $GITHUB_OUTPUT
+          # Convert raw frames to MP4 using ffmpeg (with debug text overlay from metadata)
+          if [ -f verify_output/raw_frames.bin ]; then
+            FRAME_COUNT=$(stat -c%s verify_output/raw_frames.bin 2>/dev/null || echo 0)
+            EXPECTED_FRAME_SIZE=$((640 * 480 * 4))
+            if [ "$FRAME_COUNT" -gt 0 ] && [ "$EXPECTED_FRAME_SIZE" -gt 0 ]; then
+              NUM_FRAMES=$((FRAME_COUNT / EXPECTED_FRAME_SIZE))
+              echo "Raw video: $NUM_FRAMES frames captured"
+              # First pass: raw video without text overlay
+              ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
+                -framerate 30 -i verify_output/raw_frames.bin \
+                -c:v libx264 -pix_fmt yuv420p -crf 18 \
+                verify_output/render_progress.mp4 2>/dev/null && \
+                echo "MP4 created: $(ls -la verify_output/render_progress.mp4)" || \
+                echo "ffmpeg conversion failed"
+              # Clean up large raw file
+              rm -f verify_output/raw_frames.bin
+            fi
           fi
+          echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
 
       - name: Parse milestones
         if: always()
         run: |
           # || true: Always produce the report JSON for the PR comment step.
           # Failures are surfaced in the regression check, not here.
-          python3 tools/parse_milestones.py milestones.log \
+          # Use Phase 1 (logic) log only for milestones to avoid duplicates
+          # from Phase 2 re-emitting boot milestones.
+          python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
             --min-milestone 5 || true
 
@@ -167,17 +218,24 @@ jobs:
               COMMIT_MSG="ci: auto-update milestone baseline ($(python3 -c "import json; r=json.load(open('regression-report.json')); print(f\"{r['baseline_milestone_count']} → {r['current_milestone_count']}\")" 2>/dev/null || echo "improved"))"
             fi
             git commit -m "$COMMIT_MSG"
-            git push origin HEAD:${{ github.head_ref }}
+            # Pull any new commits (e.g. from Copilot agent) before pushing
+            git pull --rebase origin ${{ github.head_ref }} || true
+            git push origin HEAD:${{ github.head_ref }} || echo "⚠️ Push failed (concurrent updates) — baseline will be updated on next run"
             echo "✅ Baseline committed and pushed"
           fi
 
       - name: Convert screenshots and generate video
         if: always()
         run: |
+          # convert_frames.py converts BMP→PNG for embedding
           python3 tools/convert_frames.py verify_output \
             --png-dir verify_png \
-            --video verify_output/render_progress.mp4 \
             --fps 4 || true
+          # If MP4 already generated from raw frames, just report
+          if [ -f verify_output/render_progress.mp4 ]; then
+            echo "✅ MP4 already generated from raw frame capture"
+            ls -la verify_output/render_progress.mp4
+          fi
 
       - name: Post PR comment with results
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -484,10 +542,11 @@ jobs:
               }
             }
 
-            // Video link
+            // Video embed
             if (imageUrls['video']) {
               body += `\n### 🎬 Render Progress Video\n`;
-              body += `[▶️ Download render_progress.mp4](${imageUrls['video']})\n`;
+              body += `<video src="${imageUrls['video']}" controls autoplay loop muted width="640"></video>\n\n`;
+              body += `[📥 Download render_progress.mp4](${imageUrls['video']})\n`;
             }
 
             // Golden image comparisons

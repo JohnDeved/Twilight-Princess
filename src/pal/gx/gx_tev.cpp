@@ -32,7 +32,6 @@ extern "C" {
 #include "pal/gx/gx_tev.h"
 #include "pal/gx/gx_texture.h"
 #include "pal/gx/gx_stub_tracker.h"
-#include "pal/gx/gx_screenshot.h"
 #include "revolution/gx/GXEnum.h"
 }
 
@@ -115,6 +114,8 @@ static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
 
 static bgfx::ProgramHandle s_programs[GX_TEV_SHADER_COUNT];
 static bgfx::UniformHandle s_tex_uniform;
+static bgfx::UniformHandle s_tev_reg0_uniform;
+static bgfx::UniformHandle s_tev_reg1_uniform;
 static int s_tev_ready = 0;
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
@@ -161,6 +162,44 @@ static void tex_cache_put(void* ptr, uint16_t w, uint16_t h, GXTexFmt fmt, bgfx:
     s_tex_cache_next++;
 }
 
+/* Convert GX wrap mode + filter to bgfx sampler flags (per-draw) */
+static uint32_t gx_sampler_flags(const GXTexBinding* binding) {
+    uint32_t flags = 0;
+
+    /* Wrap modes */
+    switch (binding->wrap_s) {
+    case GX_REPEAT: break; /* bgfx default is repeat (0) */
+    case GX_CLAMP:  flags |= BGFX_SAMPLER_U_CLAMP;  break;
+    case GX_MIRROR: flags |= BGFX_SAMPLER_U_MIRROR; break;
+    default:        break;
+    }
+    switch (binding->wrap_t) {
+    case GX_REPEAT: break;
+    case GX_CLAMP:  flags |= BGFX_SAMPLER_V_CLAMP;  break;
+    case GX_MIRROR: flags |= BGFX_SAMPLER_V_MIRROR; break;
+    default:        break;
+    }
+
+    /* Minification filter */
+    switch (binding->min_filt) {
+    case GX_NEAR:
+    case GX_NEAR_MIP_NEAR:
+    case GX_NEAR_MIP_LIN:
+        flags |= BGFX_SAMPLER_MIN_POINT;
+        break;
+    default: /* GX_LINEAR, GX_LIN_MIP_NEAR, GX_LIN_MIP_LIN → bilinear */
+        break;
+    }
+
+    /* Magnification filter */
+    switch (binding->mag_filt) {
+    case GX_NEAR: flags |= BGFX_SAMPLER_MAG_POINT; break;
+    default:      break;
+    }
+
+    return flags;
+}
+
 /* Decode GX texture and upload to bgfx */
 static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
     if (!binding || !binding->valid || !binding->image_ptr)
@@ -182,11 +221,50 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         binding->image_ptr, rgba_data,
         binding->width, binding->height,
         binding->format,
-        NULL, 0);
+        binding->tlut_ptr, binding->tlut_fmt);
 
     if (decoded == 0) {
         free(rgba_data);
         return BGFX_INVALID_HANDLE;
+    }
+
+    /* Diagnostic: dump decoded texture stats to verify non-zero content */
+    {
+        static int s_tex_dump_count = 0;
+        if (s_tex_dump_count < 30) {
+            s_tex_dump_count++;
+            uint32_t nonzero = 0;
+            uint32_t nonzero_rgb = 0;
+            for (uint32_t i = 0; i < rgba_size; i++) {
+                if (rgba_data[i]) nonzero++;
+            }
+            for (uint32_t i = 0; i < rgba_size; i += 4) {
+                if (rgba_data[i] || rgba_data[i+1] || rgba_data[i+2]) nonzero_rgb++;
+            }
+            /* Check source data non-zero count (first 256 bytes) */
+            uint32_t src_nonzero = 0;
+            const u8* src_bytes = (const u8*)binding->image_ptr;
+            for (uint32_t i = 0; i < 256; i++) {
+                if (src_bytes[i]) src_nonzero++;
+            }
+            fprintf(stderr, "{\"tex_decode\":{\"ptr\":\"%p\",\"fmt\":%d,\"w\":%u,\"h\":%u,"
+                    "\"decoded\":%u,\"nonzero\":%u,\"nonzero_rgb\":%u,\"total\":%u,"
+                    "\"src_nz256\":%u,"
+                    "\"src16\":[",
+                    binding->image_ptr, (int)binding->format,
+                    (unsigned)binding->width, (unsigned)binding->height,
+                    decoded, nonzero, nonzero_rgb, rgba_size, src_nonzero);
+            for (int i = 0; i < 32; i++) {
+                if (i > 0) fprintf(stderr, ",");
+                fprintf(stderr, "%u", src_bytes[i]);
+            }
+            fprintf(stderr, "],\"rgba16\":[");
+            for (int i = 0; i < 64 && i < (int)rgba_size; i++) {
+                if (i > 0) fprintf(stderr, ",");
+                fprintf(stderr, "%u", rgba_data[i]);
+            }
+            fprintf(stderr, "]}}\n");
+        }
     }
 
     /* Upload to bgfx */
@@ -198,7 +276,7 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         false, /* hasMips */
         1,     /* numLayers */
         bgfx::TextureFormat::RGBA8,
-        BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
+        BGFX_TEXTURE_NONE, /* sampler flags set per-draw */
         mem);
 
     if (bgfx::isValid(tex)) {
@@ -213,48 +291,176 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
 /* ================================================================ */
 
 /**
- * Detect which TEV preset the current state matches.
- * Returns shader ID (0-4) or -1 for unknown configs.
+ * Classify what inputs a TEV color argument references.
+ * Returns a bitmask: bit 0=texture, bit 1=rasterized, bit 2=constant/register, bit 3=prev
  */
-static int detect_tev_preset(void) {
-    const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+static u32 tev_arg_class(GXTevColorArg arg) {
+    switch (arg) {
+    case GX_CC_TEXC: case GX_CC_TEXA: return 0x1; /* texture */
+    case GX_CC_RASC: case GX_CC_RASA: return 0x2; /* rasterized */
+    case GX_CC_C0:   case GX_CC_A0:
+    case GX_CC_C1:   case GX_CC_A1:
+    case GX_CC_C2:   case GX_CC_A2:
+    case GX_CC_KONST: case GX_CC_ONE: case GX_CC_HALF: return 0x4; /* constant/register */
+    case GX_CC_CPREV: case GX_CC_APREV: return 0x8; /* previous stage */
+    case GX_CC_ZERO: return 0x0; /* zero */
+    default: return 0x0;
+    }
+}
 
-    /* Check if any texture is bound for stage 0 */
+/**
+ * Resolve the actual RGBA konst color for a given TEV stage's k_color_sel.
+ * Handles KCSEL_K0-K3 (full RGBA) and constant fractions (1, 7/8, etc.).
+ */
+static void resolve_konst_color(const GXTevStage* stage, uint8_t out[4]) {
+    GXTevKColorSel sel = stage->k_color_sel;
+    if (sel >= GX_TEV_KCSEL_K0 && sel <= GX_TEV_KCSEL_K3) {
+        int idx = sel - GX_TEV_KCSEL_K0;
+        out[0] = g_gx_state.tev_kregs[idx].r;
+        out[1] = g_gx_state.tev_kregs[idx].g;
+        out[2] = g_gx_state.tev_kregs[idx].b;
+        out[3] = g_gx_state.tev_kregs[idx].a;
+    } else if (sel >= GX_TEV_KCSEL_K0_R && sel <= GX_TEV_KCSEL_K3_R) {
+        int idx = sel - GX_TEV_KCSEL_K0_R;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].r;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_G && sel <= GX_TEV_KCSEL_K3_G) {
+        int idx = sel - GX_TEV_KCSEL_K0_G;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].g;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_B && sel <= GX_TEV_KCSEL_K3_B) {
+        int idx = sel - GX_TEV_KCSEL_K0_B;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].b;
+        out[3] = 255;
+    } else if (sel >= GX_TEV_KCSEL_K0_A && sel <= GX_TEV_KCSEL_K3_A) {
+        int idx = sel - GX_TEV_KCSEL_K0_A;
+        out[0] = out[1] = out[2] = g_gx_state.tev_kregs[idx].a;
+        out[3] = 255;
+    } else {
+        /* Constant fraction: 1, 7/8, 3/4, 5/8, 1/2, 3/8, 1/4, 1/8 */
+        static const uint8_t fracs[] = {
+            255, /* 1   */ 223, /* 7/8 */ 191, /* 3/4 */ 159, /* 5/8 */
+            128, /* 1/2 */  96, /* 3/8 */  64, /* 1/4 */  32  /* 1/8 */
+        };
+        int fi = (sel <= GX_TEV_KCSEL_1_8) ? sel : 0;
+        out[0] = out[1] = out[2] = fracs[fi];
+        out[3] = 255;
+    }
+}
+
+/**
+ * Generic TEV preset selection based on input class analysis.
+ *
+ * NOTE: This is an approximation, NOT full TEV emulation. The GX TEV unit
+ * computes: out = (d + (1-c)*a + c*b) op bias << scale per stage, with
+ * arbitrary routing of texture, rasterized, constant, and previous-stage
+ * values to a/b/c/d slots. Full emulation would require:
+ *   - Runtime shader generation (or a uber-shader with uniform-driven paths)
+ *   - Per-stage combiner formula evaluation
+ *   - Indirect texture lookups
+ *   - Alpha channel combiner (separate from color)
+ *   - Konst color/alpha register selection per stage
+ *
+ * The classification approach maps the most common combiner patterns to
+ * a fixed set of precompiled shaders (PASSCLR, REPLACE, MODULATE, BLEND,
+ * DECAL). This covers ~90% of TP's TEV usage but will produce incorrect
+ * output for complex multi-stage setups with indirect texturing or
+ * non-standard combiner formulas.
+ */
+static int classify_tev_config(void) {
+    u32 all_tex = 0, all_ras = 0, all_konst = 0, all_prev = 0;
+    int num_stages = g_gx_state.num_tev_stages;
+    if (num_stages == 0) num_stages = 1;
+
+    /* Accumulate input classes across all active stages */
+    for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+        const GXTevStage* st = &g_gx_state.tev_stages[s];
+        u32 ca = tev_arg_class(st->color_a);
+        u32 cb = tev_arg_class(st->color_b);
+        u32 cc = tev_arg_class(st->color_c);
+        u32 cd = tev_arg_class(st->color_d);
+        u32 classes = ca | cb | cc | cd;
+
+        all_tex   |= (classes & 0x1);
+        all_ras   |= (classes & 0x2);
+        all_konst |= (classes & 0x4);
+        all_prev  |= (classes & 0x8);
+    }
+
+    /* Check if texture is actually available */
+    const GXTevStage* s0 = &g_gx_state.tev_stages[0];
     int has_texture = (s0->tex_map != GX_TEXMAP_NULL && s0->tex_map < GX_MAX_TEXMAP &&
                        g_gx_state.tex_bindings[s0->tex_map].valid);
 
-    if (g_gx_state.num_tev_stages == 0 || g_gx_state.num_tev_stages == 1) {
-        if (!has_texture) {
-            /* No texture → PASSCLR (vertex color only) */
-            return GX_TEV_SHADER_PASSCLR;
-        }
+    /* If TEV doesn't reference texture at all, or no texture bound */
+    if (!all_tex || !has_texture) {
+        return GX_TEV_SHADER_PASSCLR;
+    }
 
-        /* REPLACE: color_a=ZERO, color_b=ZERO, color_c=ZERO, color_d=TEXC */
+    /* Multi-stage with register references: check for BLEND pattern
+     * (register lerp: a=C0, b=C1, c=CPREV → lerp(mBlack, mWhite, prev)) */
+    if (num_stages >= 2 && all_konst && all_prev) {
+        const GXTevStage* s1 = &g_gx_state.tev_stages[1];
+        if ((tev_arg_class(s1->color_a) & 0x4) &&
+            (tev_arg_class(s1->color_b) & 0x4) &&
+            (tev_arg_class(s1->color_c) & 0x8)) {
+            return GX_TEV_SHADER_BLEND;
+        }
+    }
+
+    /* J2D blend pattern: stage 0 = [C0, C1, TEXC, ZERO] → mix(C0, C1, tex)
+     * This lerps between TEV registers C0/C1 using texture color.
+     * Stage 1 may apply rasterized color (RASC) multiply. */
+    if (all_konst && all_tex) {
+        if (s0->color_a == GX_CC_C0 && s0->color_b == GX_CC_C1 &&
+            s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO) {
+            return GX_TEV_SHADER_BLEND;
+        }
+    }
+
+    /* Texture + rasterized → MODULATE */
+    if (all_ras) {
+        return GX_TEV_SHADER_MODULATE;
+    }
+
+    /* Texture + constant → MODULATE (konst tinting) */
+    if (all_konst) {
+        return GX_TEV_SHADER_MODULATE;
+    }
+
+    /* Texture-only single stage checks */
+    if (num_stages <= 1) {
+        /* REPLACE: only texture in d slot, everything else is zero */
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_TEXC) {
             return GX_TEV_SHADER_REPLACE;
         }
-
-        /* MODULATE: typical GX_MODULATE pattern */
-        if ((s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_TEXC &&
-             s0->color_c == GX_CC_RASC && s0->color_d == GX_CC_ZERO) ||
-            (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_RASC &&
-             s0->color_c == GX_CC_TEXC && s0->color_d == GX_CC_ZERO)) {
-            return GX_TEV_SHADER_MODULATE;
-        }
-
-        /* DECAL: blend texture with vertex color using texture alpha */
-        if (s0->color_a == GX_CC_RASC && s0->color_b == GX_CC_TEXC &&
-            s0->color_c == GX_CC_TEXA && s0->color_d == GX_CC_ZERO) {
+        /* DECAL: alpha-blended texture over vertex color */
+        if (s0->color_c == GX_CC_TEXA) {
             return GX_TEV_SHADER_DECAL;
         }
-
-        /* Has texture but no matching preset → use MODULATE as default */
-        return GX_TEV_SHADER_MODULATE;
     }
 
-    /* Multi-stage TEV — fall back to MODULATE for textured, PASSCLR otherwise */
-    return has_texture ? GX_TEV_SHADER_MODULATE : GX_TEV_SHADER_PASSCLR;
+    /* Default: texture-only → REPLACE */
+    return GX_TEV_SHADER_REPLACE;
+}
+
+/**
+ * Detect which TEV shader to use for the current state.
+ * Uses generic input classification instead of hardcoded preset patterns.
+ */
+static int detect_tev_preset(void) {
+    return classify_tev_config();
+}
+
+/**
+ * Override shader preset when vertex data is incompatible.
+ * MODULATE requires vertex color (multiplies texture × color).
+ * If no color attribute exists, the draw path will inject material color,
+ * so we keep the preset as-is.
+ */
+static int fixup_preset_for_vertex(int preset) {
+    return preset;
 }
 
 /* ================================================================ */
@@ -343,7 +549,7 @@ static uint64_t convert_primitive_state(GXPrimitive prim) {
     switch (prim) {
     case GX_TRIANGLES:      return 0; /* bgfx default is triangle list */
     case GX_TRIANGLESTRIP:  return BGFX_STATE_PT_TRISTRIP;
-    case GX_TRIANGLEFAN:    return BGFX_STATE_PT_TRISTRIP; /* approx */
+    case GX_TRIANGLEFAN:    return 0; /* converted to triangles via index buffer */
     case GX_LINES:          return BGFX_STATE_PT_LINES;
     case GX_LINESTRIP:      return BGFX_STATE_PT_LINESTRIP;
     case GX_POINTS:         return BGFX_STATE_PT_POINTS;
@@ -368,46 +574,316 @@ static uint64_t convert_primitive_state(GXPrimitive prim) {
  *   GX_VA_TEX0   → bgfx::Attrib::TexCoord0 (2 floats)
  *   GX_VA_TEX1-7 → bgfx::Attrib::TexCoord1-7
  */
+/**
+ * Get the byte size of a GX component type.
+ */
+static uint32_t gx_comp_size(GXCompType t) {
+    switch (t) {
+    case GX_U8: case GX_S8: return 1;
+    case GX_U16: case GX_S16: return 2;
+    case GX_F32: return 4;
+    default: return 4; /* default to float */
+    }
+}
+
+/**
+ * Map GX component type to bgfx attribute type.
+ */
+static bgfx::AttribType::Enum gx_to_bgfx_type(GXCompType t) {
+    switch (t) {
+    case GX_U8:  return bgfx::AttribType::Uint8;
+    case GX_S8:  return bgfx::AttribType::Uint8;  /* no Int8 in bgfx; size matches */
+    case GX_U16: return bgfx::AttribType::Int16;
+    case GX_S16: return bgfx::AttribType::Int16;
+    case GX_F32: return bgfx::AttribType::Float;
+    default:     return bgfx::AttribType::Float;
+    }
+}
+
 static uint32_t build_vertex_layout(bgfx::VertexLayout& layout) {
     layout.begin();
 
     uint32_t stride = 0;
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
 
-    /* Position — always 3 floats for direct mode */
-    if (desc[GX_VA_POS].type != GX_NONE) {
-        layout.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
-        stride += 12;
+    /* PNMTXIDX — 1 byte matrix index (not a bgfx attribute, skip it) */
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
+        layout.skip(1);
+        stride += 1;
     }
 
-    /* Normal */
+    /* TEXnMTXIDX — 1 byte each (not bgfx attributes, skip them) */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+            layout.skip(1);
+            stride += 1;
+        }
+    }
+
+    /* Position — always Float in bgfx.
+     * GX integer positions use frac bits (fixed-point) which bgfx
+     * doesn't understand, so we always use float and convert data
+     * in convert_vertex_to_float(). */
+    if (desc[GX_VA_POS].type != GX_NONE) {
+        int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        layout.add(bgfx::Attrib::Position, (uint8_t)ncomps, bgfx::AttribType::Float);
+        stride += ncomps * 4;
+    }
+
+    /* Normal — always Float */
     if (desc[GX_VA_NRM].type != GX_NONE) {
         layout.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float);
-        stride += 12;
+        stride += 3 * 4;
     }
 
-    /* Colors */
+    /* Colors — always Uint8 normalized */
     if (desc[GX_VA_CLR0].type != GX_NONE) {
         layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
         stride += 4;
     }
-
     if (desc[GX_VA_CLR1].type != GX_NONE) {
         layout.add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true);
         stride += 4;
     }
 
-    /* Texture coordinates */
+    /* Texture coordinates — always Float (frac-bit safe) */
     for (int i = 0; i < 8; i++) {
         if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
             layout.add((bgfx::Attrib::Enum)(bgfx::Attrib::TexCoord0 + i),
-                       2, bgfx::AttribType::Float);
-            stride += 8;
+                       (uint8_t)ncomps, bgfx::AttribType::Float);
+            stride += ncomps * 4;
         }
     }
 
     layout.end();
     return stride;
+}
+
+/**
+ * Calculate the raw GX vertex stride (bytes per vertex as stored in vtx_data).
+ * This may differ from the bgfx layout stride when integer components are
+ * promoted to float.
+ */
+static uint32_t raw_attr_size(int attr);
+static uint32_t calc_raw_vertex_stride(void) {
+    uint32_t stride = 0;
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+
+    /* Use raw_attr_size() which correctly handles INDEX8 (1 byte),
+     * INDEX16 (2 bytes), and DIRECT (actual component data size). */
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) stride += 1;
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) stride += 1;
+    }
+    if (desc[GX_VA_POS].type != GX_NONE)
+        stride += raw_attr_size(GX_VA_POS);
+    if (desc[GX_VA_NRM].type != GX_NONE)
+        stride += raw_attr_size(GX_VA_NRM);
+    if (desc[GX_VA_CLR0].type != GX_NONE)
+        stride += raw_attr_size(GX_VA_CLR0);
+    if (desc[GX_VA_CLR1].type != GX_NONE)
+        stride += raw_attr_size(GX_VA_CLR1);
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0 + i].type != GX_NONE)
+            stride += raw_attr_size(GX_VA_TEX0 + i);
+    }
+    return stride;
+}
+
+/**
+ * Read a GX component value as float, applying frac-bit scaling.
+ */
+static float read_gx_component(const uint8_t* src, GXCompType type, uint8_t frac) {
+    float scale = (frac > 0) ? (1.0f / (float)(1 << frac)) : 1.0f;
+    switch (type) {
+    case GX_S16: { int16_t v; memcpy(&v, src, 2); return (float)v * scale; }
+    case GX_U16: { uint16_t v; memcpy(&v, src, 2); return (float)v * scale; }
+    case GX_S8:  return (float)(*(const int8_t*)src) * scale;
+    case GX_U8:  return (float)(*src) * scale;
+    case GX_F32: { float v; memcpy(&v, src, 4); return v; }
+    default: return 0.0f;
+    }
+}
+
+/**
+ * Convert one vertex from raw GX format to the bgfx float layout.
+ * Walks through each attribute, converting integer components to float
+ * with frac-bit scaling applied.
+ */
+/**
+ * Resolve a vertex attribute's data source.
+ * For DIRECT mode, data comes from the raw vertex buffer (src + si).
+ * For INDEX8/INDEX16, data comes from the indexed array (base + idx * stride).
+ * Returns pointer to attribute data and advances si past the index/data in src.
+ */
+static const uint8_t* resolve_attr_data(int attr, const uint8_t* src, uint32_t* si) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    GXAttrType type = desc[attr].type;
+
+    if (type == GX_INDEX8) {
+        uint8_t idx = src[*si]; (*si) += 1;
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
+        if (arr->base_ptr && arr->stride > 0)
+            return (const uint8_t*)arr->base_ptr + (uint32_t)idx * arr->stride;
+        return NULL;
+    }
+    if (type == GX_INDEX16) {
+        uint16_t idx; memcpy(&idx, src + *si, 2); (*si) += 2;
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
+        if (arr->base_ptr && arr->stride > 0)
+            return (const uint8_t*)arr->base_ptr + (uint32_t)idx * arr->stride;
+        return NULL;
+    }
+    /* GX_DIRECT — data is inline in the vertex buffer */
+    return src + *si;
+}
+
+/**
+ * Get the byte size consumed in the raw vertex buffer for a given attribute.
+ * For INDEX8 → 1, INDEX16 → 2, DIRECT → component bytes.
+ */
+static uint32_t raw_attr_size(int attr) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+    GXAttrType type = desc[attr].type;
+
+    if (type == GX_INDEX8) return 1;
+    if (type == GX_INDEX16) return 2;
+
+    /* GX_DIRECT */
+    if (attr == GX_VA_POS) {
+        int n = (afmt[attr].cnt == GX_POS_XY) ? 2 : 3;
+        return n * gx_comp_size(afmt[attr].comp_type);
+    }
+    if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
+        return 3 * gx_comp_size(afmt[attr].comp_type);
+    }
+    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) return 4;
+    if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
+        int n = (afmt[attr].cnt == GX_TEX_S) ? 1 : 2;
+        return n * gx_comp_size(afmt[attr].comp_type);
+    }
+    return 0;
+}
+
+static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
+    uint32_t si = 0, di = 0;
+
+    /* PNMTXIDX — copy 1 byte */
+    if (desc[GX_VA_PNMTXIDX].type != GX_NONE) {
+        dst[di++] = src[si++];
+    }
+
+    /* TEXnMTXIDX — copy 1 byte each (not used by bgfx, but must be in layout) */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+            dst[di++] = src[si++];
+        }
+    }
+
+    /* Position → Float */
+    if (desc[GX_VA_POS].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_POS, src, &si);
+        GXCompType pt = afmt[GX_VA_POS].comp_type;
+        uint8_t frac = afmt[GX_VA_POS].frac;
+        int ncomps = (afmt[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+        uint32_t csz = gx_comp_size(pt);
+        if (desc[GX_VA_POS].type == GX_DIRECT) {
+            /* For direct mode, advance si past the actual data */
+            si += ncomps * csz;
+        }
+        if (data) {
+            for (int c = 0; c < ncomps; c++) {
+                float v = read_gx_component(data + c * csz, pt, frac);
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        } else {
+            for (int c = 0; c < ncomps; c++) {
+                float v = 0.0f;
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        }
+    }
+
+    /* Normal → Float */
+    if (desc[GX_VA_NRM].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_NRM, src, &si);
+        GXCompType nt = afmt[GX_VA_NRM].comp_type;
+        uint8_t frac = afmt[GX_VA_NRM].frac;
+        uint32_t csz = gx_comp_size(nt);
+        if (desc[GX_VA_NRM].type == GX_DIRECT) {
+            si += 3 * csz;
+        }
+        if (data) {
+            for (int c = 0; c < 3; c++) {
+                float v = read_gx_component(data + c * csz, nt, frac);
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        } else {
+            for (int c = 0; c < 3; c++) {
+                float v = 0.0f;
+                memcpy(dst + di, &v, 4);
+                di += 4;
+            }
+        }
+    }
+
+    /* Color0 */
+    if (desc[GX_VA_CLR0].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_CLR0, src, &si);
+        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += 4;
+        if (data) { memcpy(dst + di, data, 4); }
+        else { memset(dst + di, 0xFF, 4); }
+        /* GCN doesn't use framebuffer alpha for TV display — vertex color
+         * alpha can legitimately be 0. On PC, force alpha=255 so the
+         * fragment is fully opaque and SRC_ALPHA blending works. */
+        dst[di + 3] = 0xFF;
+        di += 4;
+    }
+    /* Color1 */
+    if (desc[GX_VA_CLR1].type != GX_NONE) {
+        const uint8_t* data = resolve_attr_data(GX_VA_CLR1, src, &si);
+        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += 4;
+        if (data) { memcpy(dst + di, data, 4); }
+        else { memset(dst + di, 0xFF, 4); }
+        /* Force alpha=255 — same GCN→PC alpha fix as Color0 */
+        dst[di + 3] = 0xFF;
+        di += 4;
+    }
+
+    /* Texture coordinates → Float */
+    for (int i = 0; i < 8; i++) {
+        if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+            const uint8_t* data = resolve_attr_data(GX_VA_TEX0 + i, src, &si);
+            GXCompType tt = afmt[GX_VA_TEX0 + i].comp_type;
+            uint8_t frac = afmt[GX_VA_TEX0 + i].frac;
+            int ncomps = (afmt[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+            uint32_t csz = gx_comp_size(tt);
+            if (desc[GX_VA_TEX0 + i].type == GX_DIRECT) {
+                si += ncomps * csz;
+            }
+            if (data) {
+                for (int c = 0; c < ncomps; c++) {
+                    float v = read_gx_component(data + c * csz, tt, frac);
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            } else {
+                for (int c = 0; c < ncomps; c++) {
+                    float v = 0.0f;
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            }
+        }
+    }
 }
 
 /* ================================================================ */
@@ -508,6 +984,10 @@ void pal_tev_init(void) {
     /* Create texture sampler uniform */
     s_tex_uniform = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 
+    /* Create TEV register uniforms for BLEND shader (mBlack/mWhite lerp) */
+    s_tev_reg0_uniform = bgfx::createUniform("u_tevReg0", bgfx::UniformType::Vec4);
+    s_tev_reg1_uniform = bgfx::createUniform("u_tevReg1", bgfx::UniformType::Vec4);
+
     s_tev_ready = all_ok;
 
     /* For Noop renderer, mark ready even if shader creation "fails" (it's a no-op anyway) */
@@ -520,6 +1000,13 @@ void pal_tev_init(void) {
 
     /* Initialize texture cache */
     memset(s_tex_cache, 0, sizeof(s_tex_cache));
+}
+
+int pal_tev_ready(void) { return s_tev_ready; }
+bgfx::ProgramHandle pal_tev_get_program(int preset) {
+    if (preset >= 0 && preset < GX_TEV_SHADER_COUNT)
+        return s_programs[preset];
+    return BGFX_INVALID_HANDLE;
 }
 
 void pal_tev_shutdown(void) {
@@ -535,6 +1022,14 @@ void pal_tev_shutdown(void) {
     if (bgfx::isValid(s_tex_uniform)) {
         bgfx::destroy(s_tex_uniform);
         s_tex_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_reg0_uniform)) {
+        bgfx::destroy(s_tev_reg0_uniform);
+        s_tev_reg0_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_reg1_uniform)) {
+        bgfx::destroy(s_tev_reg1_uniform);
+        s_tev_reg1_uniform = BGFX_INVALID_HANDLE;
     }
 
     /* Destroy cached textures */
@@ -552,39 +1047,491 @@ int pal_tev_is_ready(void) {
     return s_tev_ready;
 }
 
+void pal_tev_submit_test_quad(void) {
+    if (!s_tev_ready || !bgfx::isValid(s_programs[GX_TEV_SHADER_PASSCLR]))
+        return;
+
+    /* Test A: Simple quad (pos+color = 16 bytes) — known working */
+    {
+        struct TestVert {
+            float x, y, z;
+            uint32_t abgr;
+        };
+
+        bgfx::VertexLayout layout;
+        layout.begin()
+              .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+              .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+              .end();
+
+        bgfx::TransientVertexBuffer tvb;
+        if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
+        bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
+
+        TestVert* v = (TestVert*)tvb.data;
+        v[0] = { -0.5f, -0.5f, 0.0f, 0xff00ff00 }; /* green */
+        v[1] = {  0.5f, -0.5f, 0.0f, 0xff00ff00 };
+        v[2] = {  0.5f,  0.5f, 0.0f, 0xff00ff00 };
+        v[3] = { -0.5f,  0.5f, 0.0f, 0xff00ff00 };
+
+        bgfx::TransientIndexBuffer tib;
+        if (!bgfx::getAvailTransientIndexBuffer(6)) return;
+        bgfx::allocTransientIndexBuffer(&tib, 6);
+        uint16_t* idx = (uint16_t*)tib.data;
+        idx[0] = 0; idx[1] = 1; idx[2] = 2;
+        idx[3] = 0; idx[4] = 2; idx[5] = 3;
+
+        float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+        bgfx::setTransform(identity);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+    }
+
+    /* Test B: Same quad but with texcoord layout (24 bytes) matching game draws.
+     * Uses screen-space positions + ortho MVP to replicate the game draw path. */
+    {
+        struct TestVertTC {
+            float x, y, z;
+            uint8_t r, g, b, a;
+            float u, v;
+        };
+
+        bgfx::VertexLayout layout;
+        layout.begin()
+              .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+              .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+              .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+              .end();
+
+        bgfx::TransientVertexBuffer tvb;
+        if (!bgfx::getAvailTransientVertexBuffer(4, layout)) return;
+        bgfx::allocTransientVertexBuffer(&tvb, 4, layout);
+
+        TestVertTC* v = (TestVertTC*)tvb.data;
+        /* Screen-space positions (0-376, 0-104, z=0) matching game draws */
+        v[0] = {   0.0f,   0.0f, 0.0f, 255,0,0,255, 0.0f, 0.0f };  /* red */
+        v[1] = { 376.0f,   0.0f, 0.0f, 255,0,0,255, 1.0f, 0.0f };
+        v[2] = { 376.0f, 104.0f, 0.0f, 255,0,0,255, 1.0f, 1.0f };
+        v[3] = {   0.0f, 104.0f, 0.0f, 255,0,0,255, 0.0f, 1.0f };
+
+        bgfx::TransientIndexBuffer tib;
+        if (!bgfx::getAvailTransientIndexBuffer(6)) return;
+        bgfx::allocTransientIndexBuffer(&tib, 6);
+        uint16_t* idx = (uint16_t*)tib.data;
+        idx[0] = 0; idx[1] = 1; idx[2] = 2;
+        idx[3] = 0; idx[4] = 2; idx[5] = 3;
+
+        /* Build the same ortho MVP that the game uses (640×456 viewport) */
+        float mvp[16];
+        {
+            const float (*proj)[4] = g_gx_state.proj_mtx;
+            uint32_t mi = g_gx_state.current_pos_mtx;
+            if (mi >= GX_MAX_POS_MTX) mi = 0;
+            const float (*model)[4] = g_gx_state.pos_mtx[mi];
+
+            float m44[16] = {
+                model[0][0], model[0][1], model[0][2], model[0][3],
+                model[1][0], model[1][1], model[1][2], model[1][3],
+                model[2][0], model[2][1], model[2][2], model[2][3],
+                0.0f,        0.0f,        0.0f,        1.0f
+            };
+
+            float mvp_rm[16];
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++) {
+                    mvp_rm[r * 4 + c] = 0.0f;
+                    for (int k = 0; k < 4; k++)
+                        mvp_rm[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
+                }
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++)
+                    mvp[c * 4 + r] = mvp_rm[r * 4 + c];
+        }
+
+        bgfx::setTransform(mvp);
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setIndexBuffer(&tib);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(0, s_programs[GX_TEV_SHADER_PASSCLR]);
+    }
+
+    fprintf(stderr, "{\"tev\":\"test_quad_submitted\"}\n");
+}
+
 void pal_tev_flush_draw(void) {
     if (!s_tev_ready) return;
 
     const GXDrawState* ds = &g_gx_state.draw;
     if (ds->verts_written == 0 || ds->vtx_data_pos == 0) return;
 
+    static uint32_t s_total_draw_count = 0;
+    s_total_draw_count++;
+
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
+
+    /* Diagnostic: log ALL draws for draw_count window 250-340 (title scene frame) */
+    if (s_total_draw_count >= 250 && s_total_draw_count <= 340) {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        int tm = s0->tex_map;
+        int tv = (tm >= 0 && tm < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[tm].valid : -1;
+        uint32_t rs = calc_raw_vertex_stride();
+        fprintf(stderr, "{\"all_draw\":{\"id\":%u,\"preset\":\"%s\","
+                "\"nverts\":%u,\"prim\":%d,"
+                "\"color_upd\":%d,\"blend\":%d,\"z_en\":%d,"
+                "\"raw_stride\":%u,"
+                "\"tev0\":[%d,%d,%d,%d],"
+                "\"tex_map\":%d,\"tex_valid\":%d}}\n",
+                s_total_draw_count, s_fs_names[preset],
+                (unsigned)ds->verts_written, ds->prim_type,
+                g_gx_state.color_update, g_gx_state.blend_mode, g_gx_state.z_compare_enable,
+                rs,
+                s0->color_a, s0->color_b, s0->color_c, s0->color_d,
+                tm, tv);
+    }
+
+    preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) return;
 
-    /* 2. Build vertex layout */
-    bgfx::VertexLayout layout;
-    uint32_t expected_stride = build_vertex_layout(layout);
-    if (expected_stride == 0) return;
+    /* J2D constant-color fill detection — skip the entire draw.
+     *
+     * PASSCLR draws with TEV [ZERO,ZERO,ZERO,C0] + GX_BM_NONE just output
+     * TEVREG0 as a solid color with no blending.  On GCN hardware, these are
+     * rendered in strict submission order and overwritten by subsequent
+     * textured draws.  bgfx does not guarantee draw ordering within a view,
+     * so these fills can render AFTER the textured draws they were supposed
+     * to underlay, creating visible colored rectangles (red/black squares)
+     * over the actual content.  Skip them — the bgfx view clear color
+     * provides the background.
+     */
+    if (preset == GX_TEV_SHADER_PASSCLR &&
+        g_gx_state.blend_mode == GX_BM_NONE)
+    {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
+        {
+            return;
+        }
+    }
 
-    /* 3. Allocate transient vertex buffer */
+    /* PASSCLR draws with TEV [ZERO,ZERO,ZERO,RASC] + SRC_ALPHA blending are
+     * transparent fills on GCN (vertex alpha = 0 → SRC_ALPHA makes them
+     * invisible).  On PC we force vertex alpha to 255 which makes them
+     * opaque black, overwriting J2D textured content.  Skip them — but only
+     * when the raster color comes from vertex colors (mat_src == GX_SRC_VTX).
+     * When mat_src == GX_SRC_REG, the alpha is explicitly set by the game
+     * (e.g. darwFilter fade overlay) and the draw should proceed. */
+    if (preset == GX_TEV_SHADER_PASSCLR &&
+        g_gx_state.blend_mode == GX_BM_BLEND &&
+        g_gx_state.chan_ctrl[0].mat_src == GX_SRC_VTX)
+    {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_RASC)
+        {
+            return;
+        }
+    }
+
+    /* SHADER TEST: When TP_SKIP_PASSCLR is set, skip ALL PASSCLR draws
+     * for title scene.  Diagnostic only — not needed in production. */
+    {
+        static int s_skip_passclr = -1;
+        if (s_skip_passclr < 0) {
+            const char* bt = getenv("TP_SKIP_PASSCLR");
+            s_skip_passclr = (bt && bt[0] == '1') ? 1 : 0;
+        }
+        if (s_skip_passclr && preset == GX_TEV_SHADER_PASSCLR &&
+            s_total_draw_count > 200) {
+            return;
+        }
+    }
+
+    /* 2. Build vertex layout (always Float for pos/texcoord) */
+    bgfx::VertexLayout layout;
+    uint32_t bgfx_stride = build_vertex_layout(layout);
+    if (bgfx_stride == 0) return;
+
+    /* Raw stride matches the actual GX vertex data byte layout */
+    uint32_t raw_stride = calc_raw_vertex_stride();
+    if (raw_stride == 0) return;
+
+    /* 3. Check if we need to inject constant color when vertex color is missing.
+     * PASSCLR: inject from TEV registers or material color.
+     * MODULATE/BLEND/DECAL: inject from material color (GCN hardware uses
+     * material color as rasterized color when no vertex color attribute). */
+    const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
+    int inject_color = 0;
+    uint8_t const_clr[4] = {0, 0, 0, 255};
+
+    if (desc[GX_VA_CLR0].type == GX_NONE) {
+        if (preset == GX_TEV_SHADER_PASSCLR) {
+            inject_color = 1;
+            /* Determine the constant color from TEV state */
+            const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+            if (s0->color_d == GX_CC_C0 || s0->color_d == GX_CC_CPREV) {
+                const_clr[0] = g_gx_state.tev_regs[GX_TEVREG0].r;
+                const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
+                const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
+                const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
+            } else if (s0->color_d == GX_CC_KONST) {
+                resolve_konst_color(s0, const_clr);
+            } else if (s0->color_d == GX_CC_RASC) {
+                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
+                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
+                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
+                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            }
+        } else if (preset == GX_TEV_SHADER_MODULATE ||
+                   preset == GX_TEV_SHADER_BLEND ||
+                   preset == GX_TEV_SHADER_DECAL) {
+            inject_color = 1;
+            /* Check if any TEV stage references rasterized color (RASC/RASA).
+             * If not, vertex/material color is irrelevant to the TEV formula
+             * and the injected color should be white (pass-through) so the
+             * shader's "* v_color0" multiplication doesn't darken the output. */
+            int uses_rasc = 0;
+            int uses_konst = 0;
+            int num_stages = g_gx_state.num_tev_stages;
+            if (num_stages == 0) num_stages = 1;
+            for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+                const GXTevStage* st = &g_gx_state.tev_stages[s];
+                if (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
+                    st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
+                    st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
+                    st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA)
+                    uses_rasc = 1;
+                if (st->color_a == GX_CC_KONST || st->color_b == GX_CC_KONST ||
+                    st->color_c == GX_CC_KONST || st->color_d == GX_CC_KONST)
+                    uses_konst = 1;
+            }
+            if (uses_konst && !uses_rasc) {
+                resolve_konst_color(&g_gx_state.tev_stages[0], const_clr);
+            } else if (uses_rasc) {
+                /* Use material color as rasterized color (GCN hardware behavior) */
+                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
+                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
+                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
+                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+            } else {
+                /* No RASC/KONST in any stage — vertex color is unused.
+                 * Inject white so the shader "* v_color0" is a no-op. */
+                const_clr[0] = 255;
+                const_clr[1] = 255;
+                const_clr[2] = 255;
+                const_clr[3] = 255;
+            }
+        }
+    }
+
+    if (inject_color) {
+        /* GCN doesn't use framebuffer alpha for display — mat_color.a can
+         * legitimately be 0. On PC, force injected color alpha to 255 so
+         * the fragment is fully opaque and SRC_ALPHA blending works.
+         * Exception: the fade overlay (darwFilter) intentionally uses
+         * varying alpha for its SRC_ALPHA blend effect. */
+        if (!g_gx_state.fade_overlay_active)
+            const_clr[3] = 255;
+
+        /* SHADER TEST: When TP_BLEND_TEST is set and this is a BLEND draw,
+         * force vertex color to red so PASSCLR outputs red instead of white.
+         * This makes it visually obvious when BLEND draws reach the screen. */
+        {
+            static int s_blend_test_clr = -1;
+            if (s_blend_test_clr < 0) {
+                const char* bt = getenv("TP_BLEND_TEST");
+                s_blend_test_clr = (bt && bt[0] == '1') ? 1 : 0;
+            }
+            if (s_blend_test_clr && preset == GX_TEV_SHADER_BLEND) {
+                const_clr[0] = 255;
+                const_clr[1] = 0;
+                const_clr[2] = 0;
+                const_clr[3] = 255;
+            }
+        }
+
+        /* Rebuild layout with color attribute AND texture coords */
+        const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+        int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+
+        layout.begin();
+        if (has_pnmtx) layout.skip(1);
+        for (int i = 0; i < 8; i++) {
+            if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) layout.skip(1);
+        }
+        layout.add(bgfx::Attrib::Position, (uint8_t)npos, bgfx::AttribType::Float);
+        layout.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+        /* Add texture coordinates (critical for MODULATE/BLEND/DECAL) */
+        for (int i = 0; i < 8; i++) {
+            if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+                int ntc = (af[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+                layout.add((bgfx::Attrib::Enum)(bgfx::Attrib::TexCoord0 + i),
+                           (uint8_t)ntc, bgfx::AttribType::Float);
+            }
+        }
+        layout.end();
+        bgfx_stride = layout.getStride();
+    }
+
+    /* Allocate transient vertex buffer */
     uint16_t nverts = ds->verts_written;
     if (nverts == 0) return;
 
     bgfx::TransientVertexBuffer tvb;
-    if (!bgfx::getAvailTransientVertexBuffer(nverts, layout)) return;
+    if (!bgfx::getAvailTransientVertexBuffer(nverts, layout)) {
+        static int s_tvb_fail = 0;
+        if (s_tvb_fail < 10) {
+            fprintf(stderr, "[PAL] TVB alloc FAIL draw#%u nverts=%u stride=%u\n",
+                    s_total_draw_count, (unsigned)nverts, bgfx_stride);
+            s_tvb_fail++;
+        }
+        return;
+    }
     bgfx::allocTransientVertexBuffer(&tvb, nverts, layout);
 
-    /* Copy vertex data */
-    uint32_t copy_size = nverts * expected_stride;
-    if (copy_size > ds->vtx_data_pos) copy_size = ds->vtx_data_pos;
-    memcpy(tvb.data, ds->vtx_data, copy_size);
+    /* Copy vertex data — convert from raw GX format to bgfx float format */
+    if (inject_color) {
+        /* Convert position to float, append constant color, then texture coords */
+        const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+        int has_pnmtx = desc[GX_VA_PNMTXIDX].type != GX_NONE;
+        int npos = (af[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+
+        for (uint16_t vi = 0; vi < nverts; vi++) {
+            uint8_t* dst = tvb.data + vi * bgfx_stride;
+            const uint8_t* src = ds->vtx_data + vi * raw_stride;
+            uint32_t si = 0, di = 0;
+
+            /* PNMTXIDX */
+            if (has_pnmtx) { dst[di++] = src[si++]; }
+
+            /* TEXnMTXIDX — skip in src, copy to dst layout */
+            for (int i = 0; i < 8; i++) {
+                if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+                    dst[di++] = src[si++];
+                }
+            }
+
+            /* Position → Float with frac-bit scaling + index resolution */
+            GXCompType pt = af[GX_VA_POS].comp_type;
+            uint8_t frac = af[GX_VA_POS].frac;
+            uint32_t csz = gx_comp_size(pt);
+            const uint8_t* pos_data = resolve_attr_data(GX_VA_POS, src, &si);
+            if (desc[GX_VA_POS].type == GX_DIRECT) si += npos * csz;
+            if (pos_data) {
+                for (int c = 0; c < npos; c++) {
+                    float v = read_gx_component(pos_data + c * csz, pt, frac);
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            } else {
+                for (int c = 0; c < npos; c++) {
+                    float v = 0.0f;
+                    memcpy(dst + di, &v, 4);
+                    di += 4;
+                }
+            }
+
+            /* Append constant color */
+            memcpy(dst + di, const_clr, 4);
+            di += 4;
+
+            /* Skip normal in source if present */
+            if (desc[GX_VA_NRM].type != GX_NONE) {
+                resolve_attr_data(GX_VA_NRM, src, &si);
+                int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
+                if (desc[GX_VA_NRM].type == GX_DIRECT) si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+            }
+
+            /* Skip CLR0/CLR1 in source if present (we're replacing with const_clr) */
+            for (int ci = 0; ci < 2; ci++) {
+                if (desc[GX_VA_CLR0 + ci].type != GX_NONE) {
+                    resolve_attr_data(GX_VA_CLR0 + ci, src, &si);
+                    if (desc[GX_VA_CLR0 + ci].type == GX_DIRECT) {
+                        int clr_sz = (af[GX_VA_CLR0 + ci].comp_type <= GX_RGB565) ? 2 :
+                                     (af[GX_VA_CLR0 + ci].comp_type == GX_RGB8) ? 3 : 4;
+                        si += clr_sz;
+                    }
+                }
+            }
+
+            /* Texture coordinates → Float */
+            for (int i = 0; i < 8; i++) {
+                if (desc[GX_VA_TEX0 + i].type != GX_NONE) {
+                    int ntc = (af[GX_VA_TEX0 + i].cnt == GX_TEX_S) ? 1 : 2;
+                    GXCompType tt = af[GX_VA_TEX0 + i].comp_type;
+                    uint8_t tf = af[GX_VA_TEX0 + i].frac;
+                    uint32_t tc_sz = gx_comp_size(tt);
+                    const uint8_t* tc_data = resolve_attr_data(GX_VA_TEX0 + i, src, &si);
+                    if (desc[GX_VA_TEX0 + i].type == GX_DIRECT) si += ntc * tc_sz;
+                    if (tc_data) {
+                        for (int c = 0; c < ntc; c++) {
+                            float v = read_gx_component(tc_data + c * tc_sz, tt, tf);
+                            memcpy(dst + di, &v, 4);
+                            di += 4;
+                        }
+                    } else {
+                        for (int c = 0; c < ntc; c++) {
+                            float v = 0.0f;
+                            memcpy(dst + di, &v, 4);
+                            di += 4;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        /* Full vertex conversion: raw GX → float */
+        for (uint16_t vi = 0; vi < nverts; vi++) {
+            const uint8_t* src = ds->vtx_data + vi * raw_stride;
+            uint8_t* dst = tvb.data + vi * bgfx_stride;
+            convert_vertex_to_float(src, dst);
+        }
+    }
+
+    /* One-time vertex dump for title scene debugging */
+    {
+        static int s_vtx_dump_count = 0;
+        /* Dump vertex data for title scene draws (frame ~130+, draw_count > 1000) */
+        if (s_vtx_dump_count < 8 && nverts >= 4 && s_total_draw_count > 1000 &&
+            preset == GX_TEV_SHADER_BLEND) {
+            s_vtx_dump_count++;
+            fprintf(stderr, "{\"vtx_dump\":{\"draw_id\":%u,\"frame_est\":%u,\"nverts\":%u,"
+                    "\"stride\":%u,\"raw_stride\":%u,\"inject\":%d,\"preset\":\"%s\",\"verts\":[",
+                    s_total_draw_count, s_total_draw_count / 86, (unsigned)nverts,
+                    bgfx_stride, raw_stride, inject_color,
+                    (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?");
+            for (int vi = 0; vi < (int)nverts && vi < 4; vi++) {
+                const float* fv = (const float*)(tvb.data + vi * bgfx_stride);
+                int nf = bgfx_stride / 4;
+                if (vi > 0) fprintf(stderr, ",");
+                fprintf(stderr, "[");
+                for (int fi = 0; fi < nf && fi < 12; fi++) {
+                    if (fi > 0) fprintf(stderr, ",");
+                    /* Check if this looks like a color (4 bytes packed) or float */
+                    if (fi == 3) {
+                        /* Color0 is stored as 4 packed uint8 bytes */
+                        const uint8_t* cb = (const uint8_t*)(tvb.data + vi * bgfx_stride + fi * 4);
+                        fprintf(stderr, "\"c(%d,%d,%d,%d)\"", cb[0], cb[1], cb[2], cb[3]);
+                    } else {
+                        fprintf(stderr, "%.4f", fv[fi]);
+                    }
+                }
+                fprintf(stderr, "]");
+            }
+            fprintf(stderr, "]}}\n");
+        }
+    }
 
     /* 4. Handle primitive conversion */
     bgfx::TransientIndexBuffer tib;
     int use_index_buffer = 0;
     uint32_t num_indices = 0;
+
 
     if (ds->prim_type == GX_QUADS) {
         /* Convert quads to triangles */
@@ -622,16 +1569,80 @@ void pal_tev_flush_draw(void) {
         };
 
         /* Multiply: mvp = proj * model (row-major) */
+        float mvp_rm[16];
         for (int r = 0; r < 4; r++) {
             for (int c = 0; c < 4; c++) {
-                mvp[r * 4 + c] = 0.0f;
+                mvp_rm[r * 4 + c] = 0.0f;
                 for (int k = 0; k < 4; k++) {
-                    mvp[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
+                    mvp_rm[r * 4 + c] += proj[r][k] * m44[k * 4 + c];
                 }
+            }
+        }
+
+        /* Transpose to column-major for bgfx (OpenGL convention) */
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 4; c++) {
+                mvp[c * 4 + r] = mvp_rm[r * 4 + c];
             }
         }
     }
     bgfx::setTransform(mvp);
+    {
+        static int s_mvp_dump = 0;
+        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
+            s_mvp_dump++;
+            const float (*gp)[4] = g_gx_state.proj_mtx;
+            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f]}}\n",
+                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
+                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
+                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
+                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
+                    mvp[0],mvp[1],mvp[2],mvp[3],
+                    mvp[4],mvp[5],mvp[6],mvp[7],
+                    mvp[8],mvp[9],mvp[10],mvp[11],
+                    mvp[12],mvp[13],mvp[14],mvp[15]);
+        }
+    }
+
+    /* Screen-space bounding box diagnostic for title scene BLEND draws */
+    {
+        static int s_ss_dump = 0;
+        if (s_ss_dump < 100 && s_total_draw_count > 1000 && preset == GX_TEV_SHADER_BLEND) {
+            s_ss_dump++;
+            /* Compute screen-space bounds from first 4 verts */
+            float ss_min_x = 99999, ss_max_x = -99999;
+            float ss_min_y = 99999, ss_max_y = -99999;
+            for (int vi = 0; vi < (int)nverts && vi < 4; vi++) {
+                const float* fv = (const float*)(tvb.data + vi * bgfx_stride);
+                float x = fv[0], y = fv[1], z = fv[2];
+                /* col-major MVP: clip = mvp * (x,y,z,1) */
+                float cx = mvp[0]*x + mvp[4]*y + mvp[8]*z + mvp[12];
+                float cy = mvp[1]*x + mvp[5]*y + mvp[9]*z + mvp[13];
+                float cw = mvp[3]*x + mvp[7]*y + mvp[11]*z + mvp[15];
+                if (cw != 0.0f) { cx /= cw; cy /= cw; }
+                float sx = (cx + 1.0f) * 320.0f;
+                float sy = (1.0f - cy) * 240.0f;
+                if (sx < ss_min_x) ss_min_x = sx;
+                if (sx > ss_max_x) ss_max_x = sx;
+                if (sy < ss_min_y) ss_min_y = sy;
+                if (sy > ss_max_y) ss_max_y = sy;
+            }
+            fprintf(stderr, "{\"ss_box\":{\"draw\":%u,\"screen\":[%.0f,%.0f,%.0f,%.0f],"
+                    "\"vert0\":[%.1f,%.1f],\"mvp_tx\":%.6f,\"mvp_ty\":%.6f}}\n",
+                    s_total_draw_count,
+                    ss_min_x, ss_min_y, ss_max_x, ss_max_y,
+                    ((const float*)(tvb.data))[0], ((const float*)(tvb.data))[1],
+                    mvp[12], mvp[13]);
+        }
+    }
 
     /* 6. Set vertex buffer */
     bgfx::setVertexBuffer(0, &tvb);
@@ -648,24 +1659,220 @@ void pal_tev_flush_draw(void) {
             const GXTexBinding* binding = &g_gx_state.tex_bindings[s0->tex_map];
             bgfx::TextureHandle tex = upload_gx_texture(binding);
             if (bgfx::isValid(tex)) {
-                bgfx::setTexture(0, s_tex_uniform, tex);
+                bgfx::setTexture(0, s_tex_uniform, tex, gx_sampler_flags(binding));
             }
+            /* Per-draw texture diagnostic:
+             * Log first 5 draws AND any draw with invalid texture handle.
+             * Also log first 5 draws after draw_id exceeds 50 (title scene). */
+            static int s_tex_log_count = 0;
+            static int s_title_log_count = 0;
+            int should_log = (s_tex_log_count < 5);
+            if (!bgfx::isValid(tex)) should_log = 1;
+            if (s_total_draw_count > 50 && s_title_log_count < 10) {
+                should_log = 1;
+                s_title_log_count++;
+            }
+            if (should_log) {
+                if (s_tex_log_count < 5) s_tex_log_count++;
+                int ns = g_gx_state.num_tev_stages;
+                const GXTevStage* s1 = (ns >= 2) ? &g_gx_state.tev_stages[1] : NULL;
+                /* First 2 texcoord values for UV debugging */
+                float tc0_u = 0, tc0_v = 0, tc1_u = 0, tc1_v = 0;
+                if (nverts >= 1 && raw_stride > 0) {
+                    const GXVtxAttrFmtEntry* af = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+                    for (int tci = 0; tci < 8; tci++) {
+                        if (desc[GX_VA_TEX0 + tci].type != GX_NONE) {
+                            GXCompType tt = af[GX_VA_TEX0 + tci].comp_type;
+                            uint8_t tf = af[GX_VA_TEX0 + tci].frac;
+                            uint32_t tc_off = 0;
+                            /* Compute offset to first texcoord in raw vertex */
+                            for (int ai = 0; ai < GX_VA_TEX0 + tci; ai++) {
+                                if (desc[ai].type != GX_NONE) {
+                                    tc_off += raw_attr_size(ai);
+                                }
+                            }
+                            /* Read first vertex texcoord */
+                            if (desc[GX_VA_TEX0 + tci].type == GX_DIRECT && tc_off + 4 <= raw_stride) {
+                                tc0_u = read_gx_component(ds->vtx_data + tc_off, tt, tf);
+                                tc0_v = read_gx_component(ds->vtx_data + tc_off + gx_comp_size(tt), tt, tf);
+                                if (nverts >= 2) {
+                                    tc1_u = read_gx_component(ds->vtx_data + raw_stride + tc_off, tt, tf);
+                                    tc1_v = read_gx_component(ds->vtx_data + raw_stride + tc_off + gx_comp_size(tt), tt, tf);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                fprintf(stderr, "{\"tev_draw\":{\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"tex_valid\":%d,\"tex_map\":%d,"
+                        "\"w\":%u,\"h\":%u,\"fmt\":%d,\"img_ptr\":\"%p\","
+                        "\"bind_valid\":%d,"
+                        "\"nverts\":%u,\"prim\":%d,"
+                        "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
+                        "\"z_enable\":%d,"
+                        "\"tc\":[%.3f,%.3f,%.3f,%.3f],"
+                        "\"num_stages\":%d,"
+                        "\"tev0_cd\":[%d,%d,%d,%d]",
+                        s_total_draw_count, s_fs_names[preset],
+                        bgfx::isValid(tex) ? 1 : 0,
+                        s0->tex_map,
+                        (unsigned)binding->width, (unsigned)binding->height,
+                        (int)binding->format, binding->image_ptr,
+                        binding->valid,
+                        (unsigned)nverts, ds->prim_type,
+                        g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
+                        g_gx_state.z_compare_enable,
+                        tc0_u, tc0_v, tc1_u, tc1_v,
+                        ns,
+                        s0->color_a, s0->color_b, s0->color_c, s0->color_d);
+                if (s1) {
+                    fprintf(stderr, ",\"tev1_cd\":[%d,%d,%d,%d]",
+                            s1->color_a, s1->color_b, s1->color_c, s1->color_d);
+                }
+                fprintf(stderr, ",\"regs\":[[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d],[%d,%d,%d,%d]]}}\n",
+                        g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
+                        g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
+                        g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
+                        g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a,
+                        g_gx_state.tev_regs[2].r, g_gx_state.tev_regs[2].g,
+                        g_gx_state.tev_regs[2].b, g_gx_state.tev_regs[2].a,
+                        g_gx_state.tev_regs[3].r, g_gx_state.tev_regs[3].g,
+                        g_gx_state.tev_regs[3].b, g_gx_state.tev_regs[3].a);
+            }
+        }
+
+        /* Set TEV register uniforms for BLEND shader (mBlack/mWhite lerp) */
+        if (preset == GX_TEV_SHADER_BLEND) {
+            float reg0[4] = {
+                g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f,
+            };
+            float reg1[4] = {
+                g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
+                g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f,
+            };
+
+            /* DIAGNOSTIC: When TP_BLEND_RED is set, force both TEV regs to
+             * red to confirm whether BLEND draws reach the screen at all.
+             * If title scene shows red, the issue is in the shader formula
+             * or uniform values, not in draw submission. */
+            {
+                static int s_blend_red = -1;
+                if (s_blend_red < 0) {
+                    const char* br = getenv("TP_BLEND_RED");
+                    s_blend_red = (br && br[0] == '1') ? 1 : 0;
+                }
+                if (s_blend_red) {
+                    reg0[0] = 1.0f; reg0[1] = 0.0f; reg0[2] = 0.0f; reg0[3] = 1.0f;
+                    reg1[0] = 1.0f; reg1[1] = 0.0f; reg1[2] = 0.0f; reg1[3] = 1.0f;
+                }
+            }
+
+            bgfx::setUniform(s_tev_reg0_uniform, reg0);
+            bgfx::setUniform(s_tev_reg1_uniform, reg1);
         }
     }
 
     /* 9. Set render state */
-    uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+    uint64_t state = 0;
+    if (g_gx_state.color_update) {
+        state |= BGFX_STATE_WRITE_RGB;
+        /* GX doesn't use framebuffer alpha for TV display output.
+         * On PC, write alpha alongside RGB so the rendered content is
+         * visible in the window/capture (blending and compositing rely
+         * on FB alpha). */
+        state |= BGFX_STATE_WRITE_A;
+    }
     state |= convert_blend_state();
     state |= convert_depth_state();
     state |= convert_cull_state();
-    state |= convert_primitive_state(ds->prim_type);
+
+    /* DIAGNOSTIC: When TP_NO_BLEND is set, disable blending for BLEND draws
+     * to test whether alpha is the issue. */
+    {
+        static int s_no_blend = -1;
+        if (s_no_blend < 0) {
+            const char* nb = getenv("TP_NO_BLEND");
+            s_no_blend = (nb && nb[0] == '1') ? 1 : 0;
+        }
+        if (s_no_blend && preset == GX_TEV_SHADER_BLEND) {
+            state &= ~BGFX_STATE_BLEND_MASK;
+            state &= ~BGFX_STATE_BLEND_EQUATION_MASK;
+        }
+    }
+    /* When using index buffer conversion (quads→tris, fans→tris),
+     * the primitive state must be triangle list (0), not the original GX type. */
+    if (use_index_buffer && num_indices > 0)
+        state |= 0; /* triangle list — explicit no-op for clarity */
+    else
+        state |= convert_primitive_state(ds->prim_type);
+
+    /* Alpha test — apply GX alpha compare to bgfx alpha ref.
+     * Only the simple case (comp0 != ALWAYS with ref0 > 0) is handled;
+     * dual-compare with AND/OR/XOR is approximated by using the first ref. */
+    if (g_gx_state.alpha_comp0 != GX_ALWAYS && g_gx_state.alpha_ref0 > 0) {
+        state |= BGFX_STATE_ALPHA_REF(g_gx_state.alpha_ref0);
+    } else if (g_gx_state.alpha_comp1 != GX_ALWAYS && g_gx_state.alpha_ref1 > 0) {
+        state |= BGFX_STATE_ALPHA_REF(g_gx_state.alpha_ref1);
+    }
+
     bgfx::setState(state);
 
-    /* 10. Submit draw call */
-    bgfx::submit(0, s_programs[preset]);
+    /* Per-draw diagnostic for title scene BLEND draws — logs state values
+     * that could cause black output (blend func, alpha test, suppress, etc.) */
+    {
+        static int s_state_dump = 0;
+        if (s_state_dump < 10 && s_total_draw_count > 200) {
+            if (preset == GX_TEV_SHADER_BLEND || s_state_dump < 3) {
+                s_state_dump++;
+                fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"prog_valid\":%d,\"prog_idx\":%u,"
+                        "\"color_update\":%d,\"state\":\"0x%016llX\","
+                        "\"write_rgb\":%d,\"write_a\":%d,"
+                        "\"suppress\":%d,"
+                        "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
+                        "\"z_en\":%d,\"z_func\":%d,\"z_upd\":%d,"
+                        "\"alpha_comp0\":%d,\"alpha_ref0\":%d,"
+                        "\"cull\":%d,"
+                        "\"scissor\":[%d,%d,%d,%d],"
+                        "\"nverts\":%u,\"nidx\":%u,\"inject\":%d}}\n",
+                        s_total_draw_count,
+                        (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                        bgfx::isValid(s_programs[preset]) ? 1 : 0,
+                        s_programs[preset].idx,
+                        g_gx_state.color_update,
+                        (unsigned long long)state,
+                        (int)((state & BGFX_STATE_WRITE_RGB) != 0),
+                        (int)((state & BGFX_STATE_WRITE_A) != 0),
+                        0 /* suppress_color — depth-prime draws now skipped early */,
+                        g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
+                        g_gx_state.z_compare_enable, g_gx_state.z_func, g_gx_state.z_update_enable,
+                        g_gx_state.alpha_comp0, g_gx_state.alpha_ref0,
+                        g_gx_state.cull_mode,
+                        g_gx_state.sc_left, g_gx_state.sc_top,
+                        g_gx_state.sc_wd, g_gx_state.sc_ht,
+                        (unsigned)nverts, (unsigned)num_indices,
+                        inject_color);
+            }
+        }
+    }
 
-    /* 11. Blit to software framebuffer for screenshot capture */
-    pal_screenshot_blit();
+    /* Apply scissor if set to a non-fullscreen region */
+    if (g_gx_state.sc_wd > 0 && g_gx_state.sc_ht > 0) {
+        bgfx::setScissor(
+            (uint16_t)g_gx_state.sc_left, (uint16_t)g_gx_state.sc_top,
+            (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
+    }
+
+    /* 10. Submit draw call — use view 1 for fade overlay so it renders
+     * after all scene content in view 0. */
+    bgfx::ViewId view_id = g_gx_state.fade_overlay_active ? 1 : 0;
+    bgfx::submit(view_id, s_programs[preset]);
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

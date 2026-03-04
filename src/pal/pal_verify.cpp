@@ -21,7 +21,7 @@
 
 extern "C" {
 #include "pal/pal_verify.h"
-#include "pal/gx/gx_screenshot.h"
+#include "pal/gx/gx_capture.h"
 #include "pal/gx/gx_stub_tracker.h"
 }
 
@@ -61,6 +61,15 @@ static u32 s_all_prim_mask = 0;            /* union of all primitive types ever 
 static u32 s_distinct_hashes = 0;          /* number of distinct framebuffer hashes */
 static u32 s_prev_fb_hash = 0;            /* previous frame's hash for change detection */
 static u32 s_hash_changes = 0;            /* number of times fb hash changed frame-to-frame */
+
+/* Regression assertion: per-capture-frame pixel coverage */
+#define REGRESS_MAX_CAPTURES 32
+static int s_regress_count = 0;
+static struct {
+    u32 frame;
+    int pct_nonblack;
+    u32 nonblack_pixels;
+} s_regress_data[REGRESS_MAX_CAPTURES];
 
 static void parse_capture_frames(const char* spec) {
     if (!spec || spec[0] == '\0')
@@ -169,7 +178,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     /* Track frame-to-frame hash changes for progression detection.
      * Skip first frame (s_total_frames==1) since s_prev_fb_hash is uninitialized.
      * Compute hash once and reuse for both progression and logging. */
-    uint32_t fb_hash = pal_screenshot_hash_fb();
+    uint32_t fb_hash = pal_capture_hash_fb();
     if (s_total_frames > 1 && fb_hash != s_prev_fb_hash)
         s_hash_changes++;
     s_prev_fb_hash = fb_hash;
@@ -177,7 +186,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     /* Emit detailed frame report every 60 frames, or on capture frames */
     if (frame_num % 60 == 0 || should_capture(frame_num) || frame_num <= 5) {
         /* Include framebuffer hash for deterministic rendering comparison */
-        int has_draws = pal_screenshot_has_draws();
+        int has_draws = pal_capture_has_data();
         fprintf(stdout,
             "{\"verify_frame\":{\"frame\":%u,\"draw_calls\":%u,\"verts\":%u,"
             "\"stub_count\":%u,\"valid\":%u,\"fb_hash\":\"0x%08X\","
@@ -204,18 +213,18 @@ void pal_verify_capture_frame(u32 frame_num) {
     if (!s_verify_active || !s_verify_dir)
         return;
 
-    /* Use the software framebuffer from gx_screenshot.cpp */
-    uint8_t* fb = pal_screenshot_get_fb();
+    /* Use the capture buffer from gx_capture.cpp */
+    uint8_t* fb = pal_capture_get_fb();
     if (!fb)
         return;
 
-    int fb_w = pal_screenshot_get_fb_width();
-    int fb_h = pal_screenshot_get_fb_height();
+    int fb_w = pal_capture_get_fb_width();
+    int fb_h = pal_capture_get_fb_height();
 
     char path[512];
     snprintf(path, sizeof(path), "%s/frame_%04u.bmp", s_verify_dir, frame_num);
 
-    /* Write BMP file (same format as gx_screenshot.cpp) */
+    /* Write BMP file (same format as gx_capture.cpp) */
     FILE* f = fopen(path, "wb");
     if (!f) {
         fprintf(stdout, "{\"verify_capture\":\"write_failed\",\"frame\":%u,\"path\":\"%s\"}\n",
@@ -271,12 +280,12 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (!s_verify_active)
         return 0;
 
-    uint8_t* fb = pal_screenshot_get_fb();
+    uint8_t* fb = pal_capture_get_fb();
     if (!fb)
         return 0;
 
-    int fb_w = pal_screenshot_get_fb_width();
-    int fb_h = pal_screenshot_get_fb_height();
+    int fb_w = pal_capture_get_fb_width();
+    int fb_h = pal_capture_get_fb_height();
     u32 total_pixels = (u32)(fb_w * fb_h);
     u32 nonblack = 0;
     u32 unique_colors = 0;
@@ -321,7 +330,15 @@ int pal_verify_analyze_fb(u32 frame_num) {
     if (pct_nonblack > 0)
         s_frames_nonblack++;
 
-    uint32_t fb_hash = pal_screenshot_hash_fb();
+    /* Store for regression assertion */
+    if (s_regress_count < REGRESS_MAX_CAPTURES) {
+        s_regress_data[s_regress_count].frame = frame_num;
+        s_regress_data[s_regress_count].pct_nonblack = pct_nonblack;
+        s_regress_data[s_regress_count].nonblack_pixels = nonblack;
+        s_regress_count++;
+    }
+
+    uint32_t fb_hash = pal_capture_hash_fb();
 
     fprintf(stdout,
         "{\"verify_fb\":{\"frame\":%u,\"pct_nonblack\":%d,\"unique_colors\":%u,"
@@ -430,6 +447,78 @@ void pal_verify_summary(void) {
     if (s_audio_frames_active > 0) {
         audio_health = (int)((s_audio_frames_nonsilent * 100) / s_audio_frames_active);
     }
+
+    /* Regression assertions: check pixel-coverage thresholds at key frames.
+     * Logo (frames 40-90): expect >=2% non-black (red Nintendo logo).
+     *   Fade-in completes ~frame 33, fade-out starts ~frame 93.
+     * Title (frames 130-200): expect >=100 non-black pixels (grayscale
+     * "PRESS START" text renders ~900 pixels = 0.3% of 640x480). */
+    int regress_pass = 1;
+    int regress_logo_found = 0;
+    int regress_checked = 0;
+    int regress_passed = 0;
+
+    fprintf(stdout, "{\"verify_regression\":{\"checks\":[");
+    for (int i = 0; i < s_regress_count; i++) {
+        u32 f = s_regress_data[i].frame;
+        int pct = s_regress_data[i].pct_nonblack;
+        u32 pixels = s_regress_data[i].nonblack_pixels;
+        int threshold = 0;
+        u32 pixel_threshold = 0;
+        const char* label = "unknown";
+
+        /* Logo scene: frames 40-90 should have visible content
+         * (fade-in completes ~frame 33, fade-out starts ~frame 93) */
+        if (f >= 40 && f <= 90) {
+            threshold = 2;  /* >=2% non-black expected (Nintendo logo ~8%) */
+            label = "logo";
+            regress_logo_found = 1;
+        }
+        /* Title scene: frames 130-200 — the J2D overlay from
+         * zelda_press_start.blo renders "PRESS START" text at center-bottom.
+         * ~900 grayscale pixels = 0.3% of screen (rounds to 0% as integer).
+         * Use pixel count threshold instead of percentage. */
+        else if (f >= 130 && f <= 200) {
+            pixel_threshold = 100;  /* >=100 non-black pixels expected */
+            label = "title";
+        }
+        /* Play scene: frames 250-400 — tracking-only checkpoint to detect
+         * whether 3D world rendering produces any output after the title→play
+         * scene transition.  Uses pixel count >= 1 as a low bar. */
+        else if (f >= 250 && f <= 400) {
+            pixel_threshold = 1;  /* >=1 non-black pixel — any 3D output */
+            label = "play";
+        }
+
+        int pass;
+        if (pixel_threshold > 0) {
+            pass = (pixels >= pixel_threshold) ? 1 : 0;
+        } else if (threshold > 0) {
+            pass = (pct >= threshold) ? 1 : 0;
+        } else {
+            pass = 1;
+        }
+
+        if (threshold > 0 || pixel_threshold > 0) {
+            regress_checked++;
+            if (pass)
+                regress_passed++;
+            else
+                regress_pass = 0;
+        }
+
+        if (i > 0) fprintf(stdout, ",");
+        fprintf(stdout,
+            "{\"frame\":%u,\"label\":\"%s\",\"pct_nonblack\":%d,"
+            "\"nonblack_pixels\":%u,\"threshold\":%d,"
+            "\"pixel_threshold\":%u,\"pass\":%d}",
+            f, label, pct, pixels, threshold, pixel_threshold, pass);
+    }
+    fprintf(stdout, "],\"logo_visible\":%d,\"checks_passed\":%d,"
+            "\"checks_total\":%d,\"regression\":%s}}\n",
+            regress_logo_found, regress_passed,
+            regress_checked, regress_pass ? "false" : "true");
+    fflush(stdout);
 
     fprintf(stdout,
         "{\"verify_summary\":{"

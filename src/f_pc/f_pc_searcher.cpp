@@ -13,6 +13,9 @@ void* fpcSch_JudgeForPName(void* i_proc, void* i_data) {
 }
 
 void* fpcSch_JudgeByID(void* i_proc, void* i_data) {
+#if PLATFORM_PC
+    if (i_proc == NULL) return NULL;
+#endif
     if (((base_process_class*)i_proc)->id == *(fpc_ProcID*)i_data)
         return i_proc;
 

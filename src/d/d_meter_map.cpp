@@ -22,6 +22,15 @@
 dMeter_map_HIO_c g_meter_mapHIO;
 #endif
 
+#if !DEBUG
+/* Provide constructor and static member for non-DEBUG builds */
+dMeter_map_HIO_c* dMeter_map_HIO_c::mMySelfPointer = NULL;
+dMeter_map_HIO_c::dMeter_map_HIO_c() { mMySelfPointer = this; }
+void dMeter_map_HIO_c::listenPropertyEvent(const JORPropertyEvent*) {}
+void dMeter_map_HIO_c::genMessage(JORMContext*) {}
+void dMeter_map_HIO_c::update() {}
+#endif
+
 #if DEBUG
 dMeter_map_HIO_c* dMeter_map_HIO_c::mMySelfPointer = NULL;
 dMeterMap_c* dMeterMap_c::mMySelfPointer = NULL;

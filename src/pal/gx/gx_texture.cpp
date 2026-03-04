@@ -327,6 +327,117 @@ static void decode_cmpr(const u8* src, u8* dst, u16 width, u16 height) {
 }
 
 /* ================================================================ */
+/* TLUT (palette) lookup helper                                     */
+/* ================================================================ */
+
+static inline void tlut_lookup(const u8* tlut, u32 tlut_fmt, u32 index, u8* r, u8* g, u8* b, u8* a) {
+    const u8* entry = tlut + index * 2;
+    u16 val = read_be16(entry);
+
+    switch (tlut_fmt) {
+        case 0: /* GX_TL_IA8 */
+            *r = *g = *b = (u8)(val & 0xFF);
+            *a = (u8)(val >> 8);
+            break;
+        case 1: /* GX_TL_RGB565 */
+            rgb565_to_rgba8(val, r, g, b, a);
+            break;
+        case 2: /* GX_TL_RGB5A3 */
+        default:
+            rgb5a3_to_rgba8(val, r, g, b, a);
+            break;
+    }
+}
+
+/* ================================================================ */
+/* C4 - 4-bit indexed color, 8x8 tiles                             */
+/* ================================================================ */
+
+static void decode_c4(const u8* src, u8* dst, u16 width, u16 height,
+                      const u8* tlut, u32 tlut_fmt) {
+    u16 tw = align_up(width, 8);
+    u16 th = align_up(height, 8);
+    u32 si = 0;
+    u16 by, bx, y, x;
+
+    for (by = 0; by < th; by += 8) {
+        for (bx = 0; bx < tw; bx += 8) {
+            for (y = 0; y < 8; y++) {
+                for (x = 0; x < 8; x += 2) {
+                    u8 val = src[si++];
+                    u8 idx0 = val >> 4;
+                    u8 idx1 = val & 0xF;
+                    u8 r, g, b, a;
+                    if (bx + x < width && by + y < height) {
+                        tlut_lookup(tlut, tlut_fmt, idx0, &r, &g, &b, &a);
+                        set_pixel(dst, width, bx + x, by + y, r, g, b, a);
+                    }
+                    if (bx + x + 1 < width && by + y < height) {
+                        tlut_lookup(tlut, tlut_fmt, idx1, &r, &g, &b, &a);
+                        set_pixel(dst, width, bx + x + 1, by + y, r, g, b, a);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ================================================================ */
+/* C8 - 8-bit indexed color, 8x4 tiles                             */
+/* ================================================================ */
+
+static void decode_c8(const u8* src, u8* dst, u16 width, u16 height,
+                      const u8* tlut, u32 tlut_fmt) {
+    u16 tw = align_up(width, 8);
+    u16 th = align_up(height, 4);
+    u32 si = 0;
+    u16 by, bx, y, x;
+
+    for (by = 0; by < th; by += 4) {
+        for (bx = 0; bx < tw; bx += 8) {
+            for (y = 0; y < 4; y++) {
+                for (x = 0; x < 8; x++) {
+                    u8 idx = src[si++];
+                    u8 r, g, b, a;
+                    if (bx + x < width && by + y < height) {
+                        tlut_lookup(tlut, tlut_fmt, idx, &r, &g, &b, &a);
+                        set_pixel(dst, width, bx + x, by + y, r, g, b, a);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ================================================================ */
+/* C14X2 - 14-bit indexed color, 4x4 tiles                         */
+/* ================================================================ */
+
+static void decode_c14x2(const u8* src, u8* dst, u16 width, u16 height,
+                         const u8* tlut, u32 tlut_fmt) {
+    u16 tw = align_up(width, 4);
+    u16 th = align_up(height, 4);
+    u32 si = 0;
+    u16 by, bx, y, x;
+
+    for (by = 0; by < th; by += 4) {
+        for (bx = 0; bx < tw; bx += 4) {
+            for (y = 0; y < 4; y++) {
+                for (x = 0; x < 4; x++) {
+                    u16 val = read_be16(src + si); si += 2;
+                    u16 idx = val & 0x3FFF;
+                    u8 r, g, b, a;
+                    if (bx + x < width && by + y < height) {
+                        tlut_lookup(tlut, tlut_fmt, idx, &r, &g, &b, &a);
+                        set_pixel(dst, width, bx + x, by + y, r, g, b, a);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ================================================================ */
 /* Public API                                                       */
 /* ================================================================ */
 
@@ -334,7 +445,6 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
                           u16 width, u16 height,
                           GXTexFmt format,
                           const void* tlut, u32 tlut_fmt) {
-    (void)tlut; (void)tlut_fmt;
 
     if (!src || !dst || width == 0 || height == 0)
         return 0;
@@ -356,6 +466,15 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
         case GX_TF_RGB5A3: decode_rgb5a3((const u8*)src, (u8*)dst, width, height); break;
         case GX_TF_RGBA8:  decode_rgba8((const u8*)src, (u8*)dst, width, height);  break;
         case GX_TF_CMPR:   decode_cmpr((const u8*)src, (u8*)dst, width, height);   break;
+        case GX_TF_C4:
+            if (tlut) decode_c4((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
+            break;
+        case GX_TF_C8:
+            if (tlut) decode_c8((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
+            break;
+        case GX_TF_C14X2:
+            if (tlut) decode_c14x2((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
+            break;
         default:
             /* Unknown format - fill with magenta for visibility */
             {
@@ -376,15 +495,18 @@ u32 pal_gx_tex_size(u16 width, u16 height, GXTexFmt format) {
 
     switch (format) {
         case GX_TF_I4:
+        case GX_TF_C4:
             tw = align_up(width, 8); th = align_up(height, 8);
             return (u32)(tw * th) / 2;
         case GX_TF_I8:
         case GX_TF_IA4:
+        case GX_TF_C8:
             tw = align_up(width, 8); th = align_up(height, 4);
             return (u32)(tw * th);
         case GX_TF_IA8:
         case GX_TF_RGB565:
         case GX_TF_RGB5A3:
+        case GX_TF_C14X2:
             tw = align_up(width, 4); th = align_up(height, 4);
             return (u32)(tw * th) * 2;
         case GX_TF_RGBA8:

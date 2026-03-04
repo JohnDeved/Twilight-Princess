@@ -367,9 +367,29 @@ void fopAcM_DeleteHeap(fopAc_ac_c* i_actor) {
     }
 }
 
+#if PLATFORM_PC
+/* Track the in-progress solid heap allocation so it can be freed if the
+ * actor's createHeap callback crashes via sigsetjmp.  Without this, a
+ * crashed creation leaks the entire solid heap from the game heap. */
+static JKRSolidHeap* s_pending_solid_heap = NULL;
+
+void fopAcM_cleanupPendingSolidHeap(void) {
+    if (s_pending_solid_heap != NULL) {
+        mDoExt_destroySolidHeap(s_pending_solid_heap);
+        s_pending_solid_heap = NULL;
+    }
+}
+#endif
+
 s32 fopAcM_callCallback(fopAc_ac_c* i_actor, heapCallbackFunc i_callback, JKRHeap* i_heap) {
     JKRHeap* oldHeap = mDoExt_setCurrentHeap(i_heap);
+#if PLATFORM_PC
+    s_pending_solid_heap = (JKRSolidHeap*)i_heap;
+#endif
     s32 ret = i_callback(i_actor);
+#if PLATFORM_PC
+    s_pending_solid_heap = NULL;
+#endif
     mDoExt_setCurrentHeap(oldHeap);
     return ret;
 }
@@ -437,6 +457,25 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
     if (i_size != 0) {
         i_size = ALIGN_NEXT(i_size, 0x10);
     }
+
+#if PLATFORM_PC
+    /* Log allocation requests >1MB or zero/max */
+    {
+        JKRExpHeap* gh = mDoExt_getGameHeap();
+        u32 gh_free = gh ? gh->getFreeSize() : 0;
+        if (i_size == 0 || i_size > 0x100000) {
+            fprintf(stderr, "{\"gh_alloc\":{\"src\":\"entrySolidHeap\",\"prof\":\"%s\",\"req\":%u,\"gh_free\":%u}}\n",
+                    procNameString, i_size, gh_free);
+        }
+    }
+    /* On PC, cap the max solid heap allocation to 4MB to prevent one actor
+     * from exhausting the entire game heap when i_size=0. On GCN the game
+     * heap was 24MB so a -1 allocation was bounded. With 138MB on PC, an
+     * unbounded -1 allocation consumes all memory. */
+    if (i_size == 0) {
+        i_size = 0x400000; /* 4 MB — generous for any single actor */
+    }
+#endif
 
     while (true) {
         if (i_size != 0) {
@@ -511,7 +550,15 @@ bool fopAcM_entrySolidHeap_(fopAc_ac_c* i_actor, heapCallbackFunc i_heapCallback
         }
 
         if (heap == NULL) {
+#if PLATFORM_PC
+            /* Cap the fallback allocation to 8MB instead of -1 (all free space).
+             * On GCN the game heap was 24MB so -1 was bounded, but on PC with
+             * 260MB game heap, -1 grabs everything in one allocation, starving
+             * all other actors.  8MB is generous for any single actor. */
+            heap = mDoExt_createSolidHeapFromGame(0x800000, 0x20);
+#else
             heap = mDoExt_createSolidHeapFromGame(-1, 0x20);
+#endif
             if (heap == NULL) {
                 // Allocation failed with max free heap size. [%s]
                 OSReport_Error("最大空きヒープサイズで確保失敗。[%s]\n", procNameString);
@@ -1460,6 +1507,9 @@ fpc_ProcID fopAcM_createItemFromEnemyID(u8 i_enemyID, cXyz const* i_pos, int i_i
                                             int itemNo;
     int tableNo = 0xFF;
     u32* data = (u32*)dEnemyItem_c::getItemData();
+#if PLATFORM_PC
+    if (data == NULL) return fpcM_ERROR_PROCESS_ID_e;
+#endif
     data++;
     int tableNum = (int) *data;
     data++;
@@ -1477,7 +1527,7 @@ fpc_ProcID fopAcM_createItemFromEnemyID(u8 i_enemyID, cXyz const* i_pos, int i_i
         table++;
     }
     
-    if (daPy_getPlayerActorClass()->checkHorseRide()) {
+    if (daPy_getPlayerActorClass() != NULL && daPy_getPlayerActorClass()->checkHorseRide()) {
         tableNo = fopAcM_getItemNoFromTableNo(tableNo);
         void* actor =
             fopAcM_createItemForDirectGet(i_pos, tableNo, i_roomNo, NULL, NULL, 0.0f, 0.0f);
@@ -1869,6 +1919,9 @@ fopAc_ac_c* fopAcM_myRoomSearchEnemy(s8 roomNo) {
 
     {
         daPy_py_c* player = (daPy_py_c*)dComIfGp_getPlayer(0);
+#if PLATFORM_PC
+        if (player == NULL) return NULL;
+#endif
         fopAc_ac_c* actor = fopAcM_SearchByID(player->getGrabActorID());
 
         if (actor != NULL && fopAcM_GetGroup(actor) == 2) {

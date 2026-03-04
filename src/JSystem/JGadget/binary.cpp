@@ -69,7 +69,7 @@ bool JGadget::binary::TParse_header_block::parse_next(const void** ppData_inout,
         const void* p = *ppData_inout;
         var_r29 = parseBlock_next(ppData_inout, &uData, idx) && var_r29;
 
-        JUT_ASSERT(192, std::uintptr_t(*ppData_inout)==std::uintptr_t(p)+uData);
+        JUT_ASSERT(192, (uintptr_t)(*ppData_inout)==(uintptr_t)(p)+uData);
 
         if ((idx & 2) == 0 && !var_r29) {
             return var_r29;
