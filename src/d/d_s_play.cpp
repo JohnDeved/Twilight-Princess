@@ -103,8 +103,8 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 #if PLATFORM_PC
     static int s_scnply_draw_count = 0;
     s_scnply_draw_count++;
-    if (s_scnply_draw_count <= 3) {
-        fprintf(stderr, "[PAL] dScnPly_Draw #%d\n", s_scnply_draw_count);
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d start\n", s_scnply_draw_count);
     }
 #endif
     static s16 l_wipeType[] = {
@@ -145,6 +145,12 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     }
     dMdl_mng_c::reset();
 
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step1: pre-BgMove\n", s_scnply_draw_count);
+    }
+#endif
+
     if (!dComIfGp_isPauseFlag() && dScnPly_c::pauseTimer == 0) {
         if (fpcM_GetName(i_this) == PROC_PLAY_SCENE) {
             dComIfGp_getVibration().Run();
@@ -164,9 +170,21 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
         }
     }
 
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step2: pre-DrawIter\n", s_scnply_draw_count);
+    }
+#endif
+
     for (create_tag_class* i = fopDwIt_Begin(); i != NULL; i = fopDwIt_Next(i)) {
         fpcM_Draw(i->mpTagData);
     }
+
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d step3: post-DrawIter\n", s_scnply_draw_count);
+    }
+#endif
 
     if (!dComIfGp_isPauseFlag()) {
         dEyeHL_mng_c::update();
@@ -176,6 +194,12 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 #endif
         dComIfGp_getAttention()->Draw();
     }
+
+#if PLATFORM_PC
+    if (s_scnply_draw_count <= 5) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d done\n", s_scnply_draw_count);
+    }
+#endif
 
     return 1;
 }

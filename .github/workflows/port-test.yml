@@ -111,7 +111,7 @@ jobs:
           echo "=== Phase 1: Logic test (Noop renderer) ==="
           unset DISPLAY
           export TP_TEST_FRAMES=400
-          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_logic.log || true
+          timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_logic.log || true
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
 

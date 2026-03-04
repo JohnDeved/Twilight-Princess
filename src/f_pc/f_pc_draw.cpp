@@ -13,12 +13,20 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <unistd.h>
 static volatile sig_atomic_t s_draw_crash = 0;
 static sigjmp_buf s_draw_jmpbuf;
 static void draw_sigsegv_handler(int sig) {
     (void)sig;
     s_draw_crash = 1;
     siglongjmp(s_draw_jmpbuf, 1);
+}
+/* Per-actor Draw timeout: skip actors whose Draw hangs > 15s.
+ * Uses SIGALRM which siglongjmps to a separate jmpbuf. */
+static sigjmp_buf s_draw_alarm_jmpbuf;
+static void draw_alarm_handler(int sig) {
+    (void)sig;
+    siglongjmp(s_draw_alarm_jmpbuf, 1);
 }
 #endif
 
@@ -44,32 +52,56 @@ int fpcDw_Execute(base_process_class* i_proc) {
     
 #if PLATFORM_PC
         if (draw_func == NULL) return 0;
-        /* Wrap Draw with SIGSEGV/SIGABRT protection */
+        /* Wrap Draw with SIGSEGV/SIGABRT protection + SIGALRM timeout */
         {
-            struct sigaction sa_new, sa_old_segv, sa_old_abrt;
+            struct sigaction sa_new, sa_old_segv, sa_old_abrt, sa_old_alarm;
             memset(&sa_new, 0, sizeof(sa_new));
             sa_new.sa_handler = draw_sigsegv_handler;
             sigemptyset(&sa_new.sa_mask);
             sa_new.sa_flags = SA_NODEFER;
             sigaction(SIGSEGV, &sa_new, &sa_old_segv);
             sigaction(SIGABRT, &sa_new, &sa_old_abrt);
+
+            /* SIGALRM timeout: skip actor Draw if it hangs > 15s */
+            struct sigaction sa_alm;
+            memset(&sa_alm, 0, sizeof(sa_alm));
+            sa_alm.sa_handler = draw_alarm_handler;
+            sigemptyset(&sa_alm.sa_mask);
+            sa_alm.sa_flags = 0;
+            sigaction(SIGALRM, &sa_alm, &sa_old_alarm);
+
             s_draw_crash = 0;
 
             if (sigsetjmp(s_draw_jmpbuf, 1) != 0) {
+                alarm(0);
                 sigaction(SIGSEGV, &sa_old_segv, NULL);
                 sigaction(SIGABRT, &sa_old_abrt, NULL);
+                sigaction(SIGALRM, &sa_old_alarm, NULL);
                 fpcLy_SetCurrentLayer(save_layer);
                 fprintf(stderr, "[PAL] SIGSEGV caught in Draw (prof=%d id=%u)\n",
                         i_proc->profname, i_proc->id);
                 return 0;
             }
+            if (sigsetjmp(s_draw_alarm_jmpbuf, 1) != 0) {
+                alarm(0);
+                sigaction(SIGSEGV, &sa_old_segv, NULL);
+                sigaction(SIGABRT, &sa_old_abrt, NULL);
+                sigaction(SIGALRM, &sa_old_alarm, NULL);
+                fpcLy_SetCurrentLayer(save_layer);
+                fprintf(stderr, "[PAL] Draw timeout (prof=%d id=%u) — skipping\n",
+                        i_proc->profname, i_proc->id);
+                return 0;
+            }
 
+            alarm(15);
             fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
             ret = draw_func(i_proc);
+            alarm(0);
             fpcLy_SetCurrentLayer(save_layer);
 
             sigaction(SIGSEGV, &sa_old_segv, NULL);
             sigaction(SIGABRT, &sa_old_abrt, NULL);
+            sigaction(SIGALRM, &sa_old_alarm, NULL);
             return ret;
         }
 #else

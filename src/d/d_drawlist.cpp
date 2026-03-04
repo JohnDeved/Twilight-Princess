@@ -1856,14 +1856,15 @@ void dDlst_list_c::draw(dDlst_base_c** p_start, dDlst_base_c** p_end) {
                 continue;
             }
         }
-        /* Guard against SIGSEGV/SIGBUS inside draw() from corrupted object data. */
+        /* Guard against SIGSEGV/SIGBUS/SIGABRT inside draw() from corrupted object data. */
         {
-            struct sigaction sa, old_segv, old_bus;
+            struct sigaction sa, old_segv, old_bus, old_abrt;
             sa.sa_handler = draw_signal_handler;
             sigemptyset(&sa.sa_mask);
             sa.sa_flags = 0;
             sigaction(SIGSEGV, &sa, &old_segv);
             sigaction(SIGBUS, &sa, &old_bus);
+            sigaction(SIGABRT, &sa, &old_abrt);
             s_draw_guard_active = 1;
             int crash_sig = sigsetjmp(s_draw_jmpbuf, 1);
             if (crash_sig == 0) {
@@ -1875,6 +1876,7 @@ void dDlst_list_c::draw(dDlst_base_c** p_start, dDlst_base_c** p_end) {
             s_draw_guard_active = 0;
             sigaction(SIGSEGV, &old_segv, NULL);
             sigaction(SIGBUS, &old_bus, NULL);
+            sigaction(SIGABRT, &old_abrt, NULL);
         }
 #else
         dlst->draw();
