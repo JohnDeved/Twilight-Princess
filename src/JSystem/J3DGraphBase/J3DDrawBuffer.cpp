@@ -10,7 +10,6 @@
 #include "JSystem/JKernel/JKRHeap.h"
 #if PLATFORM_PC
 #include <stdio.h>
-#include <string.h>
 #endif
 
 void J3DDrawBuffer::calcZRatio() {
@@ -234,6 +233,10 @@ void J3DDrawBuffer::drawHead() const {
     u32 size = mEntryTableSize;
     J3DPacket** buf = mpBuffer;
 #if PLATFORM_PC
+    /* Cap TOTAL probe output to avoid stderr flood in CI; 80 samples across
+     * the run is enough to cover >2 frames of a 38-entry packet chain and
+     * capture the repeated corruption pattern without log spam. */
+    enum { MAX_PACKET_PROBES = 80 };
     /* entryTableSize should never exceed 0x10000 (default is 0x20); a larger
      * value indicates corruption.  buf==NULL means allocBuffer was never called. */
     if (buf == NULL || size == 0 || size > 0x10000) return;
@@ -248,21 +251,19 @@ void J3DDrawBuffer::drawHead() const {
             /* Packet-chain probe: sample packet pointer, vptr, next pointer and
              * first bytes before virtual dispatch to diagnose vtable corruption. */
             {
-                static int s_packet_probe = 0;
-                if (s_packet_probe < 80) {
+                static int s_packet_probe_count = 0;
+                if (s_packet_probe_count < MAX_PACKET_PROBES) {
                     const void* vptr = *(const void* const*)packet;
                     const J3DPacket* next = packet->getNextPacket();
-                    unsigned char head[8] = {0};
-                    memcpy(head, packet, sizeof(head));
+                    uintptr_t packet_header = *(const uintptr_t*)packet;
                     fprintf(stderr,
                             "{\"j3d_packet_probe\":{\"slot\":%u,\"probe\":%d,"
                             "\"packet\":\"%p\",\"vptr\":\"%p\",\"next\":\"%p\","
-                            "\"vptr_low\":%d,\"head\":[%u,%u,%u,%u,%u,%u,%u,%u]}}\n",
-                            i, s_packet_probe, (void*)packet, vptr, (void*)next,
+                            "\"vptr_low\":%d,\"packet_header\":\"0x%llx\"}}\n",
+                            i, s_packet_probe_count, (void*)packet, vptr, (void*)next,
                             ((uintptr_t)vptr < 0x100000) ? 1 : 0,
-                            (unsigned)head[0], (unsigned)head[1], (unsigned)head[2], (unsigned)head[3],
-                            (unsigned)head[4], (unsigned)head[5], (unsigned)head[6], (unsigned)head[7]);
-                    s_packet_probe++;
+                            (unsigned long long)packet_header);
+                    s_packet_probe_count++;
                 }
             }
 #endif

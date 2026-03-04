@@ -81,7 +81,7 @@ def main():
     bg_draw_entries = []
     bg_kankyo_stats = []
     kankyo_crash_count = 0
-    zblend_prop = {}
+    zblend_prop_by_frame = {}
     for obj in stderr_objs:
         if 'j3d_draw_diag' in obj:
             d = obj['j3d_draw_diag']
@@ -96,7 +96,7 @@ def main():
             bg_kankyo_stats.append(obj['bg_kankyo_stats'])
         if 'zblend_prop' in obj:
             p = obj['zblend_prop']
-            zblend_prop[p.get('frame', 0)] = p
+            zblend_prop_by_frame[p.get('frame', 0)] = p
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
 
@@ -226,27 +226,29 @@ def main():
                                f"— room geometry not present in draw queue for most frames")
             # Packet-flow assertion: if j3d_entries stay nonzero while dl_draws stay zero
             # for too long, drawHead packet dispatch is likely broken.
-            consecutive = 0
-            max_consecutive = 0
+            consecutive_stalled_frames = 0
+            max_consecutive_stalled_frames = 0
             for f, d in sorted(play_frames.items()):
                 if d.get('j3d_entries', 0) > 0 and d.get('dl_draws', 0) == 0:
-                    consecutive += 1
-                    max_consecutive = max(max_consecutive, consecutive)
+                    consecutive_stalled_frames += 1
+                    max_consecutive_stalled_frames = max(max_consecutive_stalled_frames, consecutive_stalled_frames)
                 else:
-                    consecutive = 0
-            print(f"  Max consecutive (j3d_entries>0 && dl_draws==0): {max_consecutive}")
+                    consecutive_stalled_frames = 0
+            print(f"  Max consecutive (j3d_entries>0 && dl_draws==0): {max_consecutive_stalled_frames}")
             strict_flow = os.getenv("TP_TELEMETRY_ENFORCE_J3D_FLOW", "0") == "1"
-            if strict_flow and max_consecutive >= 20:
-                errors.append(f"REGRESSION: {max_consecutive} consecutive frames with "
+            # Set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to promote packet-flow
+            # stalls to hard failures (use after packet-chain fixes land).
+            if strict_flow and max_consecutive_stalled_frames >= 20:
+                errors.append(f"REGRESSION: {max_consecutive_stalled_frames} consecutive frames with "
                              f"j3d_entries>0 but dl_draws==0")
-            elif max_consecutive >= 20:
-                warnings.append(f"Packet-flow blocker: {max_consecutive} consecutive frames with "
+            elif max_consecutive_stalled_frames >= 20:
+                warnings.append(f"Packet-flow blocker: {max_consecutive_stalled_frames} consecutive frames with "
                                f"j3d_entries>0 but dl_draws==0 (set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to fail)")
 
     print("\n=== Z/Blend Propagation ===")
-    if zblend_prop:
-        latest_f = max(zblend_prop.keys())
-        latest = zblend_prop[latest_f]
+    if zblend_prop_by_frame:
+        latest_f = max(zblend_prop_by_frame.keys())
+        latest = zblend_prop_by_frame[latest_f]
         print(f"  Latest frame: {latest_f}")
         print(f"  GXSetZMode calls: {latest.get('gx_set_z', 0)}")
         print(f"  GXSetBlendMode calls: {latest.get('gx_set_blend', 0)}")
