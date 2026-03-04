@@ -13,6 +13,8 @@
 #   tools/self-test.sh --skip-build # test only (assumes already built)
 #   tools/self-test.sh --frames 300 # fewer frames for quick smoke test
 #   tools/self-test.sh --quick      # alias for --skip-build --frames 100
+#   tools/self-test.sh --crash-report          # run under GDB, print crash stack traces
+#   tools/self-test.sh --crash-report --unique # deduplicated crash sites only
 #
 # Exit codes:
 #   0 = all checks passed
@@ -24,6 +26,8 @@ set -euo pipefail
 # --- Defaults ---
 SKIP_BUILD=0
 FRAMES=2000
+CRASH_REPORT=0
+CRASH_UNIQUE=0
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tp-self-test.XXXXXX")" || {
     echo "ERROR: Failed to create temporary directory" >&2
@@ -41,15 +45,20 @@ trap cleanup_tmp EXIT
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --skip-build) SKIP_BUILD=1; shift ;;
-        --frames)     FRAMES="$2"; shift 2 ;;
-        --quick)      SKIP_BUILD=1; FRAMES=100; shift ;;
+        --skip-build)   SKIP_BUILD=1; shift ;;
+        --frames)       FRAMES="$2"; shift 2 ;;
+        --quick)        SKIP_BUILD=1; FRAMES=100; shift ;;
+        --crash-report) CRASH_REPORT=1; shift ;;
+        --unique)       CRASH_UNIQUE=1; shift ;;
         --help|-h)
             echo "Usage: tools/self-test.sh [--skip-build] [--frames N] [--quick]"
+            echo "                          [--crash-report [--unique]]"
             echo ""
-            echo "  --skip-build  Skip the build step (use existing binary)"
-            echo "  --frames N    Number of frames to run (default: 2000)"
-            echo "  --quick       Alias for --skip-build --frames 100"
+            echo "  --skip-build    Skip the build step (use existing binary)"
+            echo "  --frames N      Number of frames to run (default: 2000)"
+            echo "  --quick         Alias for --skip-build --frames 100"
+            echo "  --crash-report  Run under GDB and print all crash stack traces"
+            echo "  --unique        With --crash-report: only show first crash at each site"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 2 ;;

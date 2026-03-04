@@ -25,7 +25,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ccache ninja-build libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxkbcommon-dev libasound2-dev libpulse-dev libdbus-1-dev xvfb x11-utils libegl-dev libgles2-mesa-dev ffmpeg
+          sudo apt-get install -y \
+            ccache ninja-build \
+            libgl-dev libx11-dev libwayland-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxkbcommon-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev \
+            xvfb x11-utils libegl-dev libgles2-mesa-dev \
+            ffmpeg \
+            gdb binutils python3-pip
 
       - name: Cache ccache
         if: runner.os == 'Linux'
@@ -52,6 +59,13 @@ jobs:
           path: orig/GZ2E01/GZ2E01.rvz
           key: rom-GZ2E01-v1
 
+      - name: Configure ccache
+        if: runner.os == 'Linux'
+        run: |
+          ccache --set-config=max_size=500M
+          ccache --set-config=compression=true
+          ccache -z
+
       - name: Set up game data
         if: env.ROMS_TOKEN != ''
         run: |
@@ -61,17 +75,12 @@ jobs:
             --extract-dir build/extract/GZ2E01 \
             --tools-dir build/tools
 
-      - name: Configure ccache (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          ccache --set-config=max_size=500M
-          ccache --set-config=compression=true
-          ccache -z
-
       - name: Build PC port
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DTP_VERSION=PC
           ninja -C build tp-pc
 
@@ -82,7 +91,9 @@ jobs:
             xdpyinfo -display :99 >/dev/null 2>&1 && break
             sleep 1
           done
-          echo "DISPLAY=:99" >> $GITHUB_ENV
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          echo "GALLIUM_DRIVER=softpipe" >> "$GITHUB_ENV"
+          echo "LIBGL_ALWAYS_SOFTWARE=1" >> "$GITHUB_ENV"
 
       - name: Verify environment
         run: |
@@ -92,3 +103,5 @@ jobs:
           echo "Build: $(test -f build/tp-pc && echo 'OK' || echo 'MISSING')"
           echo "Game data: $(test -d data/res && echo 'OK' || echo 'MISSING (no ROMS_TOKEN)')"
           echo "Xvfb: $(xdpyinfo -display :99 >/dev/null 2>&1 && echo 'OK' || echo 'NOT RUNNING')"
+          echo "GDB: $(gdb --version | head -1)"
+
