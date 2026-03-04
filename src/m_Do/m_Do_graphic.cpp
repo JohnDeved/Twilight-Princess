@@ -45,10 +45,9 @@
 #include <signal.h>
 #include <setjmp.h>
 extern "C" void pal_gd_reset_dummy(void);
-static sigjmp_buf s_painter_jmpbuf;
-static void pal_painter_crash_handler(int sig) {
-    siglongjmp(s_painter_jmpbuf, sig);
-}
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 #endif
 
 #if PLATFORM_WII
@@ -1606,23 +1605,19 @@ int mDoGph_Painter() {
                 j3dSys.setViewMtx(camera_p->viewMtx);
                 dKy_setLight();
 
-                /* Wrap 3D draw list flush with crash protection — texture
-                 * decode or bad model data can crash during rendering.
-                 * Protects so j3d_draw_diag still emits. */
+                /* Wrap 3D draw list flush with global crash handler —
+                 * no per-frame sigaction overhead. */
                 {
-                    struct sigaction sa_new, sa_segv_old, sa_abrt_old;
-                    memset(&sa_new, 0, sizeof(sa_new));
-                    sa_new.sa_handler = pal_painter_crash_handler;
-                    sigemptyset(&sa_new.sa_mask);
-                    sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-                    sigaction(SIGSEGV, &sa_new, &sa_segv_old);
-                    sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+                    pal_crash_handler_init();
 
                     /* Per-draw-list crash protection: if one list crashes,
                      * subsequent lists can still execute and produce dl_draws. */
 #define PAL_SAFE_DRAW(label, code) \
-    if (sigsetjmp(s_painter_jmpbuf, 1) == 0) { code; } \
-    else { static int c = 0; if (c++ < 3) fprintf(stderr, "[PAL] draw crash: " label "\n"); }
+    { sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
+      pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
+      if (sigsetjmp(_jb, 1) == 0) { code; } \
+      else { static int c = 0; if (c++ < 3) fprintf(stderr, "[PAL] draw crash: " label "\n"); } \
+      pal_crash_jmpbuf = _prev; }
 
                     /* Sky */
                     PAL_SAFE_DRAW("OpaListSky", dComIfGd_drawOpaListSky());
@@ -1651,8 +1646,6 @@ int mDoGph_Painter() {
                     PAL_SAFE_DRAW("OpaList3Dlast", dComIfGd_drawOpaList3Dlast());
 
 #undef PAL_SAFE_DRAW
-                    sigaction(SIGSEGV, &sa_segv_old, NULL);
-                    sigaction(SIGABRT, &sa_abrt_old, NULL);
                 }
 
                 j3dSys.reinitGX();
@@ -1674,17 +1667,15 @@ int mDoGph_Painter() {
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        /* Wrap 2D/item draws with crash protection — NULL packet
-         * pointers or uninitialized display list objects can crash. */
+        /* Wrap 2D/item draws with global crash handler — no per-frame
+         * sigaction overhead. */
         {
-            struct sigaction sa_new, sa_segv_old2, sa_abrt_old2;
-            memset(&sa_new, 0, sizeof(sa_new));
-            sa_new.sa_handler = pal_painter_crash_handler;
-            sigemptyset(&sa_new.sa_mask);
-            sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-            sigaction(SIGSEGV, &sa_new, &sa_segv_old2);
-            sigaction(SIGABRT, &sa_new, &sa_abrt_old2);
-            if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {
+            pal_crash_handler_init();
+            sigjmp_buf jb;
+            sigjmp_buf* prev_target = pal_crash_jmpbuf;
+            pal_crash_jmpbuf = &jb;
+            pal_crash_occurred = 0;
+            if (sigsetjmp(jb, 1) == 0) {
                 J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
                 ortho.setPort();
 
@@ -1701,8 +1692,7 @@ int mDoGph_Painter() {
                 }
                 s_2d_crash_count++;
             }
-            sigaction(SIGSEGV, &sa_segv_old2, NULL);
-            sigaction(SIGABRT, &sa_abrt_old2, NULL);
+            pal_crash_jmpbuf = prev_target;
         }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */

@@ -19,28 +19,61 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
-static volatile sig_atomic_t s_exec_crash = 0;
-static sigjmp_buf s_exec_jmpbuf;
-/* Alternate signal stack to avoid corrupting main stack canaries
- * when siglongjmp recovers from SIGSEGV/SIGABRT. */
-static char s_alt_stack[65536]; /* 64KB alternate signal stack */
-static int s_alt_stack_installed = 0;
-static void pal_install_alt_stack(void) {
-    if (s_alt_stack_installed) return;
+
+/* ─── Global crash-isolation infrastructure ───────────────────────
+ * Signal handlers for SIGSEGV/SIGABRT/SIGFPE are installed ONCE at
+ * startup and kept permanently.  Per-actor overhead is reduced to a
+ * single sigsetjmp + two pointer writes, eliminating the 4 sigaction
+ * syscalls per actor that caused CI timeout.
+ *
+ * Usage:  pal_crash_handler_init();       // one-time, idempotent
+ *         sigjmp_buf jb;
+ *         sigjmp_buf* prev = pal_crash_jmpbuf;
+ *         pal_crash_jmpbuf = &jb;
+ *         if (sigsetjmp(jb, 1) != 0) { pal_crash_jmpbuf = prev; ... }
+ *         actual_work();
+ *         pal_crash_jmpbuf = prev;
+ */
+static char s_alt_stack[65536];
+
+/* Current recovery target — set before each protected call, cleared after. */
+sigjmp_buf* pal_crash_jmpbuf = NULL;
+volatile sig_atomic_t pal_crash_occurred = 0;
+
+static void pal_crash_signal_handler(int sig) {
+    (void)sig;
+    pal_crash_occurred = 1;
+    if (pal_crash_jmpbuf) {
+        siglongjmp(*pal_crash_jmpbuf, 1);
+    }
+    /* No recovery target — re-raise with default handler */
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static int s_crash_handler_installed = 0;
+extern "C" void pal_crash_handler_init(void) {
+    if (s_crash_handler_installed) return;
+    s_crash_handler_installed = 1;
+
     stack_t ss;
     ss.ss_sp = s_alt_stack;
     ss.ss_size = sizeof(s_alt_stack);
     ss.ss_flags = 0;
     sigaltstack(&ss, NULL);
-    s_alt_stack_installed = 1;
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = pal_crash_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_NODEFER | SA_ONSTACK;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
 }
-static void exec_sigsegv_handler(int sig) {
-    (void)sig;
-    s_exec_crash = 1;
-    siglongjmp(s_exec_jmpbuf, 1);
-}
-/* Track actor IDs that crashed during Execute so their Draw is skipped.
- * Actors with corrupted state from Execute crashes may loop forever in Draw. */
+
+/* ─── Per-actor-ID crash tracking (exec → draw skip) ─── */
 #define PAL_MAX_EXEC_CRASH_IDS 256
 static unsigned int s_exec_crashed_ids[PAL_MAX_EXEC_CRASH_IDS];
 static int s_exec_crashed_count = 0;
@@ -49,18 +82,17 @@ extern "C" void pal_mark_exec_crashed(unsigned int id) {
         s_exec_crashed_ids[s_exec_crashed_count++] = id;
 }
 extern "C" int pal_is_exec_crashed(unsigned int id) {
-    if (s_exec_crashed_count == 0) return 0;
     for (int i = 0; i < s_exec_crashed_count; i++)
         if (s_exec_crashed_ids[i] == id) return 1;
     return 0;
 }
-/* Per-profile crash counters: profiles that crash 3+ times in Execute
- * are permanently skipped.  This eliminates per-frame SIGSEGV overhead
- * (sigsetjmp/siglongjmp + signal handler setup) for actors that will
- * never succeed.  Without this, ~6 actors crashing every frame causes
- * CI timeout (400 frames × ~1s/frame = 400s > runner limit). */
+
+/* ─── Per-profile crash counter ───
+ * Threshold = 1: one crash is enough to permanently skip.
+ * These actors will never succeed mid-run — skipping after a single
+ * crash eliminates all subsequent SIGSEGV recovery overhead. */
 #define PAL_MAX_CRASH_PROFILES 128
-#define PAL_CRASH_THRESHOLD 3
+#define PAL_CRASH_THRESHOLD 1
 struct pal_profile_crash_entry { s16 profname; int count; };
 static pal_profile_crash_entry s_profile_crashes[PAL_MAX_CRASH_PROFILES];
 static int s_profile_crash_count = 0;
@@ -84,7 +116,6 @@ static int pal_profile_is_suppressed(s16 profname) {
     }
     return 0;
 }
-/* Expose profile suppression check for Draw path (f_pc_draw.cpp) */
 extern "C" int pal_is_profile_suppressed(int profname) {
     return pal_profile_is_suppressed((s16)profname);
 }
@@ -124,47 +155,32 @@ int fpcBs_Execute(base_process_class* i_proc) {
 
 #if PLATFORM_PC
     if (i_proc == NULL || i_proc->methods == NULL) return 0;
-    /* Skip profiles that have crashed 3+ times — no signal handler overhead */
+    /* Skip immediately — zero signal work, zero sigsetjmp overhead */
     if (pal_profile_is_suppressed(i_proc->profname)) return 0;
-    /* Wrap Execute with SIGSEGV/SIGABRT protection so one crashed actor doesn't
-     * take down the whole process. Uses SA_ONSTACK to avoid corrupting
-     * main stack canaries (which trigger __fortify_fail → abort). */
+
+    pal_crash_handler_init();
+    sigjmp_buf jb;
+    sigjmp_buf* prev_target = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &jb;
+    pal_crash_occurred = 0;
+
+    if (sigsetjmp(jb, 1) != 0) {
+        pal_crash_jmpbuf = prev_target;
+        int cc = pal_profile_crash_increment(i_proc->profname);
+        fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u) — permanently suppressed\n",
+                i_proc->profname, i_proc->id);
+        pal_mark_exec_crashed(i_proc->id);
+        return 0;
+    }
+
     {
-        pal_install_alt_stack();
-        struct sigaction sa_new, sa_old_segv, sa_old_abrt;
-        memset(&sa_new, 0, sizeof(sa_new));
-        sa_new.sa_handler = exec_sigsegv_handler;
-        sigemptyset(&sa_new.sa_mask);
-        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-        sigaction(SIGSEGV, &sa_new, &sa_old_segv);
-        sigaction(SIGABRT, &sa_new, &sa_old_abrt);
-        s_exec_crash = 0;
-
-        if (sigsetjmp(s_exec_jmpbuf, 1) != 0) {
-            /* SIGSEGV/SIGABRT caught — skip this actor's Execute */
-            sigaction(SIGSEGV, &sa_old_segv, NULL);
-            sigaction(SIGABRT, &sa_old_abrt, NULL);
-            int crash_count = pal_profile_crash_increment(i_proc->profname);
-            if (crash_count <= PAL_CRASH_THRESHOLD) {
-                fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u count=%d/%d)\n",
-                        i_proc->profname, i_proc->id, crash_count, PAL_CRASH_THRESHOLD);
-            }
-            if (crash_count == PAL_CRASH_THRESHOLD) {
-                fprintf(stderr, "[PAL] Execute: prof=%d permanently suppressed after %d crashes\n",
-                        i_proc->profname, PAL_CRASH_THRESHOLD);
-            }
-            pal_mark_exec_crashed(i_proc->id);
-            return 0;
-        }
-
         layer_class* save_layer = fpcLy_CurrentLayer();
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
         result = fpcMtd_Execute(i_proc->methods, i_proc);
         fpcLy_SetCurrentLayer(save_layer);
-
-        sigaction(SIGSEGV, &sa_old_segv, NULL);
-        sigaction(SIGABRT, &sa_old_abrt, NULL);
     }
+
+    pal_crash_jmpbuf = prev_target;
     return result;
 #endif
 
@@ -226,24 +242,19 @@ int fpcBs_Delete(base_process_class* i_proc) {
     /* Wrap the delete method with crash protection — actors with
      * unswapped data or uninitialized state can crash during deletion. */
     {
-        pal_install_alt_stack();
-        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
-        memset(&sa_new, 0, sizeof(sa_new));
-        sa_new.sa_handler = exec_sigsegv_handler;
-        sigemptyset(&sa_new.sa_mask);
-        sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
-        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
-        s_exec_crash = 0;
-        if (sigsetjmp(s_exec_jmpbuf, 1) == 0) {
+        pal_crash_handler_init();
+        sigjmp_buf jb;
+        sigjmp_buf* prev_target = pal_crash_jmpbuf;
+        pal_crash_jmpbuf = &jb;
+        pal_crash_occurred = 0;
+        if (sigsetjmp(jb, 1) == 0) {
             result = fpcMtd_Delete(i_proc->methods, i_proc);
         } else {
             fprintf(stderr, "[PAL] SIGSEGV caught in Delete (prof=%d id=%u)\n",
                     i_proc->profname, (unsigned)i_proc->id);
             result = 1; /* treat as "done" to free the process */
         }
-        sigaction(SIGSEGV, &sa_segv_old, NULL);
-        sigaction(SIGABRT, &sa_abrt_old, NULL);
+        pal_crash_jmpbuf = prev_target;
     }
     if (result == 1) {
         fpcBs_DeleteAppend(i_proc);
