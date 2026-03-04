@@ -250,7 +250,7 @@ def main():
     print(f"\n{'=' * 60}")
     print("PORT TEST SUMMARY")
     print(f"{'=' * 60}")
-    base_total_milestones = len([mid for mid in MILESTONE_NAMES.keys() if 0 <= mid < 99])
+    base_total_milestones = sum(1 for mid in MILESTONE_NAMES.keys() if 0 <= mid < 99)
     print(f"Milestones reached: {valid_milestone_count}/{base_total_milestones}")
     print(f"Milestones: {', '.join(valid_milestones_reached) if valid_milestones_reached else 'NONE'}")
     if goal_milestones_reached:

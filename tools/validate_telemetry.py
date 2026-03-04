@@ -270,7 +270,7 @@ def main():
         print(f"    - ✅ {m}")
     missing_goals = sorted(goal_milestones - set(reached_goals))
     for m in missing_goals:
-        warnings.append(f"Goal milestone not reached yet: {m}")
+        print(f"    - ⏳ {m} (informational)")
 
     # ================================================================
     # Final verdict

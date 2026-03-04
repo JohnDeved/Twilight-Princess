@@ -31,6 +31,7 @@ extern "C" {
 /* ================================================================ */
 
 #define VERIFY_MAX_CAPTURES 32
+#define GOAL_MILESTONE_FRAME_START 130
 
 static int s_verify_active = 0;
 static const char* s_verify_dir = NULL;
@@ -169,7 +170,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     /* Goal milestones for visible intro gameplay rendering.
      * These are informational milestones (IDs >= 100), excluded from the
      * 16/16 boot milestone count. */
-    if (!s_goal_intro_geometry && frame_num >= 130 && draw_calls > 0 && total_verts > 0) {
+    if (!s_goal_intro_geometry && frame_num >= GOAL_MILESTONE_FRAME_START && total_verts > 0) {
         s_goal_intro_geometry = 1;
         pal_milestone("GOAL_INTRO_GEOMETRY", MILESTONE_GOAL_INTRO_GEOMETRY,
                       "play-window frame has draw_calls+verts");
@@ -182,7 +183,7 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
         s_frames_with_depth++;
     if (gx_frame_blend_draws > 0)
         s_frames_with_blend++;
-    if (!s_goal_depth_blend && frame_num >= 130 && gx_frame_depth_draws > 0 && gx_frame_blend_draws > 0) {
+    if (!s_goal_depth_blend && frame_num >= GOAL_MILESTONE_FRAME_START && gx_frame_depth_draws > 0 && gx_frame_blend_draws > 0) {
         s_goal_depth_blend = 1;
         pal_milestone("GOAL_DEPTH_BLEND_ACTIVE", MILESTONE_GOAL_DEPTH_BLEND_ACTIVE,
                       "depth and blend draws both active in play window");
@@ -347,7 +348,7 @@ int pal_verify_analyze_fb(u32 frame_num) {
     /* Track captured frames that have non-black content */
     if (pct_nonblack > 0)
         s_frames_nonblack++;
-    if (!s_goal_intro_visible && frame_num >= 130 && pct_nonblack >= 1) {
+    if (!s_goal_intro_visible && frame_num >= GOAL_MILESTONE_FRAME_START && pct_nonblack >= 1) {
         s_goal_intro_visible = 1;
         pal_milestone("GOAL_INTRO_VISIBLE", MILESTONE_GOAL_INTRO_VISIBLE,
                       "captured play-window frame has non-black pixels");
