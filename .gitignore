@@ -54,3 +54,4 @@ build-asan/
 *.bmp
 /tmp/
 data
+build-port/

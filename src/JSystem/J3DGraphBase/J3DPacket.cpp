@@ -218,6 +218,24 @@ void J3DMatPacket::draw() {
     /* On PC, display lists are empty because GD functions are stubs.
      * Directly load the material's TEV/color/texgen state here instead
      * of replaying the empty DL. This sets the GX state for rendering. */
+    {
+        static int s_mat_block_diag = 0;
+        if (s_mat_block_diag < 5) {
+            J3DTevBlock* tev = mpMaterial->getTevBlock();
+            J3DIndBlock* ind = mpMaterial->getIndBlock();
+            J3DPEBlock* pe = mpMaterial->getPEBlock();
+            J3DTexGenBlock* tg = mpMaterial->getTexGenBlock();
+            J3DColorBlock* col = mpMaterial->getColorBlock();
+            J3DShapePacket* sp = getShapePacket();
+            fprintf(stderr, "{\"mat_block_diag\":{\"idx\":%d,\"tev\":%d,\"ind\":%d,\"pe\":%d,\"tg\":%d,\"col\":%d,\"shp\":%d,\"mode\":%u}}\n",
+                    (int)mpMaterial->getIndex(),
+                    tev != NULL ? 1 : 0, ind != NULL ? 1 : 0,
+                    pe != NULL ? 1 : 0, tg != NULL ? 1 : 0,
+                    col != NULL ? 1 : 0, sp != NULL ? 1 : 0,
+                    (unsigned)mpMaterial->getMaterialMode());
+            s_mat_block_diag++;
+        }
+    }
     if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
     if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();
     if (mpMaterial->getPEBlock() != NULL)  mpMaterial->getPEBlock()->load();
@@ -229,7 +247,17 @@ void J3DMatPacket::draw() {
 
     J3DShapePacket* packet = getShapePacket();
 #if PLATFORM_PC
-    if (packet == NULL || packet->getShape() == NULL) return;
+    if (packet == NULL || packet->getShape() == NULL) {
+        static int s_no_shape_log = 0;
+        if (s_no_shape_log < 5) {
+            fprintf(stderr, "{\"mat_no_shape\":{\"idx\":%d,\"pkt\":%d,\"shp\":%d}}\n",
+                    (int)mpMaterial->getIndex(),
+                    packet != NULL ? 1 : 0,
+                    (packet != NULL && packet->getShape() != NULL) ? 1 : 0);
+            s_no_shape_log++;
+        }
+        return;
+    }
 #endif
     packet->getShape()->loadPreDrawSetting();
 

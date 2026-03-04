@@ -191,6 +191,36 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
     i_material->mTevBlock = J3DMaterial::createTevBlock((u16)tev_stage_num_max);
     i_material->mIndBlock = J3DMaterial::createIndBlock(ind_flag);
     i_material->mPEBlock = J3DMaterial::createPEBlock(pe_flag, getMaterialMode(i_idx));
+#if PLATFORM_PC
+    {
+        static int s_create_diag = 0;
+        if (s_create_diag < 10) {
+            fprintf(stderr, "{\"mat_create\":{\"idx\":%d,\"stages\":%u,\"texgens\":%u,\"mode\":%u,"
+                    "\"col_f\":\"0x%x\",\"pe_f\":\"0x%x\",\"tev\":%d,\"ind\":%d,\"pe\":%d,\"tg\":%d,\"col\":%d}}\n",
+                    i_idx, stages, texgens, (unsigned)getMaterialMode(i_idx),
+                    color_flag, pe_flag,
+                    i_material->mTevBlock != NULL ? 1 : 0,
+                    i_material->mIndBlock != NULL ? 1 : 0,
+                    i_material->mPEBlock != NULL ? 1 : 0,
+                    i_material->mTexGenBlock != NULL ? 1 : 0,
+                    i_material->mColorBlock != NULL ? 1 : 0);
+            s_create_diag++;
+        }
+        /* Fallback: create default blocks if factory returned NULL.
+         * This can happen if materialMode is 0 (createPEBlock returns NULL)
+         * or if color_flag/pe_flag don't match expected values. */
+        if (i_material->mPEBlock == NULL)
+            i_material->mPEBlock = new J3DPEBlockOpa();
+        if (i_material->mTevBlock == NULL)
+            i_material->mTevBlock = new J3DTevBlock1();
+        if (i_material->mColorBlock == NULL)
+            i_material->mColorBlock = new J3DColorBlockLightOff();
+        if (i_material->mTexGenBlock == NULL)
+            i_material->mTexGenBlock = new J3DTexGenBlockBasic();
+        if (i_material->mIndBlock == NULL)
+            i_material->mIndBlock = new J3DIndBlockNull();
+    }
+#endif
     i_material->mIndex = i_idx;
     i_material->mMaterialMode = getMaterialMode(i_idx);
     i_material->mColorBlock->setColorChanNum(newColorChanNum(i_idx));
