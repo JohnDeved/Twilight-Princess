@@ -367,11 +367,11 @@ def main():
         total_samples = len(play_state_samples)
         print(f"  play_state samples: {total_samples}")
         print(f"  depth_bits active: {samples_with_depth}/{total_samples} "
-              f"({100*samples_with_depth//max(total_samples,1)}%)")
+              f"({100.0*samples_with_depth/max(total_samples,1):.1f}%)")
         print(f"  blend_bits active: {samples_with_blend}/{total_samples} "
-              f"({100*samples_with_blend//max(total_samples,1)}%)")
+              f"({100.0*samples_with_blend/max(total_samples,1):.1f}%)")
         print(f"  write_rgb active:  {samples_with_rgb}/{total_samples} "
-              f"({100*samples_with_rgb//max(total_samples,1)}%)")
+              f"({100.0*samples_with_rgb/max(total_samples,1):.1f}%)")
         # Show first 3 unique state values for diagnosis
         seen_states = {}
         for s in play_state_samples:
