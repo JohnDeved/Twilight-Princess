@@ -28,6 +28,8 @@
 #include <signal.h>
 #include <setjmp.h>
 #include "pal/pal_error.h"
+#include "JSystem/J3DGraphBase/J3DShape.h"
+#include "JSystem/J3DGraphBase/J3DShapeDraw.h"
 static volatile sig_atomic_t s_mdl_crash = 0;
 static sigjmp_buf s_mdl_jmpbuf;
 static void mdl_sigsegv_handler(int sig) {
@@ -477,6 +479,44 @@ void mDoExt_modelEntryDL(J3DModel* i_model) {
 #if PLATFORM_PC
     if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: model_data"); return; }
     if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelEntryDL: material"); return; }
+
+    /* Per-model probe: log shape/packet/DL/vertex diagnostics once per model.
+     * Runs across all registered models in one pass to catch block, packet,
+     * DL, and endian issues. */
+    {
+        static int s_model_probe_count = 0;
+        if (s_model_probe_count < 20) {
+            u16 shape_num = model_data->getShapeNum();
+            u32 vtx_num = model_data->getVtxNum();
+            int nonnull_dl = 0;
+            u32 total_dl_bytes = 0;
+            for (u16 si = 0; si < shape_num && si < 8; si++) {
+                J3DShape* shp = model_data->getShapeNodePointer(si);
+                if (shp == NULL) continue;
+                u16 mg = shp->getMtxGroupNum();
+                for (u16 gi = 0; gi < mg; gi++) {
+                    J3DShapeDraw* sd = shp->getShapeDraw(gi);
+                    if (sd != NULL && sd->getDisplayListSize() > 0) {
+                        nonnull_dl++;
+                        total_dl_bytes += sd->getDisplayListSize();
+                    }
+                }
+            }
+            /* Log first 3 VTX1 position floats if available */
+            float v0 = 0, v1 = 0, v2 = 0;
+            void* vpos = model_data->getVtxPosArray();
+            if (vpos != NULL && vtx_num >= 1) {
+                float* fp = (float*)vpos;
+                v0 = fp[0]; v1 = fp[1]; v2 = fp[2];
+            }
+            fprintf(stderr, "{\"model_probe\":{\"idx\":%d,\"shapes\":%u,\"vtx_num\":%u,\"nonnull_dl\":%d,\"dl_bytes\":%u,\"mat_num\":%u,\"v0\":%.3f,\"v1\":%.3f,\"v2\":%.3f}}\n",
+                    s_model_probe_count, (unsigned)shape_num, (unsigned)vtx_num,
+                    nonnull_dl, total_dl_bytes,
+                    (unsigned)model_data->getMaterialNum(),
+                    v0, v1, v2);
+            s_model_probe_count++;
+        }
+    }
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
