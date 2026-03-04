@@ -246,8 +246,19 @@ def main():
                     max_consecutive_stalled_frames = max(max_consecutive_stalled_frames, consecutive_stalled_frames)
                 else:
                     consecutive_stalled_frames = 0
+            consecutive_nonzero_draws = 0
+            max_consecutive_nonzero_draws = 0
+            for f, d in sorted(play_frames.items()):
+                if d.get('j3d_entries', 0) > 0 and d.get('dl_draws', 0) > 0:
+                    consecutive_nonzero_draws += 1
+                    max_consecutive_nonzero_draws = max(max_consecutive_nonzero_draws, consecutive_nonzero_draws)
+                else:
+                    consecutive_nonzero_draws = 0
             print(f"  Max consecutive (j3d_entries>0 && dl_draws==0): {max_consecutive_stalled_frames}")
+            print(f"  Max consecutive (j3d_entries>0 && dl_draws>0): {max_consecutive_nonzero_draws}")
             strict_flow = os.getenv("TP_TELEMETRY_ENFORCE_J3D_FLOW", "0") == "1"
+            strict_sustain = os.getenv("TP_TELEMETRY_ENFORCE_DL_SUSTAIN", "0") == "1"
+            sustain_min = int(os.getenv("TP_TELEMETRY_DL_SUSTAIN_MIN", "3"))
             # Set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to promote packet-flow
             # stalls to hard failures (use after packet-chain fixes land).
             if strict_flow and max_consecutive_stalled_frames >= 20:
@@ -256,6 +267,16 @@ def main():
             elif max_consecutive_stalled_frames >= 20:
                 warnings.append(f"Packet-flow blocker: {max_consecutive_stalled_frames} consecutive frames with "
                                f"j3d_entries>0 but dl_draws==0 (set TP_TELEMETRY_ENFORCE_J3D_FLOW=1 to fail)")
+            # Set TP_TELEMETRY_ENFORCE_DL_SUSTAIN=1 to require a sustained
+            # run of nonzero play-window draws after packet-flow fixes land.
+            if strict_sustain and max_consecutive_nonzero_draws < sustain_min:
+                errors.append(f"REGRESSION: sustained play-window draws too short "
+                             f"(max consecutive j3d_entries>0 && dl_draws>0 = "
+                             f"{max_consecutive_nonzero_draws}, required >= {sustain_min})")
+            elif max_consecutive_nonzero_draws < sustain_min:
+                warnings.append(f"Unsustained draw window: max consecutive "
+                                f"j3d_entries>0 && dl_draws>0 = {max_consecutive_nonzero_draws} "
+                                f"(set TP_TELEMETRY_ENFORCE_DL_SUSTAIN=1 to fail)")
 
     print("\n=== Z/Blend Propagation ===")
     if zblend_prop_by_frame:
