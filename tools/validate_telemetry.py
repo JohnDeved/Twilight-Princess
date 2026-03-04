@@ -83,6 +83,7 @@ def main():
     chain_invalid = []
     kankyo_crash_count = 0
     zblend_prop_by_frame = {}
+    play_state_samples = []   # play_state JSON: depth_bits/blend_bits per draw
     for obj in stderr_objs:
         if 'j3d_draw_diag' in obj:
             d = obj['j3d_draw_diag']
@@ -100,6 +101,8 @@ def main():
         if 'zblend_prop' in obj:
             p = obj['zblend_prop']
             zblend_prop_by_frame[p.get('frame', 0)] = p
+        if 'play_state' in obj:
+            play_state_samples.append(obj['play_state'])
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
 
@@ -348,6 +351,50 @@ def main():
                 warnings.append(msg)
     else:
         warnings.append("No j3d_draw_diag found in stderr")
+
+    # ── Play-window Z/Blend state diagnostic ─────────────────────────
+    # play_state lines are emitted by pal_tev_flush_draw for the first 5 draws
+    # of each play-window frame once cumulative draw count exceeds 5000.
+    # They log the actual uint64_t bgfx state flags assembled before bgfx::submit,
+    # breaking out depth_bits (BGFX_STATE_DEPTH_TEST_MASK), blend_bits
+    # (BGFX_STATE_BLEND_MASK), write_rgb and write_a.
+    # Expected for opaque BG geometry: depth_bits=1, blend_bits=0, write_rgb=1
+    print(f"\n=== Play-window Z/Blend State (first samples) ===")
+    if play_state_samples:
+        samples_with_depth = sum(1 for s in play_state_samples if s.get('depth_bits', 0))
+        samples_with_blend = sum(1 for s in play_state_samples if s.get('blend_bits', 0))
+        samples_with_rgb   = sum(1 for s in play_state_samples if s.get('write_rgb', 0))
+        total_samples = len(play_state_samples)
+        print(f"  play_state samples: {total_samples}")
+        print(f"  depth_bits active: {samples_with_depth}/{total_samples} "
+              f"({100*samples_with_depth//max(total_samples,1)}%)")
+        print(f"  blend_bits active: {samples_with_blend}/{total_samples} "
+              f"({100*samples_with_blend//max(total_samples,1)}%)")
+        print(f"  write_rgb active:  {samples_with_rgb}/{total_samples} "
+              f"({100*samples_with_rgb//max(total_samples,1)}%)")
+        # Show first 3 unique state values for diagnosis
+        seen_states = {}
+        for s in play_state_samples:
+            state_hex = s.get('state', '0x0')
+            if state_hex not in seen_states:
+                seen_states[state_hex] = s
+                if len(seen_states) >= 3:
+                    break
+        for state_hex, s in seen_states.items():
+            print(f"  sample: state={state_hex} preset={s.get('preset','?')} "
+                  f"depth={s.get('depth_bits',0)} blend={s.get('blend_bits',0)} "
+                  f"rgb={s.get('write_rgb',0)} z_en={s.get('z_en',0)}")
+        # Warn if no depth bits in any sample (likely Z/Blend propagation gap)
+        if samples_with_depth == 0 and total_samples > 0:
+            warnings.append(
+                f"Z/Blend gap: {total_samples} play_state samples all have depth_bits=0 "
+                f"(GXSetZMode calls may not be reaching bgfx state)")
+        if samples_with_rgb == 0 and total_samples > 0:
+            warnings.append(
+                f"Z/Blend gap: {total_samples} play_state samples all have write_rgb=0 "
+                f"(color writes disabled, geometry will be invisible)")
+    else:
+        print("  No play_state samples found (fires when total draw_count > 5000)")
 
     print(f"\n=== Milestone Count ===")
     unique_milestones = sorted(set(milestones))

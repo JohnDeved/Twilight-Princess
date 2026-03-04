@@ -10,9 +10,10 @@
 | **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
-| **Blocking Issue** | CI analysis of f82ef2a2 confirmed: kankyo stubs work (frames 127-129 show pkt_visited=43, dl_draws=7615, sustained). But f82ef2a2 regressed to 14/16 milestones because kankyo Execute (previously suppressed after crash) now runs `exeKankyo()` on every frame — heavy computation caused SIGTERM before frame 300. Fix: 5b7481c1 adds PLATFORM_PC early returns to dKy_Execute, dKy_Draw, dEnvSe::execute. With that fix, kankyo Execute is a no-op again (fast), 400-frame run should complete, 16/16 expected. |
-| **Goal Milestones (new)** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ (expected with 5b7481c1 + Phase 2 captures at 127-129 showing pkt_visited=43, dl_draws=7615) |
-| **Peak dl_draws** | 7,615 per frame (frames 127+, confirmed sustained in f82ef2a2 for available frames) |
+| **Active CI** | `a40167e9` running — TVB pool 32MB + Phase 1 timeout 600s + play_state diagnostic |
+| **Peak dl_draws** | 7,615 per frame (frames 127+, confirmed sustained with kankyo stubs + vrbox fix) |
+| **Z/Blend gap** | `play_state` diagnostic added (a40167e9): next CI run will show depth_bits/blend_bits per draw |
+| **Goal Milestones** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ |
 
 ## Remaining Work Estimate
 
@@ -21,7 +22,7 @@
 | **Kankyo packet stubs** | ✅ DONE: All 11 dKankyo_*_Packet::draw() methods have PLATFORM_PC early-return stubs (f82ef2a2). CI confirmed: frames 127-129 show pkt_visited=43, dl_draws=7615, all packets visited. | Done | P0 done |
 | **Kankyo Execute/Draw stubs** | ✅ DONE: dKy_Execute + dKy_Draw + dEnvSe::execute have PLATFORM_PC early returns (5b7481c1). Fixes SIGTERM regression (kankyo Execute was running expensive exeKankyo() every frame). Without this, 400-frame Phase 1 timed out before frame 300 → missed FRAMES_300 + TEST_COMPLETE. | Done | P0 done |
 | **Milestone baseline** | ✅ FIXED: parse_milestones.py now counts TEST_COMPLETE (id=99) fixing 15→16 regression (fb6f1cf3). | Done | P0 done |
-| **GOAL_INTRO_VISIBLE** | ✅ IN PROGRESS: Phase 2 now runs 145 frames, captures frames 127/128/129, GOAL_PIXEL_MILESTONE_FRAME_START=127. With 5b7481c1 fast kankyo, Phase 2 at frames 127-129 should show non-black pixels → GOAL_INTRO_VISIBLE triggered. | Verify CI | P0 |
+| **GOAL_INTRO_VISIBLE** | Phase 2 (softpipe) captures frames 127-129, `play_state` logs depth_bits/blend_bits. Next CI run confirms whether pixels land (pct_nonblack > 0). If depth_bits=0 or write_rgb=0, trace GX state propagation gap. | Verify CI | P0 |
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
 | **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
 | **Lighting** | Ambient/diffuse/specular from GX light state into shaders | 2 sessions | P2 |
