@@ -32,6 +32,11 @@ extern "C" {
 
 #define VERIFY_MAX_CAPTURES 32
 #define GOAL_MILESTONE_FRAME_START 130
+/* Phase 2 (pixel test) runs only 130 frames (0-129).
+ * GOAL_INTRO_VISIBLE is pixel-data-driven. Use a threshold that falls
+ * within the play window (frame 127+ = first 3D room render) while
+ * being safely past the logo phase (frames 0-126). */
+#define GOAL_PIXEL_MILESTONE_FRAME_START 127
 
 static int s_verify_active = 0;
 static const char* s_verify_dir = NULL;
@@ -348,7 +353,7 @@ int pal_verify_analyze_fb(u32 frame_num) {
     /* Track captured frames that have non-black content */
     if (pct_nonblack > 0)
         s_frames_nonblack++;
-    if (!s_goal_intro_visible && frame_num >= GOAL_MILESTONE_FRAME_START && pct_nonblack >= 1) {
+    if (!s_goal_intro_visible && frame_num >= GOAL_PIXEL_MILESTONE_FRAME_START && pct_nonblack >= 1) {
         s_goal_intro_visible = 1;
         pal_milestone("GOAL_INTRO_VISIBLE", MILESTONE_GOAL_INTRO_VISIBLE,
                       "captured play-window frame has non-black pixels");

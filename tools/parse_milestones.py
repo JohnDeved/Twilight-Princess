@@ -199,8 +199,8 @@ def main():
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
 
-    # Build list of all reached milestone names (exclude TEST_COMPLETE for clarity)
-    reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] < 99))
+    # Build list of all reached milestone names (include TEST_COMPLETE id=99 in count)
+    reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] <= 99))
     milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in reached_ids]
     milestone_count = len(reached_ids)
     goal_ids = sorted(set(m["id"] for m in milestones if m.get("id", -1) >= 100))
