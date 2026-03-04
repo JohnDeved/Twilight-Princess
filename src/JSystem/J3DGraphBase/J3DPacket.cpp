@@ -155,11 +155,11 @@ J3DDrawPacket::J3DDrawPacket() {
     mpDisplayListObj = NULL;
     mpTexMtxObj = NULL;
 #if PLATFORM_PC
-    static int s_vptr_logged = 0;
-    if (!s_vptr_logged) {
+    static int s_draw_vptr_logged = 0;
+    if (!s_draw_vptr_logged) {
         fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DDrawPacket\",\"vptr\":\"%p\"}}\n",
                 *(const void* const*)this);
-        s_vptr_logged = 1;
+        s_draw_vptr_logged = 1;
     }
 #endif
 }
@@ -204,11 +204,11 @@ J3DMatPacket::J3DMatPacket() {
     mpTexture = NULL;
     mpMaterialAnm = NULL;
 #if PLATFORM_PC
-    static int s_vptr_logged = 0;
-    if (!s_vptr_logged) {
+    static int s_mat_vptr_logged = 0;
+    if (!s_mat_vptr_logged) {
         fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DMatPacket\",\"vptr\":\"%p\"}}\n",
                 *(const void* const*)this);
-        s_vptr_logged = 1;
+        s_mat_vptr_logged = 1;
     }
 #endif
 }
@@ -332,11 +332,11 @@ J3DShapePacket::J3DShapePacket() {
     mDiffFlag = 0;
     mpModel = NULL;
 #if PLATFORM_PC
-    static int s_vptr_logged = 0;
-    if (!s_vptr_logged) {
+    static int s_shape_vptr_logged = 0;
+    if (!s_shape_vptr_logged) {
         fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DShapePacket\",\"vptr\":\"%p\"}}\n",
                 *(const void* const*)this);
-        s_vptr_logged = 1;
+        s_shape_vptr_logged = 1;
     }
 #endif
 }
