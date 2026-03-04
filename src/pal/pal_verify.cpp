@@ -32,8 +32,10 @@ extern "C" {
 
 #define VERIFY_MAX_CAPTURES 32
 #define GOAL_MILESTONE_FRAME_START 130
-/* Phase 2 (pixel test) runs 145 frames (0-144), with GOAL_INTRO_VISIBLE
- * triggering at frame >= 127 (first 3D room render, past logo phase 0-126). */
+/* Phase 2 (pixel test) runs 145 frames (0-144); previously 130, increased to
+ * ensure frame 130+ is reachable and to provide headroom beyond the 127-frame
+ * play-window start. GOAL_INTRO_VISIBLE triggers at frame >= 127 (first 3D
+ * room render, past logo phase 0-126). */
 #define GOAL_PIXEL_MILESTONE_FRAME_START 127
 
 static int s_verify_active = 0;

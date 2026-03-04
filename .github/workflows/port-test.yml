@@ -193,7 +193,12 @@ jobs:
           # Extracts peak dl_draws, chain-invalid counts, and J3D flow stalls.
           # TP_TELEMETRY_PEAK_DL_MIN=500: warn if peak dl_draws drops below 500
           # (protects against regressions of the vrbox cast fix that produced 7615 draws).
-          # Does not hard-fail CI so a regression shows as a warning in the PR comment.
+          # TP_TELEMETRY_DL_SUSTAIN_MIN=100: require at least 100 consecutive play-window
+          # frames with dl_draws > 0. After kankyo stubs (f82ef2a2) + Execute PC bypass
+          # (5b7481c1), Phase 1 shows 273 consecutive frames with dl_draws=7615. A threshold
+          # of 100 provides a conservative safety margin (37% of expected) against transient
+          # slowdowns or timing variation while still catching real regressions.
+          TP_TELEMETRY_ENFORCE_DL_SUSTAIN=1 TP_TELEMETRY_DL_SUSTAIN_MIN=100 \
           python3 tools/validate_telemetry.py milestones_logic.log milestones_logic.log \
             > telemetry-validation.txt 2>&1 || true
           cat telemetry-validation.txt

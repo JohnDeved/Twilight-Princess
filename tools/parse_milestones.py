@@ -199,7 +199,9 @@ def main():
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
 
-    # Build list of all reached milestone names (include TEST_COMPLETE id=99 in count)
+    # Build list of all reached milestone names.
+    # Include TEST_COMPLETE (id=99) — previously excluded by `< 99`, causing a
+    # 15→16 regression when the baseline was set with TEST_COMPLETE in the count.
     reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] <= 99))
     milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in reached_ids]
     milestone_count = len(reached_ids)

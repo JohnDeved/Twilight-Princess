@@ -217,7 +217,7 @@ def main():
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:
-        play_frames = {f: d for f, d in j3d_diag_frames.items() if 130 <= f <= 400}
+        play_frames = {f: d for f, d in j3d_diag_frames.items() if 127 <= f <= 400}
         if play_frames:
             dl_draws_list = [(f, d.get('dl_draws', 0)) for f, d in sorted(play_frames.items())]
             nonzero_frames = [(f, d) for f, d in dl_draws_list if d > 0]
@@ -311,7 +311,7 @@ def main():
                       f"({len(frames_in_window)} frames)")
 
         # Regression checks — play window (frames 130-400)
-        play_frames = {f: d for f, d in j3d_diag_frames.items() if 130 <= f <= 400}
+        play_frames = {f: d for f, d in j3d_diag_frames.items() if 127 <= f <= 400}
         if play_frames:
             max_j3d = max(d.get('j3d_entries', 0) for d in play_frames.values())
             max_dl_draws = max(d.get('dl_draws', 0) for d in play_frames.values())
