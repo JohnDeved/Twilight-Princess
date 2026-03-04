@@ -4774,7 +4774,7 @@ void dScnKy_env_light_c::exeKankyo() {
     if (stageName && strcmp(stageName, "R_SP127") == 0) {
         if (dComIfGp_getCamera(0) != NULL) {
             dCamera_c* camBody = dCam_getBody();
-            if ((camBody->Mode() == 4 || camBody->Mode() == 7) && dComIfGp_event_runCheck())
+            if (camBody && (camBody->Mode() == 4 || camBody->Mode() == 7) && dComIfGp_event_runCheck())
 #else
     if (strcmp(dComIfGp_getStartStageName(), "R_SP127") == 0) {
         if ((dCam_getBody()->Mode() == 4 || dCam_getBody()->Mode() == 7) && dComIfGp_event_runCheck())
