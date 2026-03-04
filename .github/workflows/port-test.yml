@@ -98,7 +98,7 @@ jobs:
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,127,128,129,140,160,190"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,127,128,129,140,160,165,190"
         run: |
           set -o pipefail
           mkdir -p verify_output
@@ -117,10 +117,10 @@ jobs:
 
           # === Phase 2: Pixel test (softpipe, slow) ===
           # Runs with Xvfb + softpipe for pixel verification of logo/title.
-          # Limited to 145 frames — captures play-scene BG geometry at frames 127-129
-          # which is where the 3D room geometry first renders (after f82ef2a2 kankyo stubs).
-          # GOAL_INTRO_VISIBLE triggers at frame >= 127 (GOAL_PIXEL_MILESTONE_FRAME_START)
-          # with pct_nonblack > 0; 145 frames provides headroom beyond that threshold.
+          # Play scene starts at ~frame 129. darwFilter (fade-from-black) takes
+          # ~30 frames, completing at frame ~159. Run 200 frames to capture the
+          # post-fade room geometry (frame 165+). GOAL_INTRO_VISIBLE triggers when
+          # verify_fb pct_nonblack > 0 at frame >= 127.
           echo "=== Phase 2: Pixel test (softpipe) ==="
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
@@ -133,7 +133,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
-          export TP_TEST_FRAMES=145
+          export TP_TEST_FRAMES=200
           timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
           PIXEL_EXIT=${PIPESTATUS[0]}
           echo "Phase 2 exit: $PIXEL_EXIT"
