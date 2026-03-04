@@ -355,12 +355,21 @@ int daBg_c::draw() {
             for (u16 j = 0; j < modelData->getShapeNum(); j++) {
                 J3DShape* shape = modelData->getShapeNodePointer(j);
 
+#if PLATFORM_PC
+                /* On PC, skip frustum clipping for BG shapes. The camera
+                 * crashes during Execute (prof=781) every frame, so view_setup
+                 * uses stale/default lookat data. With incorrect camera
+                 * position, all shapes get clipped. Force-show them so the
+                 * J3D draw pipeline can produce dl_draws. */
+                shape->show();
+#else
                 if (mDoLib_clipper::clip(j3dSys.getViewMtx(), (Vec*)shape->getMin(),
                                          (Vec*)shape->getMax())) {
                     shape->hide();
                 } else {
                     shape->show();
                 }
+#endif
             }
 
             static int l_tevStrType[6] = {32, 33, 34, 35, 35, 32};
