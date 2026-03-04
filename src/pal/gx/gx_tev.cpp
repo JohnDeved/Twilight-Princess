@@ -1165,6 +1165,8 @@ void pal_tev_submit_test_quad(void) {
 /* Logs unique TEV combiner tuples seen across the run.             */
 /* ================================================================ */
 
+/* Maximum unique TEV configurations to track. In practice ~4-20 unique
+ * configs are seen during a 400-frame test; 128 provides ample headroom. */
 #define TEV_TRACK_MAX 128
 
 struct TevConfigKey {
