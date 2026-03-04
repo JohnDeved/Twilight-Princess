@@ -37,6 +37,12 @@
 static int s_dl_draw_count = 0;
 static int s_dl_vert_count = 0;
 
+/* DL validation counters (task 3: stride/offset/index bounds checks) */
+static int s_dl_stride_zero = 0;      /* vert_size == 0 skips */
+static int s_dl_overflow = 0;         /* buffer overflow skips */
+static int s_dl_bulk_copy_ok = 0;     /* successful bulk copies */
+static int s_dl_bulk_copy_fail = 0;   /* bulk copy buffer overflows */
+
 /* ================================================================ */
 /* Big-endian byte stream reader                                    */
 /* ================================================================ */
@@ -669,6 +675,8 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
 
     if (vert_size == 0 || r->pos + total_bytes > r->size) {
         /* Can't determine vertex size or not enough data — skip */
+        if (vert_size == 0) s_dl_stride_zero++;
+        else s_dl_overflow++;
         static int s_dl_skip_log = 0;
         if (s_dl_skip_log < 10) {
             fprintf(stderr, "{\"dl_draw_skip\":{\"vtxfmt\":%d,\"nverts\":%u,\"vert_size\":%u,"
@@ -700,6 +708,9 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
             ds->vtx_data_pos += total_bytes;
             ds->verts_written = nverts;
             ds->vtx_data_be = 1;  /* Mark as big-endian from DL bulk copy */
+            s_dl_bulk_copy_ok++;
+        } else {
+            s_dl_bulk_copy_fail++;
         }
         r->pos += total_bytes;
     }
@@ -721,6 +732,13 @@ void pal_gx_dl_reset_counters() {
     s_dl_draw_count = 0;
     s_dl_vert_count = 0;
     s_dl_call_count = 0;
+}
+
+void pal_gx_dl_report_validation() {
+    fprintf(stdout, "{\"dl_validation\":{\"draws\":%d,\"verts\":%d,\"calls\":%d,"
+            "\"stride_zero\":%d,\"overflow\":%d,\"bulk_copy_ok\":%d,\"bulk_copy_fail\":%d}}\n",
+            s_dl_draw_count, s_dl_vert_count, s_dl_call_count,
+            s_dl_stride_zero, s_dl_overflow, s_dl_bulk_copy_ok, s_dl_bulk_copy_fail);
 }
 
 void pal_gx_call_display_list(const void* list, u32 nbytes) {

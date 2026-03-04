@@ -1664,7 +1664,7 @@ int mDoGph_Painter() {
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
             int dl_calls = pal_gx_dl_get_call_count();
-            if (s_3d_diag_frame < 10 || (s_3d_diag_frame >= 120 && s_3d_diag_frame <= 200) || (s_3d_diag_frame % 30 == 0 && s_3d_diag_frame < 600)) {
+            if (s_3d_diag_frame < 10 || (s_3d_diag_frame >= 120 && s_3d_diag_frame <= 400) || (s_3d_diag_frame % 30 == 0 && s_3d_diag_frame < 600)) {
                 u32 gh_free = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getTotalFreeSize() : 0;
                 u32 gh_size = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getHeapSize() : 0;
                 fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",

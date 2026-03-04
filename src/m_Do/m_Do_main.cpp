@@ -44,6 +44,7 @@
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_tev.h"
+#include "pal/gx/gx_displaylist.h"
 #include "pal/pal_verify.h"
 #include <stdlib.h>
 #include <time.h>
@@ -819,6 +820,7 @@ void main01(void) {
                 gx_stub_report();
                 pal_tev_report_diagnostics();
                 pal_collision_stub_report();
+                pal_gx_dl_report_validation();
                 pal_verify_summary();
                 _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
