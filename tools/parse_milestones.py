@@ -36,6 +36,9 @@ MILESTONE_NAMES = {
     14: "SCENE_CREATED",
     15: "RENDER_FRAME",
     99: "TEST_COMPLETE",
+    100: "GOAL_INTRO_GEOMETRY",
+    101: "GOAL_INTRO_VISIBLE",
+    102: "GOAL_DEPTH_BLEND_ACTIVE",
 }
 
 # Milestones that require specific prerequisites.
@@ -200,6 +203,8 @@ def main():
     reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] < 99))
     milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in reached_ids]
     milestone_count = len(reached_ids)
+    goal_ids = sorted(set(m["id"] for m in milestones if m.get("id", -1) >= 100))
+    goal_milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in goal_ids]
 
     # Build timing info
     timing = {}
@@ -223,6 +228,7 @@ def main():
     summary = {
         "milestones_reached_count": valid_milestone_count,
         "milestones_reached": valid_milestones_reached,
+        "goal_milestones_reached": goal_milestones_reached,
         "last_milestone": milestones[-1] if milestones else None,
         "crash": crash,
         "total_milestones": valid_milestone_count,
@@ -244,8 +250,11 @@ def main():
     print(f"\n{'=' * 60}")
     print("PORT TEST SUMMARY")
     print(f"{'=' * 60}")
-    print(f"Milestones reached: {valid_milestone_count}/{len(MILESTONE_NAMES) - 1}")
+    base_total_milestones = len([mid for mid in MILESTONE_NAMES.keys() if 0 <= mid < 99])
+    print(f"Milestones reached: {valid_milestone_count}/{base_total_milestones}")
     print(f"Milestones: {', '.join(valid_milestones_reached) if valid_milestones_reached else 'NONE'}")
+    if goal_milestones_reached:
+        print(f"Goal milestones: {', '.join(goal_milestones_reached)}")
     if disqualified_names:
         print(f"Disqualified (integrity failed): {', '.join(disqualified_names)}")
     if timing:

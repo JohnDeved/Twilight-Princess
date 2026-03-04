@@ -21,6 +21,7 @@
 
 extern "C" {
 #include "pal/pal_verify.h"
+#include "pal/pal_milestone.h"
 #include "pal/gx/gx_capture.h"
 #include "pal/gx/gx_stub_tracker.h"
 }
@@ -61,6 +62,9 @@ static u32 s_all_prim_mask = 0;            /* union of all primitive types ever 
 static u32 s_distinct_hashes = 0;          /* number of distinct framebuffer hashes */
 static u32 s_prev_fb_hash = 0;            /* previous frame's hash for change detection */
 static u32 s_hash_changes = 0;            /* number of times fb hash changed frame-to-frame */
+static int s_goal_intro_geometry = 0;
+static int s_goal_intro_visible = 0;
+static int s_goal_depth_blend = 0;
 
 /* Regression assertion: per-capture-frame pixel coverage */
 #define REGRESS_MAX_CAPTURES 32
@@ -162,6 +166,15 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
     if ((int)total_verts > s_peak_verts)
         s_peak_verts = (int)total_verts;
 
+    /* Goal milestones for visible intro gameplay rendering.
+     * These are informational milestones (IDs >= 100), excluded from the
+     * 16/16 boot milestone count. */
+    if (!s_goal_intro_geometry && frame_num >= 130 && draw_calls > 0 && total_verts > 0) {
+        s_goal_intro_geometry = 1;
+        pal_milestone("GOAL_INTRO_GEOMETRY", MILESTONE_GOAL_INTRO_GEOMETRY,
+                      "play-window frame has draw_calls+verts");
+    }
+
     /* Track render pipeline aggregate stats from per-frame counters */
     if (gx_frame_textured_draws > 0)
         s_frames_with_textures++;
@@ -169,6 +182,11 @@ void pal_verify_frame(u32 frame_num, u32 draw_calls, u32 total_verts,
         s_frames_with_depth++;
     if (gx_frame_blend_draws > 0)
         s_frames_with_blend++;
+    if (!s_goal_depth_blend && frame_num >= 130 && gx_frame_depth_draws > 0 && gx_frame_blend_draws > 0) {
+        s_goal_depth_blend = 1;
+        pal_milestone("GOAL_DEPTH_BLEND_ACTIVE", MILESTONE_GOAL_DEPTH_BLEND_ACTIVE,
+                      "depth and blend draws both active in play window");
+    }
     s_total_textured_draws += gx_frame_textured_draws;
     if ((int)gx_frame_unique_textures > s_peak_unique_textures)
         s_peak_unique_textures = (int)gx_frame_unique_textures;
@@ -329,6 +347,11 @@ int pal_verify_analyze_fb(u32 frame_num) {
     /* Track captured frames that have non-black content */
     if (pct_nonblack > 0)
         s_frames_nonblack++;
+    if (!s_goal_intro_visible && frame_num >= 130 && pct_nonblack >= 1) {
+        s_goal_intro_visible = 1;
+        pal_milestone("GOAL_INTRO_VISIBLE", MILESTONE_GOAL_INTRO_VISIBLE,
+                      "captured play-window frame has non-black pixels");
+    }
 
     /* Store for regression assertion */
     if (s_regress_count < REGRESS_MAX_CAPTURES) {

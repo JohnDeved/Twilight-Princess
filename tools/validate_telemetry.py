@@ -259,6 +259,19 @@ def main():
     for m in unique_milestones:
         print(f"    - {m}")
 
+    goal_milestones = {
+        "GOAL_INTRO_GEOMETRY",
+        "GOAL_INTRO_VISIBLE",
+        "GOAL_DEPTH_BLEND_ACTIVE",
+    }
+    reached_goals = sorted([m for m in unique_milestones if m in goal_milestones])
+    print(f"  Goal milestones reached: {len(reached_goals)}/{len(goal_milestones)}")
+    for m in reached_goals:
+        print(f"    - ✅ {m}")
+    missing_goals = sorted(goal_milestones - set(reached_goals))
+    for m in missing_goals:
+        warnings.append(f"Goal milestone not reached yet: {m}")
+
     # ================================================================
     # Final verdict
     # ================================================================
