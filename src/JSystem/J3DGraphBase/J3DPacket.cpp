@@ -11,6 +11,7 @@
 #include "global.h"
 
 #if PLATFORM_PC
+#include <stdio.h>
 extern "C" void pal_gd_reset_dummy(void);
 #endif
 
@@ -153,6 +154,14 @@ J3DDrawPacket::J3DDrawPacket() {
     mFlags = 0;
     mpDisplayListObj = NULL;
     mpTexMtxObj = NULL;
+#if PLATFORM_PC
+    static int s_vptr_logged = 0;
+    if (!s_vptr_logged) {
+        fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DDrawPacket\",\"vptr\":\"%p\"}}\n",
+                *(const void* const*)this);
+        s_vptr_logged = 1;
+    }
+#endif
 }
 
 J3DDrawPacket::~J3DDrawPacket() {}
@@ -194,6 +203,14 @@ J3DMatPacket::J3DMatPacket() {
     mDiffFlag = 0xFFFFFFFF;
     mpTexture = NULL;
     mpMaterialAnm = NULL;
+#if PLATFORM_PC
+    static int s_vptr_logged = 0;
+    if (!s_vptr_logged) {
+        fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DMatPacket\",\"vptr\":\"%p\"}}\n",
+                *(const void* const*)this);
+        s_vptr_logged = 1;
+    }
+#endif
 }
 
 J3DMatPacket::~J3DMatPacket() {}
@@ -314,6 +331,14 @@ J3DShapePacket::J3DShapePacket() {
     mpBaseMtxPtr = NULL;
     mDiffFlag = 0;
     mpModel = NULL;
+#if PLATFORM_PC
+    static int s_vptr_logged = 0;
+    if (!s_vptr_logged) {
+        fprintf(stderr, "{\"j3d_vtable_ref\":{\"class\":\"J3DShapePacket\",\"vptr\":\"%p\"}}\n",
+                *(const void* const*)this);
+        s_vptr_logged = 1;
+    }
+#endif
 }
 
 J3DShapePacket::~J3DShapePacket() {}
