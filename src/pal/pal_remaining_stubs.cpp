@@ -28,7 +28,30 @@ void GXPeekZ(u16 x, u16 y, u32* z) { if (z) *z = 0; }
 void GXSetCoPlanar(u8 enable) { (void)enable; }
 
 /* --- GD extras --- */
+static u8 s_gd_dummy_buf[4096] __attribute__((aligned(32)));
+static GDLObj s_gd_dummy_dl;
 GDLObj* __GDCurrentDL = NULL;
+
+/* Initialize the dummy GDLObj on startup. Block load() methods (TevBlock,
+ * ColorBlock, etc.) call GDGetCurrOffset/GDOverflowCheck which dereference
+ * __GDCurrentDL. On GCN these are only called inside beginDL/endDL, but on
+ * PC we call load() directly from J3DMatPacket::draw. The writes are no-ops
+ * (GX state is set by J3DGDSet* → GX stubs), but __GDCurrentDL must be valid. */
+static void __attribute__((constructor)) pal_gd_init_dummy(void) {
+    s_gd_dummy_dl.start  = s_gd_dummy_buf;
+    s_gd_dummy_dl.length = sizeof(s_gd_dummy_buf);
+    s_gd_dummy_dl.ptr    = s_gd_dummy_buf;
+    s_gd_dummy_dl.top    = s_gd_dummy_buf + sizeof(s_gd_dummy_buf);
+    __GDCurrentDL = &s_gd_dummy_dl;
+}
+
+/* Reset the dummy GDLObj pointer so it never overflows.
+ * Called from J3DMatPacket::draw before block load() on PC.
+ * Also re-points __GDCurrentDL if it was set to NULL by endDL(). */
+void pal_gd_reset_dummy(void) {
+    s_gd_dummy_dl.ptr = s_gd_dummy_buf;
+    __GDCurrentDL = &s_gd_dummy_dl;
+}
 
 void GDSetArray(GXAttr attr, void* base_ptr, u8 stride) {
     /* Wire through to GX state so indexed vertex access works */
