@@ -181,4 +181,52 @@ void GFSetZMode(u8 compare_enable, GXCompare func, u8 update_enable) {
 
 /* JSU stream stubs are in pal_remaining_stubs.cpp; JSUInputStream is compiled from source */
 
+/* ================================================================ */
+/* dBgp_c — BG parts (collision geometry) stubs                     */
+/* ================================================================ */
+
+#include "d/d_bg_parts.h"
+#include "d/d_stage.h"
+
+dBgp_c::dBgp_c() : mPointer(NULL), mHeap(NULL) {
+    memset(mArcName, 0, sizeof(mArcName));
+}
+
+dBgp_c::~dBgp_c() {}
+
+void dBgp_c::create(s8, void*) {}
+void dBgp_c::registBg(fopAc_ac_c*) {}
+void dBgp_c::releaseBg() {}
+int dBgp_c::registBg(int, fopAc_ac_c*) { return 0; }
+void dBgp_c::releaseBg(int) {}
+int dBgp_c::execute(bool) { return 0; }
+void dBgp_c::draw(fopAc_ac_c*) {}
+void dBgp_c::setPointer(void*) {}
+void dBgp_c::createShare() {}
+void dBgp_c::removeShare() {}
+void dBgp_c::addShare(u16) {}
+void dBgp_c::cutShare(u16) {}
+bool dBgp_c::executeShare() { return false; }
+void dBgp_c::drawShare() {}
+void dBgp_c::entryShare(packet_c*) {}
+
+JKRSolidHeap* dBgp_c::mShareHeap;
+dBgp_c::share_c* dBgp_c::mShare;
+
+/* dBgp_c::packet_c (nested class) */
+dBgp_c::packet_c::packet_c() {}
+dBgp_c::packet_c::~packet_c() {}
+
+/* dStage_roomControl_c static member */
+void dStage_roomControl_c::setBgp(int, void*) {}
+void* dStage_roomControl_c::mBgp[64];
+
+/* dBgS — collision system stubs */
+#include "d/d_bg_s.h"
+void dBgS::ChkDeleteActorRegist(fopAc_ac_c*) {}
+
+/* dCcS — collision check system stubs */
+#include "d/d_cc_s.h"
+void dCcS::ChkActor(fopAc_ac_c*) {}
+
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

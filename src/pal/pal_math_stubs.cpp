@@ -335,6 +335,92 @@ f32 PSVECSquareDistance(const Vec* a, const Vec* b) {
 /* C_MTX* (C-callable matrix utilities)                             */
 /* ================================================================ */
 
+void C_MTXIdentity(Mtx m) {
+    PSMTXIdentity(m);
+}
+
+u32 C_MTXInverse(const Mtx src, Mtx inv) {
+    return PSMTXInverse(src, inv);
+}
+
+void C_MTXMultVec(const Mtx m, const Vec* src, Vec* dst) {
+    PSMTXMultVec(m, src, dst);
+}
+
+void C_MTXMultVecArray(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
+    PSMTXMultVecArray(m, srcBase, dstBase, count);
+}
+
+void C_MTXMultVecSR(const Mtx m, const Vec* src, Vec* dst) {
+    PSMTXMultVecSR(m, src, dst);
+}
+
+void C_VECNormalize(const Vec* src, Vec* unit) {
+    PSVECNormalize(src, unit);
+}
+
+void C_VECAdd(const Vec* a, const Vec* b, Vec* ab) {
+    PSVECAdd(a, b, ab);
+}
+
+void C_VECSubtract(const Vec* a, const Vec* b, Vec* ab) {
+    PSVECSubtract(a, b, ab);
+}
+
+void C_VECScale(const Vec* src, Vec* dst, f32 scale) {
+    PSVECScale(src, dst, scale);
+}
+
+void C_VECCrossProduct(const Vec* a, const Vec* b, Vec* axb) {
+    PSVECCrossProduct(a, b, axb);
+}
+
+f32 C_VECDotProduct(const Vec* a, const Vec* b) {
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}
+
+f32 C_VECMag(const Vec* v) {
+    return sqrtf(v->x * v->x + v->y * v->y + v->z * v->z);
+}
+
+f32 C_VECSquareMag(const Vec* v) {
+    return v->x * v->x + v->y * v->y + v->z * v->z;
+}
+
+f32 C_VECDistance(const Vec* a, const Vec* b) {
+    return PSVECDistance(a, b);
+}
+
+f32 C_VECSquareDistance(const Vec* a, const Vec* b) {
+    return PSVECSquareDistance(a, b);
+}
+
+void C_MTXMultVecArraySR(const Mtx m, const Vec* srcBase, Vec* dstBase, u32 count) {
+    for (u32 i = 0; i < count; i++) {
+        PSMTXMultVecSR(m, &srcBase[i], &dstBase[i]);
+    }
+}
+
+void C_MTXQuat(Mtx m, const Quaternion* q) {
+    PSMTXQuat(m, q);
+}
+
+void C_MTXRotRad(Mtx m, char axis, f32 rad) {
+    PSMTXRotRad(m, (u8)axis, rad);
+}
+
+void C_MTXScale(Mtx m, f32 xS, f32 yS, f32 zS) {
+    PSMTXScale(m, xS, yS, zS);
+}
+
+void C_MTXScaleApply(const Mtx src, Mtx dst, f32 xS, f32 yS, f32 zS) {
+    PSMTXScaleApply(src, dst, xS, yS, zS);
+}
+
+void C_MTXTransApply(const Mtx src, Mtx dst, f32 xT, f32 yT, f32 zT) {
+    PSMTXTransApply(src, dst, xT, yT, zT);
+}
+
 void C_MTXCopy(const Mtx src, Mtx dst) {
     memcpy(dst, src, sizeof(Mtx));
 }
