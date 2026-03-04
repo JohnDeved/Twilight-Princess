@@ -77,6 +77,9 @@ public:
     void draw() const;
     void drawHead() const;
     void drawTail() const;
+    static void palDiagFrameReset();
+    static int palDiagPacketsVisited();
+    static int palDiagVirtualDrawCalls();
 
     u32 getEntryTableSize() { return mEntryTableSize; }
     int getSortMode() { return mSortMode; }

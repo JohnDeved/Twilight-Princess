@@ -10,6 +10,8 @@
 #include "JSystem/JKernel/JKRHeap.h"
 #if PLATFORM_PC
 #include <stdio.h>
+static int s_pal_diag_packets_visited = 0;
+static int s_pal_diag_virtual_draw_calls = 0;
 
 static inline int pal_drawbuffer_chain_contains(J3DPacket* head, J3DPacket* target) {
     enum { MAX_ENTRY_CHAIN_SCAN = 0x10000 };
@@ -35,6 +37,29 @@ static inline void pal_drawbuffer_prepend(J3DPacket** head, J3DPacket* packet) {
     *head = packet;
 }
 #endif
+
+void J3DDrawBuffer::palDiagFrameReset() {
+#if PLATFORM_PC
+    s_pal_diag_packets_visited = 0;
+    s_pal_diag_virtual_draw_calls = 0;
+#endif
+}
+
+int J3DDrawBuffer::palDiagPacketsVisited() {
+#if PLATFORM_PC
+    return s_pal_diag_packets_visited;
+#else
+    return 0;
+#endif
+}
+
+int J3DDrawBuffer::palDiagVirtualDrawCalls() {
+#if PLATFORM_PC
+    return s_pal_diag_virtual_draw_calls;
+#else
+    return 0;
+#endif
+}
 
 void J3DDrawBuffer::calcZRatio() {
     mZRatio = (mZFar - mZNear) / (f32)mEntryTableSize;
@@ -345,6 +370,7 @@ void J3DDrawBuffer::drawHead() const {
             /* Addresses below 4KB fall within the OS NULL-page guard region
              * and indicate a corrupted linked-list pointer. */
             if ((uintptr_t)packet < 0x1000) break;
+            s_pal_diag_packets_visited++;
             /* Packet-chain probe: sample packet pointer, vptr, next pointer and
              * first bytes before virtual dispatch to diagnose vtable corruption. */
             {
@@ -363,6 +389,7 @@ void J3DDrawBuffer::drawHead() const {
                     s_packet_probe_count++;
                 }
             }
+            s_pal_diag_virtual_draw_calls++;
 #endif
             packet->draw();
         }
@@ -377,6 +404,8 @@ void J3DDrawBuffer::drawTail() const {
         for (J3DPacket* packet = mpBuffer[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
             if ((uintptr_t)packet < 0x1000) break;
+            s_pal_diag_packets_visited++;
+            s_pal_diag_virtual_draw_calls++;
 #endif
             packet->draw();
         }

@@ -1264,6 +1264,23 @@ static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
 static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
 static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
 
+u32 pal_tev_get_total_attempt_count(void) {
+    return s_ok_submitted + s_skip_not_ready + s_skip_no_verts +
+           s_skip_bad_layout + s_skip_bad_stride + s_skip_invalid_prog +
+           s_skip_passclr_fill + s_skip_passclr_alpha + s_skip_passclr_env +
+           s_skip_tvb_alloc;
+}
+
+u32 pal_tev_get_ok_submitted_count(void) { return s_ok_submitted; }
+
+u32 pal_tev_get_filter_skip_count(void) {
+    return s_skip_passclr_fill + s_skip_passclr_alpha + s_skip_passclr_env;
+}
+
+u32 pal_tev_get_skip_passclr_fill_count(void) { return s_skip_passclr_fill; }
+u32 pal_tev_get_skip_passclr_alpha_count(void) { return s_skip_passclr_alpha; }
+u32 pal_tev_get_skip_passclr_env_count(void) { return s_skip_passclr_env; }
+
 void pal_tev_report_diagnostics(void) {
     /* TEV config summary */
     fprintf(stdout, "{\"tev_config_summary\":{\"unique_configs\":%d,\"configs\":[",

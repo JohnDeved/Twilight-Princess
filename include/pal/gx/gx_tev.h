@@ -61,6 +61,12 @@ void pal_tev_submit_test_quad(void);
  * and categorized draw path failure/skip counts.
  */
 void pal_tev_report_diagnostics(void);
+u32 pal_tev_get_total_attempt_count(void);
+u32 pal_tev_get_ok_submitted_count(void);
+u32 pal_tev_get_filter_skip_count(void);
+u32 pal_tev_get_skip_passclr_fill_count(void);
+u32 pal_tev_get_skip_passclr_alpha_count(void);
+u32 pal_tev_get_skip_passclr_env_count(void);
 
 #ifdef __cplusplus
 }

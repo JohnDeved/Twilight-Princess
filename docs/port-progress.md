@@ -10,16 +10,16 @@
 | **Highest CI Milestone** | `16` (TEST_COMPLETE — 400 frames crash-free, ~225ms noop renderer) |
 | **Current Step** | Step 5+ — 3D rendering stabilization (sustained room geometry) |
 | **Last Updated** | 2026-03-04 |
-| **Blocking Issue** | `J3DDrawBuffer` packet-link corruption in play-scene draw buffers (`j3d_chain_invalid`: slot-0 runaway/self-loop). 3D entries are present but fail before virtual dispatch reaches draw methods. Next: validate chain-fix efficacy across full play window, then resolve depth/blend submit-state gap and pixel visibility. |
+| **Blocking Issue** | Packet chain is now structurally valid (`j3d_chain_invalid=0`), but draw-list crashes/suppression still stop play-window packet dispatch (`j3d_entries≈38`, `dl_draws=0` for most frames). Next: close the draw dispatch funnel gap (packet visit → virtual draw → GX draw → TEV submit), then resolve depth/blend submit-state gap and pixel visibility. |
 | **Goal Milestones (new)** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ⏳ (still black output in play-window captures) |
 
 ## Remaining Work Estimate
 
 | Area | Description | Est. Effort | Priority |
 |---|---|---|---|
-| **Scene stability** | Eliminate J3DDrawBuffer packet-chain corruption so play-scene entries dispatch to packet draw methods consistently | 0.5-1 session | **P0** |
+| **Scene stability** | Keep OpaListBG/XluListBG/XluListSky dispatch active without crash suppression and sustain nonzero play-window dl_draws | 1 session | **P0** |
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
-| **Draw drop-off** | j3d_entries→dl_draws categorization — why 64 entries produce only 2 draws | 1 session | P1 |
+| **Draw drop-off** | Per-frame funnel closure: packet visited → virtual draw → GX draw → TEV submit/filter attribution | 0.5-1 session | P1 |
 | **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
 | **Lighting** | Ambient/diffuse/specular from GX light state into shaders | 2 sessions | P2 |
 | **Multi-texture** | Multi-texture TEV stages (currently single-texture per draw) | 1 session | P2 |

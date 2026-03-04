@@ -41,6 +41,7 @@
 #include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
+#include "pal/gx/gx_tev.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include <signal.h>
 #include <setjmp.h>
@@ -1615,46 +1616,54 @@ int mDoGph_Painter() {
                  * crashes once is permanently skipped (zero signal work
                  * on subsequent frames). */
                 {
+                    static int s_drawlist_frame = 0;
                     pal_crash_handler_init();
+                    J3DDrawBuffer::palDiagFrameReset();
 
-#define PAL_SAFE_DRAW(label, code) \
-    { static int _suppressed = 0; \
+#define PAL_SAFE_DRAW_RETRY(label, retry_frames, code) \
+    /* _suppressed/_retry_frame are per-drawlist (macro expansion-site statics). */ \
+    { static int _suppressed = 0; static int _retry_frame = 0; \
+      if (_suppressed && (retry_frames) > 0 && s_drawlist_frame >= _retry_frame) { \
+        _suppressed = 0; \
+      } \
       if (!_suppressed) { \
         sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
         pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
         if (sigsetjmp(_jb, 1) == 0) { code; } \
-        else { _suppressed = 1; \
-          fprintf(stderr, "[PAL] draw list crash: " label " — permanently skipped\n"); } \
+        else { _suppressed = 1; _retry_frame = s_drawlist_frame + (retry_frames); \
+          fprintf(stderr, "[PAL] draw list crash: " label " — suppressed%s\n", \
+                  (retry_frames) > 0 ? " (will retry)" : " permanently"); } \
         pal_crash_jmpbuf = _prev; \
       } }
 
                     /* Sky */
-                    PAL_SAFE_DRAW("OpaListSky", dComIfGd_drawOpaListSky());
-                    PAL_SAFE_DRAW("XluListSky", dComIfGd_drawXluListSky());
+                    PAL_SAFE_DRAW_RETRY("OpaListSky", 0, dComIfGd_drawOpaListSky());
+                    PAL_SAFE_DRAW_RETRY("XluListSky", 30, dComIfGd_drawXluListSky());
                     GXSetClipMode(GX_CLIP_ENABLE);
 
                     /* Background / terrain */
-                    PAL_SAFE_DRAW("OpaListBG", dComIfGd_drawOpaListBG());
-                    PAL_SAFE_DRAW("OpaListDarkBG", dComIfGd_drawOpaListDarkBG());
-                    PAL_SAFE_DRAW("OpaListMiddle", dComIfGd_drawOpaListMiddle());
+                    PAL_SAFE_DRAW_RETRY("OpaListBG", 30, dComIfGd_drawOpaListBG());
+                    PAL_SAFE_DRAW_RETRY("OpaListDarkBG", 0, dComIfGd_drawOpaListDarkBG());
+                    PAL_SAFE_DRAW_RETRY("OpaListMiddle", 0, dComIfGd_drawOpaListMiddle());
 
                     /* Opaque objects */
-                    PAL_SAFE_DRAW("OpaList", dComIfGd_drawOpaList());
-                    PAL_SAFE_DRAW("OpaListDark", dComIfGd_drawOpaListDark());
-                    PAL_SAFE_DRAW("OpaListPacket", dComIfGd_drawOpaListPacket());
+                    PAL_SAFE_DRAW_RETRY("OpaList", 0, dComIfGd_drawOpaList());
+                    PAL_SAFE_DRAW_RETRY("OpaListDark", 0, dComIfGd_drawOpaListDark());
+                    PAL_SAFE_DRAW_RETRY("OpaListPacket", 0, dComIfGd_drawOpaListPacket());
 
                     /* Translucent background */
-                    PAL_SAFE_DRAW("XluListBG", dComIfGd_drawXluListBG());
-                    PAL_SAFE_DRAW("XluListDarkBG", dComIfGd_drawXluListDarkBG());
+                    PAL_SAFE_DRAW_RETRY("XluListBG", 30, dComIfGd_drawXluListBG());
+                    PAL_SAFE_DRAW_RETRY("XluListDarkBG", 0, dComIfGd_drawXluListDarkBG());
 
                     /* Translucent objects */
-                    PAL_SAFE_DRAW("XluList", dComIfGd_drawXluList());
-                    PAL_SAFE_DRAW("XluListDark", dComIfGd_drawXluListDark());
+                    PAL_SAFE_DRAW_RETRY("XluList", 0, dComIfGd_drawXluList());
+                    PAL_SAFE_DRAW_RETRY("XluListDark", 0, dComIfGd_drawXluListDark());
 
                     /* Late 3D */
-                    PAL_SAFE_DRAW("OpaList3Dlast", dComIfGd_drawOpaList3Dlast());
+                    PAL_SAFE_DRAW_RETRY("OpaList3Dlast", 0, dComIfGd_drawOpaList3Dlast());
 
-#undef PAL_SAFE_DRAW
+#undef PAL_SAFE_DRAW_RETRY
+                    s_drawlist_frame++;
                 }
 
                 j3dSys.reinitGX();
@@ -1663,15 +1672,51 @@ int mDoGph_Painter() {
         }
         {
             static int s_3d_diag_frame = 0;
+            static u32 s_prev_tev_attempts = 0;
+            static u32 s_prev_tev_submits = 0;
+            static u32 s_prev_tev_filters = 0;
+            static u32 s_prev_tev_fill = 0;
+            static u32 s_prev_tev_alpha = 0;
+            static u32 s_prev_tev_env = 0;
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
             int dl_calls = pal_gx_dl_get_call_count();
-            if (s_3d_diag_frame < 10 || (s_3d_diag_frame >= 120 && s_3d_diag_frame <= 400) || (s_3d_diag_frame % 30 == 0 && s_3d_diag_frame < 600)) {
+            u32 tev_attempts = pal_tev_get_total_attempt_count();
+            u32 tev_submits = pal_tev_get_ok_submitted_count();
+            u32 tev_filters = pal_tev_get_filter_skip_count();
+            u32 tev_fill = pal_tev_get_skip_passclr_fill_count();
+            u32 tev_alpha = pal_tev_get_skip_passclr_alpha_count();
+            u32 tev_env = pal_tev_get_skip_passclr_env_count();
+            int visited_packets = J3DDrawBuffer::palDiagPacketsVisited();
+            int virtual_draws = J3DDrawBuffer::palDiagVirtualDrawCalls();
+            enum {
+                DIAG_EARLY_FRAMES = 10,
+                DIAG_PLAY_START = 120,
+                DIAG_PLAY_END = 400,
+                DIAG_SAMPLING_STRIDE = 30,
+                DIAG_SAMPLING_CAP = 600,
+            };
+            if (s_3d_diag_frame < DIAG_EARLY_FRAMES ||
+                (s_3d_diag_frame >= DIAG_PLAY_START && s_3d_diag_frame <= DIAG_PLAY_END) ||
+                (s_3d_diag_frame % DIAG_SAMPLING_STRIDE == 0 && s_3d_diag_frame < DIAG_SAMPLING_CAP)) {
                 u32 gh_free = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getTotalFreeSize() : 0;
                 u32 gh_size = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getHeapSize() : 0;
-                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",
-                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, s_prev_j3d_entries);
+                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d,\"pkt_visited\":%d,\"pkt_virtual\":%d,\"tev_attempts\":%u,\"tev_submits\":%u,\"tev_filters\":%u,\"tev_fill\":%u,\"tev_alpha\":%u,\"tev_env\":%u}}\n",
+                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, s_prev_j3d_entries,
+                        visited_packets, virtual_draws,
+                        tev_attempts - s_prev_tev_attempts,
+                        tev_submits - s_prev_tev_submits,
+                        tev_filters - s_prev_tev_filters,
+                        tev_fill - s_prev_tev_fill,
+                        tev_alpha - s_prev_tev_alpha,
+                        tev_env - s_prev_tev_env);
             }
+            s_prev_tev_attempts = tev_attempts;
+            s_prev_tev_submits = tev_submits;
+            s_prev_tev_filters = tev_filters;
+            s_prev_tev_fill = tev_fill;
+            s_prev_tev_alpha = tev_alpha;
+            s_prev_tev_env = tev_env;
             s_3d_diag_frame++;
         }
 
