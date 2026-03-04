@@ -379,6 +379,9 @@ int daBg_c::draw() {
 
             if (bg_model != NULL) {
                 modelData = bg_model->getModelData();
+#if PLATFORM_PC
+                if (modelData == NULL) goto bg_draw_entry;
+#endif
 
                 for (u16 j = 0; j < modelData->getMaterialNum(); j++) {
                     const char* name;
@@ -387,7 +390,13 @@ int daBg_c::draw() {
 
                     mat = modelData->getMaterialNodePointer(j);
                     nametab = modelData->getMaterialName();
+#if PLATFORM_PC
+                    if (nametab == NULL || mat == NULL) continue;
+#endif
                     name = nametab->getName(j);
+#if PLATFORM_PC
+                    if (name == NULL) continue;
+#endif
 
                     if (!memcmp(&name[3], "MA12", 4)) {
                         if (g_env_light.wether_pat1 == 6) {
@@ -415,8 +424,15 @@ int daBg_c::draw() {
                         bgPart->tevstr->Material_id |= (u8)j;
                     }
 
+#if PLATFORM_PC
+                    const char* stageName = dComIfGp_getStartStageName();
+                    if (stageName != NULL &&
+                        (!strcmp(stageName, "F_SP127") ||
+                         !strcmp(stageName, "R_SP127")))
+#else
                     if (!strcmp(dComIfGp_getStartStageName(), "F_SP127") ||
                         !strcmp(dComIfGp_getStartStageName(), "R_SP127"))
+#endif
                     {
                         if (!memcmp(&name[3], "MA00_Enkei_Tree_Color", 21) ||
                             !memcmp(&name[3], "MA00_Gake", 9) || !memcmp(&name[3], "MA00_Kusa", 9))
@@ -487,6 +503,9 @@ int daBg_c::draw() {
                     }
                 }
             }
+#if PLATFORM_PC
+            bg_draw_entry:
+#endif
 
             mDoExt_modelEntryDL(bg_model);
             dComIfGd_setListBG();
