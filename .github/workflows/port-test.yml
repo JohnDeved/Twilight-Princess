@@ -174,14 +174,19 @@ jobs:
           echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
 
           # === Phase 3: 3D gameplay frame capture (softpipe + async + frame delay) ===
-          # Targets frame 128: the opening 3D J3D room sequence (7587 draws/frame).
-          # Strategy: TP_FRAME_DELAY_MS=350000 sleeps 350s after bgfx::frame(128),
-          # giving Mesa softpipe (~270s) time to finish rasterising the heavy 3D frame
-          # before the next CPU submission.  Due to bgfx's 1-frame async pipeline lag,
-          # frame 128's rendered pixels appear in s_fb when pal_verify_frame(129) runs.
-          # TP_VERIFY_CAPTURE_FRAMES="129" saves the BMP at slot 129 (= frame 128 pixels).
-          # TP_TEST_FRAMES=130: game exits after frame 129 is processed.
-          # Timing: ~20s (frames 0-127) + ~355s (frame 128 + delay) + ~2s (frame 129) = ~377s < 590s.
+          # Targets frame 129: the opening 3D J3D room sequence (7587 draws/frame).
+          #
+          # Pipeline (fixed in commit after run 498):
+          #   - The J3D 3D room draws (7587) are accumulated during game iteration 129.
+          #   - bgfx::frame() at s_frame_count=129 flushes those draws to the render thread.
+          #   - TP_FRAME_DELAY_MS=350000 now fires BEFORE pal_verify_frame (fixed order),
+          #     giving Mesa softpipe (~20-60s) time to rasterise the 3D frame.
+          #   - pal_verify_frame(129) then reads s_fb which has the just-rendered 3D room.
+          #   - TP_FRAME_DELAY_START=129 (must match s_frame_count when 3D batch is flushed).
+          #   - TP_VERIFY_CAPTURE_FRAMES="129" saves the BMP at slot 129.
+          #   - TP_TEST_FRAMES=130: game exits after frame 129 capture.
+          #
+          # Timing: ~20s (frames 0-128) + 350s sleep (safety margin; softpipe renders in ~20-60s) = ~370s < 590s.
           # NO TP_SYNC_RENDER: bgfx single-threaded mode crashes in bgfx::renderFrame()
           # on the main thread (GL context thread mismatch); async mode is stable.
           # Phase 3 is best-effort (|| true) and non-blocking: CI passes even if it times out.
@@ -197,7 +202,7 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export TP_VERIFY=1
           export TP_FRAME_DELAY_MS=350000
-          export TP_FRAME_DELAY_START=128
+          export TP_FRAME_DELAY_START=129
           export TP_TEST_FRAMES=130
           export TP_VERIFY_CAPTURE_FRAMES="129"
           unset TP_SKIP_DL_DRAWS

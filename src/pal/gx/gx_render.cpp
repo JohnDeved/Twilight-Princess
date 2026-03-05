@@ -398,25 +398,26 @@ void pal_render_end_frame(void) {
         }
     }
 
-    /* Verify after bgfx::frame() so capture buffer is up-to-date */
-    pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
-                     gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
-
-    /* Save screenshot at frame 120 (title scene with 85+ draw calls) */
-    if (s_frame_count == 120 && pal_capture_screenshot_active()) {
-        pal_capture_save();
-    }
-
     /* TP_FRAME_DELAY_MS=N: sleep N milliseconds after bgfx::frame() starting at
-     * TP_FRAME_DELAY_START frame (default 128), stopping after TP_FRAME_DELAY_END
+     * TP_FRAME_DELAY_START frame (default 129), stopping after TP_FRAME_DELAY_END
      * (default = TP_FRAME_DELAY_START, i.e. delay fires exactly once).
-     * Used by Phase 3 CI to throttle CPU frame submission so Mesa softpipe /
-     * llvmpipe can finish rasterising a heavy 3-D frame (7587 draws) before the
-     * next frame's TVB allocation begins.  Set to 0 (default) for normal
-     * operation; a value of ~350000 is appropriate for softpipe on CI. */
+     *
+     * IMPORTANT: this sleep must fire BEFORE pal_verify_frame() so that Mesa
+     * softpipe has fully rasterised the submitted batch before we read s_fb.
+     * bgfx is multi-threaded: bgfx::frame(N) queues the accumulated draw commands
+     * for the render thread, but pal_verify_frame reads s_fb which is populated by
+     * the render thread's captureFrame callback.  Without the sleep here, the
+     * capture may still contain the previous frame's data when verify runs.
+     *
+     * Default start frame = 129: the J3D 3D room draws (7587 calls) are accumulated
+     * during game iteration 129 and flushed by bgfx::frame(129).  Sleeping at
+     * frame 128 (old default) flushed game iter 128's 2-draw title batch instead.
+     *
+     * Used by Phase 3 CI to let Mesa softpipe rasterise the 7587-draw 3D frame
+     * before the BMP capture.  Set to 0 (default) for normal operation. */
     {
         static int s_frame_delay_ms = -1;
-        static uint32_t s_frame_delay_start = 128; /* default: 3D geometry starts at 128 */
+        static uint32_t s_frame_delay_start = 129; /* default: 3D geometry batch ready at 129 */
         static uint32_t s_frame_delay_end = 0;     /* 0 = same as start (fire exactly once) */
         if (s_frame_delay_ms < 0) {
             const char* ev = getenv("TP_FRAME_DELAY_MS");
@@ -431,8 +432,21 @@ void pal_render_end_frame(void) {
                         s_frame_delay_ms, s_frame_delay_start, s_frame_delay_end);
         }
         if (s_frame_delay_ms > 0 && s_frame_count >= s_frame_delay_start
-                && s_frame_count <= s_frame_delay_end)
+                && s_frame_count <= s_frame_delay_end) {
+            fprintf(stderr, "{\"frame_delay\":{\"frame\":%u,\"ms\":%d}}\n",
+                    s_frame_count, s_frame_delay_ms);
             usleep((useconds_t)s_frame_delay_ms * 1000u);
+        }
+    }
+
+    /* Verify after bgfx::frame() (and after any TP_FRAME_DELAY_MS sleep) so the
+     * capture buffer contains the just-rendered frame's pixels. */
+    pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
+                     gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
+
+    /* Save screenshot at frame 120 (title scene with 85+ draw calls) */
+    if (s_frame_count == 120 && pal_capture_screenshot_active()) {
+        pal_capture_save();
     }
 
     if (!pal_window_is_headless()) {
