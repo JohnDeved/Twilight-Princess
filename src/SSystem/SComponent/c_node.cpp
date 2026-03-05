@@ -5,6 +5,10 @@
 
 #include "SSystem/SComponent/c_node.h"
 #include <dolphin/types.h>
+#if PLATFORM_PC || PLATFORM_NX_HB
+#include "global.h"
+#include <stdio.h>
+#endif
 
 void cNd_Join(node_class* node_a, node_class* node_b) {
     node_a->mpNextNode = node_b;
@@ -13,28 +17,62 @@ void cNd_Join(node_class* node_a, node_class* node_b) {
 
 int cNd_LengthOf(node_class* node) {
     int count = 0;
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* Hard cap: guard against infinite loop when mpNextNode forms a cycle
+     * due to linked-list corruption after an actor Execute crash. */
+    while (node && count <= 10000) {
+        count++;
+        node = NODE_GET_NEXT(node);
+    }
+    if (count > 10000) {
+        fprintf(stderr, "{\"cNd_length_cycle\":{\"count\":%d}}\n", count);
+    }
+#else
     while (node) {
         count++;
         node = NODE_GET_NEXT(node);
     }
+#endif
     return count;
 }
 
 node_class* cNd_First(node_class* node) {
     node_class* ret = NULL;
+#if PLATFORM_PC || PLATFORM_NX_HB
+    int nd_iter = 0;
+    while (node && ++nd_iter <= 10000) {
+        ret = node;
+        node = NODE_GET_PREV(node);
+    }
+    if (nd_iter > 10000) {
+        fprintf(stderr, "{\"cNd_first_cycle\":{\"iter\":%d}}\n", nd_iter);
+    }
+#else
     while (node) {
         ret = node;
         node = NODE_GET_PREV(node);
     }
+#endif
     return ret;
 }
 
 node_class* cNd_Last(node_class* node) {
     node_class* ret = NULL;
+#if PLATFORM_PC || PLATFORM_NX_HB
+    int nd_iter = 0;
+    while (node && ++nd_iter <= 10000) {
+        ret = node;
+        node = NODE_GET_NEXT(node);
+    }
+    if (nd_iter > 10000) {
+        fprintf(stderr, "{\"cNd_last_cycle\":{\"iter\":%d}}\n", nd_iter);
+    }
+#else
     while (node) {
         ret = node;
         node = NODE_GET_NEXT(node);
     }
+#endif
     return ret;
 }
 
@@ -85,10 +123,21 @@ void cNd_Insert(node_class* node_a, node_class* node_b) {
 }
 
 void cNd_SetObject(node_class* node, void* data) {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    int nd_iter = 0;
+    while (node && ++nd_iter <= 10000) {
+        node->mpData = data;
+        node = NODE_GET_NEXT(node);
+    }
+    if (nd_iter > 10000) {
+        fprintf(stderr, "{\"cNd_setobj_cycle\":{\"iter\":%d}}\n", nd_iter);
+    }
+#else
     while (node) {
         node->mpData = data;
         node = NODE_GET_NEXT(node);
     }
+#endif
 }
 
 void cNd_ClearObject(node_class* node) {
