@@ -200,7 +200,7 @@ The CI runs on every push or PR that touches:
 **Total CI test time: ~5-8 minutes** (down from ~20+ minutes with the old 3-phase pipeline).
 
 Phase 2 treats rendering like a video render — each frame takes its time, no realtime
-requirement. The 120s frame delay at frame 129 gives Mesa softpipe time to rasterise
+requirement. The 120s frame delay at frame 129 gives Mesa softpipe time to rasterize
 the heavy 3D batch (typically completes in 20-60s).
 
 ### What CI Produces

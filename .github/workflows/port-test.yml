@@ -118,12 +118,18 @@ jobs:
           # === Phase 2: Render test (softpipe, single-frame capture) ===
           # Renders like a video — each frame takes its time, no realtime
           # requirement. Captures TWO key frames:
-          #   - Frame 10: title screen (2D, GOAL_INTRO_VISIBLE, ~1-5s to render)
-          #   - Frame 129: 3D gameplay room (7587 draws, ~20-60s to rasterise)
+          #   - Frame 10: title screen (2D, GOAL_INTRO_VISIBLE, ~1-5s/frame)
+          #   - Frame 129: 3D gameplay room (7587 draws, ~20-60s to rasterize)
+          # Frame 1 is skipped (not fully initialized — title screen at frame 10
+          # is the first meaningful visual output).
           #
           # TP_FRAME_DELAY_MS=120000 (120s) at frame 129 gives Mesa softpipe
-          # time to rasterise the heavy 3D batch before BMP capture. Reduced
-          # from 350s safety margin — softpipe typically completes in 20-60s.
+          # time to rasterize the heavy 3D batch before BMP capture. Softpipe
+          # typically completes in 20-60s, so 120s provides a 2x safety margin.
+          # (Previous 350s was a 6x margin — excessive for CI.)
+          #
+          # Timeout budget: ~30s (frames 0-128) + 120s (delay) + 30s (frame 129+
+          # rasterize + capture) = ~180s typical, 360s limit provides 2x headroom.
           #
           # NO TP_SYNC_RENDER: bgfx single-threaded mode crashes in
           # bgfx::renderFrame() (GL context thread mismatch); async is stable.
