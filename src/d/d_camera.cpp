@@ -10975,40 +10975,76 @@ static int camera_execute(camera_process_class* i_this) {
             }
             camera->mCamera.CalcTrimSize();
             store(camera);
-        } else if (dDemo_c::getCamera() != NULL) {
-            /* No player but demo camera is active (intro cutscene).
-             * Bypass the cameraPlay() guard in store() — in the no-player
-             * path we have no other source of camera position, so always
-             * apply demo camera values directly if ENABLE flags are set. */
+        } else {
+            /* No player — try demo camera first (bypassing cameraPlay() guard),
+             * then fall back to the stage arrow spawn position if available. */
+            bool camera_updated = false;
             dDemo_camera_c* demo = dDemo_c::getCamera();
-            bool pos_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e) != 0;
-            bool targ_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e) != 0;
-            bool fovy_en = demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e) != 0;
             static int s_cam_diag_n = 0;
             if (s_cam_diag_n < 5) {
-                cXyz eye = demo->getTrans();
-                cXyz center = demo->getTarget();
-                fprintf(stderr,
-                    "{\"cam_demo_state\":{\"n\":%d,\"cam_play\":%d,"
-                    "\"pos_en\":%d,\"targ_en\":%d,\"fovy_en\":%d,"
-                    "\"eye\":[%g,%g,%g],\"center\":[%g,%g,%g]}}\n",
-                    s_cam_diag_n,
-                    dComIfGp_getPEvtManager()->cameraPlay(),
-                    pos_en ? 1 : 0, targ_en ? 1 : 0, fovy_en ? 1 : 0,
-                    eye.x, eye.y, eye.z,
-                    center.x, center.y, center.z);
+                if (demo != NULL) {
+                    bool pos_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e) != 0;
+                    bool targ_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e) != 0;
+                    bool fovy_en = demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e) != 0;
+                    cXyz eye = demo->getTrans();
+                    cXyz center = demo->getTarget();
+                    fprintf(stderr,
+                        "{\"cam_demo_state\":{\"n\":%d,\"cam_play\":%d,"
+                        "\"pos_en\":%d,\"targ_en\":%d,\"fovy_en\":%d,"
+                        "\"eye\":[%g,%g,%g],\"center\":[%g,%g,%g]}}\n",
+                        s_cam_diag_n,
+                        dComIfGp_getPEvtManager()->cameraPlay(),
+                        pos_en ? 1 : 0, targ_en ? 1 : 0, fovy_en ? 1 : 0,
+                        eye.x, eye.y, eye.z,
+                        center.x, center.y, center.z);
+                } else {
+                    fprintf(stderr,
+                        "{\"cam_demo_state\":{\"n\":%d,\"demo_cam\":null,"
+                        "\"cur_eye\":[%g,%g,%g]}}\n",
+                        s_cam_diag_n,
+                        fopCamM_GetEye_p(camera)->x,
+                        fopCamM_GetEye_p(camera)->y,
+                        fopCamM_GetEye_p(camera)->z);
+                }
                 s_cam_diag_n++;
             }
-            if (pos_en) {
-                cXyz eye = demo->getTrans();
-                fopCamM_SetEye(camera, eye.x, eye.y, eye.z);
+            /* Primary: use demo camera position if JStage has set ENABLE flags */
+            if (demo != NULL) {
+                if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e)) {
+                    cXyz eye = demo->getTrans();
+                    fopCamM_SetEye(camera, eye.x, eye.y, eye.z);
+                    camera_updated = true;
+                }
+                if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e)) {
+                    cXyz center = demo->getTarget();
+                    fopCamM_SetCenter(camera, center.x, center.y, center.z);
+                }
+                if (demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e)) {
+                    fopCamM_SetFovy(camera, demo->getFovy());
+                }
             }
-            if (targ_en) {
-                cXyz center = demo->getTarget();
-                fopCamM_SetCenter(camera, center.x, center.y, center.z);
-            }
-            if (fovy_en) {
-                fopCamM_SetFovy(camera, demo->getFovy());
+            /* Fallback: use stage arrow spawn data as camera eye if still at default */
+            if (!camera_updated) {
+                int stay_no = dComIfGp_roomControl_getStayNo();
+                stage_arrow_class* arrow = dComIfGp_getRoomArrow(stay_no);
+                if (arrow != NULL && arrow->num > 0) {
+                    stage_arrow_data_class* entry = &arrow->m_entries[0];
+                    f32 ex = entry->posX, ey = entry->posY, ez = entry->posZ;
+                    /* Compute look-at center from spawn angle (angleY = yaw) */
+                    f32 yaw = (f32)entry->angleY * (3.14159265f / 32768.0f);
+                    f32 cx = ex + sinf(yaw) * 100.0f;
+                    f32 cy = ey;
+                    f32 cz = ez - cosf(yaw) * 100.0f;
+                    fopCamM_SetEye(camera, ex, ey + 50.0f, ez);
+                    fopCamM_SetCenter(camera, cx, cy + 50.0f, cz);
+                    static bool s_arrow_logged = false;
+                    if (!s_arrow_logged) {
+                        fprintf(stderr,
+                            "{\"cam_arrow_fallback\":{\"eye\":[%g,%g,%g],\"center\":[%g,%g,%g]}}\n",
+                            ex, ey + 50.0f, ez, cx, cy + 50.0f, cz);
+                        s_arrow_logged = true;
+                    }
+                }
             }
         }
 
