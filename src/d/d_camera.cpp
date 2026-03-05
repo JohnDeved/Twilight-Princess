@@ -10977,10 +10977,39 @@ static int camera_execute(camera_process_class* i_this) {
             store(camera);
         } else if (dDemo_c::getCamera() != NULL) {
             /* No player but demo camera is active (intro cutscene).
-             * store() applies demoCamera eye/center/up to view->lookat
-             * so view_setup builds the correct view matrix instead of
-             * using the NaN fallback (which places the camera at origin). */
-            store(camera);
+             * Bypass the cameraPlay() guard in store() — in the no-player
+             * path we have no other source of camera position, so always
+             * apply demo camera values directly if ENABLE flags are set. */
+            dDemo_camera_c* demo = dDemo_c::getCamera();
+            bool pos_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e) != 0;
+            bool targ_en = demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e) != 0;
+            bool fovy_en = demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e) != 0;
+            static int s_cam_diag_n = 0;
+            if (s_cam_diag_n < 5) {
+                cXyz eye = demo->getTrans();
+                cXyz center = demo->getTarget();
+                fprintf(stderr,
+                    "{\"cam_demo_state\":{\"n\":%d,\"cam_play\":%d,"
+                    "\"pos_en\":%d,\"targ_en\":%d,\"fovy_en\":%d,"
+                    "\"eye\":[%g,%g,%g],\"center\":[%g,%g,%g]}}\n",
+                    s_cam_diag_n,
+                    dComIfGp_getPEvtManager()->cameraPlay(),
+                    pos_en ? 1 : 0, targ_en ? 1 : 0, fovy_en ? 1 : 0,
+                    eye.x, eye.y, eye.z,
+                    center.x, center.y, center.z);
+                s_cam_diag_n++;
+            }
+            if (pos_en) {
+                cXyz eye = demo->getTrans();
+                fopCamM_SetEye(camera, eye.x, eye.y, eye.z);
+            }
+            if (targ_en) {
+                cXyz center = demo->getTarget();
+                fopCamM_SetCenter(camera, center.x, center.y, center.z);
+            }
+            if (fovy_en) {
+                fopCamM_SetFovy(camera, demo->getFovy());
+            }
         }
 
         /* Final view_setup with any updated camera state from above */
