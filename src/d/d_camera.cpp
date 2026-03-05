@@ -10975,6 +10975,12 @@ static int camera_execute(camera_process_class* i_this) {
             }
             camera->mCamera.CalcTrimSize();
             store(camera);
+        } else if (dDemo_c::getCamera() != NULL) {
+            /* No player but demo camera is active (intro cutscene).
+             * store() applies demoCamera eye/center/up to view->lookat
+             * so view_setup builds the correct view matrix instead of
+             * using the NaN fallback (which places the camera at origin). */
+            store(camera);
         }
 
         /* Final view_setup with any updated camera state from above */
