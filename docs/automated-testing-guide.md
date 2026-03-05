@@ -228,8 +228,11 @@ on CI hardware) vs the default 90s for local use.
 |---|---|---|
 | `milestone-summary.json` | Parsed milestone results | Check `milestones_reached_count` and `stubs_hit` |
 | `regression-report.json` | Regression check result | Check `status` (improved/same/regressed) |
-| `milestones.log` | Raw milestone log | Debug milestone timing |
-| `logo_render.bmp` | Screenshot capture | Visual verification |
+| `milestones.log` | Merged milestone log (logic + render) | Debug milestone timing |
+| `milestones_logic.log` | Phase 1 raw output | Debug logic-only milestones |
+| `milestones_render.log` | Phase 2 raw output | Debug render milestones |
+| `telemetry-validation.txt` | Draw-call telemetry validation | Check rendering pipeline health |
+| `verify_output/frame_*.bmp` | Captured frame screenshots | Visual verification |
 
 ### PR Comment
 
@@ -296,10 +299,12 @@ edit `milestone-baseline.json` directly and commit it alongside your code change
    ```
 3. If satisfied, run the full self-test to verify regression status:
    ```bash
-   tools/self-test.sh --quick          # fast smoke test (no GPU, ~5s)
-   tools/self-test.sh --skip-build     # full test with existing binary
-   tools/self-test.sh                  # full rebuild + test
+   tools/self-test.sh --quick          # fast: skip build, 100 logic frames + render test
+   tools/self-test.sh --skip-build     # full: skip build, 400 logic frames + render test + telemetry
+   tools/self-test.sh                  # full: rebuild + logic + render + telemetry
    ```
+   The self-test mirrors CI exactly: Phase 1 (Noop logic), Phase 2 (softpipe render via
+   `quick-test.sh`), milestone parsing with `--goal-log`, and telemetry validation.
 4. If the self-test passes, commit and push — CI runs the same `quick-test.sh`
    in render-only mode with a 120s frame delay for CI hardware
 5. If it fails, read the output to see which step failed and fix the issue
@@ -332,10 +337,11 @@ The regression report tells you the current status:
 |---|---|---|
 | `TP_HEADLESS` | Set to `1` for no-GPU testing (bgfx Noop) | unset (windowed) |
 | `TP_TEST_FRAMES` | Exit after N frames | unset (infinite loop) |
-| `TP_SCREENSHOT` | Save screenshot to this path | unset (no screenshot) |
 | `TP_VERIFY` | Set to `1` to enable subsystem verification | unset (disabled) |
 | `TP_VERIFY_DIR` | Directory for captured frame BMPs | `verify_output` |
-| `TP_VERIFY_CAPTURE_FRAMES` | Comma-separated frame numbers to capture | `30,60,120,300,600,1200,1800` |
+| `TP_VERIFY_CAPTURE_FRAMES` | Comma-separated frame numbers to capture | `10,129` |
+| `TP_FRAME_DELAY_MS` | Sleep N ms before 3D frame capture (softpipe time) | unset (no delay) |
+| `TP_FRAME_DELAY_START` | Frame number to start the delay at | `129` |
 | `TP_TEST_INPUTS` | Enable synthetic input injection | unset (no injection) |
 | `ROMS_TOKEN` | GitHub PAT for game data download | unset (skip download) |
 
@@ -392,15 +398,20 @@ run `tools/verify_port.py --update-golden` locally and commit the resulting BMPs
 ```json
 {
   "frames": {
-    "30": {
-      "min_draw_calls": 5,
-      "min_pct_nonblack": 30,
-      "expected_fb_hash": "0xABCD1234"
+    "10": {
+      "min_draw_calls": 0,
+      "min_pct_nonblack": 0,
+      "note": "Frame 10: title screen (2D)"
+    },
+    "129": {
+      "min_draw_calls": 0,
+      "min_pct_nonblack": 0,
+      "note": "Frame 129: 3D gameplay room"
     }
   },
   "global": {
-    "min_peak_draw_calls": 10,
-    "min_render_health_pct": 50
+    "min_peak_draw_calls": 1,
+    "min_render_health_pct": 0
   }
 }
 ```
@@ -514,11 +525,15 @@ Captured frame BMPs are uploaded as CI artifacts for visual inspection.
 milestone-baseline.json              ← Current best milestone (regression baseline)
 tests/render-baseline.json           ← Rendering metrics baseline (draw calls, hashes)
 tests/golden/                        ← Golden reference frame BMPs for image comparison
-tools/quick-test.sh                  ← Fast single-frame render test (10-90s)
-tools/self-test.sh                   ← Full local test (build+run+parse+verify)
+tools/quick-test.sh                  ← Fast render test (~10-90s, used by both local + CI)
+tools/self-test.sh                   ← Full local test (build+logic+render+parse+verify+telemetry)
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
 tools/check_milestone_regression.py  ← Compare against baseline, detect regressions
 tools/verify_port.py                 ← Subsystem verification (rendering/input/audio)
+tools/validate_telemetry.py          ← Draw-call telemetry validation (TEV, J3D, Z/Blend)
+tools/check_bmp_coverage.py          ← Pixel coverage analysis for captured frames
+tools/convert_frames.py              ← BMP→PNG conversion + MP4 video generation
+tools/crash-report.sh                ← GDB crash report (stack traces, deduplication)
 tools/setup_game_data.py             ← Download + extract game data
 .github/workflows/port-test.yml      ← CI pipeline (build, test, verify, comment on PR)
 include/pal/pal_milestone.h          ← Milestone C API

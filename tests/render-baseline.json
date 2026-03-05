@@ -2,29 +2,21 @@
   "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. These values represent minimum acceptable metrics and must not be lowered without justification.",
   "version": 2,
   "frames": {
-    "30": {
+    "10": {
       "min_draw_calls": 0,
       "min_verts": 0,
       "min_pct_nonblack": 0,
       "min_unique_colors": 0,
       "expected_fb_hash": null,
-      "note": "Frame 30: early boot — may not have rendering yet"
+      "note": "Frame 10: title screen (2D) — first meaningful visual output"
     },
-    "60": {
+    "129": {
       "min_draw_calls": 0,
       "min_verts": 0,
       "min_pct_nonblack": 0,
       "min_unique_colors": 0,
       "expected_fb_hash": null,
-      "note": "Frame 60: logo scene should be loading"
-    },
-    "300": {
-      "min_draw_calls": 0,
-      "min_verts": 0,
-      "min_pct_nonblack": 0,
-      "min_unique_colors": 0,
-      "expected_fb_hash": null,
-      "note": "Frame 300: logo should be rendering if assets available"
+      "note": "Frame 129: 3D gameplay room (7587 draws, J3D geometry)"
     }
   },
   "global": {

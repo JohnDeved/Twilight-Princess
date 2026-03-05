@@ -118,7 +118,6 @@ jobs:
           #   (2x safety margin; softpipe typically completes in 20-60s).
           # --output-dir verify_output: matches CI artifact paths.
           echo "=== Phase 2: Render test (via quick-test.sh) ==="
-          export TP_SCREENSHOT=logo_render.bmp
           tools/quick-test.sh --skip-build --render-only \
             --output-dir verify_output \
             --frame 10 --3d \
@@ -625,6 +624,7 @@ jobs:
           name: port-test-results
           path: |
             milestones.log
+            milestones_logic.log
             milestones_render.log
             milestone-summary.json
             regression-report.json
@@ -632,4 +632,3 @@ jobs:
             telemetry-validation.txt
             verify_output/
             verify_png/
-            logo_render.bmp

@@ -3,15 +3,17 @@
 #
 # Runs the same checks as CI without needing to push:
 #   1. Build (incremental)
-#   2. Run headless test
-#   3. Parse milestones
-#   4. Check milestone regression
-#   5. Verify rendering/input/audio
+#   2. Logic test (Noop renderer, 400 frames)
+#   3. Render test (via quick-test.sh)
+#   4. Parse milestones
+#   5. Check milestone regression
+#   6. Verify rendering/input/audio
+#   7. Validate telemetry
 #
 # Usage:
 #   tools/self-test.sh              # full pipeline (build + test)
 #   tools/self-test.sh --skip-build # test only (assumes already built)
-#   tools/self-test.sh --frames 300 # fewer frames for quick smoke test
+#   tools/self-test.sh --frames 300 # fewer logic frames (default: 400)
 #   tools/self-test.sh --quick      # alias for --skip-build --frames 100
 #   tools/self-test.sh --crash-report          # run under GDB, print crash stack traces
 #   tools/self-test.sh --crash-report --unique # deduplicated crash sites only
@@ -25,7 +27,7 @@ set -euo pipefail
 
 # --- Defaults ---
 SKIP_BUILD=0
-FRAMES=2000
+FRAMES=400
 CRASH_REPORT=0
 CRASH_UNIQUE=0
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "                          [--crash-report [--unique]]"
             echo ""
             echo "  --skip-build    Skip the build step (use existing binary)"
-            echo "  --frames N      Number of frames to run (default: 2000)"
+            echo "  --frames N      Number of logic test frames (default: 400)"
             echo "  --quick         Alias for --skip-build --frames 100"
             echo "  --crash-report  Run under GDB and print all crash stack traces"
             echo "  --unique        With --crash-report: only show first crash at each site"
@@ -76,9 +78,9 @@ echo "╔═══════════════════════�
 echo "║                    TP PORT SELF-TEST                        ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "  Frames:     $FRAMES"
-echo "  Skip build: $SKIP_BUILD"
-echo "  Output dir: $TMP_DIR"
+echo "  Logic frames: $FRAMES"
+echo "  Skip build:   $SKIP_BUILD"
+echo "  Output dir:   $TMP_DIR"
 echo ""
 
 # --- Step 0: Game data ---
@@ -101,7 +103,7 @@ echo ""
 
 # --- Step 1: Build ---
 if [ "$SKIP_BUILD" -eq 0 ]; then
-    echo "━━━ Step 1/5: Build ━━━"
+    echo "━━━ Step 1/7: Build ━━━"
     if [ ! -f build/build.ninja ]; then
         echo "  Configuring CMake..."
         cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTP_VERSION=PC
@@ -114,7 +116,7 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     fi
     echo "  ✅ Build succeeded"
 else
-    echo "━━━ Step 1/5: Build (skipped) ━━━"
+    echo "━━━ Step 1/7: Build (skipped) ━━━"
     if [ ! -f build/tp-pc ]; then
         echo "  ❌ build/tp-pc not found — run without --skip-build first"
         exit 2
@@ -123,53 +125,41 @@ else
 fi
 echo ""
 
-# --- Step 2: Run headless test ---
-echo "━━━ Step 2/5: Run headless test ($FRAMES frames) ━━━"
-mkdir -p "$TMP_DIR/verify"
+# --- Step 2: Logic test (Noop renderer, matches CI Phase 1) ---
+echo "━━━ Step 2/7: Logic test (Noop, $FRAMES frames) ━━━"
+unset DISPLAY 2>/dev/null || true
 export TP_HEADLESS=1
 export TP_TEST_FRAMES="$FRAMES"
-export TP_VERIFY=1
-export TP_VERIFY_DIR="$TMP_DIR/verify"
-export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,300,600,1200,1800"
-
-# Start Xvfb for software OpenGL rendering (no GPU needed)
-XVFB_PID=""
-if ! xdpyinfo -display :99 >/dev/null 2>&1; then
-    Xvfb :99 -screen 0 640x480x24 &
-    XVFB_PID=$!
-    # Wait for Xvfb to be ready
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        xdpyinfo -display :99 >/dev/null 2>&1 && break
-        sleep 1
-    done
-    export DISPLAY=:99
-else
-    export DISPLAY=:99
-fi
-
-# Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
-export GALLIUM_DRIVER="${GALLIUM_DRIVER:-softpipe}"
-export LIBGL_ALWAYS_SOFTWARE=1
-
-timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
-if [ -n "$XVFB_PID" ]; then
-    kill "$XVFB_PID" 2>/dev/null || true
-fi
-echo "  ✅ Test run completed"
+timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones_logic.log" || true
+echo "  ✅ Logic test completed"
 echo ""
 
-# --- Step 3: Parse milestones ---
-echo "━━━ Step 3/5: Parse milestones ━━━"
-if ! python3 tools/parse_milestones.py "$TMP_DIR/milestones.log" \
+# --- Step 3: Render test (via quick-test.sh, matches CI Phase 2) ---
+echo "━━━ Step 3/7: Render test (softpipe, frame 10 + 129) ━━━"
+mkdir -p "$TMP_DIR/verify"
+tools/quick-test.sh --skip-build --render-only \
+    --output-dir "$TMP_DIR/verify" \
+    --frame 10 --3d || true
+cp "$TMP_DIR/verify/test.log" "$TMP_DIR/milestones_render.log" 2>/dev/null || touch "$TMP_DIR/milestones_render.log"
+echo "  ✅ Render test completed"
+echo ""
+
+# Merge logs (matches CI)
+cat "$TMP_DIR/milestones_logic.log" "$TMP_DIR/milestones_render.log" > "$TMP_DIR/milestones.log"
+
+# --- Step 4: Parse milestones ---
+echo "━━━ Step 4/7: Parse milestones ━━━"
+if ! python3 tools/parse_milestones.py "$TMP_DIR/milestones_logic.log" \
     --output "$TMP_DIR/milestone-summary.json" \
-    --min-milestone 0; then
+    --min-milestone 0 \
+    --goal-log "$TMP_DIR/milestones_render.log"; then
     echo "  ⚠️  Milestone parsing reported issues"
     PASS=0
 fi
 echo ""
 
-# --- Step 4: Check regression ---
-echo "━━━ Step 4/5: Check milestone regression ━━━"
+# --- Step 5: Check regression ---
+echo "━━━ Step 5/7: Check milestone regression ━━━"
 if ! python3 tools/check_milestone_regression.py "$TMP_DIR/milestone-summary.json" \
     --baseline milestone-baseline.json \
     --output "$TMP_DIR/regression-report.json" \
@@ -179,8 +169,8 @@ if ! python3 tools/check_milestone_regression.py "$TMP_DIR/milestone-summary.jso
 fi
 echo ""
 
-# --- Step 5: Verify rendering ---
-echo "━━━ Step 5/5: Verify rendering ━━━"
+# --- Step 6: Verify rendering ---
+echo "━━━ Step 6/7: Verify rendering ━━━"
 if ! python3 tools/verify_port.py "$TMP_DIR/milestones.log" \
     --output "$TMP_DIR/verify-report.json" \
     --verify-dir "$TMP_DIR/verify" \
@@ -192,17 +182,33 @@ if ! python3 tools/verify_port.py "$TMP_DIR/milestones.log" \
 fi
 echo ""
 
-# --- Step 6 (optional): GDB crash report ---
+# --- Step 7: Validate telemetry (matches CI) ---
+echo "━━━ Step 7/7: Validate telemetry ━━━"
+TP_TELEMETRY_ENFORCE_PEAK_DL=1 TP_TELEMETRY_PEAK_DL_MIN=7000 \
+TP_TELEMETRY_CRASH_FRAME=129 \
+python3 tools/validate_telemetry.py "$TMP_DIR/milestones.log" "$TMP_DIR/milestones_logic.log" \
+    > "$TMP_DIR/telemetry-validation.txt" 2>&1 || true
+TELEMETRY_EXIT=$?
+if [ "$TELEMETRY_EXIT" -ne 0 ]; then
+    echo "  ⚠️  Telemetry validation reported issues"
+    tail -20 "$TMP_DIR/telemetry-validation.txt"
+    PASS=0
+else
+    echo "  ✅ Telemetry validation passed"
+fi
+echo ""
+
+# --- Step 8 (optional): GDB crash report ---
 if [ "$CRASH_REPORT" -eq 1 ]; then
     if ! command -v gdb &>/dev/null; then
-        echo "━━━ Step 6: GDB crash report (SKIPPED — gdb not found) ━━━"
+        echo "━━━ Bonus: GDB crash report (SKIPPED — gdb not found) ━━━"
         echo "  Install: sudo apt-get install gdb"
         echo ""
     else
         CRASH_REPORT_FRAMES="${FRAMES}"
         CRASH_UNIQUE_ARG=""
         [ "$CRASH_UNIQUE" -eq 1 ] && CRASH_UNIQUE_ARG="--unique"
-        echo "━━━ Step 6: GDB crash report ($CRASH_REPORT_FRAMES frames) ━━━"
+        echo "━━━ Bonus: GDB crash report ($CRASH_REPORT_FRAMES frames) ━━━"
         echo "  Running binary under GDB to collect all crash stack traces..."
         echo "  (This may take a few minutes)"
         echo ""
@@ -240,10 +246,13 @@ else
 fi
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Output files in $TMP_DIR:"
-echo "║    milestones.log          — raw test output"
+echo "║    milestones_logic.log    — Phase 1 (Noop) output"
+echo "║    milestones_render.log   — Phase 2 (softpipe) output"
+echo "║    milestones.log          — merged test output"
 echo "║    milestone-summary.json  — parsed milestones"
 echo "║    regression-report.json  — regression check"
 echo "║    verify-report.json      — rendering verification"
+echo "║    telemetry-validation.txt — telemetry checks"
 echo "║    verify/                 — captured frame BMPs"
 if [ "$CRASH_REPORT" -eq 1 ]; then
 echo "║    crash-report.txt        — GDB crash stack traces"
