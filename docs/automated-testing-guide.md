@@ -186,9 +186,22 @@ The CI runs on every push or PR that touches:
 - `src/**` — any source file
 - `include/**` — any header
 - `CMakeLists.txt` — build system
-- `tools/parse_milestones.py` — milestone parser
-- `tools/check_milestone_regression.py` — regression checker
+- `tools/**` — test and build tools
 - `milestone-baseline.json` — baseline milestone
+- `tests/**` — test fixtures
+
+### CI Architecture (2-Phase Pipeline)
+
+| Phase | Renderer | Frames | Timeout | What It Tests |
+|-------|----------|--------|---------|---------------|
+| **Phase 1: Logic** | Noop (no GPU) | 400 | 120s | Boot milestones, game logic, GX stubs, FRAMES_300 |
+| **Phase 2: Render** | softpipe | 131 | 360s | Frame 10 (title screen) + Frame 129 (3D room, 7587 draws) |
+
+**Total CI test time: ~5-8 minutes** (down from ~20+ minutes with the old 3-phase pipeline).
+
+Phase 2 treats rendering like a video render — each frame takes its time, no realtime
+requirement. The 120s frame delay at frame 129 gives Mesa softpipe time to rasterise
+the heavy 3D batch (typically completes in 20-60s).
 
 ### What CI Produces
 

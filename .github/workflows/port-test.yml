@@ -25,7 +25,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -98,22 +98,16 @@ jobs:
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,128"
+          TP_VERIFY_CAPTURE_FRAMES: "10,129"
         run: |
           set -o pipefail
           mkdir -p verify_output
 
           # === Phase 1: Logic test (Noop renderer, fast) ===
           # Runs without DISPLAY to use bgfx Noop backend.
-          # Verifies game logic milestones (PROC_BG creation, dl_draws,
-          # j3d_entries, heap stability) without slow softpipe rendering.
-          # Uses 400 frames to reach FRAMES_300 milestone.
-          # Phase 1 timeout: 120s. The Noop renderer fast-path in pal_tev_flush_draw
-          # skips TVB allocation and vertex copy (frames 1-129 complete in <1s).
-          # Frames 130+ may have one-time actor-list cycle recovery (cNdIt_Method cap
-          # at 10000 iterations breaks circular linked-lists from camera Execute crash
-          # at frame 130); after cycle break, frames 131-400 are <5ms each.
-          # 400 frames complete well within 120s.
+          # Validates game logic milestones, GX stub tracking, and frame counting
+          # without slow softpipe rendering. 400 frames to reach FRAMES_300.
+          # Completes in ~6-7s (Noop fast-path skips TVB allocation).
           echo "=== Phase 1: Logic test (Noop renderer) ==="
           unset DISPLAY
           export TP_TEST_FRAMES=400
@@ -121,15 +115,20 @@ jobs:
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
 
-          # === Phase 2: Pixel test (softpipe, title screen) ===
-          # Runs with Xvfb + softpipe for pixel verification of logo/title.
-          # TP_SKIP_DL_DRAWS=1 skips J3D display-list geometry (the heavy 3-D room
-          # at frames 129+) while still rendering J2D overlays (title screen, HUD).
-          # Capped at 130 frames: covers GOAL_INTRO_VISIBLE (frame 10) and title
-          # screen renders (frames 10-120); stops before the slow actor-cycle frames
-          # (130+) that can cause SIGTERM on slow CI machines.
-          # GOAL_INTRO_VISIBLE triggers at frame >= 10 (GOAL_PIXEL_MILESTONE_FRAME_START).
-          echo "=== Phase 2: Pixel test (softpipe + DL-skip) ==="
+          # === Phase 2: Render test (softpipe, single-frame capture) ===
+          # Renders like a video — each frame takes its time, no realtime
+          # requirement. Captures TWO key frames:
+          #   - Frame 10: title screen (2D, GOAL_INTRO_VISIBLE, ~1-5s to render)
+          #   - Frame 129: 3D gameplay room (7587 draws, ~20-60s to rasterise)
+          #
+          # TP_FRAME_DELAY_MS=120000 (120s) at frame 129 gives Mesa softpipe
+          # time to rasterise the heavy 3D batch before BMP capture. Reduced
+          # from 350s safety margin — softpipe typically completes in 20-60s.
+          #
+          # NO TP_SYNC_RENDER: bgfx single-threaded mode crashes in
+          # bgfx::renderFrame() (GL context thread mismatch); async is stable.
+          # NO TP_SKIP_DL_DRAWS: we want full 3D geometry for frame 129.
+          echo "=== Phase 2: Render test (softpipe, frame 10 + 129) ==="
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
           export DISPLAY=:99
@@ -140,101 +139,42 @@ jobs:
           export GALLIUM_DRIVER=softpipe
           export LIBGL_ALWAYS_SOFTWARE=1
           export TP_VERIFY=1
+          export TP_VERIFY_DIR=verify_output
           export TP_SCREENSHOT=logo_render.bmp
-          export TP_TEST_FRAMES=130
-          export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,128"
-          export TP_SKIP_DL_DRAWS=1
-          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
-          PIXEL_EXIT=${PIPESTATUS[0]}
-          echo "Phase 2 exit: $PIXEL_EXIT"
+          export TP_TEST_FRAMES=131
+          export TP_VERIFY_CAPTURE_FRAMES="10,129"
+          export TP_FRAME_DELAY_MS=120000
+          export TP_FRAME_DELAY_START=129
+          unset TP_SKIP_DL_DRAWS
+          unset TP_SYNC_RENDER
+          timeout -k 10 360s build/tp-pc 2>&1 | tee milestones_render.log || true
+          RENDER_EXIT=${PIPESTATUS[0]}
+          echo "Phase 2 exit: $RENDER_EXIT"
           kill $XVFB_PID 2>/dev/null || true
 
-          # Merge logs: logic test has the game milestones, pixel test has renders
-          cat milestones_logic.log milestones_pixel.log > milestones.log
+          # Merge logs: logic test has boot milestones, render test has pixel/3D data
+          cat milestones_logic.log milestones_render.log > milestones.log
 
-          echo "exit_code=$PIXEL_EXIT" >> $GITHUB_OUTPUT
-          # Convert raw frames to MP4 using ffmpeg (with debug text overlay from metadata)
+          echo "exit_code=$RENDER_EXIT" >> $GITHUB_OUTPUT
+          # Convert raw frames to MP4
           if [ -f verify_output/raw_frames.bin ]; then
             FRAME_COUNT=$(stat -c%s verify_output/raw_frames.bin 2>/dev/null || echo 0)
             EXPECTED_FRAME_SIZE=$((640 * 480 * 4))
             if [ "$FRAME_COUNT" -gt 0 ] && [ "$EXPECTED_FRAME_SIZE" -gt 0 ]; then
               NUM_FRAMES=$((FRAME_COUNT / EXPECTED_FRAME_SIZE))
               echo "Raw video: $NUM_FRAMES frames captured"
-              # First pass: raw video without text overlay
               ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
                 -framerate 30 -i verify_output/raw_frames.bin \
                 -c:v libx264 -pix_fmt yuv420p -crf 18 \
                 verify_output/render_progress.mp4 2>/dev/null && \
                 echo "MP4 created: $(ls -la verify_output/render_progress.mp4)" || \
                 echo "ffmpeg conversion failed"
-              # Clean up large raw file
               rm -f verify_output/raw_frames.bin
             fi
           fi
           echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
-
-          # === Phase 3: 3D gameplay frame capture (softpipe + async + frame delay) ===
-          # Targets frame 129: the opening 3D J3D room sequence (7587 draws/frame).
-          #
-          # Pipeline (fixed in commit after run 498):
-          #   - The J3D 3D room draws (7587) are accumulated during game iteration 129.
-          #   - bgfx::frame() at s_frame_count=129 flushes those draws to the render thread.
-          #   - TP_FRAME_DELAY_MS=350000 now fires BEFORE pal_verify_frame (fixed order),
-          #     giving Mesa softpipe (~20-60s) time to rasterise the 3D frame.
-          #   - pal_verify_frame(129) then reads s_fb which has the just-rendered 3D room.
-          #   - TP_FRAME_DELAY_START=129 (must match s_frame_count when 3D batch is flushed).
-          #   - TP_VERIFY_CAPTURE_FRAMES="129" saves the BMP at slot 129.
-          #   - TP_TEST_FRAMES=130: game exits after frame 129 capture.
-          #
-          # Timing: ~20s (frames 0-128) + 350s sleep (safety margin; softpipe renders in ~20-60s) = ~370s < 590s.
-          # NO TP_SYNC_RENDER: bgfx single-threaded mode crashes in bgfx::renderFrame()
-          # on the main thread (GL context thread mismatch); async mode is stable.
-          # Phase 3 is best-effort (|| true) and non-blocking: CI passes even if it times out.
-          echo "=== Phase 3: 3D gameplay frame capture (softpipe + delay) ==="
-          Xvfb :100 -screen 0 640x480x24 >/dev/null 2>&1 &
-          PHASE3_VFB_PID=$!
-          export DISPLAY=:100
-          for i in 1 2 3 4 5; do
-            xdpyinfo -display :100 >/dev/null 2>&1 && break
-            sleep 1
-          done
-          export GALLIUM_DRIVER=softpipe
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export TP_VERIFY=1
-          export TP_FRAME_DELAY_MS=350000
-          export TP_FRAME_DELAY_START=129
-          export TP_TEST_FRAMES=130
-          export TP_VERIFY_CAPTURE_FRAMES="129"
-          unset TP_SKIP_DL_DRAWS
-          unset TP_SYNC_RENDER
-          mkdir -p verify_output_3d
-          export TP_VERIFY_DIR=verify_output_3d
-          timeout -k 10 590s build/tp-pc 2>&1 | tee milestones_phase3.log || true
-          PHASE3_EXIT=${PIPESTATUS[0]}
-          echo "Phase 3 exit: $PHASE3_EXIT"
-          kill $PHASE3_VFB_PID 2>/dev/null || true
-          echo "Phase 3 BMP frames: $(ls verify_output_3d/frame_*.bmp 2>/dev/null | wc -l)"
-          # Report pixel coverage for each 3D frame
-          python3 tools/check_bmp_coverage.py verify_output_3d/frame_*.bmp 2>/dev/null || true
-          # Report RASC injection diagnostics (material/ambient color for 3D room draws)
-          echo "Phase 3 RASC inject values:"
-          grep '"rasc_inject"' milestones_phase3.log 2>/dev/null || echo "(none found)"
-          # Convert 3D captures to MP4 for PR video embed
-          if [ -f verify_output_3d/raw_frames.bin ]; then
-            FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)
-            EXPECTED3=$((640 * 480 * 4))
-            if [ "$FRAME_COUNT3" -gt 0 ] && [ "$EXPECTED3" -gt 0 ]; then
-              NUM3=$((FRAME_COUNT3 / EXPECTED3))
-              echo "Phase 3 raw video: $NUM3 frames"
-              ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
-                -framerate 5 -i verify_output_3d/raw_frames.bin \
-                -c:v libx264 -pix_fmt yuv420p -crf 18 \
-                verify_output_3d/gameplay_3d.mp4 2>/dev/null && \
-                echo "Phase 3 MP4: $(ls -la verify_output_3d/gameplay_3d.mp4)" || \
-                echo "Phase 3 ffmpeg failed"
-              rm -f verify_output_3d/raw_frames.bin
-            fi
-          fi
+          # Report pixel coverage for captured frames
+          python3 tools/check_bmp_coverage.py verify_output/frame_*.bmp 2>/dev/null || true
 
       - name: Parse milestones
         if: always()
@@ -243,12 +183,12 @@ jobs:
           # Failures are surfaced in the regression check, not here.
           # Use Phase 1 (logic) log only for the 16/16 boot milestone count
           # to avoid duplicate IDs from Phase 2 re-emitting boot milestones.
-          # --goal-log milestones_pixel.log supplements goal milestones (id>=100,
+          # --goal-log milestones_render.log supplements goal milestones (id>=100,
           # e.g. GOAL_INTRO_VISIBLE) from Phase 2, which requires a real framebuffer.
           python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
             --min-milestone 5 \
-            --goal-log milestones_pixel.log || true
+            --goal-log milestones_render.log || true
 
       - name: Verify port subsystems
         if: always()
@@ -712,12 +652,11 @@ jobs:
           name: port-test-results
           path: |
             milestones.log
-            milestones_phase3.log
+            milestones_render.log
             milestone-summary.json
             regression-report.json
             verify-report.json
             telemetry-validation.txt
             verify_output/
-            verify_output_3d/
             verify_png/
             logo_render.bmp
