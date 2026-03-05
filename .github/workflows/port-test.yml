@@ -247,6 +247,9 @@ jobs:
           # Report 3D room geometry diagnostics (MVP matrix, clip-space positions, frustum)
           echo "Phase 3 3D geometry diagnostics (MVP + frustum check):"
           grep '"rasc_geom_dump"' milestones_phase3.log 2>/dev/null | head -5 || echo "(none found)"
+          # Report per-frame draw count for frames 125-210 (shows 3D room spike + post-130 drop)
+          echo "Phase 3 per-frame draw counts (frames 125-210):"
+          grep '"frame_dc"' milestones_phase3.log 2>/dev/null | head -90 || echo "(none found)"
           # === 3D room visibility gate ===
           # frame_0129 pct_nonblack must be > 0.  The centroid camera override + separate
           # depth-cleared view (view 1) ensures 3D room geometry is visible.  A drop to 0
@@ -316,6 +319,9 @@ jobs:
           echo "Phase 4 BMP frames: $(ls verify_output_gameplay/frame_*.bmp 2>/dev/null | wc -l)"
           # Report pixel coverage for frame 200
           python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_*.bmp 2>/dev/null || true
+          # Report per-frame draw count for frames 125-210 in Phase 4 log
+          echo "Phase 4 per-frame draw counts (frames 125-210):"
+          grep '"frame_dc"' milestones_phase4.log 2>/dev/null | head -90 || echo "(none found)"
           # Report fade overlay diagnostics at frame 200
           echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 200:"
           grep '"darwFilter"' milestones_phase4.log 2>/dev/null | head -10 || echo "(no fade overlay calls)"
