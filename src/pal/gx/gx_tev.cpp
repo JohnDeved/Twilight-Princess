@@ -1572,6 +1572,12 @@ void pal_tev_flush_draw(void) {
                 const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
                 const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
                 const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
+                /* GX_TEVREG0 (tev_regs[1]) may be unset/dark on PC if the game
+                 * relies on GX lights to provide visible color (daTitle model
+                 * uses D=C0 but never calls GXSetTevColor(GX_TEVREG0,...)).
+                 * Fall back to mat/amb color so the mesh is visible. */
+                if ((int)const_clr[0] + (int)const_clr[1] + (int)const_clr[2] < RASC_DARK_THRESHOLD)
+                    apply_rasc_color(const_clr);
             } else if (s0->color_d == GX_CC_KONST) {
                 resolve_konst_color(s0, const_clr);
             } else if (s0->color_a == GX_CC_RASC || s0->color_b == GX_CC_RASC ||
