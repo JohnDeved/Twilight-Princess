@@ -354,6 +354,29 @@ void pal_render_end_frame(void) {
         pal_capture_save();
     }
 
+    /* TP_FRAME_DELAY_MS=N: sleep N milliseconds after bgfx::frame() starting at
+     * TP_FRAME_DELAY_START frame (default 128).
+     * Used by Phase 3 CI to throttle CPU frame submission so Mesa softpipe /
+     * llvmpipe can finish rasterising each heavy 3-D frame (7587 draws) before
+     * the next frame's TVB allocation begins.  Set to 0 (default) for normal
+     * operation; a value of ~30000-60000 is appropriate for softpipe on CI. */
+    {
+        static int s_frame_delay_ms = -1;
+        static uint32_t s_frame_delay_start = 128; /* default: 3D geometry starts at 128 */
+        if (s_frame_delay_ms < 0) {
+            const char* ev = getenv("TP_FRAME_DELAY_MS");
+            s_frame_delay_ms = ev ? atoi(ev) : 0;
+            const char* ev_start = getenv("TP_FRAME_DELAY_START");
+            if (ev_start) s_frame_delay_start = (uint32_t)atoi(ev_start);
+            if (s_frame_delay_ms > 0)
+                fprintf(stderr, "{\"render\":\"frame_delay_ms\":%d,"
+                        "\"start_frame\":%u}\n",
+                        s_frame_delay_ms, s_frame_delay_start);
+        }
+        if (s_frame_delay_ms > 0 && s_frame_count >= s_frame_delay_start)
+            usleep((useconds_t)s_frame_delay_ms * 1000u);
+    }
+
     if (!pal_window_is_headless()) {
         usleep(16000);
     }

@@ -25,7 +25,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -171,6 +171,51 @@ jobs:
             fi
           fi
           echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
+
+          # === Phase 3: 3D gameplay frame capture (llvmpipe, frame throttle) ===
+          # Targets frames 128-135: the opening 3D J3D room sequence (7587 draws/frame).
+          # TP_FRAME_DELAY_MS=30000 pauses 30 s after bgfx::frame() so llvmpipe finishes
+          # rasterising each heavy frame before the next submission.  llvmpipe (JIT)
+          # is ~5-10× faster than softpipe, bringing rasterisation from ~270s → ~30s/frame.
+          # Phase 3 is best-effort (|| true) and non-blocking: CI passes even if it times out.
+          echo "=== Phase 3: 3D gameplay frame capture (llvmpipe + frame throttle) ==="
+          Xvfb :100 -screen 0 640x480x24 >/dev/null 2>&1 &
+          PHASE3_VFB_PID=$!
+          export DISPLAY=:100
+          for i in 1 2 3 4 5; do
+            xdpyinfo -display :100 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          export GALLIUM_DRIVER=llvmpipe
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export TP_VERIFY=1
+          export TP_TEST_FRAMES=135
+          export TP_FRAME_DELAY_MS=30000
+          export TP_VERIFY_CAPTURE_FRAMES="128,129,130,131,132,133,134,135"
+          unset TP_SKIP_DL_DRAWS
+          mkdir -p verify_output_3d
+          export TP_VERIFY_DIR=verify_output_3d
+          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_phase3.log || true
+          PHASE3_EXIT=${PIPESTATUS[0]}
+          echo "Phase 3 exit: $PHASE3_EXIT"
+          kill $PHASE3_VFB_PID 2>/dev/null || true
+          echo "Phase 3 BMP frames: $(ls verify_output_3d/frame_*.bmp 2>/dev/null | wc -l)"
+          # Convert 3D captures to MP4 for PR video embed
+          if [ -f verify_output_3d/raw_frames.bin ]; then
+            FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)
+            EXPECTED3=$((640 * 480 * 4))
+            if [ "$FRAME_COUNT3" -gt 0 ] && [ "$EXPECTED3" -gt 0 ]; then
+              NUM3=$((FRAME_COUNT3 / EXPECTED3))
+              echo "Phase 3 raw video: $NUM3 frames"
+              ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
+                -framerate 5 -i verify_output_3d/raw_frames.bin \
+                -c:v libx264 -pix_fmt yuv420p -crf 18 \
+                verify_output_3d/gameplay_3d.mp4 2>/dev/null && \
+                echo "Phase 3 MP4: $(ls -la verify_output_3d/gameplay_3d.mp4)" || \
+                echo "Phase 3 ffmpeg failed"
+              rm -f verify_output_3d/raw_frames.bin
+            fi
+          fi
 
       - name: Parse milestones
         if: always()
@@ -644,10 +689,12 @@ jobs:
           name: port-test-results
           path: |
             milestones.log
+            milestones_phase3.log
             milestone-summary.json
             regression-report.json
             verify-report.json
             telemetry-validation.txt
             verify_output/
+            verify_output_3d/
             verify_png/
             logo_render.bmp
