@@ -42,6 +42,14 @@ static uint32_t s_frame_width = GX_DEFAULT_WIDTH;
 static uint32_t s_frame_height = GX_DEFAULT_HEIGHT;
 static int s_using_noop = 0;
 static int s_fb_capture_enabled = 0;
+/* TP_SYNC_RENDER=1: single-threaded bgfx mode for synchronous frame completion.
+ * bgfx::renderFrame() before bgfx::init() disables the internal render thread;
+ * the API thread must call bgfx::renderFrame() after each bgfx::frame() to
+ * actually execute the GL draw calls.  This ensures Mesa softpipe has fully
+ * rasterised a frame before the next submission, eliminating TVB overflow
+ * on heavy 3-D frames.  captureFrame() fires inside renderFrame(), so
+ * pal_verify_frame() reads the CURRENT frame's pixels (no 1-frame pipeline lag). */
+static int s_sync_render = 0;
 
 /**
  * bgfx callback — captures every rendered frame via BGFX_RESET_CAPTURE.
@@ -102,6 +110,23 @@ extern "C" {
 int pal_render_init(void) {
     if (s_initialized)
         return 1;
+
+    /* TP_SYNC_RENDER=1: activate bgfx single-threaded mode by calling
+     * bgfx::renderFrame() exactly once BEFORE bgfx::init().  This signals
+     * bgfx not to spawn an internal render thread; the application is
+     * responsible for calling bgfx::renderFrame() after each bgfx::frame().
+     * Each bgfx::renderFrame() call blocks until all GL commands for that
+     * frame are complete, giving Mesa softpipe time to rasterise heavy 3-D
+     * frames (7587 draws) without TVB pool exhaustion. */
+    {
+        const char* ev = getenv("TP_SYNC_RENDER");
+        if (ev && ev[0] == '1') {
+            bgfx::renderFrame(); /* single-threaded mode activation */
+            s_sync_render = 1;
+            fprintf(stderr, "{\"render\":\"sync_render_mode\",\"active\":true,"
+                    "\"note\":\"bgfx single-threaded; renderFrame() called per frame\"}\n");
+        }
+    }
 
     pal_window_init(s_frame_width, s_frame_height, "Twilight Princess");
 
@@ -216,6 +241,12 @@ void pal_render_shutdown(void) {
         pal_error_shutdown();
         pal_tev_shutdown();
         bgfx::shutdown();
+        /* In single-threaded mode, bgfx::shutdown() puts a terminate command in
+         * the queue; one more bgfx::renderFrame() is required to process it and
+         * tear down the GL context cleanly. */
+        if (s_sync_render) {
+            bgfx::renderFrame();
+        }
         s_initialized = 0;
         gx_shim_active = 0;
     }
@@ -325,8 +356,30 @@ void pal_render_end_frame(void) {
      * bgfx uses multi-threaded rendering by default (BGFX_CONFIG_MULTITHREADED=1).
      * The capture at frame N contains frame N-1's rendering (1-frame pipeline
      * delay). This is acceptable for regression testing — we compare frame
-     * content rather than frame number. */
+     * content rather than frame number.
+     *
+     * In TP_SYNC_RENDER=1 mode (single-threaded), bgfx::renderFrame() is called
+     * immediately after bgfx::frame().  renderFrame() blocks until ALL GL draw
+     * calls for this frame complete, then fires captureFrame() with current
+     * frame's pixels — no pipeline delay. */
     bgfx::frame();
+
+    /* TP_SYNC_RENDER=1: process the submitted frame synchronously.
+     * bgfx::renderFrame() executes the OpenGL draw calls and blocks until
+     * Mesa softpipe has fully rasterised the frame.  captureFrame() fires
+     * inside renderFrame(), so s_fb contains the CURRENT frame's pixels
+     * after this call returns — pal_verify_frame() below sees fresh data. */
+    if (s_sync_render) {
+        bgfx::renderFrame();
+        /* Log sync completion for every frame in the 3D-geometry window
+         * (frame 128+) and every 10 frames otherwise — limits log volume
+         * while preserving visibility around the heavy-render transition. */
+        if (s_frame_count % 10 == 0 || s_frame_count >= 128) {
+            fprintf(stderr, "{\"sync_render\":\"frame_complete\",\"frame\":%u,"
+                    "\"draw_calls\":%u}\n",
+                    s_frame_count, g_gx_state.draw_calls);
+        }
+    }
 
     /* Log bgfx stats for title scene frames to see actual GPU draw counts */
     if (s_frame_count >= 120 && s_frame_count <= 125) {
