@@ -211,6 +211,9 @@ jobs:
           echo "Phase 3 BMP frames: $(ls verify_output_3d/frame_*.bmp 2>/dev/null | wc -l)"
           # Report pixel coverage for each 3D frame
           python3 tools/check_bmp_coverage.py verify_output_3d/frame_*.bmp 2>/dev/null || true
+          # Report RASC injection diagnostics (material/ambient color for 3D room draws)
+          echo "Phase 3 RASC inject values:"
+          grep '"rasc_inject"' milestones_phase3.log 2>/dev/null || echo "(none found)"
           # Convert 3D captures to MP4 for PR video embed
           if [ -f verify_output_3d/raw_frames.bin ]; then
             FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)

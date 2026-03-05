@@ -72,6 +72,7 @@ def main():
         sys.exit(0)
 
     any_visible = False
+    frame_129_visible = False
     for path in sys.argv[1:]:
         p = Path(path)
         if not p.is_file():
@@ -80,9 +81,15 @@ def main():
         print(json.dumps(result))
         if result.get("pct_nonblack", 0) > 0:
             any_visible = True
+            # Check specifically for frame 129 (3D room frame, captured via
+            # TP_VERIFY_CAPTURE_FRAMES="129" with 1-frame async lag = frame 128 pixels)
+            if "frame_0129" in str(p):
+                frame_129_visible = True
 
-    if any_visible:
+    if frame_129_visible:
         print('{"phase3_result":"visible_3d_frame_confirmed"}')
+    elif any_visible:
+        print('{"phase3_result":"title_screen_only_nonblack"}')
     else:
         print('{"phase3_result":"all_frames_black"}')
 

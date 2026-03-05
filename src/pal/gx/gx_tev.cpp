@@ -1344,6 +1344,44 @@ void pal_tev_report_diagnostics(void) {
     fflush(stdout);
 }
 
+/* RGB sum threshold below which a colour is considered "dark" and requires
+ * a RASC fallback.  48 = 3 channels × 16: each channel < 16 (< 6% of full
+ * intensity) is effectively black in the absence of GX lighting. */
+#define RASC_DARK_THRESHOLD 48
+/* Neutral grey used when both mat_color and amb_color are dark.  200 is
+ * visible on all common display gamma curves without being blinding white. */
+#define RASC_FALLBACK_GRAY  200
+
+/* apply_rasc_color: compute the RASC approximation for a draw.
+ *
+ * GCN hardware: RASC = clamp(amb_color + lights × mat_color).
+ * Without GX lights the best static approximation is mat_color itself.
+ * When mat_color is very dark (common for fully dynamic-lit J3D rooms that
+ * set mat_color=(0,0,0) and rely on GX lights), fall back to amb_color.
+ * If both are dark, use a neutral grey so geometry is at least visible. */
+static void apply_rasc_color(uint8_t* const_clr) {
+    const uint8_t mr = g_gx_state.chan_ctrl[0].mat_color.r;
+    const uint8_t mg = g_gx_state.chan_ctrl[0].mat_color.g;
+    const uint8_t mb = g_gx_state.chan_ctrl[0].mat_color.b;
+    const_clr[0] = mr;
+    const_clr[1] = mg;
+    const_clr[2] = mb;
+    const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+    if ((int)mr + (int)mg + (int)mb < RASC_DARK_THRESHOLD) {
+        uint8_t ar = g_gx_state.chan_ctrl[0].amb_color.r;
+        uint8_t ag = g_gx_state.chan_ctrl[0].amb_color.g;
+        uint8_t ab = g_gx_state.chan_ctrl[0].amb_color.b;
+        if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
+            const_clr[0] = ar;
+            const_clr[1] = ag;
+            const_clr[2] = ab;
+        } else {
+            /* No ambient either — use neutral grey so room is visible */
+            const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+        }
+    }
+}
+
 void pal_tev_flush_draw(void) {
     if (!s_tev_ready) { s_skip_not_ready++; return; }
 
@@ -1467,12 +1505,34 @@ void pal_tev_flush_draw(void) {
     /* 3. Check if we need to inject constant color when vertex color is missing.
      * PASSCLR: inject from TEV registers or material color.
      * MODULATE/BLEND/DECAL: inject from material color (GCN hardware uses
-     * material color as rasterized color when no vertex color attribute). */
+     * material color as rasterized color when no vertex color attribute).
+     *
+     * Special case: PASSCLR with any RASC operand in the TEV formula ALWAYS
+     * injects, even when CLR0 vertex data is present.  On GCN hardware, RASC
+     * is the OUTPUT of the channel combiner (amb + lights × mat) — it is NOT
+     * the raw vertex-color data.  J3D rooms typically store vertex CLR0 =
+     * (0,0,0,0) because GX lights provide the actual colour; passing raw (0,0,0)
+     * through the shader produces transparent-black output.  We approximate
+     * RASC as max(mat_color, amb_color) per channel. */
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
     int inject_color = 0;
     uint8_t const_clr[4] = {0, 0, 0, 255};
 
-    if (desc[GX_VA_CLR0].type == GX_NONE) {
+    /* Determine if PASSCLR formula has RASC as the first (A) operand.
+     * This is the J3D 3D room pattern: c=[RASC,0,0,0] → out = RASC.
+     * In this case we force inject_color=1 regardless of vertex CLR0
+     * presence, because RASC on GCN is the channel-combiner OUTPUT, not
+     * the raw vertex-color data.  J3D rooms set vertex CLR0=(0,0,0,0) as
+     * a placeholder; GX lights provide the actual colour via the combiner.
+     * Without GX lights we approximate with mat_color / amb_color. */
+    int passclr_uses_rasc = 0;
+    if (preset == GX_TEV_SHADER_PASSCLR) {
+        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
+        if (s0->color_a == GX_CC_RASC)  /* A=RASC: the dominant output operand */
+            passclr_uses_rasc = 1;
+    }
+
+    if (desc[GX_VA_CLR0].type == GX_NONE || passclr_uses_rasc) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
             inject_color = 1;
             /* Determine the constant color from TEV state.
@@ -1489,14 +1549,28 @@ void pal_tev_flush_draw(void) {
                 resolve_konst_color(s0, const_clr);
             } else if (s0->color_a == GX_CC_RASC || s0->color_b == GX_CC_RASC ||
                        s0->color_c == GX_CC_RASC || s0->color_d == GX_CC_RASC) {
-                /* Any operand references RASC → inject material color (GCN
-                 * hardware computes RASC from the light + material model;
-                 * without a lighting implementation we approximate with
-                 * the material colour set by GXSetChanMatColor). */
-                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
-                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
-                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
-                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+                /* Diagnostic: log first 3 A=RASC inject draws (3D room pattern) */
+                {
+                    static int s_rd_n = 0;
+                    if (s_rd_n < 3 && s0->color_a == GX_CC_RASC) {
+                        fprintf(stderr, "{\"rasc_inject\":{\"draw\":%u,"
+                                "\"mat\":[%d,%d,%d,%d],"
+                                "\"amb\":[%d,%d,%d,%d],"
+                                "\"mat_src\":%d}}\n",
+                                s_total_draw_count,
+                                (int)g_gx_state.chan_ctrl[0].mat_color.r,
+                                (int)g_gx_state.chan_ctrl[0].mat_color.g,
+                                (int)g_gx_state.chan_ctrl[0].mat_color.b,
+                                (int)g_gx_state.chan_ctrl[0].mat_color.a,
+                                (int)g_gx_state.chan_ctrl[0].amb_color.r,
+                                (int)g_gx_state.chan_ctrl[0].amb_color.g,
+                                (int)g_gx_state.chan_ctrl[0].amb_color.b,
+                                (int)g_gx_state.chan_ctrl[0].amb_color.a,
+                                (int)g_gx_state.chan_ctrl[0].mat_src);
+                        s_rd_n++;
+                    }
+                }
+                apply_rasc_color(const_clr);
             }
         } else if (preset == GX_TEV_SHADER_MODULATE ||
                    preset == GX_TEV_SHADER_BLEND ||
@@ -1524,11 +1598,7 @@ void pal_tev_flush_draw(void) {
             if (uses_konst && !uses_rasc) {
                 resolve_konst_color(&g_gx_state.tev_stages[0], const_clr);
             } else if (uses_rasc) {
-                /* Use material color as rasterized color (GCN hardware behavior) */
-                const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
-                const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
-                const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;
-                const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+                apply_rasc_color(const_clr);
             } else {
                 /* No RASC/KONST in any stage — vertex color is unused.
                  * Inject white so the shader "* v_color0" is a no-op. */

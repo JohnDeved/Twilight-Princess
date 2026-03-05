@@ -87,6 +87,7 @@ def main():
     zblend_prop_by_frame = {}
     play_state_samples = []   # play_state JSON: depth_bits/blend_bits per draw
     frame_draw_diag_samples = []  # frame_draw_diag: per-frame first-3-draw TEV diagnostics
+    rasc_inject_samples = []  # rasc_inject: mat/amb color used for RASC draws
     # Sequential pass: tag chain_invalid and cycle events with the current frame
     # number (the last j3d_draw_diag frame seen before each event in log order).
     # This lets us assert that cycles only appear after the known crash frame.
@@ -115,6 +116,8 @@ def main():
             play_state_samples.append(obj['play_state'])
         if 'frame_draw_diag' in obj:
             frame_draw_diag_samples.append(obj['frame_draw_diag'])
+        if 'rasc_inject' in obj:
+            rasc_inject_samples.append(obj['rasc_inject'])
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
 
@@ -205,6 +208,12 @@ def main():
             print("  (All collision stubs are dead code during noop test)")
     else:
         warnings.append("No collision_stub_calls found in stdout")
+
+    if rasc_inject_samples:
+        print("\n=== RASC Color Injection (3D room material/ambient) ===")
+        for s in rasc_inject_samples:
+            print(f"  draw={s.get('draw','?')} mat={s.get('mat','?')} "
+                  f"amb={s.get('amb','?')} mat_src={s.get('mat_src','?')}")
 
     print("\n=== 3D Rendering Stability ===")
     # Check BG draw lifecycle
