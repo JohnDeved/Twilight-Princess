@@ -11027,6 +11027,25 @@ static int camera_execute(camera_process_class* i_this) {
             if (!camera_updated) {
                 int stay_no = dComIfGp_roomControl_getStayNo();
                 stage_arrow_class* arrow = dComIfGp_getRoomArrow(stay_no);
+                static bool s_arrow_diag_logged = false;
+                if (!s_arrow_diag_logged) {
+                    /* Always log arrow fallback state so CI can confirm whether
+                     * arrow data exists and whether the fallback fired. */
+                    int num_entries = (arrow != NULL) ? (int)arrow->num : -1;
+                    f32 px = 0, py = 0, pz = 0;
+                    s16 ay = 0;
+                    if (arrow != NULL && arrow->num > 0) {
+                        px = arrow->m_entries[0].posX;
+                        py = arrow->m_entries[0].posY;
+                        pz = arrow->m_entries[0].posZ;
+                        ay = arrow->m_entries[0].angleY;
+                    }
+                    fprintf(stderr,
+                        "{\"cam_arrow_diag\":{\"triggered\":%d,\"num_entries\":%d,"
+                        "\"posX\":%g,\"posY\":%g,\"posZ\":%g,\"angleY\":%d}}\n",
+                        camera_updated ? 0 : 1, num_entries, (double)px, (double)py, (double)pz, (int)ay);
+                    s_arrow_diag_logged = true;
+                }
                 if (arrow != NULL && arrow->num > 0) {
                     stage_arrow_data_class* entry = &arrow->m_entries[0];
                     f32 ex = entry->posX, ey = entry->posY, ez = entry->posZ;
@@ -11037,12 +11056,12 @@ static int camera_execute(camera_process_class* i_this) {
                     f32 cz = ez - cosf(yaw) * 100.0f;
                     fopCamM_SetEye(camera, ex, ey + 50.0f, ez);
                     fopCamM_SetCenter(camera, cx, cy + 50.0f, cz);
-                    static bool s_arrow_logged = false;
-                    if (!s_arrow_logged) {
+                    static bool s_arrow_fallback_logged = false;
+                    if (!s_arrow_fallback_logged) {
                         fprintf(stderr,
                             "{\"cam_arrow_fallback\":{\"eye\":[%g,%g,%g],\"center\":[%g,%g,%g]}}\n",
                             ex, ey + 50.0f, ez, cx, cy + 50.0f, cz);
-                        s_arrow_logged = true;
+                        s_arrow_fallback_logged = true;
                     }
                 }
             }

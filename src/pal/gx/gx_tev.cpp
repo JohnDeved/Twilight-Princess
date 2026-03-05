@@ -118,6 +118,10 @@ static bgfx::UniformHandle s_tev_reg0_uniform;
 static bgfx::UniformHandle s_tev_reg1_uniform;
 static int s_tev_ready = 0;
 
+/* Number of RASC draw world-positions to accumulate before computing the
+ * geometry-centroid camera override (see pal_tev_flush_draw). */
+#define CENTROID_SAMPLES 50
+
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
 #define TEV_TEX_CACHE_SIZE 256
 struct TexCacheEntry {
@@ -1891,6 +1895,130 @@ void pal_tev_flush_draw(void) {
                     mvp[4],mvp[5],mvp[6],mvp[7],
                     mvp[8],mvp[9],mvp[10],mvp[11],
                     mvp[12],mvp[13],mvp[14],mvp[15]);
+        }
+    }
+
+    /* Geometry-centroid camera fallback for the 3D intro room (PC only).
+     *
+     * When the normal camera path cannot position the view (demo camera NULL,
+     * stage arrow absent), the pos_mtx stays at the fallback identity+translation
+     * [0,-100,-200] which leaves all room geometry ~107000 units outside the
+     * frustum.  This block accumulates world-space vertex positions from the
+     * first CENTROID_SAMPLES RASC draws (past the 2D title block at ~500 draws)
+     * and, once enough samples are collected, computes a look-at view matrix
+     * from eye=centroid+(0,500,2000) aimed at the centroid.  The matrix is
+     * then written into all GX_MAX_POS_MTX slots so every subsequent draw on
+     * this frame and beyond uses the correct view transform.
+     *
+     * The override fires at most once per process lifetime (static flag).
+     * First ~CENTROID_SAMPLES draws still render with the wrong matrix (black),
+     * but the remaining ~7400 room draws get the corrected view → pct_nonblack > 0. */
+    if (passclr_uses_rasc && s_total_draw_count > 500) {
+        static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
+        static int   s_centroid_n      = 0;
+        static int   s_centroid_done   = 0;
+
+        /* Extract first vertex world position from TVB using the same
+         * byte_prefix logic as rasc_geom_dump below. */
+        float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+        if (nverts >= 1) {
+            int has_pnmtx_c = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
+            int tex_cnt_c = 0;
+            for (int i = 0; i < 8; i++)
+                if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) tex_cnt_c++;
+            uint32_t poff = (uint32_t)(has_pnmtx_c + tex_cnt_c);
+            if (poff + 12u <= (uint32_t)bgfx_stride) {
+                memcpy(&vx, tvb.data + poff,     4);
+                memcpy(&vy, tvb.data + poff + 4, 4);
+                memcpy(&vz, tvb.data + poff + 8, 4);
+            }
+        }
+
+        if (!s_centroid_done) {
+            if (s_centroid_n < CENTROID_SAMPLES) {
+                s_centroid_sum[0] += vx;
+                s_centroid_sum[1] += vy;
+                s_centroid_sum[2] += vz;
+                s_centroid_n++;
+            }
+            if (s_centroid_n == CENTROID_SAMPLES) {
+                /* Centroid of first N RASC draws = approximate room centre */
+                float cx = s_centroid_sum[0] / (float)CENTROID_SAMPLES;
+                float cy = s_centroid_sum[1] / (float)CENTROID_SAMPLES;
+                float cz = s_centroid_sum[2] / (float)CENTROID_SAMPLES;
+
+                /* Camera eye: above and behind the centroid (positive Z offset
+                 * puts the eye in the +Z direction from the centroid). */
+                float ex = cx, ey = cy + 500.0f, ez = cz + 2000.0f;
+
+                /* Build LookAt via C_MTXLookAt convention (row-major 3×4):
+                 *   look  = normalize(eye - center)   [points from target to eye]
+                 *   right = normalize(cross(up, look)) [up = (0,1,0)]
+                 *   up2   = cross(look, right)
+                 * Each row: [axis.x, axis.y, axis.z, -dot(axis, eye)] */
+                float lx = ex-cx, ly = ey-cy, lz = ez-cz;
+                float ln = sqrtf(lx*lx + ly*ly + lz*lz);
+                if (ln > 0.0f) { lx /= ln; ly /= ln; lz /= ln; }
+
+                /* right = cross((0,1,0), look) = (1*lz - 0*ly, 0*lx - 0*lz, 0*ly - 1*lx)
+                 *       = (lz, 0, -lx).  ry is always 0, so omitted from
+                 *       magnitude: |right| = sqrt(rx² + rz²). */
+                float rx = lz, ry = 0.0f, rz = -lx;
+                float rn = sqrtf(rx*rx + rz*rz);
+                if (rn > 0.0f) { rx /= rn; rz /= rn; }
+
+                /* corrected_up = cross(look, right) */
+                float ux = ly*rz - lz*ry;
+                float uy = lz*rx - lx*rz;
+                float uz = lx*ry - ly*rx;
+
+                /* 3×4 row-major view matrix */
+                float vm[3][4] = {
+                    {rx, ry, rz, -(ex*rx + ey*ry + ez*rz)},
+                    {ux, uy, uz, -(ex*ux + ey*uy + ez*uz)},
+                    {lx, ly, lz, -(ex*lx + ey*ly + ez*lz)}
+                };
+
+                /* Broadcast into all pos_mtx slots so any PNMTXIDX value
+                 * selects the corrected view matrix. */
+                for (int s = 0; s < GX_MAX_POS_MTX; s++)
+                    memcpy(g_gx_state.pos_mtx[s], vm, sizeof(vm));
+
+                s_centroid_done = 1;
+                fprintf(stderr,
+                    "{\"geom_centroid_cam\":{\"centroid\":[%.1f,%.1f,%.1f],"
+                    "\"eye\":[%.1f,%.1f,%.1f],"
+                    "\"look\":[%.4f,%.4f,%.4f],"
+                    "\"vm_row0\":[%.4f,%.4f,%.4f,%.1f]}}\n",
+                    cx, cy, cz, ex, ey, ez,
+                    lx, ly, lz,
+                    vm[0][0], vm[0][1], vm[0][2], vm[0][3]);
+            }
+        }
+
+        /* Re-compute and re-set the MVP for this draw using the (now possibly
+         * overridden) pos_mtx slot 0.  The normal MVP computed above used the
+         * old matrix; this overwrites the bgfx transform before submit. */
+        if (s_centroid_done) {
+            const float (*proj_c)[4] = g_gx_state.proj_mtx;
+            const float (*view_c)[4] = g_gx_state.pos_mtx[0];
+            float m44_c[16] = {
+                view_c[0][0], view_c[0][1], view_c[0][2], view_c[0][3],
+                view_c[1][0], view_c[1][1], view_c[1][2], view_c[1][3],
+                view_c[2][0], view_c[2][1], view_c[2][2], view_c[2][3],
+                0.0f,         0.0f,         0.0f,         1.0f
+            };
+            float mvp_rowmaj[16], mvp_c[16];
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++) {
+                    mvp_rowmaj[r*4+c] = 0.0f;
+                    for (int k = 0; k < 4; k++)
+                        mvp_rowmaj[r*4+c] += proj_c[r][k] * m44_c[k*4+c];
+                }
+            for (int r = 0; r < 4; r++)
+                for (int c = 0; c < 4; c++)
+                    mvp_c[c*4+r] = mvp_rowmaj[r*4+c];
+            bgfx::setTransform(mvp_c);
         }
     }
 
