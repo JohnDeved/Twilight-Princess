@@ -1351,6 +1351,24 @@ void pal_tev_flush_draw(void) {
     static uint32_t s_total_draw_count = 0;
     s_total_draw_count++;
 
+    /* Fast-path for Noop renderer (Phase 1 headless CI test).
+     * Skip expensive TVB allocation, vertex copy, bgfx state setup, and submit.
+     * s_dl_draw_count in gx_displaylist.cpp is already incremented before this call,
+     * so the dl_draws regression gate still reflects this draw correctly.
+     * We still update gx_frame_draw_calls (crosscheck), gx_frame_valid_verts,
+     * gx_frame_depth_draws, and gx_frame_blend_draws (for GOAL_DEPTH_BLEND_ACTIVE). */
+    if (bgfx::getRendererType() == bgfx::RendererType::Noop) {
+        gx_frame_draw_calls++;
+        gx_frame_valid_verts += ds->verts_written;
+        s_ok_submitted++;
+        gx_stub_draw_call_crosscheck();
+        if (g_gx_state.z_compare_enable)
+            gx_frame_depth_draws++;
+        if (g_gx_state.blend_mode != 0)
+            gx_frame_blend_draws++;
+        return;
+    }
+
     /* 1. Select shader based on TEV config */
     int preset = detect_tev_preset();
     if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) preset = GX_TEV_SHADER_PASSCLR;
