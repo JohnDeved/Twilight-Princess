@@ -171,6 +171,10 @@ def main():
                         help="Output summary JSON file")
     parser.add_argument("--min-milestone", type=int, default=0,
                         help="Fail if milestone count < this value")
+    parser.add_argument("--goal-log", default=None,
+                        help="Optional second log file (e.g. milestones_pixel.log) "
+                             "used to supplement goal milestones (id>=100) only. "
+                             "Does not affect the 16/16 boot milestone count.")
     args = parser.parse_args()
 
     milestones = []
@@ -198,6 +202,27 @@ def main():
                 stubs.append(obj)
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
+
+    # Supplement goal milestones (id>=100) from a second log file if provided.
+    # Boot milestones (id < 100, i.e., 0-99) are intentionally excluded to
+    # avoid duplicate IDs being flagged as integrity failures.
+    if args.goal_log:
+        try:
+            with open(args.goal_log, errors='replace') as f:
+                for line in f:
+                    line = ansi_escape.sub('', line.strip())
+                    if not line.startswith("{"):
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if "milestone" in obj:
+                        mid = obj.get("id", -1)
+                        if mid >= 100:
+                            milestones.append(obj)
+        except FileNotFoundError:
+            pass
 
     # Build list of all reached milestone names.
     # Include TEST_COMPLETE (id=99) — previously excluded by `< 99`, causing a

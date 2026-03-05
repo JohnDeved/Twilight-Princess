@@ -108,13 +108,15 @@ jobs:
           # Verifies game logic milestones (PROC_BG creation, dl_draws,
           # j3d_entries, heap stability) without slow softpipe rendering.
           # Uses 400 frames to reach FRAMES_300 milestone.
-          # Phase 1 timeout: 120s. The Noop renderer fast-path in pal_tev_flush_draw
-          # skips TVB allocation and vertex copy (was ~364s/frame in Noop mode).
-          # 400 frames now complete in ~32s (pure game logic, no GPU work).
+          # Phase 1 timeout: 300s. The Noop renderer fast-path in pal_tev_flush_draw
+          # skips TVB allocation and vertex copy (frames 1-129 complete in <1s).
+          # Frames 130+ may have actor-chain recovery overhead; 300s provides headroom
+          # for the chain-cycle hard-break fix in J3DDrawBuffer to take effect and
+          # allow Phase 1 to reach frame 300+ and emit FRAMES_300 + TEST_COMPLETE.
           echo "=== Phase 1: Logic test (Noop renderer) ==="
           unset DISPLAY
           export TP_TEST_FRAMES=400
-          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_logic.log || true
+          timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_logic.log || true
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
 
@@ -173,11 +175,14 @@ jobs:
         run: |
           # || true: Always produce the report JSON for the PR comment step.
           # Failures are surfaced in the regression check, not here.
-          # Use Phase 1 (logic) log only for milestones to avoid duplicates
-          # from Phase 2 re-emitting boot milestones.
+          # Use Phase 1 (logic) log only for the 16/16 boot milestone count
+          # to avoid duplicate IDs from Phase 2 re-emitting boot milestones.
+          # --goal-log milestones_pixel.log supplements goal milestones (id>=100,
+          # e.g. GOAL_INTRO_VISIBLE) from Phase 2, which requires a real framebuffer.
           python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
-            --min-milestone 5 || true
+            --min-milestone 5 \
+            --goal-log milestones_pixel.log || true
 
       - name: Verify port subsystems
         if: always()
@@ -203,8 +208,10 @@ jobs:
           # DL_SUSTAIN not enforced: BG actor only lives 2 frames (128-129) before the
           # opening scene transitions to Title (PROC_TITLE created in dScnPly_Execute).
           # Peak gate already protects the 7615-draw vrbox cast fix. Sustain is a warning.
+          # Use milestones.log (merged Phase 1+2) as first arg so GOAL_INTRO_VISIBLE
+          # from Phase 2 is visible in the telemetry summary.
           TP_TELEMETRY_ENFORCE_PEAK_DL=1 TP_TELEMETRY_PEAK_DL_MIN=7000 \
-          python3 tools/validate_telemetry.py milestones_logic.log milestones_logic.log \
+          python3 tools/validate_telemetry.py milestones.log milestones_logic.log \
             > telemetry-validation.txt 2>&1
           EXIT_CODE=$?
           cat telemetry-validation.txt

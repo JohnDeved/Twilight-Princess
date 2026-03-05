@@ -437,18 +437,38 @@ void J3DDrawBuffer::drawHead() const {
                 cursor = next;
                 chain_len++;
             }
-            if (invalid_ptr || self_loop || vptr_low) {
+            /* chain_len >= MAX_CHAIN_LENGTH means the while loop hit the cap
+             * without finding NULL — the chain forms a multi-node cycle that
+             * the self_loop check above (which only catches A→A) missed.
+             * Treat length exhaustion as an invalid chain so drawHead skips
+             * this slot rather than looping forever in the draw loop below. */
+            int chain_cycle = (chain_len >= MAX_CHAIN_LENGTH && cursor != NULL);
+            if (invalid_ptr || self_loop || vptr_low || chain_cycle) {
                 fprintf(stderr,
                         "{\"j3d_chain_invalid\":{\"slot\":%u,\"len\":%d,"
                         "\"invalid_ptr\":%d,\"self_loop\":%d,\"vptr_low\":%d,"
+                        "\"chain_cycle\":%d,"
                         "\"head\":\"%p\"}}\n",
-                        i, chain_len, invalid_ptr, self_loop, vptr_low, (void*)buf[i]);
+                        i, chain_len, invalid_ptr, self_loop, vptr_low, chain_cycle,
+                        (void*)buf[i]);
                 continue;
             }
         }
 #endif
+        {
+        int draw_iter = 0;
         for (J3DPacket* packet = buf[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
+            /* Hard draw-loop iteration cap: catches multi-node cycles (A→B→A)
+             * that passed chain validation (which only checks self-loops + ptr
+             * validity, not longer cycles).  0x10000 iterations per slot is an
+             * upper bound far beyond any real packet chain (max seen: 76). */
+            if (draw_iter++ >= 0x10000) {
+                fprintf(stderr,
+                        "{\"j3d_draw_runaway\":{\"slot\":%u,\"iter\":%d}}\n",
+                        i, draw_iter - 1);
+                break;
+            }
             s_pal_diag_crash_phase = CRASH_PHASE_HEAD_PACKET_ITER;
             s_pal_diag_crash_packet_index++;
             /* Addresses below 4KB fall within the OS NULL-page guard region
@@ -483,6 +503,7 @@ void J3DDrawBuffer::drawHead() const {
             s_pal_diag_crash_phase = CRASH_PHASE_HEAD_AFTER_DRAW;
 #endif
         }
+        }
     }
 }
 
@@ -499,8 +520,16 @@ void J3DDrawBuffer::drawTail() const {
         s_pal_diag_crash_slot = i;
         s_pal_diag_crash_packet_index = -1;
 #endif
+        {
+        int draw_iter = 0;
         for (J3DPacket* packet = mpBuffer[i]; packet != NULL; packet = packet->getNextPacket()) {
 #if PLATFORM_PC
+            if (draw_iter++ >= 0x10000) {
+                fprintf(stderr,
+                        "{\"j3d_tail_runaway\":{\"slot\":%d,\"iter\":%d}}\n",
+                        i, draw_iter - 1);
+                break;
+            }
             s_pal_diag_crash_phase = CRASH_PHASE_TAIL_PACKET_ITER;
             s_pal_diag_crash_packet_index++;
             if ((uintptr_t)packet < 0x1000) break;
@@ -514,6 +543,7 @@ void J3DDrawBuffer::drawTail() const {
 #if PLATFORM_PC
             s_pal_diag_crash_phase = CRASH_PHASE_TAIL_AFTER_DRAW;
 #endif
+        }
         }
     }
 }
