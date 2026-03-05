@@ -1475,7 +1475,10 @@ void pal_tev_flush_draw(void) {
     if (desc[GX_VA_CLR0].type == GX_NONE) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
             inject_color = 1;
-            /* Determine the constant color from TEV state */
+            /* Determine the constant color from TEV state.
+             * Check ALL four TEV operand slots (A, B, C, D) for RASC so that
+             * formulas like A=RASC,B=0,C=0,D=0 → out=RASC are handled correctly.
+             * The common J3D room pattern uses A=RASC (GX_CC_RASC=10), not D=RASC. */
             const GXTevStage* s0 = &g_gx_state.tev_stages[0];
             if (s0->color_d == GX_CC_C0 || s0->color_d == GX_CC_CPREV) {
                 const_clr[0] = g_gx_state.tev_regs[GX_TEVREG0].r;
@@ -1484,7 +1487,12 @@ void pal_tev_flush_draw(void) {
                 const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
             } else if (s0->color_d == GX_CC_KONST) {
                 resolve_konst_color(s0, const_clr);
-            } else if (s0->color_d == GX_CC_RASC) {
+            } else if (s0->color_a == GX_CC_RASC || s0->color_b == GX_CC_RASC ||
+                       s0->color_c == GX_CC_RASC || s0->color_d == GX_CC_RASC) {
+                /* Any operand references RASC → inject material color (GCN
+                 * hardware computes RASC from the light + material model;
+                 * without a lighting implementation we approximate with
+                 * the material colour set by GXSetChanMatColor). */
                 const_clr[0] = g_gx_state.chan_ctrl[0].mat_color.r;
                 const_clr[1] = g_gx_state.chan_ctrl[0].mat_color.g;
                 const_clr[2] = g_gx_state.chan_ctrl[0].mat_color.b;

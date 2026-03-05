@@ -270,7 +270,7 @@ jobs:
           # from Phase 2 is visible in the telemetry summary.
           # TP_TELEMETRY_CRASH_FRAME=129: PROC_CAMERA Execute crash corrupts the actor
           # list at frame 129 (not 130 as the default assumes); chain_cycle events at
-          # frame 129 are expected post-crash behaviour, not new corruption sources.
+          # frame 129 are expected post-crash behavior, not new corruption sources.
           TP_TELEMETRY_ENFORCE_PEAK_DL=1 TP_TELEMETRY_PEAK_DL_MIN=7000 \
           TP_TELEMETRY_CRASH_FRAME=129 \
           python3 tools/validate_telemetry.py milestones.log milestones_logic.log \

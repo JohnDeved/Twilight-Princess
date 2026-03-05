@@ -52,7 +52,7 @@ static FILE* s_raw_video = NULL;     /* raw RGBA video file */
 static int s_record_frames = 0;     /* record every frame */
 static uint32_t s_frame_number = 0; /* current frame counter */
 static int s_bmp_interval = 30;     /* save BMP every N frames */
-static char s_capture_dir[256];     /* output directory (from TP_VERIFY_DIR) */
+static char s_capture_dir[300];     /* output directory (from TP_VERIFY_DIR) */
 
 /* Debug text overlay — stored per-frame, written to metadata file */
 static char s_debug_line0[128];
