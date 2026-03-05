@@ -278,21 +278,22 @@ jobs:
 
           # Phase 4: Gameplay intro verification — capture frame 200.
           #
-          # At game-logic speed (no frame-rate limiter), the 3D BG actor (intro room) only
-          # renders for frames 128-129 before PROC_TITLE takes over.  Frame 200 captures
-          # whatever the title/intro system shows well past the 3D intro — typically a J2D
-          # title screen with 2D draws.  This directly satisfies the request to verify
-          # visible content "a few seconds into the gameplay intro section" and confirms
-          # that the geometry-centroid camera override (persistent via s_centroid_done)
-          # does not break J2D rendering at frame 200.
+          # PROC_TITLE is created with TP_ENABLE_PROC_TITLE=1 so J2D title-screen
+          # content is visible at frame 200 after the 3D BG actor exits at frame 130.
+          # Without this, PROC_TITLE is suppressed on PC (to keep 3D room alive for
+          # Phase 3) and no J2D draws are submitted after frame 130.
           #
-          # TP_FRAME_DELAY_MS=60000: 60 s is sufficient for J2D/2D renders (~200-500 draws).
-          # TP_TEST_FRAMES=201: game exits after frame 200 capture (200 + 1).
-          # TP_SKIP_FADE=1: skip fade overlay in case a scene-transition fade
-          #   covers 2D content at frame 200.
+          # The PROC_OPENING_SCENE Execute crash at frame ~132 (JStudio forward on
+          # freed BG actor refs) is now caught by an inner sigsetjmp in dScnPly_Execute,
+          # preventing permanent suppression of the opening scene manager.  PROC_TITLE
+          # (a separate proc, id 737) is unaffected by PROC_OPENING_SCENE's crash and
+          # runs normally to produce J2D title-screen draws at frame 200.
+          #
+          # TP_FRAME_DELAY_MS=60000: 60 s lets softpipe fully rasterise the J2D batch.
+          # TP_SKIP_FADE=1: skip darwFilter fade overlay (still logs alpha).
           # Timing: ~30s (frames 0-199) + 60s sleep = ~90s well within 120s timeout.
           # Phase 4 is best-effort (|| true): CI passes even on timeout.
-          echo "=== Phase 4: Gameplay intro frame capture (frame 200, after 3D BG actor exits) ==="
+          echo "=== Phase 4: Gameplay intro frame capture (frame 200, PROC_TITLE J2D content) ==="
           Xvfb :101 -screen 0 640x480x24 >/dev/null 2>&1 &
           PHASE4_VFB_PID=$!
           export DISPLAY=:101
@@ -308,6 +309,7 @@ jobs:
           export TP_TEST_FRAMES=201
           export TP_VERIFY_CAPTURE_FRAMES="200"
           export TP_SKIP_FADE=1
+          export TP_ENABLE_PROC_TITLE=1
           unset TP_SKIP_DL_DRAWS
           unset TP_SYNC_RENDER
           mkdir -p verify_output_gameplay
@@ -325,11 +327,13 @@ jobs:
           # Report fade overlay diagnostics at frame 200
           echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 200:"
           grep '"darwFilter"' milestones_phase4.log 2>/dev/null | head -10 || echo "(no fade overlay calls)"
-          # Report draw count at frame 200 (confirms whether 3D BG actor survived or PROC_TITLE took over)
-          echo "Phase 4 draw count at frame 200:"
-          grep '"frame_stat"' milestones_phase4.log 2>/dev/null | tail -5 || \
-          grep '"frame".*"draws"' milestones_phase4.log 2>/dev/null | tail -5 || \
+          # Report PROC_TITLE status and draw count at frame 200
+          echo "Phase 4 PROC_TITLE enable status + j3d_draw_diag at frame 200:"
+          grep 'TP_ENABLE_PROC_TITLE\|j3d_draw_diag.*"frame":200' milestones_phase4.log 2>/dev/null | head -5 || \
           echo "(check milestones_phase4.log for draw counts)"
+          # Report opening-scene crash catch (confirms inner handler fired at frame ~132)
+          echo "Phase 4 opening scene crash catch:"
+          grep 'demo/event crash at' milestones_phase4.log 2>/dev/null || echo "(no crash catch logged)"
 
       - name: Parse milestones
         if: always()

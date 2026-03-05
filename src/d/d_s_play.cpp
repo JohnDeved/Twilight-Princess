@@ -32,10 +32,13 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stdlib.h>
 static sigjmp_buf s_predraw_jmpbuf;
 static void pal_predraw_crash_handler(int sig) {
     siglongjmp(s_predraw_jmpbuf, sig);
 }
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
 #endif
 
 #if PLATFORM_WII
@@ -314,15 +317,42 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
         }
     }
 
+#if PLATFORM_PC
+    /* Inner crash handler: dDemo_c::update() / dComIfGp_getEvent()->Step() may
+     * SIGSEGV at frame ~132 when the JStudio control iterates actor objects freed
+     * by the BG actor exit at frame 130.  Catching here (not in fpcBs_Execute)
+     * prevents PROC_OPENING_SCENE from being permanently suppressed, keeping
+     * scene management alive for the rest of the run. */
+    {
+        pal_crash_handler_init();
+        sigjmp_buf inner_jb;
+        sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+        pal_crash_jmpbuf = &inner_jb;
+        if (sigsetjmp(inner_jb, 1) == 0) {
+            dKy_itudemo_se();
+            if (!dComIfGp_isPauseFlag()) {
+                dDemo_c::update();
+                dComIfGp_getEvent()->Step();
+                if (dComIfGp_getPlayer(0) != NULL)
+                    dComIfGp_getAttention()->Run();
+            }
+            pal_crash_jmpbuf = prev_jb;
+        } else {
+            pal_crash_jmpbuf = prev_jb;
+            static int s_demo_crash_logged = 0;
+            if (!s_demo_crash_logged++) {
+                fprintf(stderr, "[PAL] dScnPly_Execute: demo/event crash at ~frame 132 — caught, scene continues\n");
+            }
+        }
+    }
+#else
     dKy_itudemo_se();
     if (!dComIfGp_isPauseFlag()) {
         dDemo_c::update();
         dComIfGp_getEvent()->Step();
-#if PLATFORM_PC
-        if (dComIfGp_getPlayer(0) != NULL)
-#endif
         dComIfGp_getAttention()->Run();
     }
+#endif
     return 1;
 }
 
@@ -786,13 +816,26 @@ static int phase_4(dScnPly_c* i_this) {
 
     if (fpcM_GetName(i_this) == PROC_OPENING_SCENE) {
 #if PLATFORM_PC
-        /* On PC, suppress the immediate opening→title scene transition.
-         * The opening scene loads rooms with 3D geometry (BG actors).
-         * Creating PROC_TITLE immediately causes a scene switch after ~2
-         * frames, unloading all room data before the rendering pipeline
-         * can produce sustained dl_draws.  By skipping the PROC_TITLE
-         * creation, the opening scene stays alive for the full test
-         * window, keeping room geometry loaded and drawable. */
+        /* On PC, optionally create PROC_TITLE based on TP_ENABLE_PROC_TITLE.
+         *
+         * Phase 3 (3D room capture, frame 129): leave unset.  PROC_TITLE
+         * creation triggers a scene switch that unloads room geometry before
+         * the rendering pipeline can capture sustained dl_draws.
+         *
+         * Phase 4 (J2D title screen, frame 200+): set TP_ENABLE_PROC_TITLE=1.
+         * PROC_TITLE is created normally so J2D title-screen content is
+         * visible at frame 200 after the 3D BG actor exits at frame 130. */
+        {
+            static int s_enable_proc_title = -1;
+            if (s_enable_proc_title < 0) {
+                const char* ev = getenv("TP_ENABLE_PROC_TITLE");
+                s_enable_proc_title = (ev && ev[0] == '1') ? 1 : 0;
+                fprintf(stderr, "[PAL] TP_ENABLE_PROC_TITLE=%d\n", s_enable_proc_title);
+            }
+            if (s_enable_proc_title) {
+                fopAcM_create(PROC_TITLE, 0, NULL, -1, NULL, NULL, -1);
+            }
+        }
         dComIfGs_init();
         dComIfGs_setOptPointer(0);
         dComIfGs_setLife(12);
