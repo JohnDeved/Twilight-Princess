@@ -1933,10 +1933,20 @@ void pal_tev_flush_draw(void) {
                 float ndcx = (cw != 0.0f) ? cx/cw : cx;
                 float ndcy = (cw != 0.0f) ? cy/cw : cy;
                 float ndcz = (cw != 0.0f) ? cz/cw : cz;
+                /* Dump raw pos_mtx[current] to diagnose identity matrix issue */
+                uint32_t diag_mtx_idx = g_gx_state.current_pos_mtx;
+                if (diag_mtx_idx >= GX_MAX_POS_MTX) diag_mtx_idx = 0;
+                const float (*pm)[4] = g_gx_state.pos_mtx[diag_mtx_idx];
+                int pm_is_identity = (pm[0][0] == 1.0f && pm[0][1] == 0.0f && pm[0][2] == 0.0f && pm[0][3] == 0.0f &&
+                                      pm[1][0] == 0.0f && pm[1][1] == 1.0f && pm[1][2] == 0.0f && pm[1][3] == 0.0f &&
+                                      pm[2][0] == 0.0f && pm[2][1] == 0.0f && pm[2][2] == 1.0f && pm[2][3] == 0.0f) ? 1 : 0;
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
                         "\"draw\":%u,"
                         "\"nverts\":%u,"
                         "\"pnmtx\":%d,\"tmtx\":%d,"
+                        "\"cur_mtx\":%u,"
+                        "\"pos_mtx_identity\":%d,"
+                        "\"pos_mtx0\":[%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f],"
                         "\"world\":[%.4f,%.4f,%.4f],"
                         "\"clip\":[%.4f,%.4f,%.4f,%.4f],"
                         "\"ndc\":[%.4f,%.4f,%.4f],"
@@ -1950,6 +1960,11 @@ void pal_tev_flush_draw(void) {
                         s_total_draw_count,
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
+                        diag_mtx_idx,
+                        pm_is_identity,
+                        pm[0][0], pm[0][1], pm[0][2], pm[0][3],
+                        pm[1][0], pm[1][1], pm[1][2], pm[1][3],
+                        pm[2][0], pm[2][1], pm[2][2], pm[2][3],
                         wx, wy, wz,
                         cx, cy, cz, cw,
                         ndcx, ndcy, ndcz,

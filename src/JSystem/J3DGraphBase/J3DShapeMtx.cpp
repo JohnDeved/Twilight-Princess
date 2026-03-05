@@ -316,6 +316,23 @@ void J3DShapeMtxConcatView::loadMtxConcatView_NCPU(int slot, u16 drw) const {
 }
 
 void J3DShapeMtxConcatView::loadMtxConcatView_PNCPU(int slot, u16 drw) const {
+#if PLATFORM_PC || PLATFORM_NX_HB
+    /* On PC, pipeline is forced to PNCPU (3) for all models.  The original
+     * PNCPU only loads baseMtxPtr (view), but ConcatView shapes need the
+     * view * drawMtx concatenation that PNGP provides. */
+    Mtx m;
+    MTXConcat(*j3dSys.getShapePacket()->getBaseMtxPtr(), j3dSys.getModelDrawMtx(drw), m);
+
+    if (J3DDifferedTexMtx::sTexGenBlock != NULL) {
+        J3DDifferedTexMtx::loadExecute(m);
+    }
+
+    J3DFifoLoadPosMtxImm(m, slot * 3);
+    J3DFifoLoadNrmMtxImm(m, slot * 3);
+
+    if (J3DShapeMtx::sTexMtxLoadType == 0x2000)
+        J3DFifoLoadNrmMtxToTexMtx(m, slot * 3 + GX_TEXMTX0);
+#else
     if (J3DDifferedTexMtx::sTexGenBlock != NULL) {
         Mtx m;
         MTXConcat(*j3dSys.getShapePacket()->getBaseMtxPtr(), j3dSys.getModelDrawMtx(drw), m);
@@ -327,6 +344,7 @@ void J3DShapeMtxConcatView::loadMtxConcatView_PNCPU(int slot, u16 drw) const {
 
     if (J3DShapeMtx::sTexMtxLoadType == 0x2000)
         J3DFifoLoadNrmMtxToTexMtx(*j3dSys.getShapePacket()->getBaseMtxPtr(), slot * 3 + GX_TEXMTX0);
+#endif
 }
 
 void J3DShapeMtxConcatView::loadMtxConcatView_PNGP_LOD(int slot, u16 drw) const {

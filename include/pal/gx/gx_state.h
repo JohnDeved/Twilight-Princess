@@ -330,6 +330,9 @@ void pal_gx_set_current_mtx(u32 id);
 void pal_gx_set_viewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz);
 void pal_gx_set_scissor(u32 left, u32 top, u32 wd, u32 ht);
 
+/* FIFO indexed matrix loading (GX_LOAD_INDX_A/B/C/D) */
+void pal_gx_fifo_load_indx(u8 cmd, u16 indx, u16 addr);
+
 /* Pixel / Blend / Z */
 void pal_gx_set_blend_mode(GXBlendMode type, GXBlendFactor src, GXBlendFactor dst, GXLogicOp op);
 void pal_gx_set_z_mode(GXBool compare, GXCompare func, GXBool update);

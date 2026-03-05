@@ -384,8 +384,9 @@ bool J3DShape::sEnvelopeFlag;
 
 void J3DShape::setArrayAndBindPipeline() const {
 #if PLATFORM_PC || PLATFORM_NX_HB
-    /* On PC, force CPU matrix load pipeline (PNCPU=3). GPU-indexed matrix
-     * loads (PNGP=0) use J3DFifoLoadIndx which writes to FIFO, never processed. */
+    /* On PC, force CPU matrix load pipeline (PNCPU=3). LOAD_INDX_A/B are
+     * intercepted via pal_gx_fifo_load_indx, but ConcatView models with
+     * flag 0x10 need PNCPU for correct baseMtx * drawMtx concatenation. */
     J3DShapeMtx::setCurrentPipeline(3);
 #else
     J3DShapeMtx::setCurrentPipeline((mFlags & 0x1C) >> 2);
@@ -462,7 +463,11 @@ void J3DShape::draw() const {
 void J3DShape::simpleDraw() const {
     resetVcdVatCache();
     loadPreDrawSetting();
+#if PLATFORM_PC || PLATFORM_NX_HB
+    J3DShapeMtx::setCurrentPipeline(3);
+#else
     J3DShapeMtx::setCurrentPipeline((mFlags & 0x1C) >> 2);
+#endif
     loadVtxArray();
     for (u16 n = mMtxGroupNum, i = 0; i < n; i++) {
         if (mShapeDraw[i] != NULL) {
