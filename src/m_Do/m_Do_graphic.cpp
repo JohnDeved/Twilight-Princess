@@ -419,6 +419,18 @@ void mDoGph_gInf_c::fadeOut(f32 fadeSpeed) {
 
 void darwFilter(GXColor matColor) {
 #if PLATFORM_PC
+    /* Diagnostic: always log the fade colour so CI can confirm whether a black-
+     * fade overlay is covering the 3D scene at capture frames (e.g. frame 129).
+     * JSON key "darwFilter" intentionally preserves the original spelling. */
+    fprintf(stderr, "{\"darwFilter\":{\"r\":%d,\"g\":%d,\"b\":%d,\"a\":%d}}\n",
+            (int)matColor.r, (int)matColor.g,
+            (int)matColor.b, (int)matColor.a);
+    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3/4 CI
+     * to bypass a fully-black fade transition that would cover the 3D geometry.
+     * Any non-empty value enables the skip (consistent with other TP_ env vars). */
+    if (getenv("TP_SKIP_FADE")) {
+        return;
+    }
     g_gx_state.fade_overlay_active = 1;
 #endif
     GXSetNumChans(1);
