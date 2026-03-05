@@ -339,7 +339,7 @@ The regression report tells you the current status:
 | `TP_TEST_FRAMES` | Exit after N frames | unset (infinite loop) |
 | `TP_VERIFY` | Set to `1` to enable subsystem verification | unset (disabled) |
 | `TP_VERIFY_DIR` | Directory for captured frame BMPs | `verify_output` |
-| `TP_VERIFY_CAPTURE_FRAMES` | Comma-separated frame numbers to capture | `10,129` |
+| `TP_VERIFY_CAPTURE_FRAMES` | Comma-separated frame numbers to capture | `10,129` (CI default; custom lists supported) |
 | `TP_FRAME_DELAY_MS` | Sleep N ms before 3D frame capture (softpipe time) | unset (no delay) |
 | `TP_FRAME_DELAY_START` | Frame number to start the delay at | `129` |
 | `TP_TEST_INPUTS` | Enable synthetic input injection | unset (no injection) |

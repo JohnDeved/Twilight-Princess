@@ -127,7 +127,7 @@ echo ""
 
 # --- Step 2: Logic test (Noop renderer, matches CI Phase 1) ---
 echo "━━━ Step 2/7: Logic test (Noop, $FRAMES frames) ━━━"
-unset DISPLAY 2>/dev/null || true
+unset DISPLAY || true
 export TP_HEADLESS=1
 export TP_TEST_FRAMES="$FRAMES"
 timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones_logic.log" || true
@@ -148,6 +148,8 @@ echo ""
 cat "$TMP_DIR/milestones_logic.log" "$TMP_DIR/milestones_render.log" > "$TMP_DIR/milestones.log"
 
 # --- Step 4: Parse milestones ---
+# Uses logic log for boot milestones (16/16 count), with --goal-log
+# to supplement goal milestones (GOAL_INTRO_VISIBLE etc.) from the render phase.
 echo "━━━ Step 4/7: Parse milestones ━━━"
 if ! python3 tools/parse_milestones.py "$TMP_DIR/milestones_logic.log" \
     --output "$TMP_DIR/milestone-summary.json" \
