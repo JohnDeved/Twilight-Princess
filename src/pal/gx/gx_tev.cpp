@@ -122,6 +122,12 @@ static int s_tev_ready = 0;
  * geometry-centroid camera override (see pal_tev_flush_draw). */
 #define CENTROID_SAMPLES 50
 
+/* Saved centroid LookAt matrix (3×4, row-major) and completion flag.
+ * Set once by the centroid calculation block; never overwritten by J3D's
+ * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw). */
+static float s_geom_centroid_view[3][4];
+static int   s_geom_centroid_active = 0;
+
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
 #define TEV_TEX_CACHE_SIZE 256
 struct TexCacheEntry {
@@ -1916,7 +1922,6 @@ void pal_tev_flush_draw(void) {
     if (passclr_uses_rasc && s_total_draw_count > 500) {
         static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
         static int   s_centroid_n      = 0;
-        static int   s_centroid_done   = 0;
 
         /* Extract first vertex world position from TVB using the same
          * byte_prefix logic as rasc_geom_dump below. */
@@ -1934,7 +1939,7 @@ void pal_tev_flush_draw(void) {
             }
         }
 
-        if (!s_centroid_done) {
+        if (!s_geom_centroid_active) {
             if (s_centroid_n < CENTROID_SAMPLES) {
                 s_centroid_sum[0] += vx;
                 s_centroid_sum[1] += vy;
@@ -1979,12 +1984,14 @@ void pal_tev_flush_draw(void) {
                     {lx, ly, lz, -(ex*lx + ey*ly + ez*lz)}
                 };
 
-                /* Broadcast into all pos_mtx slots so any PNMTXIDX value
-                 * selects the corrected view matrix. */
-                for (int s = 0; s < GX_MAX_POS_MTX; s++)
-                    memcpy(g_gx_state.pos_mtx[s], vm, sizeof(vm));
+                /* Save the centroid view for use in subsequent draws.
+                 * IMPORTANT: do NOT rely on g_gx_state.pos_mtx[0] staying set —
+                 * J3D calls GXLoadPosMtxImm for every mesh node, overwriting
+                 * pos_mtx slots before pal_tev_flush_draw runs for that draw.
+                 * s_geom_centroid_view is never touched after this assignment. */
+                memcpy(s_geom_centroid_view, vm, sizeof(vm));
+                s_geom_centroid_active = 1;
 
-                s_centroid_done = 1;
                 fprintf(stderr,
                     "{\"geom_centroid_cam\":{\"centroid\":[%.1f,%.1f,%.1f],"
                     "\"eye\":[%.1f,%.1f,%.1f],"
@@ -1996,17 +2003,25 @@ void pal_tev_flush_draw(void) {
             }
         }
 
-        /* Re-compute and re-set the MVP for this draw using the (now possibly
-         * overridden) pos_mtx slot 0.  The normal MVP computed above used the
-         * old matrix; this overwrites the bgfx transform before submit. */
-        if (s_centroid_done) {
+        /* Re-compute and re-set the MVP for this draw using the SAVED centroid
+         * view matrix.  Using g_gx_state.pos_mtx[0] here would be wrong because
+         * J3D calls GXLoadPosMtxImm for every mesh node, overwriting pos_mtx
+         * BEFORE pal_tev_flush_draw runs for that draw.  s_geom_centroid_view is
+         * set once and never overwritten, so it always holds the correct LookAt.
+         * The intro room stores vertices in world space (model ≈ identity), so
+         * proj * centroid_view directly maps world positions to clip space. */
+        if (s_geom_centroid_active) {
             const float (*proj_c)[4] = g_gx_state.proj_mtx;
-            const float (*view_c)[4] = g_gx_state.pos_mtx[0];
+            /* Use the saved centroid view, NOT pos_mtx[0] which J3D overwrites */
             float m44_c[16] = {
-                view_c[0][0], view_c[0][1], view_c[0][2], view_c[0][3],
-                view_c[1][0], view_c[1][1], view_c[1][2], view_c[1][3],
-                view_c[2][0], view_c[2][1], view_c[2][2], view_c[2][3],
-                0.0f,         0.0f,         0.0f,         1.0f
+                s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
+                s_geom_centroid_view[0][2], s_geom_centroid_view[0][3],
+                s_geom_centroid_view[1][0], s_geom_centroid_view[1][1],
+                s_geom_centroid_view[1][2], s_geom_centroid_view[1][3],
+                s_geom_centroid_view[2][0], s_geom_centroid_view[2][1],
+                s_geom_centroid_view[2][2], s_geom_centroid_view[2][3],
+                0.0f,                       0.0f,
+                0.0f,                       1.0f
             };
             float mvp_rowmaj[16], mvp_c[16];
             for (int r = 0; r < 4; r++)
@@ -2022,15 +2037,17 @@ void pal_tev_flush_draw(void) {
         }
     }
 
-    /* 3D room RASC geometry dump: fires for first 5 PASSCLR+RASC draws once
-     * total_draw_count exceeds 500 (past the 2D title screen block ~635 draws).
-     * Logs MVP matrix, first vertex world-space position, its clip-space
-     * transform, and render state.  Used to diagnose why 3D room geometry
-     * renders to all-black despite white material color injection.
-     * NDC frustum check uses [-1,1] range (OpenGL / Mesa softpipe convention). */
+    /* 3D room RASC geometry dump: fires for the first 5 PASSCLR+RASC draws
+     * AFTER the centroid camera fires (s_geom_centroid_active=1).  Sampling
+     * post-centroid draws shows the corrected pos_mtx and NDC values so CI
+     * can confirm in_frustum=1.  Pre-centroid draws (first ~50) are omitted
+     * since they use the stale fallback camera and always show in_frustum=0. */
     if (passclr_uses_rasc) {
         static int s_rasc_geom_n = 0;
-        if (s_rasc_geom_n < 5 && s_total_draw_count > 500) {
+        /* Changed from "s_total_draw_count > 500" to "s_geom_centroid_active":
+         * the dump now fires AFTER the centroid camera is established so the
+         * logged pos_mtx0 / NDC values reflect the corrected transform. */
+        if (s_rasc_geom_n < 5 && s_geom_centroid_active) {
             s_rasc_geom_n++;
             float wx = 0, wy = 0, wz = 0;
             if (nverts >= 1) {
@@ -2053,11 +2070,34 @@ void pal_tev_flush_draw(void) {
                     memcpy(&wz, tvb.data + pos_offset + 8, 4);
                 }
                 const float (*gp)[4] = g_gx_state.proj_mtx;
-                /* clip = mvp(col-major) * (wx,wy,wz,1) */
-                float cx = mvp[0]*wx + mvp[4]*wy + mvp[8]*wz  + mvp[12];
-                float cy = mvp[1]*wx + mvp[5]*wy + mvp[9]*wz  + mvp[13];
-                float cz = mvp[2]*wx + mvp[6]*wy + mvp[10]*wz + mvp[14];
-                float cw = mvp[3]*wx + mvp[7]*wy + mvp[11]*wz + mvp[15];
+                /* Use the CENTROID MVP for clip/NDC calculation (same transform that
+                 * bgfx::setTransform was given for this draw when centroid is active). */
+                float use_mvp[16];
+                if (s_geom_centroid_active) {
+                    /* Compute proj * centroid_view (same as the override block above) */
+                    float cv44[16] = {
+                        s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
+                        s_geom_centroid_view[0][2], s_geom_centroid_view[0][3],
+                        s_geom_centroid_view[1][0], s_geom_centroid_view[1][1],
+                        s_geom_centroid_view[1][2], s_geom_centroid_view[1][3],
+                        s_geom_centroid_view[2][0], s_geom_centroid_view[2][1],
+                        s_geom_centroid_view[2][2], s_geom_centroid_view[2][3],
+                        0.0f, 0.0f, 0.0f, 1.0f
+                    };
+                    float mrm[16];
+                    for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) {
+                        mrm[r*4+c] = 0;
+                        for (int k = 0; k < 4; k++) mrm[r*4+c] += gp[r][k] * cv44[k*4+c];
+                    }
+                    for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) use_mvp[c*4+r] = mrm[r*4+c];
+                } else {
+                    for (int i = 0; i < 16; i++) use_mvp[i] = mvp[i];
+                }
+                /* clip = use_mvp(col-major) * (wx,wy,wz,1) */
+                float cx = use_mvp[0]*wx + use_mvp[4]*wy + use_mvp[8]*wz  + use_mvp[12];
+                float cy = use_mvp[1]*wx + use_mvp[5]*wy + use_mvp[9]*wz  + use_mvp[13];
+                float cz = use_mvp[2]*wx + use_mvp[6]*wy + use_mvp[10]*wz + use_mvp[14];
+                float cw = use_mvp[3]*wx + use_mvp[7]*wy + use_mvp[11]*wz + use_mvp[15];
                 float ndcx = (cw != 0.0f) ? cx/cw : cx;
                 float ndcy = (cw != 0.0f) ? cy/cw : cy;
                 float ndcz = (cw != 0.0f) ? cz/cw : cz;
@@ -2068,13 +2108,17 @@ void pal_tev_flush_draw(void) {
                 int pm_is_identity = (pm[0][0] == 1.0f && pm[0][1] == 0.0f && pm[0][2] == 0.0f && pm[0][3] == 0.0f &&
                                       pm[1][0] == 0.0f && pm[1][1] == 1.0f && pm[1][2] == 0.0f && pm[1][3] == 0.0f &&
                                       pm[2][0] == 0.0f && pm[2][1] == 0.0f && pm[2][2] == 1.0f && pm[2][3] == 0.0f) ? 1 : 0;
+                /* Note: pos_mtx0 shown here is the GAME's matrix (loaded by J3D for this mesh).
+                 * The centroid override bypasses this via s_geom_centroid_view. */
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
                         "\"draw\":%u,"
                         "\"nverts\":%u,"
                         "\"pnmtx\":%d,\"tmtx\":%d,"
                         "\"cur_mtx\":%u,"
+                        "\"centroid_active\":%d,"
                         "\"pos_mtx_identity\":%d,"
                         "\"pos_mtx0\":[%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f],"
+                        "\"centroid_view0\":[%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f],"
                         "\"world\":[%.4f,%.4f,%.4f],"
                         "\"clip\":[%.4f,%.4f,%.4f,%.4f],"
                         "\"ndc\":[%.4f,%.4f,%.4f],"
@@ -2089,10 +2133,17 @@ void pal_tev_flush_draw(void) {
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
                         diag_mtx_idx,
+                        s_geom_centroid_active,
                         pm_is_identity,
                         pm[0][0], pm[0][1], pm[0][2], pm[0][3],
                         pm[1][0], pm[1][1], pm[1][2], pm[1][3],
                         pm[2][0], pm[2][1], pm[2][2], pm[2][3],
+                        s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
+                        s_geom_centroid_view[0][2], s_geom_centroid_view[0][3],
+                        s_geom_centroid_view[1][0], s_geom_centroid_view[1][1],
+                        s_geom_centroid_view[1][2], s_geom_centroid_view[1][3],
+                        s_geom_centroid_view[2][0], s_geom_centroid_view[2][1],
+                        s_geom_centroid_view[2][2], s_geom_centroid_view[2][3],
                         wx, wy, wz,
                         cx, cy, cz, cw,
                         ndcx, ndcy, ndcz,
