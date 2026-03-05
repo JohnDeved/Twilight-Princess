@@ -129,9 +129,21 @@ static int s_tev_ready = 0;
 
 /* Saved centroid LookAt matrix (3×4, row-major) and completion flag.
  * Set once by the centroid calculation block; never overwritten by J3D's
- * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw). */
+ * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw).
+ *
+ * Per-frame reset: s_geom_centroid_active is cleared at the start of each
+ * frame (when gx_frame_draw_calls == 0) so that only the 3D room frame
+ * (draw_calls > CENTROID_FRAME_DRAWS_MIN) activates the centroid camera.
+ * Without this reset, s_geom_centroid_active stays set after frame 129 and
+ * routes all Phase 4 frames 130-200 to bgfx view 1, leaving view 0 black. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
+
+/* Centroid accumulation state — file-scope so the per-frame reset block
+ * (at gx_frame_draw_calls == 0 boundary) can clear them each frame. */
+static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
+static int   s_centroid_n      = 0;
+static float s_centroid_vz_max = -1e30f;
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
 #define TEV_TEX_CACHE_SIZE 256
@@ -1929,9 +1941,8 @@ void pal_tev_flush_draw(void) {
      * First ~CENTROID_SAMPLES draws still render with the wrong matrix (black),
      * but the remaining ~7400 room draws get the corrected view → pct_nonblack > 0. */
     if (passclr_uses_rasc && g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
-        static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
-        static int   s_centroid_n      = 0;
-        static float s_centroid_vz_max = -1e30f; /* track near face of room (max Z) */
+        /* s_centroid_sum, s_centroid_n, s_centroid_vz_max are file-scope statics
+         * reset at the start of each frame in the gx_frame_draw_calls == 0 block. */
 
         /* Extract first vertex world position from TVB using the same
          * byte_prefix logic as rasc_geom_dump below.
@@ -2476,6 +2487,21 @@ void pal_tev_flush_draw(void) {
         }
     }
 
+    /* Per-frame centroid camera reset.
+     * s_geom_centroid_active must be cleared at the start of each frame so that
+     * only frames with draw_calls > CENTROID_FRAME_DRAWS_MIN activate the centroid
+     * camera.  Without this reset, centroid stays active after the 3D room frame
+     * (frame 129) and routes all subsequent frames to bgfx view 1, leaving the
+     * Phase 4 captured frame 0% nonblack (view 0 receives no draws after frame 129). */
+    if (gx_frame_draw_calls == 0) {
+        s_geom_centroid_active = 0;
+        s_centroid_n           = 0;
+        s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;
+        s_centroid_vz_max = -1e30f;
+        /* Allow centroid_view_switch to re-log on the next 3D room frame. */
+        /* (s_centroid_view_logged is reset below in its own block) */
+    }
+
     /* Per-frame draw diagnostic for Phase 2 (softpipe) analysis.
      * Logs the first 3 draws of each frame once we've completed enough
      * frames to be past the startup black screen (frame > 5).
@@ -2555,9 +2581,14 @@ void pal_tev_flush_draw(void) {
     }
     /* One-shot log when the first centroid draw is submitted to view 1.
      * Confirms the depth-clear view switch fired and how many draws have
-     * been submitted so far (pre-centroid draws that contaminated depth). */
+     * been submitted so far (pre-centroid draws that contaminated depth).
+     * s_centroid_view_logged is reset per-frame (via gx_frame_draw_calls == 0)
+     * so it re-fires on each 3D room frame. */
     {
         static int s_centroid_view_logged = 0;
+        if (gx_frame_draw_calls == 0) {
+            s_centroid_view_logged = 0;  /* allow re-log on next 3D room frame */
+        }
         if (s_geom_centroid_active && !s_centroid_view_logged) {
             s_centroid_view_logged = 1;
             fprintf(stderr, "{\"centroid_view_switch\":{\"draw_id\":%u,"

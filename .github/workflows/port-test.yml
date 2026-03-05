@@ -677,8 +677,6 @@ jobs:
           name: port-test-results
           path: |
             milestones.log
-            milestones_phase3.log
-            milestones_phase4.log
             milestone-summary.json
             regression-report.json
             verify-report.json
