@@ -119,8 +119,13 @@ static bgfx::UniformHandle s_tev_reg1_uniform;
 static int s_tev_ready = 0;
 
 /* Number of RASC draw world-positions to accumulate before computing the
- * geometry-centroid camera override (see pal_tev_flush_draw). */
-#define CENTROID_SAMPLES 50
+ * geometry-centroid camera override (see pal_tev_flush_draw).
+ *
+ * Gate: only accumulate when g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN,
+ * so the centroid fires during the high-draw-count 3D room frame (~7400 draws)
+ * and NOT during title-screen frames (~50-500 draws each). */
+#define CENTROID_SAMPLES          50
+#define CENTROID_FRAME_DRAWS_MIN 1000
 
 /* Saved centroid LookAt matrix (3×4, row-major) and completion flag.
  * Set once by the centroid calculation block; never overwritten by J3D's
@@ -1908,20 +1913,25 @@ void pal_tev_flush_draw(void) {
      *
      * When the normal camera path cannot position the view (demo camera NULL,
      * stage arrow absent), the pos_mtx stays at the fallback identity+translation
-     * [0,-100,-200] which leaves all room geometry ~107000 units outside the
-     * frustum.  This block accumulates world-space vertex positions from the
-     * first CENTROID_SAMPLES RASC draws (past the 2D title block at ~500 draws)
-     * and, once enough samples are collected, computes a look-at view matrix
-     * from eye=centroid+(0,500,2000) aimed at the centroid.  The matrix is
-     * then written into all GX_MAX_POS_MTX slots so every subsequent draw on
-     * this frame and beyond uses the correct view transform.
+     * [0,-100,-200] which leaves all room geometry outside the frustum.
+     *
+     * This block fires ONLY when g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN
+     * (per-frame counter, reset to 0 at the start of each frame).  The 3D room
+     * frame has ~7400 RASC draws; title-screen frames have << 1000.  This prevents
+     * the centroid from accumulating title-screen geometry (wrong coordinates).
+     *
+     * Once CENTROID_SAMPLES have been accumulated the block computes a LookAt view
+     * matrix with eye placed OUTSIDE the near face of the room geometry
+     * (eye.z = vz_max + 5000, where vz_max is the maximum raw vertex Z seen).
+     * This guarantees the geometry is in FRONT of the camera, not behind it.
      *
      * The override fires at most once per process lifetime (static flag).
      * First ~CENTROID_SAMPLES draws still render with the wrong matrix (black),
      * but the remaining ~7400 room draws get the corrected view → pct_nonblack > 0. */
-    if (passclr_uses_rasc && s_total_draw_count > 500) {
+    if (passclr_uses_rasc && g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
         static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
         static int   s_centroid_n      = 0;
+        static float s_centroid_vz_max = -1e30f; /* track near face of room (max Z) */
 
         /* Extract first vertex world position from TVB using the same
          * byte_prefix logic as rasc_geom_dump below. */
@@ -1944,6 +1954,7 @@ void pal_tev_flush_draw(void) {
                 s_centroid_sum[0] += vx;
                 s_centroid_sum[1] += vy;
                 s_centroid_sum[2] += vz;
+                if (vz > s_centroid_vz_max) s_centroid_vz_max = vz;
                 s_centroid_n++;
             }
             if (s_centroid_n == CENTROID_SAMPLES) {
@@ -1952,9 +1963,12 @@ void pal_tev_flush_draw(void) {
                 float cy = s_centroid_sum[1] / (float)CENTROID_SAMPLES;
                 float cz = s_centroid_sum[2] / (float)CENTROID_SAMPLES;
 
-                /* Camera eye: above and behind the centroid (positive Z offset
-                 * puts the eye in the +Z direction from the centroid). */
-                float ex = cx, ey = cy + 500.0f, ez = cz + 2000.0f;
+                /* Camera eye: placed OUTSIDE the near face of the room.
+                 * s_centroid_vz_max is the maximum raw vertex Z seen = near face.
+                 * Adding 5000 ensures the camera is in front of all geometry,
+                 * not behind it. (Using cz+2000 put the camera INSIDE the room
+                 * because vz_max > cz+2000 = geometry was behind camera.) */
+                float ex = cx, ey = cy + 500.0f, ez = s_centroid_vz_max + 5000.0f;
 
                 /* Build LookAt via C_MTXLookAt convention (row-major 3×4):
                  *   look  = normalize(eye - center)   [points from target to eye]
@@ -1996,9 +2010,11 @@ void pal_tev_flush_draw(void) {
                     "{\"geom_centroid_cam\":{\"centroid\":[%.1f,%.1f,%.1f],"
                     "\"eye\":[%.1f,%.1f,%.1f],"
                     "\"look\":[%.4f,%.4f,%.4f],"
+                    "\"vz_max\":%.1f,"
                     "\"vm_row0\":[%.4f,%.4f,%.4f,%.1f]}}\n",
                     cx, cy, cz, ex, ey, ez,
                     lx, ly, lz,
+                    s_centroid_vz_max,
                     vm[0][0], vm[0][1], vm[0][2], vm[0][3]);
             }
         }
