@@ -204,7 +204,7 @@ if [ "${#RUN_PHASES[@]}" -gt 0 ]; then
         echo "━━━ Step 6: Render phase $phase capture (via quick-test.sh) ━━━"
         if ! tools/quick-test.sh \
                 --phase "$phase" \
-                --binary build/tp-pc \
+                --binary "${BINARY:-build/tp-pc}" \
                 --output-dir "$PHASE_OUT"; then
             echo "  ⚠️  Phase $phase gate failed"
             PASS=0

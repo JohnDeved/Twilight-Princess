@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
         --timeout)     TIMEOUT_SECS="$2"; shift 2 ;;
         --best-effort) BEST_EFFORT=1; shift ;;
         --help|-h)
-            sed -n '2,20p' "$0"
+            sed -n '2,23p' "$0"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
