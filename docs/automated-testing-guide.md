@@ -68,21 +68,22 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 
 ## Quick Render Test (`tools/quick-test.sh`)
 
-The quick render test is designed for **fast local iteration**. Instead of running
-the full CI pipeline (3 phases, ~10+ minutes), it renders a **single frame** from
-the intro sequence and validates milestones in **10-90 seconds**.
+The quick render test is designed for **fast local iteration** and is also used by
+CI for its render phase. Instead of running the full CI pipeline from scratch, it
+renders target frame(s) from the intro sequence and validates milestones in **10-90 seconds**.
 
 ### How It Works
 
 The test treats rendering like a **video render** — each frame can take its time
 to rasterize via Mesa softpipe (no GPU required). Instead of rendering hundreds
-of frames, it targets just ONE meaningful frame:
+of frames, it targets just the meaningful frames:
 
 | Mode | Target Frame | Game Time | Content | Time |
 |------|-------------|-----------|---------|------|
 | Default | Frame 10 | ~0.17s | Title screen (2D) | ~10-20s |
 | `--3d` | Frame 129 | ~2.15s | 3D gameplay room (7587 draws) | ~60-90s |
 | `--frame N` | Frame N | N/60s | Whatever is on screen at that point | varies |
+| `--frame 10 --3d` | 10 + 129 | ~2.15s | Both title + 3D in one pass | ~60-90s |
 
 ### Usage
 
@@ -96,17 +97,35 @@ tools/quick-test.sh --skip-build
 # 3D gameplay room (more thorough, ~60-90s)
 tools/quick-test.sh --3d
 
+# Both title + 3D in one pass
+tools/quick-test.sh --frame 10 --3d
+
 # Specific frame
 tools/quick-test.sh --frame 60
+
+# CI usage (render-only mode, CI handles post-processing):
+tools/quick-test.sh --skip-build --render-only \
+  --output-dir verify_output --frame 10 --3d --frame-delay 120000
 ```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--skip-build` | Skip build step (use existing binary) |
+| `--3d` | Add frame 129 (3D room) to capture list |
+| `--frame N` | Add frame N to capture list (can specify multiple) |
+| `--output-dir DIR` | Output directory (default: `quick-test-output/`) |
+| `--render-only` | Only render + capture, skip milestone parse/regression |
+| `--frame-delay MS` | Override frame delay for 3D frames (default: 90000ms) |
 
 ### Output
 
-Results are saved to `quick-test-output/` (gitignored):
-- `frame_NNNN.bmp` — the rendered frame (view to see render progress)
+Results are saved to `quick-test-output/` (gitignored, or `--output-dir` override):
+- `frame_NNNN.bmp` — the rendered frame(s) (view to see render progress)
 - `test.log` — full game output (milestones, telemetry, errors)
-- `milestone-summary.json` — parsed milestone results
-- `regression-report.json` — comparison against baseline
+- `milestone-summary.json` — parsed milestone results (unless `--render-only`)
+- `regression-report.json` — comparison against baseline (unless `--render-only`)
 
 ### When To Use Which Test
 
@@ -195,13 +214,13 @@ The CI runs on every push or PR that touches:
 | Phase | Renderer | Frames | Timeout | What It Tests |
 |-------|----------|--------|---------|---------------|
 | **Phase 1: Logic** | Noop (no GPU) | 400 | 120s | Boot milestones, game logic, GX stubs, FRAMES_300 |
-| **Phase 2: Render** | softpipe | 131 | 360s | Frame 10 (title screen) + Frame 129 (3D room, 7587 draws) |
+| **Phase 2: Render** | softpipe (via `quick-test.sh`) | 131 | 240s | Frame 10 (title screen) + Frame 129 (3D room, 7587 draws) |
 
 **Total CI test time: ~5-8 minutes** (down from ~20+ minutes with the old 3-phase pipeline).
 
-Phase 2 treats rendering like a video render — each frame takes its time, no realtime
-requirement. The 120s frame delay at frame 129 gives Mesa softpipe time to rasterize
-the heavy 3D batch (typically completes in 20-60s).
+Phase 2 calls `tools/quick-test.sh --render-only` — the same script agents use
+locally. CI passes `--frame-delay 120000` (120s, 2x safety margin for softpipe
+on CI hardware) vs the default 90s for local use.
 
 ### What CI Produces
 
@@ -271,8 +290,9 @@ edit `milestone-baseline.json` directly and commit it alongside your code change
 1. Make minimal, focused changes
 2. Run the quick render test for fast visual feedback:
    ```bash
-   tools/quick-test.sh --skip-build     # title screen in ~10s
-   tools/quick-test.sh --skip-build --3d  # 3D room in ~60-90s
+   tools/quick-test.sh --skip-build          # title screen in ~10s
+   tools/quick-test.sh --skip-build --3d     # 3D room in ~60-90s
+   tools/quick-test.sh --skip-build --frame 10 --3d  # both in one pass
    ```
 3. If satisfied, run the full self-test to verify regression status:
    ```bash
@@ -280,7 +300,8 @@ edit `milestone-baseline.json` directly and commit it alongside your code change
    tools/self-test.sh --skip-build     # full test with existing binary
    tools/self-test.sh                  # full rebuild + test
    ```
-4. If the self-test passes, commit and push — CI will run the same checks automatically
+4. If the self-test passes, commit and push — CI runs the same `quick-test.sh`
+   in render-only mode with a 120s frame delay for CI hardware
 5. If it fails, read the output to see which step failed and fix the issue
 
 ### Interpreting CI Results
