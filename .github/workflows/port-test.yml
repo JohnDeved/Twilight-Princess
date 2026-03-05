@@ -185,155 +185,21 @@ jobs:
             --require frame_0120:80 || \
             echo "⚠️  RASC gate FAILED: frame_0120 dropped below 80% — check passclr_uses_rasc in gx_tev.cpp"
 
-          # Phase 3: Targets frame 129 — the opening 3D J3D room sequence (7587 draws/frame).
-          #
-          # The 3D BG actor lives only for frames 128-129 at game-logic speed (no frame-rate
-          # limiter in headless mode).  PROC_TITLE takes over at frame 130+, so frame 129 is
-          # the sole reliable 3D-room capture point.
-          #
-          # TP_SKIP_FADE=1: darwFilter (the full-screen fade overlay) may cover the 3D scene
-          # with a fully-opaque black quad at frame 129 (scene transition fade-in).  Skipping
-          # the fade draw ensures geometry is visible regardless of the fade animation state.
-          # The darwFilter diagnostic log (JSON key "darwFilter") still fires before the skip
-          # so we can see the fade colour in CI output.
-          #
-          # Pipeline:
-          #   - TP_FRAME_DELAY_START=129: sleep fires at s_frame_count=129, after bgfx::frame()
-          #     flushes the 7587 3D room draws to the softpipe render thread.
-          #   - TP_FRAME_DELAY_MS=350000: 350 s safety margin (softpipe renders in ~20-60 s).
-          #   - pal_verify_frame(129) reads s_fb = 3D room pixels after the sleep.
-          #
-          # Timing: ~20s (frames 0-128) + 350s sleep = ~370s < 590s.
-          # Phase 3 is best-effort (|| true): CI passes even if it times out or crashes.
-          echo "=== Phase 3: 3D room frame capture (frame 129, softpipe, fade skipped) ==="
-          Xvfb :100 -screen 0 640x480x24 >/dev/null 2>&1 &
-          PHASE3_VFB_PID=$!
-          export DISPLAY=:100
-          for i in 1 2 3 4 5; do
-            xdpyinfo -display :100 >/dev/null 2>&1 && break
-            sleep 1
-          done
-          export GALLIUM_DRIVER=softpipe
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export TP_VERIFY=1
-          export TP_FRAME_DELAY_MS=350000
-          export TP_FRAME_DELAY_START=129
-          export TP_TEST_FRAMES=130
-          export TP_VERIFY_CAPTURE_FRAMES="129"
-          export TP_SKIP_FADE=1
-          unset TP_SKIP_DL_DRAWS
-          unset TP_SYNC_RENDER
-          mkdir -p verify_output_3d
-          export TP_VERIFY_DIR=verify_output_3d
-          timeout -k 10 590s build/tp-pc 2>&1 | tee milestones_phase3.log || true
-          PHASE3_EXIT=${PIPESTATUS[0]}
-          echo "Phase 3 exit: $PHASE3_EXIT"
-          kill $PHASE3_VFB_PID 2>/dev/null || true
-          echo "Phase 3 BMP frames: $(ls verify_output_3d/frame_*.bmp 2>/dev/null | wc -l)"
-          # Report pixel coverage for each 3D frame
-          python3 tools/check_bmp_coverage.py verify_output_3d/frame_*.bmp 2>/dev/null || true
-          # Report RASC injection diagnostics (material/ambient color for 3D room draws)
-          echo "Phase 3 RASC inject values:"
-          grep '"rasc_inject"' milestones_phase3.log 2>/dev/null || echo "(none found)"
-          # Report geometry-centroid camera fallback (fires at draw ~550, frame 129)
-          echo "Phase 3 geometry-centroid camera fallback:"
-          grep '"geom_centroid_cam"' milestones_phase3.log 2>/dev/null || echo "(centroid not triggered)"
-          # Report view switch diagnostic (centroid draws → view 1 with fresh depth)
-          echo "Phase 3 centroid view switch (depth-clear view):"
-          grep '"centroid_view_switch"' milestones_phase3.log 2>/dev/null || echo "(centroid view switch not triggered)"
-          # Report fade overlay diagnostics (darwFilter r/g/b/a per call)
-          echo "Phase 3 fade overlay (darwFilter) — shows alpha at frame 129 transition:"
-          grep '"darwFilter"' milestones_phase3.log 2>/dev/null | head -10 || echo "(no fade overlay calls)"
-          # Report 3D room geometry diagnostics (MVP matrix, clip-space positions, frustum)
-          echo "Phase 3 3D geometry diagnostics (MVP + frustum check):"
-          grep '"rasc_geom_dump"' milestones_phase3.log 2>/dev/null | head -5 || echo "(none found)"
-          # Report per-frame draw count for frames 125-210 (shows 3D room spike + post-130 drop)
-          echo "Phase 3 per-frame draw counts (frames 125-210):"
-          grep '"frame_dc"' milestones_phase3.log 2>/dev/null | head -90 || echo "(none found)"
-          # === 3D room visibility gate ===
-          # frame_0129 pct_nonblack must be > 0.  The centroid camera override + separate
-          # depth-cleared view (view 1) ensures 3D room geometry is visible.  A drop to 0
-          # indicates a regression in the centroid camera pipeline, depth buffer handling,
-          # or the view separation fix.  This gate complements the RASC gate on frame_0120.
-          echo "=== 3D room visibility gate (frame_0129 pct_nonblack > 0) ==="
-          python3 tools/check_bmp_coverage.py verify_output_3d/frame_0129.bmp \
-            --require frame_0129:1 2>/dev/null || \
-            echo "⚠️  3D room gate FAILED: frame_0129 pct_nonblack is below 1% — check centroid camera (centroid_view_switch in log) and view 1 depth-clear in gx_render.cpp"
-          # Convert 3D captures to MP4 for PR video embed
-          if [ -f verify_output_3d/raw_frames.bin ]; then
-            FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)
-            EXPECTED3=$((640 * 480 * 4))
-            if [ "$FRAME_COUNT3" -gt 0 ] && [ "$EXPECTED3" -gt 0 ]; then
-              NUM3=$((FRAME_COUNT3 / EXPECTED3))
-              echo "Phase 3 raw video: $NUM3 frames"
-              ffmpeg -y -f rawvideo -pixel_format rgba -video_size 640x480 \
-                -framerate 5 -i verify_output_3d/raw_frames.bin \
-                -c:v libx264 -pix_fmt yuv420p -crf 18 \
-                verify_output_3d/gameplay_3d.mp4 2>/dev/null && \
-                echo "Phase 3 MP4: $(ls -la verify_output_3d/gameplay_3d.mp4)" || \
-                echo "Phase 3 ffmpeg failed"
-              rm -f verify_output_3d/raw_frames.bin
-            fi
-          fi
+          # Phase 3: 3D room frame capture (frame 129).
+          # The 3D BG actor lives only frames 128-129 at game-logic speed.
+          # Delegated to tools/quick-test.sh --phase 3 (shared with self-test.sh).
+          # --best-effort: gate failures are diagnostic only (CI still passes).
+          unset DISPLAY
+          tools/quick-test.sh --phase 3 --binary build/tp-pc \
+            --output-dir verify_output_3d --best-effort
 
-          # Phase 4: Gameplay intro verification — capture frame 200.
-          #
-          # PROC_TITLE is created with TP_ENABLE_PROC_TITLE=1 so J2D title-screen
-          # content is visible at frame 200 after the 3D BG actor exits at frame 130.
-          # Without this, PROC_TITLE is suppressed on PC (to keep 3D room alive for
-          # Phase 3) and no J2D draws are submitted after frame 130.
-          #
-          # The PROC_OPENING_SCENE Execute crash at frame ~132 (JStudio forward on
-          # freed BG actor refs) is now caught by an inner sigsetjmp in dScnPly_Execute,
-          # preventing permanent suppression of the opening scene manager.  PROC_TITLE
-          # (a separate proc, id 737) is unaffected by PROC_OPENING_SCENE's crash and
-          # runs normally to produce J2D title-screen draws at frame 200.
-          #
-          # TP_FRAME_DELAY_MS=60000: 60 s lets softpipe fully rasterise the J2D batch.
-          # TP_SKIP_FADE=1: skip darwFilter fade overlay (still logs alpha).
-          # Timing: ~30s (frames 0-199) + 60s sleep = ~90s well within 120s timeout.
-          # Phase 4 is best-effort (|| true): CI passes even on timeout.
-          echo "=== Phase 4: Gameplay intro frame capture (frame 200, PROC_TITLE J2D content) ==="
-          Xvfb :101 -screen 0 640x480x24 >/dev/null 2>&1 &
-          PHASE4_VFB_PID=$!
-          export DISPLAY=:101
-          for i in 1 2 3 4 5; do
-            xdpyinfo -display :101 >/dev/null 2>&1 && break
-            sleep 1
-          done
-          export GALLIUM_DRIVER=softpipe
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export TP_VERIFY=1
-          export TP_FRAME_DELAY_MS=60000
-          export TP_FRAME_DELAY_START=200
-          export TP_TEST_FRAMES=201
-          export TP_VERIFY_CAPTURE_FRAMES="200"
-          export TP_SKIP_FADE=1
-          export TP_ENABLE_PROC_TITLE=1
-          unset TP_SKIP_DL_DRAWS
-          unset TP_SYNC_RENDER
-          mkdir -p verify_output_gameplay
-          export TP_VERIFY_DIR=verify_output_gameplay
-          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_phase4.log || true
-          PHASE4_EXIT=${PIPESTATUS[0]}
-          echo "Phase 4 exit: $PHASE4_EXIT"
-          kill $PHASE4_VFB_PID 2>/dev/null || true
-          echo "Phase 4 BMP frames: $(ls verify_output_gameplay/frame_*.bmp 2>/dev/null | wc -l)"
-          # Report pixel coverage for frame 200
-          python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_*.bmp 2>/dev/null || true
-          # Report per-frame draw count for frames 125-210 in Phase 4 log
-          echo "Phase 4 per-frame draw counts (frames 125-210):"
-          grep '"frame_dc"' milestones_phase4.log 2>/dev/null | head -90 || echo "(none found)"
-          # Report fade overlay diagnostics at frame 200
-          echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 200:"
-          grep '"darwFilter"' milestones_phase4.log 2>/dev/null | head -10 || echo "(no fade overlay calls)"
-          # Report PROC_TITLE status and draw count at frame 200
-          echo "Phase 4 PROC_TITLE enable status + j3d_draw_diag at frame 200:"
-          grep 'TP_ENABLE_PROC_TITLE\|j3d_draw_diag.*"frame":200' milestones_phase4.log 2>/dev/null | head -5 || \
-          echo "(check milestones_phase4.log for draw counts)"
-          # Report opening-scene crash catch (confirms inner handler fired at frame ~132)
-          echo "Phase 4 opening scene crash catch:"
-          grep 'demo/event crash at' milestones_phase4.log 2>/dev/null || echo "(no crash catch logged)"
+          # Phase 4: Gameplay intro frame capture (frame 200, PROC_TITLE J2D content).
+          # PROC_TITLE created with TP_ENABLE_PROC_TITLE=1 after 3D BG actor exits.
+          # Delegated to tools/quick-test.sh --phase 4 (shared with self-test.sh).
+          # --best-effort: gate failures are diagnostic only (CI still passes).
+          unset DISPLAY
+          tools/quick-test.sh --phase 4 --binary build/tp-pc \
+            --output-dir verify_output_gameplay --best-effort
 
       - name: Parse milestones
         if: always()
