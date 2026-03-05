@@ -81,6 +81,7 @@ def main():
     bg_draw_entries = []
     bg_kankyo_stats = []
     chain_invalid = []
+    cNdIt_cycles = []
     kankyo_crash_count = 0
     zblend_prop_by_frame = {}
     play_state_samples = []   # play_state JSON: depth_bits/blend_bits per draw
@@ -98,6 +99,8 @@ def main():
             bg_kankyo_stats.append(obj['bg_kankyo_stats'])
         if 'j3d_chain_invalid' in obj:
             chain_invalid.append(obj['j3d_chain_invalid'])
+        if 'cNdIt_cycle' in obj or 'cNdIt_judge_cycle' in obj:
+            cNdIt_cycles.append(obj)
         if 'zblend_prop' in obj:
             p = obj['zblend_prop']
             zblend_prop_by_frame[p.get('frame', 0)] = p
@@ -224,13 +227,22 @@ def main():
                       (c.get('invalid_ptr') or c.get('self_loop') or c.get('vptr_low'))]
         if cycle_only:
             warnings.append(f"chain_cycle: {len(cycle_only)} packet chain cycles detected "
-                            f"(safely broken by draw-loop cap; expected after Execute crash at frame 130+)")
+                            f"(safely broken by draw-loop cap; expected after actor Execute crashes)")
         if hard_invalid:
             errors.append(f"REGRESSION: detected {len(hard_invalid)} corrupt packet chains in drawHead "
                           f"(first: slot={hard_invalid[0].get('slot')} "
                           f"invalid_ptr={hard_invalid[0].get('invalid_ptr')} "
                           f"self_loop={hard_invalid[0].get('self_loop')} "
                           f"vptr_low={hard_invalid[0].get('vptr_low')})")
+
+    # Actor linked-list cycle events (cNdIt_cycle / cNdIt_judge_cycle)
+    # These fire when the actor-framework iteration hits the 10000-node safety cap,
+    # which indicates a circular linked-list caused by a mid-modification crash.
+    # Warn (not error) — the cap safely breaks the loop and game progresses.
+    if cNdIt_cycles:
+        warnings.append(f"cNdIt_cycle: {len(cNdIt_cycles)} actor-list cycle events "
+                        f"(safely broken by iteration cap; expected after actor Execute crashes)")
+    print(f"  Actor-list cycles detected: {len(cNdIt_cycles)}")
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:

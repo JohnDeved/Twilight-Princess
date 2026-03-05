@@ -409,9 +409,11 @@ void J3DDrawBuffer::drawHead() const {
                  * mappings for this process are far above low-memory legacy
                  * ranges; <1MB is treated as suspicious (not a hard ABI rule). */
                 MIN_VALID_VPTR = 0x100000,
-                /* Large safety cap: play-scene chains can contain thousands of
-                 * packets; use 64K to catch runaways without false positives. */
-                MAX_CHAIN_LENGTH = 0x10000,
+                /* Safety cap for multi-node cycle detection.  Real packet chains
+                 * max out at ~76 nodes (observed); 200 is a safe upper bound
+                 * that detects cycles quickly (200 iterations max vs 65536 for
+                 * the old 0x10000 value) without false positives on valid chains. */
+                MAX_CHAIN_LENGTH = 200,
             };
             const J3DPacket* cursor = buf[i];
             int chain_len = 0;
