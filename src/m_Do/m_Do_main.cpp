@@ -784,15 +784,21 @@ void main01(void) {
                     s_is_softpipe = (dpy && dpy[0] != '\0') ? 1 : 0;
                 }
                 if (elapsed_ms > 60000 && s_headless_cached && s_is_softpipe) {
-                    fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
-                            "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
-                            frame, elapsed_ms);
-                    pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
-                    gx_stub_report();
-                    pal_tev_report_diagnostics();
-                    pal_collision_stub_report();
-                    pal_verify_summary();
-                    _Exit(0);
+                    /* Skip timeout if TP_FRAME_DELAY_MS is set to a non-zero value:
+                     * user is intentionally throttling softpipe rendering
+                     * (e.g. Phase 3 3D frame capture). */
+                    const char* delay_ev = getenv("TP_FRAME_DELAY_MS");
+                    if (!delay_ev || atoi(delay_ev) == 0) {
+                        fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
+                                "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
+                                frame, elapsed_ms);
+                        pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
+                        gx_stub_report();
+                        pal_tev_report_diagnostics();
+                        pal_collision_stub_report();
+                        pal_verify_summary();
+                        _Exit(0);
+                    }
                 }
             }
             s_prev_ts = now_ts;

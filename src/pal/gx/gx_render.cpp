@@ -408,25 +408,30 @@ void pal_render_end_frame(void) {
     }
 
     /* TP_FRAME_DELAY_MS=N: sleep N milliseconds after bgfx::frame() starting at
-     * TP_FRAME_DELAY_START frame (default 128).
+     * TP_FRAME_DELAY_START frame (default 128), stopping after TP_FRAME_DELAY_END
+     * (default = TP_FRAME_DELAY_START, i.e. delay fires exactly once).
      * Used by Phase 3 CI to throttle CPU frame submission so Mesa softpipe /
-     * llvmpipe can finish rasterising each heavy 3-D frame (7587 draws) before
-     * the next frame's TVB allocation begins.  Set to 0 (default) for normal
-     * operation; a value of ~30000-60000 is appropriate for softpipe on CI. */
+     * llvmpipe can finish rasterising a heavy 3-D frame (7587 draws) before the
+     * next frame's TVB allocation begins.  Set to 0 (default) for normal
+     * operation; a value of ~350000 is appropriate for softpipe on CI. */
     {
         static int s_frame_delay_ms = -1;
         static uint32_t s_frame_delay_start = 128; /* default: 3D geometry starts at 128 */
+        static uint32_t s_frame_delay_end = 0;     /* 0 = same as start (fire exactly once) */
         if (s_frame_delay_ms < 0) {
             const char* ev = getenv("TP_FRAME_DELAY_MS");
             s_frame_delay_ms = ev ? atoi(ev) : 0;
             const char* ev_start = getenv("TP_FRAME_DELAY_START");
             if (ev_start) s_frame_delay_start = (uint32_t)atoi(ev_start);
+            const char* ev_end = getenv("TP_FRAME_DELAY_END");
+            s_frame_delay_end = ev_end ? (uint32_t)atoi(ev_end) : s_frame_delay_start;
             if (s_frame_delay_ms > 0)
                 fprintf(stderr, "{\"render\":\"frame_delay_ms\":%d,"
-                        "\"start_frame\":%u}\n",
-                        s_frame_delay_ms, s_frame_delay_start);
+                        "\"start_frame\":%u,\"end_frame\":%u}\n",
+                        s_frame_delay_ms, s_frame_delay_start, s_frame_delay_end);
         }
-        if (s_frame_delay_ms > 0 && s_frame_count >= s_frame_delay_start)
+        if (s_frame_delay_ms > 0 && s_frame_count >= s_frame_delay_start
+                && s_frame_count <= s_frame_delay_end)
             usleep((useconds_t)s_frame_delay_ms * 1000u);
     }
 
