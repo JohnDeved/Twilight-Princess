@@ -86,24 +86,27 @@ def main():
     kankyo_crash_count = 0
     zblend_prop_by_frame = {}
     play_state_samples = []   # play_state JSON: depth_bits/blend_bits per draw
+    # Sequential pass: tag chain_invalid and cycle events with the current frame
+    # number (the last j3d_draw_diag frame seen before each event in log order).
+    # This lets us assert that cycles only appear after the known crash frame.
+    _cur_frame = 0
     for obj in stderr_objs:
         if 'j3d_draw_diag' in obj:
             d = obj['j3d_draw_diag']
-            frame = d.get('frame', 0)
-            j3d_diag_frames[frame] = d
+            _cur_frame = d.get('frame', _cur_frame)
+            j3d_diag_frames[_cur_frame] = d
         if 'render' in obj and obj.get('render') == 'frame_stats':
-            frame = obj.get('frame', 0)
-            frame_stats[frame] = obj
+            frame_stats[obj.get('frame', 0)] = obj
         if 'bg_draw_entry' in obj:
             bg_draw_entries.append(obj['bg_draw_entry'])
         if 'bg_kankyo_stats' in obj:
             bg_kankyo_stats.append(obj['bg_kankyo_stats'])
         if 'j3d_chain_invalid' in obj:
-            chain_invalid.append(obj['j3d_chain_invalid'])
+            chain_invalid.append(dict(obj['j3d_chain_invalid'], _frame=_cur_frame))
         if 'cNdIt_cycle' in obj or 'cNdIt_judge_cycle' in obj:
-            cNdIt_cycles.append(obj)
+            cNdIt_cycles.append(dict(obj, _frame=_cur_frame))
         if 'cNd_last_cycle' in obj or 'cNd_length_cycle' in obj or 'cNd_first_cycle' in obj or 'cNd_setobj_cycle' in obj:
-            cNd_node_cycles.append(obj)
+            cNd_node_cycles.append(dict(obj, _frame=_cur_frame))
         if 'zblend_prop' in obj:
             p = obj['zblend_prop']
             zblend_prop_by_frame[p.get('frame', 0)] = p
@@ -214,12 +217,20 @@ def main():
     if kankyo_crash_count > 0:
         errors.append(f"REGRESSION: {kankyo_crash_count} kankyo crash-recovery events "
                      f"(should be 0 — clean bypass replaces signal-based recovery)")
+    # Known crash frame: PROC_CAMERA Execute crash at frame 130 corrupts the
+    # actor delete-queue linked list.  All cycle events (chain_cycle, cNdIt_cycle,
+    # cNd_node_cycles) should only appear AFTER this frame.  Any cycle event on a
+    # clean frame (< CRASH_FRAME) indicates a new, unexpected corruption source.
+    CRASH_FRAME = int(os.getenv("TP_TELEMETRY_CRASH_FRAME", "130"))
+
     print(f"  Invalid J3D chains detected: {len(chain_invalid)}")
+    cycle_only = []
     if chain_invalid:
         first_bad = chain_invalid[0]
         print(f"  First invalid chain: slot={first_bad.get('slot')} len={first_bad.get('len')} "
               f"invalid_ptr={first_bad.get('invalid_ptr')} self_loop={first_bad.get('self_loop')} "
-              f"vptr_low={first_bad.get('vptr_low')} chain_cycle={first_bad.get('chain_cycle', 0)}")
+              f"vptr_low={first_bad.get('vptr_low')} chain_cycle={first_bad.get('chain_cycle', 0)} "
+              f"frame={first_bad.get('_frame', '?')}")
         # chain_cycle=1 means a multi-node cycle in the packet list was detected and safely
         # skipped by the chain-cycle guard added in J3DDrawBuffer::drawHead(). This is expected
         # when actor-Execute crashes at frame 130+ corrupt J3D list state (game proceeds safely).
@@ -231,6 +242,15 @@ def main():
         if cycle_only:
             warnings.append(f"chain_cycle: {len(cycle_only)} packet chain cycles detected "
                             f"(safely broken by draw-loop cap; expected after actor Execute crashes)")
+            # Assert: chain_cycle events should only appear after the known crash frame.
+            # Any cycle on a clean frame indicates a new corruption source.
+            early_cycles = [c for c in cycle_only if c.get('_frame', CRASH_FRAME) < CRASH_FRAME]
+            if early_cycles:
+                warnings.append(
+                    f"NEW CORRUPTION SOURCE: {len(early_cycles)} chain_cycle event(s) on frames "
+                    f"< {CRASH_FRAME} (first at frame {early_cycles[0].get('_frame','?')}, "
+                    f"slot={early_cycles[0].get('slot','?')}) — cycles before the known crash "
+                    f"frame indicate a new list-corruption path that was not present before")
         if hard_invalid:
             errors.append(f"REGRESSION: detected {len(hard_invalid)} corrupt packet chains in drawHead "
                           f"(first: slot={hard_invalid[0].get('slot')} "
@@ -242,18 +262,52 @@ def main():
     # These fire when the actor-framework iteration hits the 10000-node safety cap,
     # which indicates a circular linked-list caused by a mid-modification crash.
     # Warn (not error) — the cap safely breaks the loop and game progresses.
+    cNdIt_count = len(cNdIt_cycles)
     if cNdIt_cycles:
-        warnings.append(f"cNdIt_cycle: {len(cNdIt_cycles)} actor-list cycle events "
+        warnings.append(f"cNdIt_cycle: {cNdIt_count} actor-list cycle events "
                         f"(safely broken by iteration cap; expected after actor Execute crashes)")
-    print(f"  Actor-list cycles detected: {len(cNdIt_cycles)}")
+        # Assert: cycle events should only appear after the known crash frame.
+        early_cNdIt = [c for c in cNdIt_cycles if c.get('_frame', CRASH_FRAME) < CRASH_FRAME]
+        if early_cNdIt:
+            warnings.append(
+                f"NEW CORRUPTION SOURCE: {len(early_cNdIt)} cNdIt_cycle event(s) on frames "
+                f"< {CRASH_FRAME} (first at frame {early_cNdIt[0].get('_frame','?')}) — "
+                f"actor-list cycles before the known crash frame indicate a new corruption path")
+    # Count regression gate: warn if cycle count exceeds a configured max.
+    # Set TP_TELEMETRY_MAX_CHAIN_CYCLES=N to flag when chain or actor-list cycles increase.
+    max_chain_cycles = int(os.getenv("TP_TELEMETRY_MAX_CHAIN_CYCLES", "0"))
+    total_cycle_count = len(cycle_only)
+    if max_chain_cycles > 0 and total_cycle_count > max_chain_cycles:
+        warnings.append(
+            f"cycle count regression: {total_cycle_count} chain_cycle events > baseline "
+            f"{max_chain_cycles} (TP_TELEMETRY_MAX_CHAIN_CYCLES); new corruption source likely")
+    max_ndIt_cycles = int(os.getenv("TP_TELEMETRY_MAX_NDIT_CYCLES", "0"))
+    if max_ndIt_cycles > 0 and cNdIt_count > max_ndIt_cycles:
+        warnings.append(
+            f"cycle count regression: {cNdIt_count} cNdIt_cycle events > baseline "
+            f"{max_ndIt_cycles} (TP_TELEMETRY_MAX_NDIT_CYCLES); new corruption source likely")
+    print(f"  Actor-list cycles detected: {cNdIt_count}")
 
     # Node-level cycle events (cNd_last_cycle / cNd_length_cycle / cNd_first_cycle)
     # These fire when cNd_Last/cNd_LengthOf/cNd_First hit the 10000-node safety cap,
     # indicating a corrupted doubly-linked list (circular). Warn only.
+    cNd_count = len(cNd_node_cycles)
     if cNd_node_cycles:
-        warnings.append(f"cNd_node_cycle: {len(cNd_node_cycles)} node-level list cycle events "
+        warnings.append(f"cNd_node_cycle: {cNd_count} node-level list cycle events "
                         f"(safely broken by iteration cap; expected after actor Execute crashes)")
-    print(f"  Node-level list cycles: {len(cNd_node_cycles)}")
+        # Assert: node-level cycles should only appear after the known crash frame.
+        early_cNd = [c for c in cNd_node_cycles if c.get('_frame', CRASH_FRAME) < CRASH_FRAME]
+        if early_cNd:
+            warnings.append(
+                f"NEW CORRUPTION SOURCE: {len(early_cNd)} cNd_node_cycle event(s) on frames "
+                f"< {CRASH_FRAME} (first at frame {early_cNd[0].get('_frame','?')}) — "
+                f"node-level cycles before the known crash frame indicate a new corruption path")
+    max_nd_cycles = int(os.getenv("TP_TELEMETRY_MAX_ND_CYCLES", "0"))
+    if max_nd_cycles > 0 and cNd_count > max_nd_cycles:
+        warnings.append(
+            f"cycle count regression: {cNd_count} cNd_node_cycle events > baseline "
+            f"{max_nd_cycles} (TP_TELEMETRY_MAX_ND_CYCLES); new corruption source likely")
+    print(f"  Node-level list cycles: {cNd_count}")
 
     # Check dl_draws across sustained frame range
     if j3d_diag_frames:
