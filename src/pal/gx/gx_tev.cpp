@@ -1934,22 +1934,30 @@ void pal_tev_flush_draw(void) {
         static float s_centroid_vz_max = -1e30f; /* track near face of room (max Z) */
 
         /* Extract first vertex world position from TVB using the same
-         * byte_prefix logic as rasc_geom_dump below. */
+         * byte_prefix logic as rasc_geom_dump below.
+         * Only extract if pos has 3 components (XYZ); skip XY-only draws to
+         * avoid reading color bytes as Z which would corrupt the centroid. */
         float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+        int centroid_pos_ok = 0;
         if (nverts >= 1) {
-            int has_pnmtx_c = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
-            int tex_cnt_c = 0;
-            for (int i = 0; i < 8; i++)
-                if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) tex_cnt_c++;
-            uint32_t poff = (uint32_t)(has_pnmtx_c + tex_cnt_c);
-            if (poff + 12u <= (uint32_t)bgfx_stride) {
-                memcpy(&vx, tvb.data + poff,     4);
-                memcpy(&vy, tvb.data + poff + 4, 4);
-                memcpy(&vz, tvb.data + poff + 8, 4);
+            const GXVtxAttrFmtEntry* af_c = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+            int npos_c = (af_c[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+            if (npos_c == 3) {
+                int has_pnmtx_c = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
+                int tex_cnt_c = 0;
+                for (int i = 0; i < 8; i++)
+                    if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) tex_cnt_c++;
+                uint32_t poff = (uint32_t)(has_pnmtx_c + tex_cnt_c);
+                if (poff + 12u <= (uint32_t)bgfx_stride) {
+                    memcpy(&vx, tvb.data + poff,     4);
+                    memcpy(&vy, tvb.data + poff + 4, 4);
+                    memcpy(&vz, tvb.data + poff + 8, 4);
+                    centroid_pos_ok = 1;
+                }
             }
         }
 
-        if (!s_geom_centroid_active) {
+        if (!s_geom_centroid_active && centroid_pos_ok) {
             if (s_centroid_n < CENTROID_SAMPLES) {
                 s_centroid_sum[0] += vx;
                 s_centroid_sum[1] += vy;
