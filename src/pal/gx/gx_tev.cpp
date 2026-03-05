@@ -1908,16 +1908,17 @@ void pal_tev_flush_draw(void) {
             if (nverts >= 1) {
                 /* TVB layout with inject_color=1: optional 1-byte prefix indices
                  * (PNMTXIDX, TEXnMTXIDX) followed by 3 position floats.
-                 * bgfx TransientVertexBuffer data is 4-byte aligned.
-                 * Use memcpy for portable unaligned reads even if prefix != 0. */
+                 * Position starts at byte `byte_prefix` in the vertex — use
+                 * memcpy for portable unaligned reads when byte_prefix != 0. */
                 int has_pnmtx = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
                 int tex_mtx_cnt = 0;
                 for (int i = 0; i < 8; i++) {
                     if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) tex_mtx_cnt++;
                 }
                 uint32_t byte_prefix = (uint32_t)(has_pnmtx + tex_mtx_cnt);
-                /* Round up to next 4-byte boundary to reach position floats */
-                uint32_t pos_offset = (byte_prefix + 3u) & ~3u;
+                /* Position starts at exactly byte_prefix (no padding in the injected layout).
+                 * Use memcpy to safely read potentially unaligned float values. */
+                uint32_t pos_offset = byte_prefix;
                 if (pos_offset + 12u <= (uint32_t)bgfx_stride) {
                     memcpy(&wx, tvb.data + pos_offset,     4);
                     memcpy(&wy, tvb.data + pos_offset + 4, 4);
@@ -1935,17 +1936,20 @@ void pal_tev_flush_draw(void) {
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
                         "\"draw\":%u,"
                         "\"nverts\":%u,"
+                        "\"pnmtx\":%d,\"tmtx\":%d,"
                         "\"world\":[%.4f,%.4f,%.4f],"
                         "\"clip\":[%.4f,%.4f,%.4f,%.4f],"
                         "\"ndc\":[%.4f,%.4f,%.4f],"
                         "\"in_frustum\":%d,"
                         "\"z_en\":%d,\"z_func\":%d,\"cull\":%d,"
                         "\"color_update\":%d,"
+                        "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
                         "\"scissor\":[%d,%d,%d,%d],"
                         "\"const_clr\":[%d,%d,%d,%d],"
                         "\"proj00\":%.6f,\"proj11\":%.6f}}\n",
                         s_total_draw_count,
                         (unsigned)nverts,
+                        has_pnmtx, tex_mtx_cnt,
                         wx, wy, wz,
                         cx, cy, cz, cw,
                         ndcx, ndcy, ndcz,
@@ -1954,6 +1958,7 @@ void pal_tev_flush_draw(void) {
                         g_gx_state.z_func,
                         g_gx_state.cull_mode,
                         g_gx_state.color_update,
+                        g_gx_state.blend_mode, g_gx_state.blend_src, g_gx_state.blend_dst,
                         g_gx_state.sc_left, g_gx_state.sc_top,
                         g_gx_state.sc_wd, g_gx_state.sc_ht,
                         const_clr[0], const_clr[1], const_clr[2], const_clr[3],
