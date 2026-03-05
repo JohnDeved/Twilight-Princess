@@ -1894,6 +1894,74 @@ void pal_tev_flush_draw(void) {
         }
     }
 
+    /* 3D room RASC geometry dump: fires for first 5 PASSCLR+RASC draws once
+     * total_draw_count exceeds 500 (past the 2D title screen block ~635 draws).
+     * Logs MVP matrix, first vertex world-space position, its clip-space
+     * transform, and render state.  Used to diagnose why 3D room geometry
+     * renders to all-black despite white material color injection.
+     * NDC frustum check uses [-1,1] range (OpenGL / Mesa softpipe convention). */
+    if (passclr_uses_rasc) {
+        static int s_rasc_geom_n = 0;
+        if (s_rasc_geom_n < 5 && s_total_draw_count > 500) {
+            s_rasc_geom_n++;
+            float wx = 0, wy = 0, wz = 0;
+            if (nverts >= 1) {
+                /* TVB layout with inject_color=1: optional 1-byte prefix indices
+                 * (PNMTXIDX, TEXnMTXIDX) followed by 3 position floats.
+                 * bgfx TransientVertexBuffer data is 4-byte aligned.
+                 * Use memcpy for portable unaligned reads even if prefix != 0. */
+                int has_pnmtx = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
+                int tex_mtx_cnt = 0;
+                for (int i = 0; i < 8; i++) {
+                    if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) tex_mtx_cnt++;
+                }
+                uint32_t byte_prefix = (uint32_t)(has_pnmtx + tex_mtx_cnt);
+                /* Round up to next 4-byte boundary to reach position floats */
+                uint32_t pos_offset = (byte_prefix + 3u) & ~3u;
+                if (pos_offset + 12u <= (uint32_t)bgfx_stride) {
+                    memcpy(&wx, tvb.data + pos_offset,     4);
+                    memcpy(&wy, tvb.data + pos_offset + 4, 4);
+                    memcpy(&wz, tvb.data + pos_offset + 8, 4);
+                }
+                const float (*gp)[4] = g_gx_state.proj_mtx;
+                /* clip = mvp(col-major) * (wx,wy,wz,1) */
+                float cx = mvp[0]*wx + mvp[4]*wy + mvp[8]*wz  + mvp[12];
+                float cy = mvp[1]*wx + mvp[5]*wy + mvp[9]*wz  + mvp[13];
+                float cz = mvp[2]*wx + mvp[6]*wy + mvp[10]*wz + mvp[14];
+                float cw = mvp[3]*wx + mvp[7]*wy + mvp[11]*wz + mvp[15];
+                float ndcx = (cw != 0.0f) ? cx/cw : cx;
+                float ndcy = (cw != 0.0f) ? cy/cw : cy;
+                float ndcz = (cw != 0.0f) ? cz/cw : cz;
+                fprintf(stderr, "{\"rasc_geom_dump\":{"
+                        "\"draw\":%u,"
+                        "\"nverts\":%u,"
+                        "\"world\":[%.4f,%.4f,%.4f],"
+                        "\"clip\":[%.4f,%.4f,%.4f,%.4f],"
+                        "\"ndc\":[%.4f,%.4f,%.4f],"
+                        "\"in_frustum\":%d,"
+                        "\"z_en\":%d,\"z_func\":%d,\"cull\":%d,"
+                        "\"color_update\":%d,"
+                        "\"scissor\":[%d,%d,%d,%d],"
+                        "\"const_clr\":[%d,%d,%d,%d],"
+                        "\"proj00\":%.6f,\"proj11\":%.6f}}\n",
+                        s_total_draw_count,
+                        (unsigned)nverts,
+                        wx, wy, wz,
+                        cx, cy, cz, cw,
+                        ndcx, ndcy, ndcz,
+                        (ndcx >= -1.0f && ndcx <= 1.0f && ndcy >= -1.0f && ndcy <= 1.0f && ndcz >= -1.0f && ndcz <= 1.0f) ? 1 : 0,
+                        g_gx_state.z_compare_enable,
+                        g_gx_state.z_func,
+                        g_gx_state.cull_mode,
+                        g_gx_state.color_update,
+                        g_gx_state.sc_left, g_gx_state.sc_top,
+                        g_gx_state.sc_wd, g_gx_state.sc_ht,
+                        const_clr[0], const_clr[1], const_clr[2], const_clr[3],
+                        gp[0][0], gp[1][1]);
+            }
+        }
+    }
+
     /* Screen-space bounding box diagnostic for title scene BLEND draws */
     {
         static int s_ss_dump = 0;

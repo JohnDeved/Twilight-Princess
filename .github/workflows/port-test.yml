@@ -173,7 +173,18 @@ jobs:
           fi
           echo "Captured BMP frames: $(ls verify_output/frame_*.bmp 2>/dev/null | wc -l)"
 
-          # === Phase 3: 3D gameplay frame capture (softpipe + async + frame delay) ===
+          # === RASC regression gate ===
+          # frame_0120 (Phase 2 title screen, RASC-injected with white mat_color) must
+          # stay >= 80% nonblack.  A drop below this threshold indicates the
+          # GX_CC_RASC → material-color injection path regressed (e.g. passclr_uses_rasc
+          # check removed, apply_rasc_color() broken, or PASSCLR override logic changed).
+          # This gate is independent of Phase 3: it fires on Phase 2 (J2D title screen)
+          # where TP_SKIP_DL_DRAWS=1 still lets 2D/RASC draws through softpipe.
+          echo "=== RASC regression gate (frame_0120 >= 80% nonblack) ==="
+          python3 tools/check_bmp_coverage.py verify_output/frame_0120.bmp \
+            --require frame_0120:80 || \
+            echo "⚠️  RASC gate FAILED: frame_0120 dropped below 80% — check passclr_uses_rasc in gx_tev.cpp"
+
           # Targets frame 129: the opening 3D J3D room sequence (7587 draws/frame).
           #
           # Pipeline (fixed in commit after run 498):
@@ -219,6 +230,9 @@ jobs:
           # Report RASC injection diagnostics (material/ambient color for 3D room draws)
           echo "Phase 3 RASC inject values:"
           grep '"rasc_inject"' milestones_phase3.log 2>/dev/null || echo "(none found)"
+          # Report 3D room geometry diagnostics (MVP matrix, clip-space positions, frustum)
+          echo "Phase 3 3D geometry diagnostics (MVP + frustum check):"
+          grep '"rasc_geom_dump"' milestones_phase3.log 2>/dev/null | head -5 || echo "(none found)"
           # Convert 3D captures to MP4 for PR video embed
           if [ -f verify_output_3d/raw_frames.bin ]; then
             FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)
