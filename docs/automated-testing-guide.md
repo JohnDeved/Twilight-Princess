@@ -6,14 +6,20 @@
 ## Quick Reference
 
 ```bash
-# One-command self-test (build + run + parse + verify — same checks as CI)
+# ⚡ Fast single-frame render test (~10-20s, title screen)
+tools/quick-test.sh
+
+# ⚡ Fast 3D render test (~60-90s, gameplay room)
+tools/quick-test.sh --3d
+
+# ⚡ Skip build, render specific frame
+tools/quick-test.sh --skip-build --frame 60
+
+# Full self-test (build + run + parse + verify — same checks as CI)
 tools/self-test.sh
 
 # Quick smoke test (skip build, 100 frames)
 tools/self-test.sh --quick
-
-# Skip build, custom frame count
-tools/self-test.sh --skip-build --frames 300
 ```
 
 ### Manual steps (if needed)
@@ -43,7 +49,10 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 │  1. Read milestone-baseline.json (current best milestone)       │
 │  2. Read docs/port-progress.md (what to work on)                │
 │  3. Make code changes                                           │
-│  4. Push to PR                                                  │
+│  4. Run tools/quick-test.sh locally (~10-90s)                   │
+│     → See rendered frame BMP + milestone validation             │
+│     → Iterate until satisfied                                   │
+│  5. Push to PR                                                  │
 │     ↓                                                           │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  CI Pipeline (.github/workflows/port-test.yml)           │   │
@@ -52,11 +61,61 @@ python3 tools/check_milestone_regression.py milestone-summary.json \
 │  │       → Check regression → Post PR comment               │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │     ↓                                                           │
-│  5. Read PR comment (structured milestone results)              │
-│  6. Implement fix based on stubs / milestones → goto 4          │
-│  7. Implement fix → goto 4                                      │
+│  6. Read PR comment (structured milestone results)              │
+│  7. Implement fix based on stubs / milestones → goto 3          │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## Quick Render Test (`tools/quick-test.sh`)
+
+The quick render test is designed for **fast local iteration**. Instead of running
+the full CI pipeline (3 phases, ~10+ minutes), it renders a **single frame** from
+the intro sequence and validates milestones in **10-90 seconds**.
+
+### How It Works
+
+The test treats rendering like a **video render** — each frame can take its time
+to rasterize via Mesa softpipe (no GPU required). Instead of rendering hundreds
+of frames, it targets just ONE meaningful frame:
+
+| Mode | Target Frame | Game Time | Content | Time |
+|------|-------------|-----------|---------|------|
+| Default | Frame 10 | ~0.17s | Title screen (2D) | ~10-20s |
+| `--3d` | Frame 129 | ~2.15s | 3D gameplay room (7587 draws) | ~60-90s |
+| `--frame N` | Frame N | N/60s | Whatever is on screen at that point | varies |
+
+### Usage
+
+```bash
+# Fast title screen test (default, ~10-20s)
+tools/quick-test.sh
+
+# Skip build (if already built)
+tools/quick-test.sh --skip-build
+
+# 3D gameplay room (more thorough, ~60-90s)
+tools/quick-test.sh --3d
+
+# Specific frame
+tools/quick-test.sh --frame 60
+```
+
+### Output
+
+Results are saved to `quick-test-output/` (gitignored):
+- `frame_NNNN.bmp` — the rendered frame (view to see render progress)
+- `test.log` — full game output (milestones, telemetry, errors)
+- `milestone-summary.json` — parsed milestone results
+- `regression-report.json` — comparison against baseline
+
+### When To Use Which Test
+
+| Scenario | Command | Time |
+|----------|---------|------|
+| Quick visual check after code change | `tools/quick-test.sh --skip-build` | ~10s |
+| Verify 3D rendering pipeline | `tools/quick-test.sh --skip-build --3d` | ~60-90s |
+| Full regression check (same as CI) | `tools/self-test.sh` | ~5-10min |
+| Minimal logic check (no GPU) | `tools/self-test.sh --quick` | ~5-10s |
 
 ## What the CI Tests
 
@@ -197,14 +256,19 @@ edit `milestone-baseline.json` directly and commit it alongside your code change
 ### Making Changes
 
 1. Make minimal, focused changes
-2. Run the self-test:
+2. Run the quick render test for fast visual feedback:
    ```bash
-   tools/self-test.sh --quick          # fast smoke test after small changes
+   tools/quick-test.sh --skip-build     # title screen in ~10s
+   tools/quick-test.sh --skip-build --3d  # 3D room in ~60-90s
+   ```
+3. If satisfied, run the full self-test to verify regression status:
+   ```bash
+   tools/self-test.sh --quick          # fast smoke test (no GPU, ~5s)
    tools/self-test.sh --skip-build     # full test with existing binary
    tools/self-test.sh                  # full rebuild + test
    ```
-3. If the self-test passes, commit and push — CI will run the same checks automatically
-4. If it fails, read the output to see which step failed and fix the issue
+4. If the self-test passes, commit and push — CI will run the same checks automatically
+5. If it fails, read the output to see which step failed and fix the issue
 
 ### Interpreting CI Results
 
@@ -416,7 +480,8 @@ Captured frame BMPs are uploaded as CI artifacts for visual inspection.
 milestone-baseline.json              ← Current best milestone (regression baseline)
 tests/render-baseline.json           ← Rendering metrics baseline (draw calls, hashes)
 tests/golden/                        ← Golden reference frame BMPs for image comparison
-tools/self-test.sh                   ← One-command local test (build+run+parse+verify)
+tools/quick-test.sh                  ← Fast single-frame render test (10-90s)
+tools/self-test.sh                   ← Full local test (build+run+parse+verify)
 tools/parse_milestones.py            ← Parse milestone log → JSON summary
 tools/check_milestone_regression.py  ← Compare against baseline, detect regressions
 tools/verify_port.py                 ← Subsystem verification (rendering/input/audio)

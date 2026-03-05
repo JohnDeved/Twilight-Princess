@@ -335,6 +335,7 @@ Use this table to diagnose where the port is stuck and decide what to work on.
 - `src/pal/pal_profile_list.cpp` — PC profile list (35 available game process profiles)
 - `tools/download_tool.py` — Helper for downloading tools (nodtool) from GitHub releases
 - `tools/self-test.sh` — Local self-test script (build + headless test + milestone check)
+- `tools/quick-test.sh` — Fast single-frame render test for agent iteration (10-90s)
 
 ### Modified files (conditional extensions)
 - `include/global.h` — Added VERSION_PC=13, PLATFORM_PC macro
