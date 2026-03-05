@@ -478,10 +478,12 @@ int daTitle_c::Draw() {
     MTXTrans(mpModel->getBaseTRMtx(), 0.0f, 0.0f, -430.0f);
     mpModel->getBaseScale()->x = -1.0f;
 
+#if !PLATFORM_PC
     mBck.entry(modelData);
     mBpk.entry(modelData);
     mBrk.entry(modelData);
     mBtk.entry(modelData);
+#endif
 
     dComIfGd_setListItem3D();
     mDoExt_modelUpdateDL(mpModel);
