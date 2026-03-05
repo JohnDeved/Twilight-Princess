@@ -227,21 +227,21 @@ echo ""
 END_TIME=$(date +%s)
 TOTAL_ELAPSED=$((END_TIME - START_TIME))
 
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  Quick test completed in ${TOTAL_ELAPSED}s                              "
-echo "╠══════════════════════════════════════════════════════════════╣"
+echo ""
+echo "━━━ Quick test completed in ${TOTAL_ELAPSED}s ━━━"
+echo ""
 if [ -f "$TARGET_BMP" ]; then
-echo "║  ✅ Frame $TARGET_FRAME captured: $TARGET_BMP"
+    echo "  ✅ Frame $TARGET_FRAME captured: $TARGET_BMP"
 else
-echo "║  ⚠  No frame captured (check test.log for errors)"
+    echo "  ⚠  No frame captured (check test.log for errors)"
 fi
-echo "║  📁 Output: $OUTPUT_DIR/"
-echo "║     test.log              — raw test output"
-echo "║     milestone-summary.json — parsed milestones"
+echo ""
+echo "  Output: $OUTPUT_DIR/"
+echo "    test.log               — raw test output"
+echo "    milestone-summary.json — parsed milestones"
 if [ -f "$TARGET_BMP" ]; then
-echo "║     $(basename "$TARGET_BMP")         — rendered frame"
+    echo "    $(basename "$TARGET_BMP")          — rendered frame"
 fi
-echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Check if frame was captured
