@@ -26,6 +26,19 @@
 
 set -euo pipefail
 
+# --- Helper: report pixel coverage for captured frames ---
+report_pixel_coverage() {
+    if [ -f tools/check_bmp_coverage.py ]; then
+        for f in "${FRAMES[@]}"; do
+            local bmp="$OUTPUT_DIR/$(printf 'frame_%04d.bmp' "$f")"
+            if [ -f "$bmp" ]; then
+                echo "  Pixel coverage for frame $f:"
+                python3 tools/check_bmp_coverage.py "$bmp" 2>/dev/null || true
+            fi
+        done
+    fi
+}
+
 # --- Defaults ---
 SKIP_BUILD=0
 RENDER_ONLY=0
@@ -216,12 +229,12 @@ if [ "$FRAME_DELAY_MS" -gt 0 ]; then
     export TP_FRAME_DELAY_MS="$FRAME_DELAY_MS"
     export TP_FRAME_DELAY_START="$DELAY_START"
 fi
-unset TP_SYNC_RENDER 2>/dev/null || true
+unset TP_SYNC_RENDER
 
 # Don't set TP_HEADLESS — we need real rendering, and the per-frame
 # timeout (60s) in m_Do_main.cpp only fires when BOTH TP_HEADLESS=1
 # AND DISPLAY is set. Without TP_HEADLESS, no timeout interference.
-unset TP_HEADLESS 2>/dev/null || true
+unset TP_HEADLESS
 
 # Calculate timeout: frame delay + 120s for game logic + render
 TIMEOUT_S=$((FRAME_DELAY_MS / 1000 + 120))
@@ -254,16 +267,7 @@ if [ "$RENDER_ONLY" -eq 1 ]; then
     TOTAL_ELAPSED=$((END_TIME - START_TIME))
     echo "━━━ Render completed in ${TOTAL_ELAPSED}s (render-only mode) ━━━"
     echo "  Output: $OUTPUT_DIR/"
-    # Run pixel coverage check if available
-    if [ -f tools/check_bmp_coverage.py ]; then
-        for f in "${FRAMES[@]}"; do
-            BMP="$OUTPUT_DIR/$(printf 'frame_%04d.bmp' "$f")"
-            if [ -f "$BMP" ]; then
-                echo "  Pixel coverage for frame $f:"
-                python3 tools/check_bmp_coverage.py "$BMP" 2>/dev/null || true
-            fi
-        done
-    fi
+    report_pixel_coverage
     exit 0
 fi
 
@@ -324,17 +328,8 @@ for f in "${FRAMES[@]}"; do
 done
 echo ""
 
-# Run pixel coverage check if available
-if [ -f tools/check_bmp_coverage.py ]; then
-    for f in "${FRAMES[@]}"; do
-        BMP="$OUTPUT_DIR/$(printf 'frame_%04d.bmp' "$f")"
-        if [ -f "$BMP" ]; then
-            echo "Pixel coverage for frame $f:"
-            python3 tools/check_bmp_coverage.py "$BMP" 2>/dev/null || true
-            echo ""
-        fi
-    done
-fi
+# Run pixel coverage check
+report_pixel_coverage
 
 # Exit based on capture success
 if [ "$CAPTURED" -gt 0 ]; then
