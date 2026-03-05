@@ -238,12 +238,24 @@ jobs:
           # Report geometry-centroid camera fallback (fires at draw ~550, frame 129)
           echo "Phase 3 geometry-centroid camera fallback:"
           grep '"geom_centroid_cam"' milestones_phase3.log 2>/dev/null || echo "(centroid not triggered)"
+          # Report view switch diagnostic (centroid draws → view 1 with fresh depth)
+          echo "Phase 3 centroid view switch (depth-clear view):"
+          grep '"centroid_view_switch"' milestones_phase3.log 2>/dev/null || echo "(centroid view switch not triggered)"
           # Report fade overlay diagnostics (darwFilter r/g/b/a per call)
           echo "Phase 3 fade overlay (darwFilter) — shows alpha at frame 129 transition:"
           grep '"darwFilter"' milestones_phase3.log 2>/dev/null | head -10 || echo "(no fade overlay calls)"
           # Report 3D room geometry diagnostics (MVP matrix, clip-space positions, frustum)
           echo "Phase 3 3D geometry diagnostics (MVP + frustum check):"
           grep '"rasc_geom_dump"' milestones_phase3.log 2>/dev/null | head -5 || echo "(none found)"
+          # === 3D room visibility gate ===
+          # frame_0129 pct_nonblack must be > 0.  The centroid camera override + separate
+          # depth-cleared view (view 1) ensures 3D room geometry is visible.  A drop to 0
+          # indicates a regression in the centroid camera pipeline, depth buffer handling,
+          # or the view separation fix.  This gate complements the RASC gate on frame_0120.
+          echo "=== 3D room visibility gate (frame_0129 pct_nonblack > 0) ==="
+          python3 tools/check_bmp_coverage.py verify_output_3d/frame_0129.bmp \
+            --require frame_0129:1 2>/dev/null || \
+            echo "⚠️  3D room gate FAILED: frame_0129 pct_nonblack is below 1% — check centroid camera (centroid_view_switch in log) and view 1 depth-clear in gx_render.cpp"
           # Convert 3D captures to MP4 for PR video embed
           if [ -f verify_output_3d/raw_frames.bin ]; then
             FRAME_COUNT3=$(stat -c%s verify_output_3d/raw_frames.bin 2>/dev/null || echo 0)

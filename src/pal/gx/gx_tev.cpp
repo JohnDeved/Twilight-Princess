@@ -2535,9 +2535,37 @@ void pal_tev_flush_draw(void) {
             (uint16_t)g_gx_state.sc_wd, (uint16_t)g_gx_state.sc_ht);
     }
 
-    /* 10. Submit draw call — use view 1 for fade overlay so it renders
-     * after all scene content in view 0. */
-    bgfx::ViewId view_id = g_gx_state.fade_overlay_active ? 1 : 0;
+    /* 10. Submit draw call.
+     * View layout (rendered in ascending ID order):
+     *   0 — pre-centroid background + normal draws (depth cleared to 1.0 at frame start)
+     *   1 — centroid camera 3D room draws (depth cleared to 1.0, separate from view 0)
+     *   2 — fade overlay (no depth clear, composites on top of all 3D content)
+     *
+     * Using a separate view for centroid draws solves the depth-conflict bug:
+     * pre-centroid background fills write depth≈0.950 to view 0's depth buffer,
+     * so post-centroid room draws (NDC.z≈0.9996) would fail LEQUAL.  View 1's
+     * BGFX_CLEAR_DEPTH gives a fresh depth=1.0 for all centroid room draws. */
+    bgfx::ViewId view_id;
+    if (g_gx_state.fade_overlay_active) {
+        view_id = 2;  /* fade overlay — always last */
+    } else if (s_geom_centroid_active) {
+        view_id = 1;  /* centroid camera 3D room — depth-cleared view */
+    } else {
+        view_id = 0;  /* normal draws */
+    }
+    /* One-shot log when the first centroid draw is submitted to view 1.
+     * Confirms the depth-clear view switch fired and how many draws have
+     * been submitted so far (pre-centroid draws that contaminated depth). */
+    {
+        static int s_centroid_view_logged = 0;
+        if (s_geom_centroid_active && !s_centroid_view_logged) {
+            s_centroid_view_logged = 1;
+            fprintf(stderr, "{\"centroid_view_switch\":{\"draw_id\":%u,"
+                    "\"frame_dc\":%u,\"view_id\":%u}}\n",
+                    s_total_draw_count, (unsigned)gx_frame_draw_calls,
+                    (unsigned)view_id);
+        }
+    }
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
 

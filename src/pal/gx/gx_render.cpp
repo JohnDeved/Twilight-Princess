@@ -284,14 +284,28 @@ void pal_render_begin_frame(void) {
     float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     bgfx::setViewTransform(0, identity, identity);
 
-    /* View 1: fade overlay — renders after all view 0 content.
-     * No clear (preserves view 0 framebuffer), same rect. */
+    /* View 1: centroid camera 3D room draws.
+     * Pre-centroid background fills (draws 0-~1000) write depth=~0.950 using the
+     * original MVP, contaminating the depth buffer.  Post-centroid draws at
+     * NDC.z≈0.9996 then fail LEQUAL (0.9996 > 0.950 → rejected).  Giving the
+     * centroid pass its own depth-clear view fixes this: BGFX_CLEAR_DEPTH resets
+     * the depth to 1.0 before the first centroid draw, so all room geometry at
+     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  No color clear — view 0's
+     * framebuffer is preserved and the 3D room composites over it. */
     bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(1, BGFX_CLEAR_NONE);
+    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
     bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
     bgfx::setViewTransform(1, identity, identity);
-    bgfx::touch(1);
 
+    /* View 2: fade overlay — renders last, after all 3D content.
+     * No clear (preserves composite framebuffer), same rect. */
+    bgfx::setViewRect(2, vp_x, vp_y, vp_w, vp_h);
+    bgfx::setViewClear(2, BGFX_CLEAR_NONE);
+    bgfx::setViewMode(2, bgfx::ViewMode::Sequential);
+    bgfx::setViewTransform(2, identity, identity);
+    bgfx::touch(2);
+
+    bgfx::touch(1);
     bgfx::touch(0);
 
     /* Enable bgfx debug text overlay for frame diagnostics */
