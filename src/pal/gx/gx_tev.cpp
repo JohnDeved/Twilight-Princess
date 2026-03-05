@@ -1258,7 +1258,7 @@ static uint32_t s_skip_no_verts      = 0; /* verts_written == 0 */
 static uint32_t s_skip_bad_layout    = 0; /* build_vertex_layout returned 0 */
 static uint32_t s_skip_bad_stride    = 0; /* calc_raw_vertex_stride returned 0 */
 static uint32_t s_skip_invalid_prog  = 0; /* program handle invalid */
-static uint32_t s_skip_passclr_fill  = 0; /* J2D constant-color fill skipped */
+static uint32_t s_passclr_fill_count = 0; /* J2D TEVREG0 fill draws (tracked, not skipped) */
 static uint32_t s_skip_passclr_alpha = 0; /* transparent PASSCLR fill skipped */
 static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
 static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
@@ -1267,17 +1267,17 @@ static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
 u32 pal_tev_get_total_attempt_count(void) {
     return s_ok_submitted + s_skip_not_ready + s_skip_no_verts +
            s_skip_bad_layout + s_skip_bad_stride + s_skip_invalid_prog +
-           s_skip_passclr_fill + s_skip_passclr_alpha + s_skip_passclr_env +
+           s_skip_passclr_alpha + s_skip_passclr_env +
            s_skip_tvb_alloc;
 }
 
 u32 pal_tev_get_ok_submitted_count(void) { return s_ok_submitted; }
 
 u32 pal_tev_get_filter_skip_count(void) {
-    return s_skip_passclr_fill + s_skip_passclr_alpha + s_skip_passclr_env;
+    return s_skip_passclr_alpha + s_skip_passclr_env;
 }
 
-u32 pal_tev_get_skip_passclr_fill_count(void) { return s_skip_passclr_fill; }
+u32 pal_tev_get_skip_passclr_fill_count(void) { return s_passclr_fill_count; }
 u32 pal_tev_get_skip_passclr_alpha_count(void) { return s_skip_passclr_alpha; }
 u32 pal_tev_get_skip_passclr_env_count(void) { return s_skip_passclr_env; }
 
@@ -1317,7 +1317,9 @@ void pal_tev_report_diagnostics(void) {
     }
     fprintf(stdout, "]}}\n");
 
-    /* Draw path failure summary */
+    /* Draw path failure summary.
+     * passclr_fill_count: TEVREG0-fill draws now rendered (not skipped) since
+     * bgfx ViewMode::Sequential guarantees submission order in views 0 and 1. */
     fprintf(stdout, "{\"draw_path_summary\":{"
             "\"ok_submitted\":%u,"
             "\"skip_not_ready\":%u,"
@@ -1325,7 +1327,7 @@ void pal_tev_report_diagnostics(void) {
             "\"skip_bad_layout\":%u,"
             "\"skip_bad_stride\":%u,"
             "\"skip_invalid_prog\":%u,"
-            "\"skip_passclr_fill\":%u,"
+            "\"passclr_fill_count\":%u,"
             "\"skip_passclr_alpha\":%u,"
             "\"skip_passclr_env\":%u,"
             "\"skip_tvb_alloc\":%u}}\n",
@@ -1335,7 +1337,7 @@ void pal_tev_report_diagnostics(void) {
             s_skip_bad_layout,
             s_skip_bad_stride,
             s_skip_invalid_prog,
-            s_skip_passclr_fill,
+            s_passclr_fill_count,
             s_skip_passclr_alpha,
             s_skip_passclr_env,
             s_skip_tvb_alloc);
@@ -1399,16 +1401,15 @@ void pal_tev_flush_draw(void) {
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) { s_skip_invalid_prog++; return; }
 
-    /* J2D constant-color fill detection — skip the entire draw.
+    /* J2D constant-color fill tracking.
      *
-     * PASSCLR draws with TEV [ZERO,ZERO,ZERO,C0] + GX_BM_NONE just output
-     * TEVREG0 as a solid color with no blending.  On GCN hardware, these are
-     * rendered in strict submission order and overwritten by subsequent
-     * textured draws.  bgfx does not guarantee draw ordering within a view,
-     * so these fills can render AFTER the textured draws they were supposed
-     * to underlay, creating visible colored rectangles (red/black squares)
-     * over the actual content.  Skip them — the bgfx view clear color
-     * provides the background.
+     * PASSCLR draws with TEV [ZERO,ZERO,ZERO,C0] + GX_BM_NONE output
+     * TEVREG0 as a solid color with no blending.  Both bgfx view 0 and 1
+     * use bgfx::ViewMode::Sequential, which guarantees submission-order
+     * rendering — fills render before the textured draws they underlie,
+     * matching GCN hardware behavior.  We allow these fills to proceed so
+     * the TP title-screen's colored UI backgrounds render correctly.
+     * Track them for diagnostics only.
      */
     if (preset == GX_TEV_SHADER_PASSCLR &&
         g_gx_state.blend_mode == GX_BM_NONE)
@@ -1417,7 +1418,7 @@ void pal_tev_flush_draw(void) {
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_C0)
         {
-            s_skip_passclr_fill++; return;
+            s_passclr_fill_count++; /* tracked for diagnostics, draw proceeds */
         }
     }
 
@@ -2103,6 +2104,58 @@ void pal_tev_flush_draw(void) {
                     (int)((state & BGFX_STATE_WRITE_A)           != 0),
                     g_gx_state.z_compare_enable, g_gx_state.z_update_enable,
                     g_gx_state.blend_mode);
+        }
+    }
+
+    /* Per-frame draw diagnostic for Phase 2 (softpipe) analysis.
+     * Logs the first 3 draws of each frame once we've completed enough
+     * frames to be past the startup black screen (frame > 5).
+     * Uses frame boundaries (gx_frame_draw_calls == 0) rather than a
+     * cumulative draw count so it fires in Phase 2 where total draws never
+     * exceed 5000 (the play_state threshold above).  Emits TEV register
+     * values + vertex color for diagnosing red-channel-only output. */
+    {
+        static uint32_t s_diag_frame      = 0; /* frame counter for this diagnostic */
+        static int      s_diag_frame_pos  = 0; /* draws logged in current frame */
+
+        if (gx_frame_draw_calls == 0) {
+            s_diag_frame++;
+            s_diag_frame_pos = 0;
+        }
+        /* Log first 3 draws of frames 6-200 (captures Nintendo logo +
+         * start of TP title screen; skips pure-black startup frames). */
+        if (s_diag_frame >= 6 && s_diag_frame <= 200 && s_diag_frame_pos < 3) {
+            s_diag_frame_pos++;
+            /* For injected-color draws (no vertex color in buffer), const_clr
+             * is the actual vertex color.  For vertex-buffered color, log flag. */
+            uint8_t v0_r = 0, v0_g = 0, v0_b = 0, v0_a = 0;
+            int has_vtx_clr = (desc[GX_VA_CLR0].type != GX_NONE);
+            if (inject_color) {
+                v0_r = const_clr[0]; v0_g = const_clr[1];
+                v0_b = const_clr[2]; v0_a = const_clr[3];
+            }
+            const GXTevStage* ts = &g_gx_state.tev_stages[0];
+            fprintf(stderr, "{\"frame_draw_diag\":{\"frame\":%u,\"frame_dc\":%u,"
+                    "\"draw_id\":%u,\"preset\":\"%s\","
+                    "\"blend_mode\":%d,\"z_en\":%d,"
+                    "\"tevR0\":[%d,%d,%d,%d],"
+                    "\"tevR1\":[%d,%d,%d,%d],"
+                    "\"vtx_clr\":[%d,%d,%d,%d],"
+                    "\"inject\":%d,\"has_vtx_clr\":%d,"
+                    "\"tev0_cd\":[%d,%d,%d,%d],"
+                    "\"nverts\":%u}}\n",
+                    s_diag_frame, (unsigned)gx_frame_draw_calls,
+                    s_total_draw_count,
+                    (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                    g_gx_state.blend_mode, g_gx_state.z_compare_enable,
+                    g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
+                    g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,
+                    g_gx_state.tev_regs[1].r, g_gx_state.tev_regs[1].g,
+                    g_gx_state.tev_regs[1].b, g_gx_state.tev_regs[1].a,
+                    (int)v0_r, (int)v0_g, (int)v0_b, (int)v0_a,
+                    inject_color, has_vtx_clr,
+                    ts->color_a, ts->color_b, ts->color_c, ts->color_d,
+                    (unsigned)nverts);
         }
     }
 

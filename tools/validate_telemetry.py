@@ -86,6 +86,7 @@ def main():
     kankyo_crash_count = 0
     zblend_prop_by_frame = {}
     play_state_samples = []   # play_state JSON: depth_bits/blend_bits per draw
+    frame_draw_diag_samples = []  # frame_draw_diag: per-frame first-3-draw TEV diagnostics
     # Sequential pass: tag chain_invalid and cycle events with the current frame
     # number (the last j3d_draw_diag frame seen before each event in log order).
     # This lets us assert that cycles only appear after the known crash frame.
@@ -112,6 +113,8 @@ def main():
             zblend_prop_by_frame[p.get('frame', 0)] = p
         if 'play_state' in obj:
             play_state_samples.append(obj['play_state'])
+        if 'frame_draw_diag' in obj:
+            frame_draw_diag_samples.append(obj['frame_draw_diag'])
         if 'milestone' in obj:
             milestones.append(obj['milestone'])
 
@@ -153,8 +156,11 @@ def main():
         ok = draw_path.get('ok_submitted', 0)
         total_skips = sum(v for k, v in draw_path.items() if k.startswith('skip_'))
         total = ok + total_skips
+        passclr_fill = draw_path.get('passclr_fill_count', draw_path.get('skip_passclr_fill', 0))
         print(f"  Total draw attempts: {total}")
         print(f"  Successfully submitted: {ok} ({100*ok/max(total,1):.1f}%)")
+        if passclr_fill > 0:
+            print(f"  passclr_fill_count: {passclr_fill} (TEVREG0 fills rendered in order)")
         for k, v in sorted(draw_path.items()):
             if k.startswith('skip_') and v > 0:
                 print(f"  {k}: {v} ({100*v/max(total,1):.1f}%)")
@@ -486,6 +492,56 @@ def main():
                 f"(color writes disabled, geometry will be invisible)")
     else:
         print("  No play_state samples found (fires when total draw_count > 5000)")
+
+    # Per-frame draw diagnostic: TEV registers and vertex colors for Phase 2
+    # Emitted by frame_draw_diag events from pal_tev_flush_draw (first 3 draws/frame,
+    # frames 6-200, works in Phase 2 where total draw count never exceeds 5000).
+    if frame_draw_diag_samples:
+        frames_seen = sorted(set(s.get('frame', 0) for s in frame_draw_diag_samples))
+        print(f"\n=== Per-Frame Draw Diagnostic ({len(frame_draw_diag_samples)} samples, frames {frames_seen[0]}-{frames_seen[-1]}) ===")
+        # Group by frame and show first few
+        from collections import defaultdict
+        by_frame = defaultdict(list)
+        for s in frame_draw_diag_samples:
+            by_frame[s.get('frame', 0)].append(s)
+        # Show a representative sample: frames 10,30,60,90,120 if present
+        sample_frames = [f for f in [10, 30, 60, 90, 120] if f in by_frame]
+        if not sample_frames:
+            sample_frames = frames_seen[:5]
+        for frm in sample_frames:
+            draws = by_frame[frm]
+            print(f"  Frame {frm}: {len(draws)} draws")
+            for d in draws[:3]:
+                preset   = d.get('preset', '?')
+                tevR0    = d.get('tevR0', [0,0,0,0])
+                tevR1    = d.get('tevR1', [0,0,0,0])
+                vtx_clr  = d.get('vtx_clr', [0,0,0,0])
+                blend    = d.get('blend_mode', 0)
+                inject   = d.get('inject', 0)
+                has_vtx  = d.get('has_vtx_clr', 0)
+                nverts   = d.get('nverts', 0)
+                tcd      = d.get('tev0_cd', [0,0,0,0])
+                color_src = f"inject={vtx_clr}" if inject else (f"vtx_clr(raw)" if has_vtx else "none")
+                print(f"    draw_id={d.get('draw_id','?')} preset={preset} blend={blend} nverts={nverts}")
+                print(f"      TEV0 formula [a,b,c,d]={tcd}  tevR0={tevR0}  tevR1={tevR1}  color={color_src}")
+        # Check for non-red (RGB) content: if any non-PASSCLR draws have colored tevR0/R1
+        blend_draws = [s for s in frame_draw_diag_samples if s.get('preset', '') in ('fs_gx_blend', 'fs_gx_modulate', 'fs_gx_replace')]
+        if blend_draws:
+            has_full_rgb = any(
+                (s.get('tevR1', [0,0,0,0])[1] > 10 or s.get('tevR1', [0,0,0,0])[2] > 10 or
+                 s.get('tevR0', [0,0,0,0])[1] > 10 or s.get('tevR0', [0,0,0,0])[2] > 10)
+                for s in blend_draws
+            )
+            if has_full_rgb:
+                print(f"  ✅ Full-RGB content detected in BLEND/MODULATE draws (G or B > 10)")
+            else:
+                warnings.append(
+                    f"frame_draw_diag: {len(blend_draws)} BLEND/MODULATE draws all have G=B=0 in "
+                    f"TEV registers — red-channel-only output expected (shader uniform gap)")
+        else:
+            print(f"  ℹ️  No BLEND/MODULATE/REPLACE draws in sample frames (only PASSCLR)")
+    else:
+        print("  No frame_draw_diag samples found (frames 6-200, first 3 draws/frame)")
 
     print(f"\n=== Milestone Count ===")
     unique_milestones = sorted(set(milestones))

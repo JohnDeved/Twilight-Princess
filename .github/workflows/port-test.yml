@@ -94,11 +94,11 @@ jobs:
         if: success()
         env:
           TP_HEADLESS: "1"
-          TP_TEST_FRAMES: "128"
+          TP_TEST_FRAMES: "200"
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,127,128"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,128,140,160,180,200"
         run: |
           set -o pipefail
           mkdir -p verify_output
@@ -121,15 +121,15 @@ jobs:
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
 
-          # === Phase 2: Pixel test (softpipe, slow) ===
+          # === Phase 2: Pixel test (softpipe, extended with DL skip) ===
           # Runs with Xvfb + softpipe for pixel verification of logo/title.
-          # Limited to 128 frames to stay before the heavy BG-geometry phase
-          # (frame 129+, ~270s/frame with Mesa softpipe, would exceed 600s timeout).
-          # Title/logo screen (frames 10-120) already shows pct_nonblack >= 1.
+          # TP_SKIP_DL_DRAWS=1 skips J3D display-list geometry (the heavy 3-D room
+          # at frames 129+) while still rendering J2D overlays (title screen, HUD).
+          # This lets Phase 2 run 200 frames so the TP title screen (frame ~129+)
+          # is captured as pixel data.  3D room geometry is validated separately
+          # via GOAL_INTRO_GEOMETRY (Phase 1) and the dl_draws regression gate.
           # GOAL_INTRO_VISIBLE triggers at frame >= 10 (GOAL_PIXEL_MILESTONE_FRAME_START).
-          # 3D room geometry is validated separately via GOAL_INTRO_GEOMETRY (Phase 1)
-          # and the dl_draws regression gate (7000/frame).
-          echo "=== Phase 2: Pixel test (softpipe) ==="
+          echo "=== Phase 2: Pixel test (softpipe + DL-skip) ==="
           Xvfb :99 -screen 0 640x480x24 &
           XVFB_PID=$!
           export DISPLAY=:99
@@ -141,7 +141,8 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
-          export TP_TEST_FRAMES=128
+          export TP_TEST_FRAMES=200
+          export TP_SKIP_DL_DRAWS=1
           timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
           PIXEL_EXIT=${PIPESTATUS[0]}
           echo "Phase 2 exit: $PIXEL_EXIT"

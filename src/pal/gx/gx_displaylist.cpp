@@ -695,6 +695,19 @@ static void dl_handle_draw(DLReader* r, u8 opcode) {
     s_dl_vert_count += nverts;
     s_dl_total_draws++;
     s_dl_total_verts += nverts;
+
+    /* TP_SKIP_DL_DRAWS=1: count DL draws (for regression gates) but skip actual
+     * geometry submission.  Used by Phase 2 softpipe runs to let the J2D title-
+     * screen overlays render quickly without rasterising the heavy 3-D room data. */
+    {
+        static int s_skip_dl = -1;
+        if (s_skip_dl < 0) {
+            const char* ev = getenv("TP_SKIP_DL_DRAWS");
+            s_skip_dl = (ev && ev[0] == '1') ? 1 : 0;
+        }
+        if (s_skip_dl) { r->pos += total_bytes; return; }
+    }
+
     pal_gx_begin(prim, (GXVtxFmt)vtxfmt, nverts);
 
     /* FAST PATH: Bulk-copy vertex data from DL into draw state buffer.
