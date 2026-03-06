@@ -24,7 +24,15 @@
       "min_pct_nonblack": 0,
       "min_unique_colors": 1,
       "expected_fb_hash": null,
-      "note": "Frame 60: logo fade-down — ~4% nonblack from maroon logo on black; phase depends on animation timing"
+      "note": "Frame 60: Nintendo logo fade animation — expected ~4% nonblack (maroon logo on black background). clearEfb correctly outputs black after tev_reg_dirty fix. Logo is near bottom of fade-down cycle at this frame."
+    },
+    "90": {
+      "min_draw_calls": 2,
+      "min_verts": 8,
+      "min_pct_nonblack": 0,
+      "min_unique_colors": 1,
+      "expected_fb_hash": null,
+      "note": "Frame 90: Nintendo logo fade animation — expected ~4% nonblack (maroon logo on black background), same phase as frame 60. avg_rgb=[9,0,0] is consistent expected behavior — maroon logo with correct black background from clearEfb tev_reg_dirty fix."
     },
     "120": {
       "min_draw_calls": 3,

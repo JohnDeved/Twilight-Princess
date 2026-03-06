@@ -198,25 +198,13 @@ jobs:
 
           # Phase 4: Gameplay intro frame capture (frame 200, PROC_TITLE J2D content).
           # PROC_TITLE created with TP_ENABLE_PROC_TITLE=1 after 3D BG actor exits.
-          # Delegated to tools/quick-test.sh --phase 4 (shared with self-test.sh).
-          # --best-effort: gate failures are diagnostic only (CI still passes).
+          # Gate: frame_0030 >= 1% nonblack (maroon Nintendo logo on black background).
+          # Delegated exclusively to tools/quick-test.sh --phase 4 (sole implementation
+          # shared with self-test.sh).  --best-effort: CI still passes on gate failure;
+          # gate results are reported in quick-test.sh output and Phase 4 milestone log.
           unset DISPLAY
           tools/quick-test.sh --phase 4 --binary build/tp-pc \
             --output-dir verify_output_gameplay --best-effort
-
-          # === TITLE regression gate (informational) ===
-          # After the clearEfb tev_reg_dirty fix, frame_0200 correctly
-          # shows 0% nonblack: clearEfb now outputs black as intended (EFB clear),
-          # instead of white (the previous false-positive due to the D=C0 dark fallback
-          # overriding the explicitly-registered black value with mat_color={255,255,255}).
-          # Gate updated to check frame_0030 (Phase 4 logo scene, ~4% nonblack from
-          # the maroon Nintendo logo on black background) instead of frame_0200 (which
-          # now correctly shows nothing until J2D/PRESS-START rendering is implemented).
-          # GOAL_TITLE_VISIBLE fires at frame >= 30 in Phase 4.
-          echo "=== TITLE regression gate (frame_0030 >= 1% nonblack) ==="
-          python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_0030.bmp \
-            --require frame_0030:1 || \
-            echo "⚠️  TITLE gate FAILED: frame_0030 dropped below 1% — check clearEfb tev_reg_dirty fix in gx_tev.cpp"
 
       - name: Parse milestones
         if: always()
@@ -337,6 +325,8 @@ jobs:
           else
             echo "No new golden reference BMPs to commit"
           fi
+
+      - name: Convert frames to PNG
         if: always()
         run: |
           # convert_frames.py converts BMP→PNG for embedding

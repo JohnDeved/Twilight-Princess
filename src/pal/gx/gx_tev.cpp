@@ -556,7 +556,17 @@ static uint64_t convert_depth_state(void) {
         }
     }
 
-    if (g_gx_state.z_update_enable) {
+    /* GX_ALWAYS + z_write is used by clearEfb (JFWDisplay::clearEfb) together with
+     * GXSetZTexture(GX_ZT_REPLACE,...) to write a specific depth value from a Z24X8
+     * texture into the depth buffer.  On GCN hardware this writes z=1.0 (far plane)
+     * from the z-texture, leaving depth=1.0 everywhere so subsequent geometry passes
+     * LEQUAL.  On PC, GXSetZTexture is a stub (no-op), so writing vertex z instead
+     * would corrupt the depth buffer with z=0 (near plane), causing all subsequent
+     * 3D draws to fail the LEQUAL test.
+     * Skip depth writes when z_func == GX_ALWAYS to match the GCN intent:
+     * clearEfb should fill color only, not disturb the depth buffer. */
+    if (g_gx_state.z_update_enable &&
+        g_gx_state.z_func != GX_ALWAYS) {
         state |= BGFX_STATE_WRITE_Z;
     }
 

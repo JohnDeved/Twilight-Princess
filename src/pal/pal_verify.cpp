@@ -79,11 +79,16 @@ static int s_goal_title_visible = 0;
 
 /* Frame 30+ threshold for GOAL_TITLE_VISIBLE (Phase 4 logo scene capture).
  * Updated from 200→30 after clearEfb white-background fix (tev_reg_dirty):
- * frame_0200 is now correctly 0% nonblack (clearEfb outputs black as intended),
- * confirming the fix.  Logo frames 30-120 in Phase 4 still have pct_nonblack>=1%
- * (maroon Nintendo logo on black background), so GOAL_TITLE_VISIBLE fires there.
- * When PRESS START / J2D title screen rendering is implemented, raise this back
- * to frame 200 and require pct_nonblack >= 1 at that specific frame. */
+ * frame_0200 previously showed 0% nonblack because clearEfb wrote depth=0 via
+ * GX_ALWAYS+z_write (the GXSetZTexture z-texture pattern), blocking daTitle's 3D
+ * model draws via LEQUAL test.  View 0 initialises depth=1.0 at frame start
+ * (bgfx::setViewClear BGFX_CLEAR_DEPTH=1.0); the depth-write-on-ALWAYS fix
+ * (skip BGFX_STATE_WRITE_Z when z_func==GX_ALWAYS) preserves that 1.0 so
+ * subsequent daTitle draws pass LEQUAL (model_depth ≤ 1.0 ✓).
+ * Logo frames 30-120 in Phase 4 have pct_nonblack>=1% (maroon Nintendo logo on black
+ * background), so GOAL_TITLE_VISIBLE fires there.
+ * After the depth fix, frame_0200 should show daTitle model via apply_rasc_color
+ * fallback (~gray output).  When that is confirmed, raise this back to 200. */
 #define GOAL_TITLE_VISIBLE_FRAME 30
 
 /* Regression assertion: per-capture-frame pixel coverage */
@@ -373,10 +378,10 @@ int pal_verify_analyze_fb(u32 frame_num) {
                       "captured play-window frame has non-black pixels");
     }
     /* GOAL_TITLE_VISIBLE: logo-scene frame >= 30 has visible pixels.
-     * After the clearEfb tev_reg_dirty fix, frame 200 is correctly 0% nonblack
-     * (black background, title content pending).  Logo frames 30-120 in Phase 4
-     * show the maroon Nintendo logo at ~4% nonblack, confirming the logo pipeline
-     * (PASSCLR D=RASC/BLEND path) is functional. */
+     * Logo frames 30-120 in Phase 4 show the maroon Nintendo logo at ~4% nonblack.
+     * After the clearEfb depth-write-on-ALWAYS fix, daTitle 3D model draws at
+     * frame 200 should also be visible (apply_rasc_color fallback + correct depth).
+     * GOAL_TITLE_VISIBLE fires on any of those frames when pct_nonblack >= 1. */
     if (!s_goal_title_visible && frame_num >= GOAL_TITLE_VISIBLE_FRAME && pct_nonblack >= 1) {
         s_goal_title_visible = 1;
         pal_milestone("GOAL_TITLE_VISIBLE", MILESTONE_GOAL_TITLE_VISIBLE,
@@ -528,12 +533,13 @@ void pal_verify_summary(void) {
             regress_logo_found = 1;
         }
         /* Title scene: frames 130-200 — PROC_TITLE is active.
-         * After the clearEfb tev_reg_dirty fix, frame 200 correctly shows
-         * 0% nonblack (EFB clears to black, title content rendering is TBD).
-         * No pixel threshold enforced here — tracked as label="title" for
-         * diagnostic visibility in PR comments. */
+         * After the clearEfb depth-write-on-ALWAYS fix, daTitle's 3D model draws
+         * should pass the LEQUAL depth test (depth buffer stays at 1.0 after clearEfb,
+         * not corrupted to 0.0).  Frame 200 pct_nonblack may now be > 0 (gray model
+         * via apply_rasc_color fallback).  No minimum enforced yet — tracked as
+         * label="title" for diagnostic visibility in PR comments. */
         else if (f >= 130 && f <= 200) {
-            pixel_threshold = 0;   /* informational only — not enforced */
+            pixel_threshold = 0;   /* informational only — raise once depth fix confirmed */
             label = "title";
         }
         /* Play scene: frames 250-400 — tracking-only checkpoint to detect
