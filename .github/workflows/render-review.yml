@@ -155,10 +155,13 @@ jobs:
           HEAD="${{ github.event.pull_request.head.sha }}"
           # Only scan C/C++ source files that were actually touched by this PR.
           # Using -z / tr for safe filename handling.
+          # Filter through [ -f ] to skip files deleted in this PR — cppcheck
+          # errors out when given a nonexistent path.
           FILES=$(git diff --name-only -z "$BASE" "$HEAD" \
             | tr '\0' '\n' \
             | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
             | grep -E '^(src/pal/|include/pal/|src/pc/|include/pc/)' \
+            | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
             || true)
           echo "files=$FILES" >> $GITHUB_OUTPUT
           if [ -z "$FILES" ]; then
@@ -508,3 +511,88 @@ jobs:
             echo "❌ Expected exit 1 for diverging frames, got $RC"
             exit 1
           fi
+
+      - name: Near-threshold RMSE — just below (delta=12, RMSE≈0.047, expect pass)
+        run: |
+          # For a uniform RGB image where every channel differs by `delta`, RMSE = delta/255.
+          # delta=12 → RMSE = 12/255 ≈ 0.0471, which is just below threshold=0.05 → PASS.
+          python3 - <<'PYEOF'
+          import struct, os
+
+          def write_bmp(path, w, h, rgb):
+              row_size = (w * 3 + 3) & ~3
+              pd_size  = row_size * h
+              hdr = struct.pack('<2sIHHI', b'BM', 54 + pd_size, 0, 0, 54)
+              dib = struct.pack('<IiiHHIIiiII', 40, w, -h, 1, 24, 0, pd_size, 2835, 2835, 0, 0)
+              row = bytes([rgb[2], rgb[1], rgb[0]] * w) + bytes(row_size - w * 3)
+              with open(path, 'wb') as f:
+                  f.write(hdr + dib + row * h)
+
+          os.makedirs('/tmp/fc_caps_near_pass', exist_ok=True)
+          os.makedirs('/tmp/fc_refs_near_pass', exist_ok=True)
+          # Reference: (128, 128, 128)  Captured: (140, 140, 140)  delta=12 per channel
+          write_bmp('/tmp/fc_caps_near_pass/frame_0030.bmp', 4, 4, (140, 140, 140))
+          write_bmp('/tmp/fc_refs_near_pass/frame_0030.bmp', 4, 4, (128, 128, 128))
+          print(f'Near-threshold-pass BMPs written: expected RMSE = {12/255:.4f}')
+          PYEOF
+
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  /tmp/fc_caps_near_pass/ \
+            --reference-dir /tmp/fc_refs_near_pass/ \
+            --threshold     0.05 \
+            --json-out      /tmp/fc_results_near_pass.json
+
+          python3 - <<'PYEOF'
+          import json
+          data = json.load(open('/tmp/fc_results_near_pass.json'))
+          r = data['results'][0]
+          expected_rmse = 12 / 255.0
+          assert abs(r['rmse'] - expected_rmse) < 1e-6, f"RMSE mismatch: {r['rmse']} vs {expected_rmse}"
+          assert r['passed'], f"Expected PASS for delta=12 (RMSE {r['rmse']:.4f} < 0.05), got FAIL"
+          print(f"✅ Near-threshold PASS: rmse={r['rmse']:.4f} < 0.05 → passed={r['passed']}")
+          PYEOF
+
+      - name: Near-threshold RMSE — just above (delta=13, RMSE≈0.051, expect fail)
+        run: |
+          # delta=13 → RMSE = 13/255 ≈ 0.0510, which is just above threshold=0.05 → FAIL.
+          python3 - <<'PYEOF'
+          import struct, os
+
+          def write_bmp(path, w, h, rgb):
+              row_size = (w * 3 + 3) & ~3
+              pd_size  = row_size * h
+              hdr = struct.pack('<2sIHHI', b'BM', 54 + pd_size, 0, 0, 54)
+              dib = struct.pack('<IiiHHIIiiII', 40, w, -h, 1, 24, 0, pd_size, 2835, 2835, 0, 0)
+              row = bytes([rgb[2], rgb[1], rgb[0]] * w) + bytes(row_size - w * 3)
+              with open(path, 'wb') as f:
+                  f.write(hdr + dib + row * h)
+
+          os.makedirs('/tmp/fc_caps_near_fail', exist_ok=True)
+          os.makedirs('/tmp/fc_refs_near_fail', exist_ok=True)
+          # Reference: (128, 128, 128)  Captured: (141, 141, 141)  delta=13 per channel
+          write_bmp('/tmp/fc_caps_near_fail/frame_0030.bmp', 4, 4, (141, 141, 141))
+          write_bmp('/tmp/fc_refs_near_fail/frame_0030.bmp', 4, 4, (128, 128, 128))
+          print(f'Near-threshold-fail BMPs written: expected RMSE = {13/255:.4f}')
+          PYEOF
+
+          RC=0
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  /tmp/fc_caps_near_fail/ \
+            --reference-dir /tmp/fc_refs_near_fail/ \
+            --threshold     0.05 \
+            --json-out      /tmp/fc_results_near_fail.json || RC=$?
+
+          if [ "$RC" -ne 1 ]; then
+            echo "❌ Expected exit 1 for delta=13 (RMSE≈0.051 > 0.05), got $RC"
+            exit 1
+          fi
+
+          python3 - <<'PYEOF'
+          import json
+          data = json.load(open('/tmp/fc_results_near_fail.json'))
+          r = data['results'][0]
+          expected_rmse = 13 / 255.0
+          assert abs(r['rmse'] - expected_rmse) < 1e-6, f"RMSE mismatch: {r['rmse']} vs {expected_rmse}"
+          assert not r['passed'], f"Expected FAIL for delta=13 (RMSE {r['rmse']:.4f} > 0.05), got PASS"
+          print(f"✅ Near-threshold FAIL: rmse={r['rmse']:.4f} > 0.05 → passed={r['passed']}")
+          PYEOF
