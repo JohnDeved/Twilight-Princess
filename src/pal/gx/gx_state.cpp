@@ -947,9 +947,21 @@ u32 pal_gx_calc_vtx_stride(GXVtxFmt fmt) {
         if (desc == GX_NONE) continue;
 
         if (desc == GX_INDEX8) {
-            stride += 1;
+            /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+            if ((i == GX_VA_NRM || i == GX_VA_NBT) &&
+                g_gx_state.vtx_attr_fmt[fmt][i].cnt == GX_NRM_NBT3) {
+                stride += 3;
+            } else {
+                stride += 1;
+            }
         } else if (desc == GX_INDEX16) {
-            stride += 2;
+            /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+            if ((i == GX_VA_NRM || i == GX_VA_NBT) &&
+                g_gx_state.vtx_attr_fmt[fmt][i].cnt == GX_NRM_NBT3) {
+                stride += 6;
+            } else {
+                stride += 2;
+            }
         } else if (desc == GX_DIRECT) {
             GXVtxAttrFmtEntry* af = &g_gx_state.vtx_attr_fmt[fmt][i];
             u32 n_comps = 0;

@@ -830,8 +830,20 @@ static uint32_t raw_attr_size(int attr) {
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
     GXAttrType type = desc[attr].type;
 
-    if (type == GX_INDEX8) return 1;
-    if (type == GX_INDEX16) return 2;
+    if (type == GX_INDEX8) {
+        /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+        if ((attr == GX_VA_NRM || attr == GX_VA_NBT) &&
+            afmt[attr].cnt == GX_NRM_NBT3)
+            return 3;
+        return 1;
+    }
+    if (type == GX_INDEX16) {
+        /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+        if ((attr == GX_VA_NRM || attr == GX_VA_NBT) &&
+            afmt[attr].cnt == GX_NRM_NBT3)
+            return 6;
+        return 2;
+    }
 
     /* GX_DIRECT */
     if (attr == GX_VA_POS) {
@@ -839,7 +851,9 @@ static uint32_t raw_attr_size(int attr) {
         return n * gx_comp_size(afmt[attr].comp_type);
     }
     if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
-        return 3 * gx_comp_size(afmt[attr].comp_type);
+        /* dolsdk2004 GXSave.c: NBT/NBT3 have 9 components, regular normal has 3 */
+        int n = (afmt[attr].cnt == GX_NRM_NBT || afmt[attr].cnt == GX_NRM_NBT3) ? 9 : 3;
+        return n * gx_comp_size(afmt[attr].comp_type);
     }
     if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
         /* Match dolsdk2004 GXSave.c clrCompSize table:
@@ -971,6 +985,12 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         uint32_t csz = gx_comp_size(nt);
         if (desc[GX_VA_NRM].type == GX_DIRECT) {
             si += 3 * csz;
+        } else if (afmt[GX_VA_NRM].cnt == GX_NRM_NBT3) {
+            /* dolsdk2004 GXSave.c: NBT3 indexed normals have 3 separate indices
+             * (N, Binormal, Tangent). resolve_attr_data consumed the first one;
+             * skip the remaining 2 indices for B and T. */
+            uint32_t idx_sz = (desc[GX_VA_NRM].type == GX_INDEX8) ? 1 : 2;
+            si += 2 * idx_sz;
         }
         if (data) {
             for (int c = 0; c < 3; c++) {
@@ -2027,8 +2047,15 @@ void pal_tev_flush_draw(void) {
             /* Skip normal in source if present */
             if (desc[GX_VA_NRM].type != GX_NONE) {
                 resolve_attr_data(GX_VA_NRM, src, &si);
-                int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
-                if (desc[GX_VA_NRM].type == GX_DIRECT) si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+                if (desc[GX_VA_NRM].type == GX_DIRECT) {
+                    int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
+                    si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+                } else if (af[GX_VA_NRM].cnt == GX_NRM_NBT3) {
+                    /* dolsdk2004 GXSave.c: NBT3 indexed normals have 3 separate indices;
+                     * resolve_attr_data consumed the first one, skip remaining 2 */
+                    uint32_t idx_sz = (desc[GX_VA_NRM].type == GX_INDEX8) ? 1 : 2;
+                    si += 2 * idx_sz;
+                }
             }
 
             /* Skip CLR0/CLR1 in source if present (we're replacing with const_clr) */
