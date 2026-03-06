@@ -126,8 +126,10 @@ static void decode_ia4(const u8* src, u8* dst, u16 width, u16 height) {
             for (y = 0; y < 4; y++) {
                 for (x = 0; x < 8; x++) {
                     u8 val = src[si++];
-                    u8 a = (u8)((val >> 4) * 17);
-                    u8 i = (u8)((val & 0xF) * 17);
+                    /* IA4: Intensity in high nibble, Alpha in low nibble
+                     * (consistent with IA8: I in upper bits, A in lower) */
+                    u8 i = (u8)((val >> 4) * 17);
+                    u8 a = (u8)((val & 0xF) * 17);
                     if (bx + x < width && by + y < height)
                         set_pixel(dst, width, bx + x, by + y, i, i, i, a);
                 }
