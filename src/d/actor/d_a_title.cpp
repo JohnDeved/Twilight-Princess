@@ -18,6 +18,7 @@
 #if PLATFORM_PC
 #include <setjmp.h>
 #include <signal.h>
+#include "pal/gx/gx_stub_tracker.h"
 #endif
 
 class daTit_HIO_c {
@@ -470,11 +471,15 @@ int daTitle_c::Draw() {
     {
         static u32 s_draw_count = 0;
         if (s_draw_count < 5) {
-            /* JSON: n=call index, model=J3D model loaded, j2d_queued=field_0x5f8
-             * (J2D press-start overlay flag), Scr=J2DScreen resource loaded */
-            fprintf(stderr, "{\"daTitle_draw\":{\"n\":%u,\"model\":%d,\"j2d_queued\":%d,\"Scr\":%d}}\n",
-                    s_draw_count, mpModel != NULL ? 1 : 0,
-                    (int)field_0x5f8, mTitle.Scr != NULL ? 1 : 0);
+            /* JSON: n=call index, proc=state-machine mProcID (0=loadWait,1=logoDispWait,
+             * 2=logoDispAnm,3=keyWait,4=nextScene,5=fastLogoDisp),
+             * model=J3D model loaded, j2d_queued=field_0x5f8
+             * (J2D press-start overlay flag), Scr=J2DScreen resource loaded,
+             * dc=gx_frame_draw_calls at diagnostic point (before setListItem3D/modelUpdateDL) */
+            fprintf(stderr, "{\"daTitle_draw\":{\"n\":%u,\"proc\":%d,\"model\":%d,\"j2d_queued\":%d,\"Scr\":%d,\"dc\":%u}}\n",
+                    s_draw_count, (int)mProcID, mpModel != NULL ? 1 : 0,
+                    (int)field_0x5f8, mTitle.Scr != NULL ? 1 : 0,
+                    gx_frame_draw_calls);
             s_draw_count++;
         }
     }
@@ -494,6 +499,20 @@ int daTitle_c::Draw() {
     mBpk.entry(modelData);
     mBrk.entry(modelData);
     mBtk.entry(modelData);
+#else
+    /* On PC, calling entry() with big-endian animation data crashes inside
+     * entryMatColorAnimator (misread mColorUpdateMaterialNum loops OOB).
+     * Also clear joint 0's inherited mtxCalc pointer so mDoExt_modelUpdateDL
+     * uses the static BMD transform, not a stale big-endian calc from another
+     * actor that left J3DJoint::mCurrentMtxCalc pointing at animation data. */
+    modelData->getJointNodePointer(0)->setMtxCalc(NULL);
+    {
+        static int s_clear_done = 0;
+        if (!s_clear_done) {
+            s_clear_done = 1;
+            fprintf(stderr, "[PAL] daTitle Draw: cleared joint0 mtxCalc for static BMD render\n");
+        }
+    }
 #endif
 
     dComIfGd_setListItem3D();

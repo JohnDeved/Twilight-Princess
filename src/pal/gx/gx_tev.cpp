@@ -1412,9 +1412,16 @@ static void apply_rasc_color(uint8_t* const_clr) {
             const_clr[0] = ar;
             const_clr[1] = ag;
             const_clr[2] = ab;
+            /* Force alpha=255 when overriding RGB: the original const_clr[3] came
+             * from tev_regs which may be [0,0,0,0] after reset on PC.  We need the
+             * ambient color to be fully opaque so it actually reaches the screen. */
+            const_clr[3] = 255;
         } else {
-            /* No ambient either — use neutral grey so room is visible */
+            /* No ambient either — use neutral grey so room is visible.
+             * Force alpha=255 so the grey is fully opaque even if mat_color.a
+             * was 0 (e.g. a material using src-alpha blending on PC). */
             const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+            const_clr[3] = 255;
         }
     }
 }

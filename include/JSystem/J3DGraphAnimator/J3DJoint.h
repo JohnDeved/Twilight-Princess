@@ -168,6 +168,16 @@ struct J3DMtxCalcAnimationAdaptorDefault : public J3DMtxCalcAnimationAdaptorBase
     J3DMtxCalcAnimationAdaptorDefault(J3DAnmTransform* pAnmTransform) {}
 
     void calc(J3DMtxCalcAnmBase* pMtxCalc) {
+#if PLATFORM_PC
+        /* BCK animation data is stored in big-endian GCN byte order.
+         * Reading keyframe tables (J3DAnmTransform::getTransform) with
+         * native little-endian accesses produces garbage values and may
+         * SIGSEGV via an out-of-bounds index from the swapped mOffset field.
+         * Fall back to the joint's static transform from the BMD instead,
+         * so the model renders in its T-pose without crashing. */
+        A0::calcTransform(J3DMtxCalc::getJoint()->getTransformInfo());
+        return;
+#endif
         J3DTransformInfo transform;
         J3DTransformInfo* transform_p;
         if (pMtxCalc->getAnmTransform() != NULL) {

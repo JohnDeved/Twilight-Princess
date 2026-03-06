@@ -21,6 +21,12 @@ set(TP_VERSION "PC" CACHE STRING "Target platform: PC or NX_HB")
 
 if(TP_VERSION STREQUAL "PC")
     add_compile_definitions(VERSION=13)
+    # PLATFORM_PC is normally derived from (VERSION == VERSION_PC) in global.h,
+    # but global.h is not reachable from all translation units (e.g. JSystem
+    # template headers).  Define it directly here so that PLATFORM_PC guards
+    # in header-only templates (J3DJoint.h, J3DMaterialAnm.h) are always
+    # evaluated correctly at the compiler level, regardless of include order.
+    add_compile_definitions(PLATFORM_PC=1)
 elseif(TP_VERSION STREQUAL "NX_HB")
     add_compile_definitions(VERSION=14)
 else()
