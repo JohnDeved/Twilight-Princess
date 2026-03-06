@@ -130,29 +130,53 @@ jobs:
             }
 
   # --------------------------------------------------------------------------
-  # 2. cppcheck static analysis on render backend
+  # 2. cppcheck static analysis — only on files changed in this PR
   # --------------------------------------------------------------------------
   cppcheck:
-    name: cppcheck (render backend)
+    name: cppcheck (changed files)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install cppcheck
         run: |
           sudo apt-get update -q
           sudo apt-get install -y cppcheck
 
-      - name: Run cppcheck on render backend
-        id: cppcheck
+      - name: Find changed C/C++ files
+        id: changed_cpp
         run: |
-          # Run cppcheck on the GX render backend and PAL layer.
-          # We use --suppress=missingInclude because GX headers reference game-specific
-          # paths that are not available as include paths outside the full build.
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Only scan C/C++ source files that were actually touched by this PR.
+          # Using -z / tr for safe filename handling.
+          FILES=$(git diff --name-only -z "$BASE" "$HEAD" \
+            | tr '\0' '\n' \
+            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
+            | grep -E '^(src/pal/|include/pal/|src/pc/|include/pc/)' \
+            || true)
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          if [ -z "$FILES" ]; then
+            echo "No C/C++ render-backend files changed — skipping cppcheck."
+          else
+            echo "cppcheck targets: $FILES"
+          fi
+
+      - name: Run cppcheck on changed files
+        id: cppcheck
+        if: steps.changed_cpp.outputs.files != ''
+        run: |
+          # Run cppcheck only on C/C++ files changed by this PR.
+          # Scoping to changed files avoids false positives from unrelated shared
+          # headers (e.g. include/revolution/os.h) that are pulled in transitively.
           mkdir -p cppcheck-results
+          # Build the file list for cppcheck (one file per line → positional args)
+          readarray -t FILES <<< "${{ steps.changed_cpp.outputs.files }}"
           cppcheck \
             --enable=warning,performance,portability \
             --suppress=missingInclude \
@@ -163,12 +187,12 @@ jobs:
             -I include \
             -I include/pal \
             -I include/pal/gx \
-            src/pal/gx/ \
+            "${FILES[@]}" \
             2> cppcheck-results/cppcheck.xml || true
 
-          # Convert XML to human-readable text for annotation
+          # Convert XML to human-readable JSON for annotation and comment steps
           python3 - <<'PYEOF'
-          import xml.etree.ElementTree as ET, json, os
+          import xml.etree.ElementTree as ET, json
           try:
               tree = ET.parse('cppcheck-results/cppcheck.xml')
               root = tree.getroot()
@@ -193,6 +217,13 @@ jobs:
           PYEOF
 
           echo "issues_count=$(python3 -c "import json; d=json.load(open('cppcheck-results/issues.json')); print(len(d))")" >> $GITHUB_OUTPUT
+
+      - name: Write empty results when no files changed
+        if: steps.changed_cpp.outputs.files == ''
+        run: |
+          mkdir -p cppcheck-results
+          echo '[]' > cppcheck-results/issues.json
+          echo "issues_count=0" >> $GITHUB_OUTPUT
 
       - name: Emit GitHub annotations for cppcheck issues
         if: steps.cppcheck.outputs.issues_count != '0'
@@ -356,3 +387,124 @@ jobs:
                 body: body,
               });
             }
+
+  # --------------------------------------------------------------------------
+  # 4. frame_compare.py self-test
+  #    Runs the tool against an empty reference directory to confirm it exits
+  #    cleanly with --allow-missing-reference and produces valid JSON output.
+  # --------------------------------------------------------------------------
+  frame-compare-selftest:
+    name: frame_compare self-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run frame_compare with no reference frames (expect exit 0)
+        run: |
+          # Confirm the tool handles the "no reference frames yet" case gracefully.
+          # Uses a temporary empty directory as the captured-frames source so the
+          # test is fully self-contained without needing a built binary.
+          mkdir -p /tmp/fc_selftest_caps /tmp/fc_selftest_diffs
+
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  /tmp/fc_selftest_caps/ \
+            --reference-dir tests/reference_frames/ \
+            --diff-dir      /tmp/fc_selftest_diffs/ \
+            --threshold     0.05 \
+            --json-out      /tmp/fc_selftest_results.json \
+            --allow-missing-reference
+
+          echo "✅ frame_compare exited 0 with --allow-missing-reference"
+
+      - name: Validate JSON output is well-formed
+        run: |
+          python3 - <<'PYEOF'
+          import json, sys
+
+          with open('/tmp/fc_selftest_results.json') as f:
+              data = json.load(f)
+
+          assert 'results' in data, "JSON missing 'results' key"
+          assert 'passed' in data,  "JSON missing 'passed' key"
+          assert isinstance(data['results'], list), "'results' must be a list"
+          assert data['passed'] is True, f"Expected passed=True, got {data['passed']}"
+
+          print(f"✅ JSON valid: passed={data['passed']}, results={len(data['results'])}")
+          PYEOF
+
+      - name: Run frame_compare with synthetic identical BMPs (expect pass)
+        run: |
+          # Create a tiny identical 4x4 BMP pair and confirm RMSE=0 / pass.
+          python3 - <<'PYEOF'
+          import struct, os
+
+          def write_bmp(path, w, h, rgb):
+              row_size = (w * 3 + 3) & ~3
+              pd_size  = row_size * h
+              hdr = struct.pack('<2sIHHI', b'BM', 54 + pd_size, 0, 0, 54)
+              dib = struct.pack('<IiiHHIIiiII', 40, w, -h, 1, 24, 0, pd_size, 2835, 2835, 0, 0)
+              row = bytes([rgb[2], rgb[1], rgb[0]] * w) + bytes(row_size - w * 3)
+              with open(path, 'wb') as f:
+                  f.write(hdr + dib + row * h)
+
+          os.makedirs('/tmp/fc_caps2', exist_ok=True)
+          os.makedirs('/tmp/fc_refs2', exist_ok=True)
+          write_bmp('/tmp/fc_caps2/frame_0030.bmp', 4, 4, (200, 100, 50))
+          write_bmp('/tmp/fc_refs2/frame_0030.bmp', 4, 4, (200, 100, 50))
+          print('Synthetic BMPs written')
+          PYEOF
+
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  /tmp/fc_caps2/ \
+            --reference-dir /tmp/fc_refs2/ \
+            --diff-dir      /tmp/fc_diffs2/ \
+            --threshold     0.05 \
+            --json-out      /tmp/fc_results2.json
+
+          python3 - <<'PYEOF'
+          import json
+          data = json.load(open('/tmp/fc_results2.json'))
+          assert data['passed'], f"Expected pass for identical frames, got: {data}"
+          r = data['results'][0]
+          assert r['rmse'] == 0.0, f"Expected rmse=0.0, got {r['rmse']}"
+          print(f"✅ Identical-frame test: rmse={r['rmse']}, passed={r['passed']}")
+          PYEOF
+
+      - name: Run frame_compare with differing BMPs above threshold (expect fail)
+        run: |
+          # Create a BMP pair that differs enough to exceed RMSE 0.05 and verify
+          # the tool correctly returns exit code 1.
+          python3 - <<'PYEOF'
+          import struct, os
+
+          def write_bmp(path, w, h, rgb):
+              row_size = (w * 3 + 3) & ~3
+              pd_size  = row_size * h
+              hdr = struct.pack('<2sIHHI', b'BM', 54 + pd_size, 0, 0, 54)
+              dib = struct.pack('<IiiHHIIiiII', 40, w, -h, 1, 24, 0, pd_size, 2835, 2835, 0, 0)
+              row = bytes([rgb[2], rgb[1], rgb[0]] * w) + bytes(row_size - w * 3)
+              with open(path, 'wb') as f:
+                  f.write(hdr + dib + row * h)
+
+          os.makedirs('/tmp/fc_caps3', exist_ok=True)
+          os.makedirs('/tmp/fc_refs3', exist_ok=True)
+          write_bmp('/tmp/fc_caps3/frame_0030.bmp', 4, 4, (0,   0,   0))    # black
+          write_bmp('/tmp/fc_refs3/frame_0030.bmp', 4, 4, (255, 255, 255))  # white
+          print('Diverging BMPs written')
+          PYEOF
+
+          RC=0
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  /tmp/fc_caps3/ \
+            --reference-dir /tmp/fc_refs3/ \
+            --threshold     0.05 \
+            --json-out      /tmp/fc_results3.json || RC=$?
+
+          if [ "$RC" -eq 1 ]; then
+            echo "✅ Tool correctly returned exit 1 for frames exceeding threshold"
+          else
+            echo "❌ Expected exit 1 for diverging frames, got $RC"
+            exit 1
+          fi
