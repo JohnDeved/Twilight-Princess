@@ -329,10 +329,21 @@ jobs:
       - name: Convert frames to PNG
         if: always()
         run: |
-          # convert_frames.py converts BMP→PNG for embedding
+          # convert_frames.py converts BMP→PNG for embedding.
+          # Phase 2 (TP_SKIP_DL_DRAWS) frames — verify_output/frame_NNNN.bmp
           python3 tools/convert_frames.py verify_output \
             --png-dir verify_png \
             --fps 4 || true
+          # Phase 3 (3D room, centroid camera) — prefix "3d_" avoids name collision.
+          # frame_0129 is the key 3D geometry frame (~75% nonblack).
+          python3 tools/convert_frames.py verify_output_3d \
+            --png-dir verify_png \
+            --name-prefix 3d_ || true
+          # Phase 4 (PROC_TITLE/gameplay intro) — prefix "p4_" distinguishes from P2.
+          # frame_0030 shows the maroon Nintendo logo in full-DL-draw mode.
+          python3 tools/convert_frames.py verify_output_gameplay \
+            --png-dir verify_png \
+            --name-prefix p4_ || true
           # If MP4 already generated from raw frames, just report
           if [ -f verify_output/render_progress.mp4 ]; then
             echo "✅ MP4 already generated from raw frame capture"
@@ -611,23 +622,48 @@ jobs:
 
             if (sortedPngs.length > 0) {
               body += `\n### 📸 Render Screenshots\n`;
-              // Show key frames inline (first, middle, last — up to 6)
-              const keyFrames = sortedPngs.length <= 6
-                ? sortedPngs
-                : [sortedPngs[0], sortedPngs[Math.floor(sortedPngs.length / 3)], sortedPngs[Math.floor(2 * sortedPngs.length / 3)], sortedPngs[sortedPngs.length - 1]];
-              for (const png of keyFrames) {
-                const frameNum = png.replace('frame_', '').replace('.png', '');
-                body += `\n**Frame ${frameNum}**\n\n`;
-                body += `![Frame ${frameNum}](${imageUrls[png]})\n`;
+              // Always show 3D geometry frames (3d_ prefix) inline first — most visually
+              // informative (centroid camera captures actual 3D room geometry, ~75% nonblack).
+              const d3Frames = sortedPngs.filter(p => p.startsWith('3d_'));
+              // Phase 2 (TP_SKIP_DL_DRAWS) logo frames — shows RASC pipeline health.
+              const p2Frames = sortedPngs.filter(p => !p.startsWith('3d_') && !p.startsWith('p4_'));
+              // Phase 4 (full DL draws) gameplay frames — lower priority, in collapsible.
+              const p4Frames = sortedPngs.filter(p => p.startsWith('p4_'));
+
+              // Inline: 3D frames + up to 3 Phase 2 key frames (0010, 0030, 0120)
+              const p2KeyNames = ['frame_0010.png', 'frame_0030.png', 'frame_0120.png'];
+              const p2Key = p2KeyNames.filter(n => p2Frames.includes(n));
+              const inlineFrames = [...d3Frames, ...p2Key];
+
+              if (d3Frames.length > 0) {
+                body += `\n**🏛️ 3D Scene (Phase 3 — centroid camera)**\n`;
+                for (const png of d3Frames) {
+                  const label = png.replace('3d_frame_', '').replace('.png', '');
+                  body += `\n_Frame ${label}_\n\n`;
+                  body += `![3D frame ${label}](${imageUrls[png]})\n`;
+                }
               }
-              // Collapsible section with all frames if many
-              if (sortedPngs.length > 6) {
-                body += `\n<details><summary>All ${sortedPngs.length} captured frames</summary>\n\n`;
-                for (const png of sortedPngs) {
-                  if (!keyFrames.includes(png)) {
-                    const frameNum = png.replace('frame_', '').replace('.png', '');
-                    body += `**Frame ${frameNum}** · ![Frame ${frameNum}](${imageUrls[png]})\n\n`;
-                  }
+
+              if (p2Key.length > 0) {
+                body += `\n**🎮 Phase 2 — Logo/Title Screen (TP_SKIP_DL_DRAWS)**\n`;
+                for (const png of p2Key) {
+                  const label = png.replace('frame_', '').replace('.png', '');
+                  body += `\n_Frame ${label}_\n\n`;
+                  body += `![Frame ${label}](${imageUrls[png]})\n`;
+                }
+              }
+
+              // Collapsible section with Phase 4 + remaining Phase 2 frames
+              const rest = sortedPngs.filter(p => !inlineFrames.includes(p));
+              if (rest.length > 0) {
+                body += `\n<details><summary>📂 All other captured frames (${rest.length})</summary>\n\n`;
+                if (p4Frames.length > 0) {
+                  body += `**Phase 4 — Full DL Draws (PROC_TITLE enabled)**\n\n`;
+                }
+                for (const png of rest) {
+                  const label = png.replace(/^(3d_|p4_)?frame_/, '').replace('.png', '');
+                  const prefix = png.startsWith('3d_') ? '3D-' : png.startsWith('p4_') ? 'P4-' : 'P2-';
+                  body += `**${prefix}Frame ${label}** · ![${prefix}Frame ${label}](${imageUrls[png]})\n\n`;
                 }
                 body += `</details>\n`;
               }
