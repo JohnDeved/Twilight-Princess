@@ -98,6 +98,8 @@ static const FSShaderBins s_fs_bins[GX_TEV_SHADER_COUNT] = {
       sizeof(fs_gx_blend_glsl), sizeof(fs_gx_blend_essl), sizeof(fs_gx_blend_spv) },
     { fs_gx_decal_glsl,    fs_gx_decal_essl,    fs_gx_decal_spv,
       sizeof(fs_gx_decal_glsl), sizeof(fs_gx_decal_essl), sizeof(fs_gx_decal_spv) },
+    { fs_gx_tev_glsl,      fs_gx_tev_essl,      fs_gx_tev_spv,
+      sizeof(fs_gx_tev_glsl), sizeof(fs_gx_tev_essl), sizeof(fs_gx_tev_spv) },
 };
 
 static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
@@ -106,6 +108,7 @@ static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
     "fs_gx_modulate",
     "fs_gx_blend",
     "fs_gx_decal",
+    "fs_gx_tev",
 };
 
 /* ================================================================ */
@@ -116,6 +119,9 @@ static bgfx::ProgramHandle s_programs[GX_TEV_SHADER_COUNT];
 static bgfx::UniformHandle s_tex_uniform;
 static bgfx::UniformHandle s_tev_reg0_uniform;
 static bgfx::UniformHandle s_tev_reg1_uniform;
+static bgfx::UniformHandle s_tev_config_uniform;
+static bgfx::UniformHandle s_alpha_test_uniform;
+static bgfx::UniformHandle s_alpha_op_uniform;
 static int s_tev_ready = 0;
 
 /* Number of RASC draw world-positions to accumulate before computing the
@@ -477,7 +483,16 @@ static int classify_tev_config(void) {
  * Uses generic input classification instead of hardcoded preset patterns.
  */
 static int detect_tev_preset(void) {
-    return classify_tev_config();
+    int base = classify_tev_config();
+
+    /* If alpha compare is active (non-trivial test), use the uber-shader
+     * which has alpha discard support. GX_ALWAYS(7) with any op always passes,
+     * so only upgrade when a real test is configured. */
+    if (g_gx_state.alpha_comp0 != GX_ALWAYS || g_gx_state.alpha_comp1 != GX_ALWAYS) {
+        return GX_TEV_SHADER_TEV;
+    }
+
+    return base;
 }
 
 /**
@@ -1058,6 +1073,11 @@ void pal_tev_init(void) {
     s_tev_reg0_uniform = bgfx::createUniform("u_tevReg0", bgfx::UniformType::Vec4);
     s_tev_reg1_uniform = bgfx::createUniform("u_tevReg1", bgfx::UniformType::Vec4);
 
+    /* Create TEV uber-shader uniforms (Recipe 2 + Recipe 4) */
+    s_tev_config_uniform = bgfx::createUniform("u_tevConfig", bgfx::UniformType::Vec4);
+    s_alpha_test_uniform = bgfx::createUniform("u_alphaTest", bgfx::UniformType::Vec4);
+    s_alpha_op_uniform   = bgfx::createUniform("u_alphaOp",   bgfx::UniformType::Vec4);
+
     s_tev_ready = all_ok;
 
     /* For Noop renderer, mark ready even if shader creation "fails" (it's a no-op anyway) */
@@ -1100,6 +1120,18 @@ void pal_tev_shutdown(void) {
     if (bgfx::isValid(s_tev_reg1_uniform)) {
         bgfx::destroy(s_tev_reg1_uniform);
         s_tev_reg1_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_config_uniform)) {
+        bgfx::destroy(s_tev_config_uniform);
+        s_tev_config_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_alpha_test_uniform)) {
+        bgfx::destroy(s_alpha_test_uniform);
+        s_alpha_test_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_alpha_op_uniform)) {
+        bgfx::destroy(s_alpha_op_uniform);
+        s_alpha_op_uniform = BGFX_INVALID_HANDLE;
     }
 
     /* Destroy cached textures */
@@ -2780,6 +2812,47 @@ void pal_tev_flush_draw(void) {
                     (unsigned)view_id);
         }
     }
+    /* Set uber-shader uniforms when using TEV shader (Recipe 2 + Recipe 4) */
+    if (preset == GX_TEV_SHADER_TEV) {
+        int base_mode = classify_tev_config();
+        float config[4] = {
+            (float)base_mode, /* TEV mode for color computation */
+            0.0f, 0.0f, 0.0f
+        };
+        bgfx::setUniform(s_tev_config_uniform, config);
+
+        /* Alpha compare uniforms */
+        float alphaTest[4] = {
+            g_gx_state.alpha_ref0 / 255.0f,       /* ref0 */
+            (float)g_gx_state.alpha_comp0,          /* comp0 */
+            (float)g_gx_state.alpha_comp1,          /* comp1 */
+            g_gx_state.alpha_ref1 / 255.0f,        /* ref1 */
+        };
+        float alphaOp[4] = {
+            (float)g_gx_state.alpha_op,             /* op */
+            1.0f,                                    /* enable */
+            0.0f, 0.0f
+        };
+        bgfx::setUniform(s_alpha_test_uniform, alphaTest);
+        bgfx::setUniform(s_alpha_op_uniform, alphaOp);
+
+        /* The uber-shader also needs TEV reg uniforms for BLEND mode */
+        float reg0[4] = {
+            g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f,
+        };
+        float reg1[4] = {
+            g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f,
+        };
+        bgfx::setUniform(s_tev_reg0_uniform, reg0);
+        bgfx::setUniform(s_tev_reg1_uniform, reg1);
+    }
+
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
 

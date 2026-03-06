@@ -109,6 +109,13 @@ void pal_gx_state_init(void) {
     g_gx_state.color_update = GX_TRUE;
     g_gx_state.alpha_update = GX_TRUE;
 
+    /* Default alpha compare: always pass (per __GXInitGX in dolsdk2004) */
+    g_gx_state.alpha_comp0 = GX_ALWAYS;
+    g_gx_state.alpha_ref0  = 0;
+    g_gx_state.alpha_op    = (GXAlphaOp)0; /* AND */
+    g_gx_state.alpha_comp1 = GX_ALWAYS;
+    g_gx_state.alpha_ref1  = 0;
+
     /* Default clear */
     g_gx_state.clear_color.r = 0;
     g_gx_state.clear_color.g = 0;

@@ -24,7 +24,8 @@ extern "C" {
 #define GX_TEV_SHADER_MODULATE   2   /* Texture * vertex color */
 #define GX_TEV_SHADER_BLEND      3   /* Blend texture with vertex color */
 #define GX_TEV_SHADER_DECAL      4   /* Decal texture (alpha blend) */
-#define GX_TEV_SHADER_COUNT      5
+#define GX_TEV_SHADER_TEV        5   /* Generic TEV uber-shader with alpha compare */
+#define GX_TEV_SHADER_COUNT      6
 
 /**
  * Initialize the TEV shader system.
