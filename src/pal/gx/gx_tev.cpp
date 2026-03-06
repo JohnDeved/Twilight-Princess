@@ -1590,16 +1590,22 @@ void pal_tev_flush_draw(void) {
                 const_clr[1] = g_gx_state.tev_regs[GX_TEVREG0].g;
                 const_clr[2] = g_gx_state.tev_regs[GX_TEVREG0].b;
                 const_clr[3] = g_gx_state.tev_regs[GX_TEVREG0].a;
-                /* GX_TEVREG0 (tev_regs[1]) may be unset/dark on PC if the game
-                 * relies on GX lights to provide visible color (daTitle model
-                 * uses D=C0 but never calls GXSetTevColor(GX_TEVREG0,...)).
-                 * Fall back to mat/amb color so the mesh is visible.
-                 * Exception: if GXSetTevColor(GX_TEVREG0) was explicitly called
-                 * since the last flush (e.g. clearEfb setting register to black),
-                 * honour that value even if dark — do NOT apply the fallback. */
-                if (!(g_gx_state.tev_reg_dirty & (1u << GX_TEVREG0)) &&
-                    (int)const_clr[0] + (int)const_clr[1] + (int)const_clr[2] < RASC_DARK_THRESHOLD)
-                    apply_rasc_color(const_clr);
+                /* GX_TEVREG0 may be dark on PC when:
+                 *  (a) GXSetTevColor(GX_TEVREG0) was never called — use fallback.
+                 *  (b) GXSetTevColor set TEVREG0=black because the game relies on
+                 *      BRK animation to supply the per-frame color (e.g. daTitle);
+                 *      on PC without BRK the static black must be overridden.
+                 *  (c) clearEfb intentionally sets TEVREG0=black (z_func=GX_ALWAYS);
+                 *      preserve that value so the screen clears to black correctly.
+                 * Rule: apply RASC fallback when TEVREG0 is dark AND NOT a clearEfb draw. */
+                {
+                    int t0_dark       = ((int)const_clr[0] + (int)const_clr[1] + (int)const_clr[2] < RASC_DARK_THRESHOLD);
+                    int t0_explicitly = (g_gx_state.tev_reg_dirty & (1u << GX_TEVREG0)) != 0;
+                    int is_clearefb   = (g_gx_state.z_func == GX_ALWAYS);
+                    /* Skip fallback only for clearEfb (explicitly set + GX_ALWAYS z-func). */
+                    if (t0_dark && !(t0_explicitly && is_clearefb))
+                        apply_rasc_color(const_clr);
+                }
             } else if (s0->color_d == GX_CC_KONST) {
                 resolve_konst_color(s0, const_clr);
             } else if (s0->color_a == GX_CC_RASC || s0->color_b == GX_CC_RASC ||
@@ -2171,6 +2177,10 @@ void pal_tev_flush_draw(void) {
                 int pm_is_identity = (pm[0][0] == 1.0f && pm[0][1] == 0.0f && pm[0][2] == 0.0f && pm[0][3] == 0.0f &&
                                       pm[1][0] == 0.0f && pm[1][1] == 1.0f && pm[1][2] == 0.0f && pm[1][3] == 0.0f &&
                                       pm[2][0] == 0.0f && pm[2][1] == 0.0f && pm[2][2] == 1.0f && pm[2][3] == 0.0f) ? 1 : 0;
+                /* Compute tex_map index once for stage 0 texture-binding lookup */
+                int s0_texmap = (int)g_gx_state.tev_stages[0].tex_map;
+                int s0_tex_valid = (s0_texmap >= 0 && s0_texmap < GX_MAX_TEXMAP)
+                                    ? (int)g_gx_state.tex_bindings[s0_texmap].valid : 0;
                 /* Note: pos_mtx0 shown here is the GAME's matrix (loaded by J3D for this mesh).
                  * The centroid override bypasses this via s_geom_centroid_view. */
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
@@ -2191,7 +2201,11 @@ void pal_tev_flush_draw(void) {
                         "\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
                         "\"scissor\":[%d,%d,%d,%d],"
                         "\"const_clr\":[%d,%d,%d,%d],"
-                        "\"proj00\":%.6f,\"proj11\":%.6f}}\n",
+                        "\"proj00\":%.6f,\"proj11\":%.6f,"
+                        "\"num_tev\":%d,"
+                        "\"s0_abcd\":[%d,%d,%d,%d],"
+                        "\"s0_texmap\":%d,\"s0_tex_valid\":%d,"
+                        "\"num_texgen\":%d,\"tg0_src\":%d}}\n",
                         s_total_draw_count,
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
@@ -2219,7 +2233,18 @@ void pal_tev_flush_draw(void) {
                         g_gx_state.sc_left, g_gx_state.sc_top,
                         g_gx_state.sc_wd, g_gx_state.sc_ht,
                         const_clr[0], const_clr[1], const_clr[2], const_clr[3],
-                        gp[0][0], gp[1][1]);
+                        gp[0][0], gp[1][1],
+                        /* TEV stage config: helps diagnose flat-white vs textured output */
+                        (int)g_gx_state.num_tev_stages,
+                        (int)g_gx_state.tev_stages[0].color_a,
+                        (int)g_gx_state.tev_stages[0].color_b,
+                        (int)g_gx_state.tev_stages[0].color_c,
+                        (int)g_gx_state.tev_stages[0].color_d,
+                        /* Texture binding for stage 0: is a real texture loaded? */
+                        s0_texmap, s0_tex_valid,
+                        /* Texture coord gen: src tells whether GX_TG_MTX sources used */
+                        (int)g_gx_state.num_tex_gens,
+                        (g_gx_state.num_tex_gens > 0) ? (int)g_gx_state.tex_gens[0].src : -1);
             }
         }
     }
