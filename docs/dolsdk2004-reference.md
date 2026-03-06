@@ -347,6 +347,212 @@ computed from an indirect texture sample multiplied by a 2×3 matrix.
 **Port implication:** Indirect texturing is used sparingly in TP (water effects, heat
 shimmer). It can be initially stubbed but will need implementation for visual accuracy.
 
+### 9. Vertex Attribute Size Computation (`GXSave.c`)
+
+The authoritative vertex size computation used by the SDK display list parser. This is
+critical for our DL parser to compute vertex stride correctly.
+
+**Component size tables:**
+```c
+static u32 vtxCompSize[5] = { 1, 1, 2, 2, 4 };  // U8, S8, U16, S16, F32
+static int clrCompSize[6] = { 2, 3, 4, 2, 3, 4 }; // RGB565, RGB888, RGBX8, RGBA4, RGBA6, RGBA8
+```
+
+**Per-attribute GetAttrSize() logic:**
+- **PNMTXIDX..TEX7MTXIDX (0-8):** 1 byte if present, 0 if not (from vcdLo bits 0-8)
+- **POS (9):** Direct=`(cnt+2) * vtxCompSize[type]`, Index8=1, Index16=2
+  - cnt from vatA bit 0, type from vatA bits 1-3
+- **NRM (10):** Direct=`3 * vtxCompSize[type]` (or 9× if NBT), Index8=1/3, Index16=2/6
+  - NBT flag from vatA bit 9, type from vatA bits 10-12
+- **CLR0 (11):** Direct=`clrCompSize[fmt]`, Index8=1, Index16=2
+  - fmt from vatA bits 14-16
+- **CLR1 (12):** Direct=`clrCompSize[fmt]`, Index8=1, Index16=2
+  - fmt from vatA bits 18-20
+- **TEX0 (13):** Direct=`(cnt+1) * vtxCompSize[type]`, Index8=1, Index16=2
+  - cnt from vatA bit 21, type from vatA bits 22-24
+- **TEX1 (14):** From vatB bits 0-3
+- **TEX2 (15):** From vatB bits 9-12
+- **TEX3 (16):** From vatB bits 18-21
+- **TEX4 (17):** From vatB bits 27-30
+- **TEX5 (18):** From vatC bits 5-8
+- **TEX6 (19):** From vatC bits 14-17
+- **TEX7 (20):** From vatC bits 23-26
+
+**VCD (Vertex Component Descriptor) register layout:**
+- `vcdLo` bits: [0]=PNMTXIDX, [1-8]=TEXnMTXIDX, [9:10]=POS(2bit), [11:12]=NRM(2bit),
+  [13:14]=CLR0(2bit), [15:16]=CLR1(2bit)
+- `vcdHi` bits: [0:1]=TEX0, [2:3]=TEX1, ..., [14:15]=TEX7
+
+**Port implication:** Our `raw_attr_size()` function in gx_tev.cpp should match this
+table exactly. Any mismatch causes incorrect vertex stride → corrupted geometry.
+
+### 10. cmode0 / zmode Register Bit Layouts (`GXPixel.c`)
+
+**cmode0 (blend register):**
+```
+bit  0: blend enable (GX_BM_BLEND or GX_BM_SUBTRACT set this)
+bit  1: logic op enable (GX_BM_LOGIC)
+bit  2: dither enable
+bit  3: color update enable
+bit  4: alpha update enable
+bits 5-7: dst_factor (3 bits)
+bits 8-10: src_factor (3 bits)
+bit  11: subtract mode (GX_BM_SUBTRACT)
+bits 12-15: logic op (4 bits)
+```
+
+**zmode (depth register):**
+```
+bit 0: compare_enable
+bits 1-3: func (GXCompare)
+bit 4: update_enable
+```
+
+**peCtrl register:**
+```
+bits 0-2: pixel format
+bits 3-5: z format
+bit 6: z comp location (before=1 or after=0 texture)
+```
+
+**Port implication:** These bit layouts are critical for DL parsing that writes BP
+registers directly. Our BP command handler at `0x61` must decode these fields correctly.
+
+### 11. Display List Command Format (`GXSave.c` `__GXShadowDispList`)
+
+Full command byte format for GX display lists:
+
+```
+cmdOp = (cmd >> 3) & 0x1F   (5 bits: command opcode)
+vatIdx = cmd & 0x7           (3 bits: vertex format index)
+```
+
+| cmdOp | Byte | Description | Data |
+|-------|------|-------------|------|
+| 0 | 0x00 | NOP | none |
+| 1 | 0x08 | CP register write | u8 addr + u32 data |
+| 2 | 0x10 | XF register write | u32 header + N×u32 data |
+| 4 | 0x20 | XF pos mtx index load | u32 reg |
+| 5 | 0x28 | XF nrm mtx index load | u32 reg |
+| 6 | 0x30 | XF tex mtx index load | u32 reg |
+| 7 | 0x38 | XF light index load | u32 reg |
+| 8 | 0x40 | Call display list | (nested — error) |
+| 12 | 0x61 | BP register write | u32 data |
+| 16-23 | 0x80-0xBF | Draw primitives | u16 count + vertex data |
+
+**CP register addresses (from cmdOp=1):**
+```
+cpAddr = (reg8 >> 4) & 0xF
+vatIdx = reg8 & 0xF
+0x05: VCD low (vcdLo)
+0x06: VCD high (vcdHi)
+0x07: VAT A[vatIdx]
+0x08: VAT B[vatIdx]
+0x09: VAT C[vatIdx]
+0x0A: Index base (vatIdx - 0x15 maps to indexBase[0..3])
+0x0B: Index stride (vatIdx - 0x15 maps to indexStride[0..3])
+```
+
+**XF indexed load register format (cmdOp 4-7):**
+```
+bits 0-11:  XF address offset
+bits 12-15: count - 1
+bits 16-31: array index
+```
+- Pos matrix (0x20): offset = id*4, count = 12
+- Nrm matrix (0x28): offset = id*3 + 0x400, count = 9
+- Tex matrix (0x30): offset = id*4 or (id-GX_PTTEXMTX0)*4+0x500
+- Light (0x38): offset = 0x600 + id*16
+
+**Port implication:** Our DL parser handles 0x10, 0x61, and 0x80-0xBF. Missing 0x08 (CP
+writes — VCD/VAT changes mid-DL) and 0x20/0x28/0x30 (indexed matrix loads). The 0x08
+command is particularly important because J3D materials can change vertex format mid-DL.
+
+### 12. Projection and Viewport Internal Formulas (`GXTransform.c`)
+
+**GXSetProjection packed format (6 floats):**
+```c
+// Common to both types:
+projMtx[0] = mtx[0][0];  // sx (x scale)
+projMtx[2] = mtx[1][1];  // sy (y scale)
+projMtx[4] = mtx[2][2];  // sz (z scale)
+projMtx[5] = mtx[2][3];  // tz (z offset)
+
+// Perspective only (type == GX_PERSPECTIVE):
+projMtx[1] = mtx[0][2];  // mtx[0][2] (usually 0 for symmetric frustum)
+projMtx[3] = mtx[1][2];  // mtx[1][2] (usually 0 for symmetric frustum)
+
+// Orthographic only (type == GX_ORTHOGRAPHIC):
+projMtx[1] = mtx[0][3];  // tx (x offset)
+projMtx[3] = mtx[1][3];  // ty (y offset)
+```
+
+**GXSetProjectionv type detection:**
+```c
+// ptr[0] == 0.0f → GX_PERSPECTIVE
+// ptr[0] != 0.0f → GX_ORTHOGRAPHIC
+```
+
+**Viewport hardware transform:**
+```c
+sx = vpWd / 2.0f;
+sy = -vpHt / 2.0f;                      // Y IS NEGATED
+ox = 342.0f + (vpLeft + vpWd / 2.0f);   // 342.0 guard-band offset
+oy = 342.0f + (vpTop + vpHt / 2.0f);
+zmin = vpNearz * zScale;
+zmax = vpFarz * zScale;
+sz = zmax - zmin;
+oz = zmax + zOffset;
+```
+
+**GXProject screen-space formula:**
+```c
+// Perspective (pm[0] == 0):
+xc = peye.x * pm[1] + peye.z * pm[2];
+yc = peye.y * pm[3] + peye.z * pm[4];
+zc = pm[6] + peye.z * pm[5];
+wc = 1.0f / -peye.z;
+
+// Orthographic (pm[0] != 0):
+xc = pm[2] + peye.x * pm[1];
+yc = pm[4] + peye.y * pm[3];
+zc = pm[6] + peye.z * pm[5];
+wc = 1.0f;
+
+// Screen coords:
+*sx = (vp[2]/2) + (vp[0] + wc * (xc * vp[2]/2));
+*sy = (vp[3]/2) + (vp[1] + wc * (-yc * vp[3]/2));  // Y negated
+*sz = vp[5] + wc * (zc * (vp[5] - vp[4]));
+```
+
+**Port implication:** Our GXProject implementation is already correct. The viewport Y
+negation and 342.0 guard-band offset are important for scissor rect conversion.
+
+### 13. Fog Implementation (`GXPixel.c`)
+
+**Perspective fog (type bit 3 = 0):**
+```c
+A = (farz * nearz) / ((farz - nearz) * (endz - startz));
+B = farz / (farz - nearz);
+C = startz / (endz - startz);
+// B is decomposed into mantissa + exponent for hardware
+```
+
+**Orthographic fog (type bit 3 = 1):**
+```c
+A = 1.0f / (endz - startz);
+a = A * (farz - nearz);
+c = A * (startz - nearz);
+```
+
+**Fog type (3 bits):** 0=none, 2=linear, 4=exp, 5=exp2, 6=reverse_exp, 7=reverse_exp2
+
+**BP registers:** 0xEE=fog0(a), 0xEF=fog1(b_m), 0xF0=fog2(b_s), 0xF1=fog3(c+proj+fsel), 0xF2=fogclr
+
+**Port implication:** Fog requires shader support. For bgfx, pass fog params as uniforms
+and implement fog in fragment shader: `finalColor = mix(color, fogColor, fogFactor)`.
+Not critical for initial rendering but needed for atmosphere in gameplay areas.
+
 ## GX Init Default State
 
 From `__GXInitGX()`, the complete default state after GXInit:
@@ -437,54 +643,20 @@ currently does, and exactly what to change.
 
 ---
 
-### Recipe 1: Fix RASC Color — Use `mat_src` + `chan_ctrl.enable` (P0, ~30min)
+### Recipe 1: Fix RASC Color — Use `mat_src` + `chan_ctrl.enable` (P0, ~30min) ✅ DONE
 
-**Current bug:** `apply_rasc_color()` in `gx_tev.cpp:1427` always reads
-`chan_ctrl[0].mat_color` for ortho draws and uses amb+grey fallback for perspective.
-It ignores `mat_src` (register vs vertex) and `enable` (lighting on/off).
+**Status:** Implemented in commit 7e1dea75.
 
-**SDK truth** (from `GXLight.c` → `GXSetChanCtrl`):
-```
-When enable=0:
-  if mat_src == GX_SRC_REG  → output = matColor (register)
-  if mat_src == GX_SRC_VTX  → output = vertex color attribute
-When enable=1:
-  output = ambColor + Σ(light[i].color * diffuse(N·L) * attn(dist))
-```
+**Changes made in `src/pal/gx/gx_tev.cpp` (apply_rasc_color):**
+- Removed projection-type heuristic (ortho vs perspective)
+- Now uses `chan_ctrl.enable` and `mat_src` flags per SDK
+- `enable=0`: uses `mat_color` (mat_src=REG) or white pass-through (mat_src=VTX)
+- `enable=1`: uses amb_color approximation with grey fallback for dark amb
 
-**What to change in `gx_tev.cpp`:**
-```c
-static void apply_rasc_color(uint8_t* const_clr) {
-    const GXChanCtrl* ch = &g_gx_state.chan_ctrl[0];
-    if (!ch->enable) {
-        /* Lighting disabled: output depends on mat_src */
-        if (ch->mat_src == GX_SRC_VTX) {
-            /* Vertex color will be used — signal caller to use vertex attribute */
-            const_clr[0] = const_clr[1] = const_clr[2] = const_clr[3] = 255;
-            return;  /* white = multiply-neutral, vertex color comes through */
-        }
-        /* mat_src == GX_SRC_REG: use register color directly */
-        const_clr[0] = ch->mat_color.r;
-        const_clr[1] = ch->mat_color.g;
-        const_clr[2] = ch->mat_color.b;
-        const_clr[3] = ch->mat_color.a;
-        return;
-    }
-    /* Lighting enabled: amb + lights (stub: use amb only for now) */
-    const_clr[0] = ch->amb_color.r;
-    const_clr[1] = ch->amb_color.g;
-    const_clr[2] = ch->amb_color.b;
-    const_clr[3] = 255;
-    /* If amb is dark (<threshold), fall back to RASC_FALLBACK_GRAY.
-     * Remove this fallback once Recipe 3 (full lighting) is done. */
-    if ((int)const_clr[0] + const_clr[1] + const_clr[2] < RASC_DARK_THRESHOLD) {
-        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
-    }
-}
-```
-
-**Files:** `src/pal/gx/gx_tev.cpp` (apply_rasc_color)
-**Test:** Frame 129 (3D room) should still show ~80% nonblack. Title screen unchanged.
+**Additional fixes in same session:**
+- `GX_COLOR0A0` now replicates channel ctrl to alpha channel per SDK (gx_state.cpp)
+- `GXInitLight*` functions write to GXLightObj memory at SDK-correct offsets (pal_gx_stubs.cpp)
+- `GXLoadLightObjImm` captures light params into `g_gx_state.lights[]` (foundation for Recipe 3)
 
 ---
 
