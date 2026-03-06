@@ -11,6 +11,7 @@
 | **Current Step** | Step 5+ — rendering accuracy: clearEfb depth-write fix applied |
 | **Last Updated** | 2026-03-06 |
 | **Active CI** | f41e8a4/c3f2c18 committed — depth fix (skip BGFX_STATE_WRITE_Z when z_func=GX_ALWAYS) pending CI. |
+| **render-review CI fix** | Multiline GITHUB_OUTPUT truncation bug resolved in render-review.yml (02636a0). Both clang-format and cppcheck jobs now use workspace files (`clang-format-files.txt` / `cppcheck-files.txt`) + `has_files` boolean gate. Deleted-file guard (`[ -f "$f" ]`) added to both list-building steps. Smoke test (db3d711) confirmed: formatting violations in `src/pal/fmt_smoke_test.cpp` were detected and a PR comment was posted by CI run 22762971523. |
 | **Peak dl_draws** | 7,587 per frame (frames 128-129, confirmed by CI artifact) |
 | **Z/Blend gap** | `play_state` confirmed from CI: depth_bits=100%, blend_bits=100%, write_rgb=100% |
 | **Goal Milestones** | `GOAL_INTRO_GEOMETRY` ✅, `GOAL_DEPTH_BLEND_ACTIVE` ✅, `GOAL_INTRO_VISIBLE` ✅ (title screen frame 10, 95% nonblack), `GOAL_TITLE_VISIBLE` ✅ (frame 30+, logo visible; fires from Phase 2 and Phase 4) |
