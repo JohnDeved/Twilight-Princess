@@ -78,17 +78,13 @@ static int s_goal_depth_blend = 0;
 static int s_goal_title_visible = 0;
 
 /* Frame 30+ threshold for GOAL_TITLE_VISIBLE (Phase 4 logo scene capture).
- * Updated from 200→30 after clearEfb white-background fix (tev_reg_dirty):
- * frame_0200 previously showed 0% nonblack because clearEfb wrote depth=0 via
- * GX_ALWAYS+z_write (the GXSetZTexture z-texture pattern), blocking daTitle's 3D
- * model draws via LEQUAL test.  View 0 initialises depth=1.0 at frame start
- * (bgfx::setViewClear BGFX_CLEAR_DEPTH=1.0); the depth-write-on-ALWAYS fix
- * (skip BGFX_STATE_WRITE_Z when z_func==GX_ALWAYS) preserves that 1.0 so
- * subsequent daTitle draws pass LEQUAL (model_depth ≤ 1.0 ✓).
  * Logo frames 30-120 in Phase 4 have pct_nonblack>=1% (maroon Nintendo logo on black
  * background), so GOAL_TITLE_VISIBLE fires there.
- * After the depth fix, frame_0200 should show daTitle model via apply_rasc_color
- * fallback (~gray output).  When that is confirmed, raise this back to 200. */
+ *
+ * TODO Phase 5: Once daTitle_c::Draw() entry() crash is fixed (j3dSys draw-buffer
+ * init order — j3dSys.mDrawBuffer[0] may be NULL when the early draw_iter actors run),
+ * raise this to 128: the first frame where the J3D title model renders grey
+ * (RASC fallback vtx_clr=[200,200,200,255], ~78% nonblack). */
 #define GOAL_TITLE_VISIBLE_FRAME 30
 
 /* Regression assertion: per-capture-frame pixel coverage */
@@ -509,9 +505,9 @@ void pal_verify_summary(void) {
     /* Regression assertions: check pixel-coverage thresholds at key frames.
      * Logo (frames 40-90): expect >=2% non-black (red Nintendo logo).
      *   Fade-in completes ~frame 33, fade-out starts ~frame 93.
-     * Title (frames 200-400): expect >=100 non-black pixels (grayscale
-     * title logo renders once PROC_TITLE initialises, ~frame 152-160).
-     * Frame 300 is the key capture: J3D title logo should be grey by then. */
+     * Title model (frames 128-400): gated at 1 pixel once the entry() crash
+     *   is fixed (Phase 5: j3dSys draw-buffer init order for early draw_iter
+     *   actors).  Until then tracked as informational (pixel_threshold=0). */
     int regress_pass = 1;
     int regress_logo_found = 0;
     int regress_checked = 0;
@@ -533,22 +529,11 @@ void pal_verify_summary(void) {
             label = "logo";
             regress_logo_found = 1;
         }
-        /* Title scene: frames 200-400 — PROC_TITLE is active.
-         * PROC_TITLE initialises at ~frame 152 when PROC_OPENING_SCENE fires.
-         * After create() + loadWait_proc complete, the J3D title logo should
-         * render in grey (RASC fallback) from frame ~160 onwards.
-         * Frame 300 is the first reliable capture window for title content.
-         * No minimum enforced yet — tracked as label="title" for diagnostics. */
-        else if (f >= 200 && f <= 400) {
-            pixel_threshold = 0;   /* informational only — raise once grey model confirmed */
+        /* Title model: frames 128-400 — informational until entry() is fixed.
+         * TODO Phase 5: raise pixel_threshold to 1 once draw-buffer init fixed. */
+        else if (f >= 128 && f <= 400) {
+            pixel_threshold = 0;   /* informational only — raise once title model renders */
             label = "title";
-        }
-        /* Play scene: frames 250-400 — tracking-only checkpoint to detect
-         * whether 3D world rendering produces any output after the title→play
-         * scene transition.  Uses pixel count >= 1 as a low bar. */
-        else if (f >= 250 && f <= 400) {
-            pixel_threshold = 1;  /* >=1 non-black pixel — any 3D output */
-            label = "play";
         }
 
         int pass;

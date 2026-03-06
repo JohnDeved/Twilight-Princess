@@ -76,15 +76,13 @@ case "$PHASE" in
     4)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase4}"
         TIMEOUT_SECS="${TIMEOUT_SECS:-180}"
-        PHASE_DESC="gameplay intro frame capture (title scene, frame 300)"
+        PHASE_DESC="gameplay intro frame capture (title scene, frame 128)"
         DISPLAY_NUM=":103"
-        # Gate on frame 30 (maroon Nintendo logo, reliable 4% nonblack) while
-        # we extend the run to frame 400 to capture the PROC_TITLE actor.
-        # PROC_TITLE is created at ~frame 152 when PROC_OPENING_SCENE fires;
-        # it needs several frames to initialise before producing visible draws.
-        # frame_0300 is the first frame where the J3D title logo should be
-        # rendering in grey (RASC fallback).  If it shows nonblack content,
-        # update CAPTURE_FRAME/GATE to "0300:1" in a follow-up commit.
+        # Gate on frame 30 (maroon Nintendo logo, reliable 4% nonblack).
+        # Frame 128 is captured for analysis: the title J3D model should render
+        # grey (~78% nonblack) once the entry() crash is fixed (Phase 5 task:
+        # j3dSys draw-buffer init order for early draw_iter actors).
+        # When frame_0128 shows nonblack, promote CAPTURE_FRAME/GATE to 0128.
         CAPTURE_FRAME="0030"
         GATE="frame_0030:1"
         GATE_MSG="Gameplay gate FAILED: frame_0030 pct_nonblack < 1% — clearEfb tev_reg_dirty fix may have regressed (check D=C0 dirty-bit guard in gx_tev.cpp ~line 1579) or logo scene not reaching frame 30"
@@ -142,14 +140,12 @@ case "$PHASE" in
         ;;
     4)
         export TP_TEST_FRAMES=401
-        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,150,180,200,250,300,350,400"
-        # Delay at frame 300 — by then PROC_TITLE has had ~150 frames to initialise
-        # and the J3D title logo should be rendering grey (RASC fallback).
-        # Phase 4 has only a few dozen draw calls per frame (vs 7587 for Phase 3)
-        # so 60 seconds is ample for Mesa softpipe to rasterise.  Using 350000ms
-        # (Phase 3's value) would exceed the 180s timeout.
+        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,128,150,180,200,250,300,350,400"
+        # Delay at frame 128 — the first frame where the J3D title logo renders
+        # grey (RASC fallback vtx_clr=[200,200,200,255]).  The delay lets Mesa
+        # softpipe rasterise the ~7335 DL draws before the BMP is captured.
         export TP_FRAME_DELAY_MS=60000
-        export TP_FRAME_DELAY_START=300
+        export TP_FRAME_DELAY_START=128
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
         ;;
