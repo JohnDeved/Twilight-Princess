@@ -1,7 +1,10 @@
 name: Port Test (PC Headless)
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - port
     paths:
       - 'src/**'
       - 'include/**'
