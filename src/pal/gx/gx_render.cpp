@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
+#include <setjmp.h>
 
 extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
@@ -50,6 +52,14 @@ static int s_fb_capture_enabled = 0;
  * on heavy 3-D frames.  captureFrame() fires inside renderFrame(), so
  * pal_verify_frame() reads the CURRENT frame's pixels (no 1-frame pipeline lag). */
 static int s_sync_render = 0;
+/* Crash protection for bgfx::renderFrame() — Mesa softpipe can SIGSEGV on
+ * heavy geometry or first-frame shader JIT.  We catch the crash and skip
+ * rendering for that frame instead of killing the entire test process. */
+static sigjmp_buf s_render_jmpbuf;
+static int s_render_crash_count = 0;
+static void pal_render_crash_handler(int sig) {
+    siglongjmp(s_render_jmpbuf, sig);
+}
 
 /**
  * bgfx callback — captures every rendered frame via BGFX_RESET_CAPTURE.
@@ -366,6 +376,7 @@ void pal_render_end_frame(void) {
                 "\"submit_depth\":%u,\"submit_blend\":%u}}\n",
                 s_frame_count, gx_frame_zmode_calls, gx_frame_blendmode_calls,
                 gx_frame_submit_with_depth_state, gx_frame_submit_with_blend_state);
+        fflush(stderr);
     }
 
     /* Submit frame — triggers rendering and capture.
@@ -385,9 +396,31 @@ void pal_render_end_frame(void) {
      * bgfx::renderFrame() executes the OpenGL draw calls and blocks until
      * Mesa softpipe has fully rasterised the frame.  captureFrame() fires
      * inside renderFrame(), so s_fb contains the CURRENT frame's pixels
-     * after this call returns — pal_verify_frame() below sees fresh data. */
+     * after this call returns — pal_verify_frame() below sees fresh data.
+     *
+     * Crash protection: Mesa softpipe can SIGSEGV on heavy geometry frames
+     * (e.g., 7600+ DL draws at frame 128-129) or during first-frame shader
+     * JIT compilation.  We wrap renderFrame() in a signal handler so that a
+     * softpipe crash skips rendering for that frame instead of killing the
+     * entire test process. */
     if (s_sync_render) {
-        bgfx::renderFrame();
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_render_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
+            bgfx::renderFrame();
+        } else {
+            s_render_crash_count++;
+            fprintf(stderr, "{\"sync_render\":\"crash\",\"frame\":%u,\"count\":%d}\n",
+                    s_frame_count, s_render_crash_count);
+            fflush(stderr);
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
         /* Log sync completion for every frame in the 3D-geometry window
          * (frame 128+) and every 10 frames otherwise — limits log volume
          * while preserving visibility around the heavy-render transition. */

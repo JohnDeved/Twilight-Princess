@@ -255,6 +255,7 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
      * due to uninitialized state (player, collision, etc.) in the
      * opening scene. Skip them on crash so the frame completes. */
     {
+        static int s_postdraw_crash_count = 0;
         struct sigaction sa_new, sa_segv_old, sa_abrt_old;
         memset(&sa_new, 0, sizeof(sa_new));
         sa_new.sa_handler = pal_predraw_crash_handler;
@@ -270,7 +271,13 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
                     dComIfGp_getAttention()->Draw();
             }
         } else {
-            fprintf(stderr, "[PAL] dScnPly_Draw: crash in post-Draw (Ccsp/Attention), skipped\n");
+            s_postdraw_crash_count++;
+            if (s_postdraw_crash_count <= 3) {
+                fprintf(stderr, "[PAL] dScnPly_Draw: crash in post-Draw (Ccsp/Attention), skipped [%d]\n",
+                        s_postdraw_crash_count);
+            } else if (s_postdraw_crash_count == 4) {
+                fprintf(stderr, "[PAL] dScnPly_Draw: suppressing further post-Draw crash messages\n");
+            }
         }
         sigaction(SIGSEGV, &sa_segv_old, NULL);
         sigaction(SIGABRT, &sa_abrt_old, NULL);

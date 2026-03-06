@@ -210,11 +210,13 @@ jobs:
           # TP_TELEMETRY_CRASH_FRAME=129: PROC_CAMERA Execute crash corrupts the actor
           # list at frame 129 (not 130 as the default assumes); chain_cycle events at
           # frame 129 are expected post-crash behavior, not new corruption sources.
+          set +e
           TP_TELEMETRY_ENFORCE_PEAK_DL=1 TP_TELEMETRY_PEAK_DL_MIN=7000 \
           TP_TELEMETRY_CRASH_FRAME=129 \
           python3 tools/validate_telemetry.py milestones.log milestones_logic.log \
             > telemetry-validation.txt 2>&1
           EXIT_CODE=$?
+          set -e
           cat telemetry-validation.txt
           exit $EXIT_CODE
 
