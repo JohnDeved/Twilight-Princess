@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - port
+      - 'copilot/**'
     paths:
       - 'src/**'
       - 'include/**'
