@@ -28,8 +28,8 @@
 | **Milestone baseline** | ✅ FIXED: parse_milestones.py now counts TEST_COMPLETE (id=99) fixing 15→16 regression (fb6f1cf3). | Done | P0 done |
 | **GOAL_INTRO_VISIBLE** | Root cause identified: Phase 2 (softpipe) terminates at frame 130 (600s timeout) because each BG-geometry frame (7590 draws) takes ~270s with Mesa softpipe. Fix: lower GOAL_PIXEL_MILESTONE_FRAME_START from 127 to 10 — title screen (frames 10-120) already shows pct_nonblack >= 1%. Phase 2 now runs 128 frames (before BG geometry) and completes in <60s. Triggers at frame 10. | Done in current session | P0 done |
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
-| **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets) | 2-3 sessions | P2 |
-| **Lighting** | Ambient/diffuse/specular from GX light state into shaders | 2 sessions | P2 |
+| **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets). See [dolsdk2004-reference.md](dolsdk2004-reference.md) for TEV register layout and stage 0 vs 1+ input tables from the decompiled SDK. | 2-3 sessions | P2 |
+| **Lighting** | Ambient/diffuse/specular from GX light state into shaders. See [dolsdk2004-reference.md](dolsdk2004-reference.md) for GXLightObj internal layout, ChanCtrl register bits, and lighting equation details. | 2 sessions | P2 |
 | **Audio** | Software mixer replacing DSP/ARAM → SDL3 PCM output | 3-4 sessions | P3 |
 | **Gameplay** | Title → Ordon → Faron → Forest Temple loop (auto-input injection) | 2-3 sessions | P3 |
 | **NX Homebrew** | libnx/EGL, HID, audren, romfs backends | 3-4 sessions | P4 |
