@@ -92,10 +92,11 @@ void pal_gx_state_init(void) {
     g_gx_state.sc_wd = 640;
     g_gx_state.sc_ht = 480;
 
-    /* Default blend */
+    /* Default blend (per dolsdk2004 __GXInitGX:
+     * GXSetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR)) */
     g_gx_state.blend_mode = GX_BM_NONE;
-    g_gx_state.blend_src = GX_BL_ONE;
-    g_gx_state.blend_dst = GX_BL_ZERO;
+    g_gx_state.blend_src = GX_BL_SRCALPHA;
+    g_gx_state.blend_dst = GX_BL_INVSRCALPHA;
 
     /* Default Z mode */
     g_gx_state.z_compare_enable = GX_TRUE;
@@ -116,19 +117,21 @@ void pal_gx_state_init(void) {
     g_gx_state.alpha_comp1 = GX_ALWAYS;
     g_gx_state.alpha_ref1  = 0;
 
-    /* Default clear */
-    g_gx_state.clear_color.r = 0;
-    g_gx_state.clear_color.g = 0;
-    g_gx_state.clear_color.b = 0;
+    /* Default clear (per dolsdk2004 __GXInitGX: GXSetCopyClear({64,64,64,255}, 0xFFFFFF)) */
+    g_gx_state.clear_color.r = 64;
+    g_gx_state.clear_color.g = 64;
+    g_gx_state.clear_color.b = 64;
     g_gx_state.clear_color.a = 255;
     g_gx_state.clear_z = 0x00FFFFFF;
 
-    /* 1 TEV stage, passthrough */
+    /* 1 TEV stage, REPLACE (per dolsdk2004 __GXInitGX:
+     * GXSetNumTevStages(1), GXSetTevOp(GX_TEVSTAGE0, GX_REPLACE)
+     * REPLACE: color_d=TEXC, alpha_d=TEXA) */
     g_gx_state.num_tev_stages = 1;
-    g_gx_state.tev_stages[0].color_d = GX_CC_RASC;
+    g_gx_state.tev_stages[0].color_d = GX_CC_TEXC;
     g_gx_state.tev_stages[0].color_op = GX_TEV_ADD;
     g_gx_state.tev_stages[0].color_clamp = GX_TRUE;
-    g_gx_state.tev_stages[0].alpha_d = GX_CA_RASA;
+    g_gx_state.tev_stages[0].alpha_d = GX_CA_TEXA;
     g_gx_state.tev_stages[0].alpha_op = GX_TEV_ADD;
     g_gx_state.tev_stages[0].alpha_clamp = GX_TRUE;
 

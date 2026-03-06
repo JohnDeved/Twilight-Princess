@@ -903,8 +903,12 @@ static void dl_handle_bp_reg(u32 value) {
         if (texmap >= 0 && texmap < GX_MAX_TEXMAP) {
             GXTexWrapMode ws = (GXTexWrapMode)(data & 0x3);
             GXTexWrapMode wt = (GXTexWrapMode)((data >> 2) & 0x3);
+            GXTexFilter mag = (GXTexFilter)((data >> 4) & 0x1);
+            GXTexFilter min_f = (GXTexFilter)((data >> 5) & 0x7);
             g_gx_state.tex_bindings[texmap].wrap_s = ws;
             g_gx_state.tex_bindings[texmap].wrap_t = wt;
+            g_gx_state.tex_bindings[texmap].mag_filt = mag;
+            g_gx_state.tex_bindings[texmap].min_filt = min_f;
             return;
         }
     }
