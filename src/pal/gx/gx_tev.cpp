@@ -1391,11 +1391,21 @@ void pal_tev_report_diagnostics(void) {
 
 /* apply_rasc_color: compute the RASC approximation for a draw.
  *
- * GCN hardware: RASC = clamp(amb_color + lights × mat_color).
- * Without GX lights the best static approximation is mat_color itself.
- * When mat_color is very dark (common for fully dynamic-lit J3D rooms that
- * set mat_color=(0,0,0) and rely on GX lights), fall back to amb_color.
- * If both are dark, use a neutral grey so geometry is at least visible. */
+ * GCN hardware: RASC = clamp(amb_color + Σ(lights × mat_color)).
+ *
+ * Two fundamentally different rendering contexts use RASC:
+ *
+ * 1. Orthographic / J2D draws (BLO screen overlays, fade panes):
+ *    mat_color is the game's intended solid colour for the pane.
+ *    A black background pane has mat_color=(0,0,0) deliberately — it should
+ *    stay black.  Do NOT override with a grey fallback: grey backgrounds
+ *    produce a "white fade" instead of the expected "black fade" transition.
+ *
+ * 2. Perspective / J3D draws (3D geometry with GX lighting):
+ *    mat_color is the base reflectivity, not the output colour.
+ *    Without GX lights, RASC ≈ amb_color (the static ambient term).
+ *    If both mat and amb are dark, use a neutral grey so geometry is at
+ *    least visible (e.g. daTitle castle model, unlit 3D objects). */
 static void apply_rasc_color(uint8_t* const_clr) {
     const uint8_t mr = g_gx_state.chan_ctrl[0].mat_color.r;
     const uint8_t mg = g_gx_state.chan_ctrl[0].mat_color.g;
@@ -1404,25 +1414,36 @@ static void apply_rasc_color(uint8_t* const_clr) {
     const_clr[1] = mg;
     const_clr[2] = mb;
     const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
-    if ((int)mr + (int)mg + (int)mb < RASC_DARK_THRESHOLD) {
-        uint8_t ar = g_gx_state.chan_ctrl[0].amb_color.r;
-        uint8_t ag = g_gx_state.chan_ctrl[0].amb_color.g;
-        uint8_t ab = g_gx_state.chan_ctrl[0].amb_color.b;
-        if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
-            const_clr[0] = ar;
-            const_clr[1] = ag;
-            const_clr[2] = ab;
-            /* Force alpha=255 when overriding RGB: the original const_clr[3] came
-             * from tev_regs which may be [0,0,0,0] after reset on PC.  We need the
-             * ambient color to be fully opaque so it actually reaches the screen. */
-            const_clr[3] = 255;
-        } else {
-            /* No ambient either — use neutral grey so room is visible.
-             * Force alpha=255 so the grey is fully opaque even if mat_color.a
-             * was 0 (e.g. a material using src-alpha blending on PC). */
-            const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
-            const_clr[3] = 255;
-        }
+
+    /* ---- Orthographic (J2D) path ---- */
+    /* mat_color IS the intended pane colour; respect it regardless of brightness.
+     * A black background pane (mat=(0,0,0)) must stay black — do not substitute
+     * a grey fallback.  Alpha is handled by the caller's inject_color block,
+     * which forces alpha=255 for non-overlay draws (fade_overlay_active=false)
+     * and preserves mat.a for the darwFilter fade overlay. */
+    if (g_gx_state.proj_type == GX_ORTHOGRAPHIC)
+        return;
+
+    /* ---- Perspective (J3D) path ---- */
+    /* Approximate RASC = amb_color (static ambient without dynamic lights).
+     * This applies for any mat brightness: a bright mat_color like (255,255,255)
+     * is a reflectivity base, not the output colour — returning it directly
+     * produces blinding-white unlit geometry.  amb_color is the correct static
+     * approximation.  If amb is also dark (dynamic-light-only materials), use
+     * a neutral grey so the geometry is at least visible. */
+    const uint8_t ar = g_gx_state.chan_ctrl[0].amb_color.r;
+    const uint8_t ag = g_gx_state.chan_ctrl[0].amb_color.g;
+    const uint8_t ab = g_gx_state.chan_ctrl[0].amb_color.b;
+    if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
+        const_clr[0] = ar;
+        const_clr[1] = ag;
+        const_clr[2] = ab;
+        const_clr[3] = 255;
+    } else {
+        /* No usable ambient — dynamic-light-only material.
+         * Neutral grey so geometry is visible without blinding white. */
+        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+        const_clr[3] = 255;
     }
 }
 
