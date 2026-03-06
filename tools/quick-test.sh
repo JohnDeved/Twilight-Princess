@@ -129,7 +129,7 @@ case "$PHASE" in
         ;;
     4)
         export TP_TEST_FRAMES=201
-        export TP_VERIFY_CAPTURE_FRAMES="200"
+        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,150,180,200"
         export TP_FRAME_DELAY_MS=60000
         export TP_FRAME_DELAY_START=200
         export TP_SKIP_FADE=1
@@ -174,6 +174,10 @@ elif [[ "$PHASE" == "4" ]]; then
         echo "(check $LOG_FILE for draw counts)"
     echo "Phase 4 opening scene crash catch:"
     grep 'demo/event crash at' "$LOG_FILE" 2>/dev/null || echo "(no crash catch logged)"
+    echo "Phase 4 daTitle actor diagnostics (Draw/dDlst):"
+    grep 'daTitle_draw\|dDlst_daTitle_draw' "$LOG_FILE" 2>/dev/null | head -10 || echo "(daTitle Draw never called)"
+    echo "Phase 4 daTitle CreateHeap resource load:"
+    grep 'daTitle_c::CreateHeap' "$LOG_FILE" 2>/dev/null | head -5 || echo "(CreateHeap not reached)"
 fi
 
 # --- Coverage gate ---

@@ -467,6 +467,17 @@ int daTitle_c::getDemoPrm() {
 
 int daTitle_c::Draw() {
 #if PLATFORM_PC
+    {
+        static u32 s_draw_count = 0;
+        if (s_draw_count < 5) {
+            /* JSON: n=call index, model=J3D model loaded, j2d_queued=field_0x5f8
+             * (J2D press-start overlay flag), Scr=J2DScreen resource loaded */
+            fprintf(stderr, "{\"daTitle_draw\":{\"n\":%u,\"model\":%d,\"j2d_queued\":%d,\"Scr\":%d}}\n",
+                    s_draw_count, mpModel != NULL ? 1 : 0,
+                    (int)field_0x5f8, mTitle.Scr != NULL ? 1 : 0);
+            s_draw_count++;
+        }
+    }
     if (mpModel == NULL) {
         if (field_0x5f8) {
             dComIfGd_set2DOpaTop(&mTitle);
@@ -532,17 +543,18 @@ static int daTitle_Create(fopAc_ac_c* i_this) {
 
 void dDlst_daTitle_c::draw() {
 #if PLATFORM_PC
-    if (Scr == NULL) return;
-    /* Title scene J2D draw diagnostic — confirm draw dispatch fires and
-     * track per-frame rendering of the press-start overlay. */
+    /* Always log the first few calls to confirm draw dispatch fires,
+     * even when Scr is NULL (to distinguish "not called" from "called but empty").
+     * JSON: n=call index, Scr=J2DScreen resource loaded (0=NULL/no BLO data) */
     {
         static u32 s_title_draw_count = 0;
-        if (s_title_draw_count < 30) {
-            fprintf(stderr, "[PAL] dDlst_daTitle_c::draw #%u  Scr=%p\n",
-                    s_title_draw_count, (void*)Scr);
+        if (s_title_draw_count < 5) {
+            fprintf(stderr, "{\"dDlst_daTitle_draw\":{\"n\":%u,\"Scr\":%d}}\n",
+                    s_title_draw_count, Scr != NULL ? 1 : 0);
             s_title_draw_count++;
         }
     }
+    if (Scr == NULL) return;
 #endif
     J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
     Scr->draw(0.0f, 0.0f, ctx);

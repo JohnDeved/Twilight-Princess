@@ -75,6 +75,10 @@ static u32 s_hash_changes = 0;            /* number of times fb hash changed fra
 static int s_goal_intro_geometry = 0;
 static int s_goal_intro_visible = 0;
 static int s_goal_depth_blend = 0;
+static int s_goal_title_visible = 0;
+
+/* Frame 200+ threshold for GOAL_TITLE_VISIBLE (Phase 4 capture) */
+#define GOAL_TITLE_VISIBLE_FRAME 200
 
 /* Regression assertion: per-capture-frame pixel coverage */
 #define REGRESS_MAX_CAPTURES 32
@@ -361,6 +365,14 @@ int pal_verify_analyze_fb(u32 frame_num) {
         s_goal_intro_visible = 1;
         pal_milestone("GOAL_INTRO_VISIBLE", MILESTONE_GOAL_INTRO_VISIBLE,
                       "captured play-window frame has non-black pixels");
+    }
+    /* GOAL_TITLE_VISIBLE: frame 200+ has visible pixels — confirms the
+     * Phase 4 title-screen draw pipeline (PROC_TITLE / TEV PASSCLR path)
+     * produces non-black output at the post-3D-room intro frame. */
+    if (!s_goal_title_visible && frame_num >= GOAL_TITLE_VISIBLE_FRAME && pct_nonblack >= 1) {
+        s_goal_title_visible = 1;
+        pal_milestone("GOAL_TITLE_VISIBLE", MILESTONE_GOAL_TITLE_VISIBLE,
+                      "frame 200+ has non-black pixels (title-screen draw path ok)");
     }
 
     /* Store for regression assertion */

@@ -210,10 +210,14 @@ jobs:
           # to avoid duplicate IDs from Phase 2 re-emitting boot milestones.
           # --goal-log milestones_pixel.log supplements goal milestones (id>=100,
           # e.g. GOAL_INTRO_VISIBLE) from Phase 2, which requires a real framebuffer.
+          # --goal-log .../milestones_phase4.log supplements GOAL_TITLE_VISIBLE
+          # (id=103) from Phase 4, which fires at frame 200 when title-screen
+          # background is non-black (validates the TEV PASSCLR D=C0 path).
           python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
             --min-milestone 5 \
-            --goal-log milestones_pixel.log || true
+            --goal-log milestones_pixel.log \
+            --goal-log verify_output_gameplay/milestones_phase4.log || true
 
       - name: Verify port subsystems
         if: always()

@@ -39,6 +39,7 @@ MILESTONE_NAMES = {
     100: "GOAL_INTRO_GEOMETRY",
     101: "GOAL_INTRO_VISIBLE",
     102: "GOAL_DEPTH_BLEND_ACTIVE",
+    103: "GOAL_TITLE_VISIBLE",
 }
 
 # Milestones that require specific prerequisites.
@@ -171,9 +172,10 @@ def main():
                         help="Output summary JSON file")
     parser.add_argument("--min-milestone", type=int, default=0,
                         help="Fail if milestone count < this value")
-    parser.add_argument("--goal-log", default=None,
-                        help="Optional second log file (e.g. milestones_pixel.log) "
+    parser.add_argument("--goal-log", default=None, action='append',
+                        help="Optional supplementary log file (e.g. milestones_pixel.log) "
                              "used to supplement goal milestones (id>=100) only. "
+                             "May be specified multiple times. "
                              "Does not affect the 16/16 boot milestone count.")
     args = parser.parse_args()
 
@@ -203,12 +205,12 @@ def main():
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
 
-    # Supplement goal milestones (id>=100) from a second log file if provided.
+    # Supplement goal milestones (id>=100) from supplementary log files if provided.
     # Boot milestones (id < 100, i.e., 0-99) are intentionally excluded to
     # avoid duplicate IDs being flagged as integrity failures.
-    if args.goal_log:
+    for goal_log_path in (args.goal_log or []):
         try:
-            with open(args.goal_log, errors='replace') as f:
+            with open(goal_log_path, errors='replace') as f:
                 for line in f:
                     line = ansi_escape.sub('', line.strip())
                     if not line.startswith("{"):
