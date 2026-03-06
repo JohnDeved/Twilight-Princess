@@ -6,7 +6,7 @@ Usage:
     python3 tools/check_bmp_coverage.py verify_output/frame_0120.bmp --require frame_0120:80
 
 Emits one JSON line per file to stdout:
-    {"phase3_bmp": "...", "pct_nonblack": N, "nonblack_pixels": M, "total_pixels": T, "avg_rgb": [R, G, B]}
+    {"bmp": "...", "pct_nonblack": N, "nonblack_pixels": M, "total_pixels": T, "avg_rgb": [R, G, B]}
 
 Options:
     --require PATTERN:MIN_PCT
@@ -15,9 +15,9 @@ Options:
         Example: --require frame_0120:80
 
 Used by Phase 3 CI to verify that 3D gameplay frames contain visible geometry.
-A pct_nonblack > 0 in frames 128-129 confirms the J3D 3D intro sequence rendered
+A pct_nonblack > 0 in frame 129 confirms the J3D 3D intro sequence rendered
 through the full bgfx → Mesa softpipe pipeline.
-Used by Phase 2 CI as a RASC regression gate: frame_0120 must stay >= 80% nonblack
+Used by Phase 2/4 CI as a RASC regression gate: frame_0120 must stay >= 80% nonblack
 to confirm the GX_CC_RASC → material-color injection path is still working.
 """
 
@@ -67,7 +67,7 @@ def analyze_bmp(path: str) -> dict:
     avg_b = b_sum // total
 
     return {
-        "phase3_bmp": str(path),
+        "bmp": str(path),
         "pct_nonblack": pct,
         "nonblack_pixels": nonblack,
         "total_pixels": total,
@@ -140,7 +140,7 @@ def main():
     # Evaluate --require assertions
     failures = []
     for pattern, min_pct in require_specs:
-        matched = [r for r in results if pattern in r.get("phase3_bmp", "")]
+        matched = [r for r in results if pattern in r.get("bmp", "")]
         if not matched:
             msg = f"RASC gate MISSING: no BMP matching {pattern!r} (pattern required >= {min_pct}%)"
             print(f'{{"rasc_gate":"missing","pattern":{json.dumps(pattern)},"min_pct":{min_pct}}}')
@@ -149,7 +149,7 @@ def main():
         for r in matched:
             pct = r.get("pct_nonblack", 0)
             avg = r.get("avg_rgb", [0, 0, 0])
-            file_name = r.get("phase3_bmp", pattern)
+            file_name = r.get("bmp", pattern)
             if pct < min_pct:
                 msg = (f"RASC gate FAIL: {file_name} pct_nonblack={pct}% "
                        f"< required {min_pct}% (avg_rgb={avg})")

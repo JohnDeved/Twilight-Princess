@@ -67,6 +67,11 @@ case "$PHASE" in
         CAPTURE_FRAME="0129"
         GATE="frame_0129:1"
         GATE_MSG="3D room gate FAILED: frame_0129 pct_nonblack < 1% — check centroid camera (centroid_view_switch) and view 1 depth-clear in gx_render.cpp"
+        # Disable interval BMP captures so verify_output_3d contains only frame_0129.bmp
+        # (captured by pal_verify_capture_frame).  Without this, gx_capture.cpp saves
+        # frames 1/30/60/90/120 periodically — dark near-black frames that pollute the
+        # PR comment 3D Scene section before the key 75%-nonblack frame_0129.
+        BMP_INTERVAL_OVERRIDE=9999
         ;;
     4)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase4}"
@@ -125,6 +130,7 @@ case "$PHASE" in
         export TP_FRAME_DELAY_MS=350000
         export TP_FRAME_DELAY_START=129
         export TP_SKIP_FADE=1
+        export TP_BMP_INTERVAL="${BMP_INTERVAL_OVERRIDE:-9999}"
         unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
         ;;
     4)
