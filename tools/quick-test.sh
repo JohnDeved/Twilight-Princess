@@ -160,6 +160,8 @@ python3 tools/check_bmp_coverage.py "$OUTPUT_DIR"/frame_*.bmp 2>/dev/null || tru
 if [[ "$PHASE" == "3" ]]; then
     echo "Phase 3 RASC inject values:"
     grep '"rasc_inject"' "$LOG_FILE" 2>/dev/null || echo "(none found)"
+    echo "Phase 3 RASC grey fallback (daTitle/dynamic-light-only draws):"
+    grep '"rasc_grey_fallback"' "$LOG_FILE" 2>/dev/null || echo "(no grey fallback draws)"
     echo "Phase 3 geometry-centroid camera fallback:"
     grep '"geom_centroid_cam"' "$LOG_FILE" 2>/dev/null || echo "(centroid not triggered)"
     echo "Phase 3 centroid view switch (depth-clear view):"
@@ -171,6 +173,8 @@ if [[ "$PHASE" == "3" ]]; then
     echo "Phase 3 per-frame draw counts (frames 125-210):"
     grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -90 || echo "(none found)"
 elif [[ "$PHASE" == "4" ]]; then
+    echo "Phase 4 RASC grey fallback (daTitle/dynamic-light-only draws):"
+    grep '"rasc_grey_fallback"' "$LOG_FILE" 2>/dev/null || echo "(no grey fallback draws)"
     echo "Phase 4 per-frame draw counts (frames 125-210):"
     grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -90 || echo "(none found)"
     echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 200:"
