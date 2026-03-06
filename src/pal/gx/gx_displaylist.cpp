@@ -104,10 +104,48 @@ static u32 calc_dl_vertex_size(u8 vtxfmt) {
 
 /**
  * Handle LOAD_CP_REG command.
- * CP registers 0x50-0x5F set vertex attribute descriptors.
- * CP registers 0x70-0x9F set vertex attribute formats.
+ *
+ * CP register address space (from dolsdk2004 GXSave.c __SaveCPRegs):
+ *   cpAddr = (raw_addr >> 4) & 0xF  (upper nibble = register group)
+ *   vatIdx = raw_addr & 0xF         (lower nibble = sub-index)
+ *
+ * Register groups:
+ *   0x30 (grp 3): MatIdxA — position/texture matrix index A
+ *   0x40 (grp 4): MatIdxB — position/texture matrix index B
+ *   0x50 (grp 5): VCD_Lo  — vertex component descriptor low
+ *   0x60 (grp 6): VCD_Hi  — vertex component descriptor high
+ *   0x70-0x77 (grp 7): VAT_A  — vertex attribute table group A
+ *   0x80-0x87 (grp 8): VAT_B  — vertex attribute table group B
+ *   0x90-0x97 (grp 9): VAT_C  — vertex attribute table group C
+ *   0xA0-0xAF (grp 10): Array base addresses
+ *   0xB0-0xBF (grp 11): Array strides
  */
 static void dl_handle_cp_reg(u8 addr, u32 value) {
+    /* CP register 0x30: MatIdxA — matrix index register A
+     * From dolsdk2004 GXAttr.c: controls which position/normal/texture matrices
+     * are active for subsequent draws.
+     *
+     * Bit layout:
+     * [5:0]   POSIDX   — position matrix index (÷3 = slot in pos_mtx[])
+     * [11:6]  TEXIDX0  — texture matrix 0 index
+     * [17:12] TEXIDX1  — texture matrix 1 index
+     * [23:18] TEXIDX2  — texture matrix 2 index
+     * [29:24] TEXIDX3  — texture matrix 3 index
+     */
+    if (addr == 0x30) {
+        u32 pos_idx = (value >> 0) & 0x3F;
+        /* Position matrix: idx/3 gives slot (0-9) */
+        pal_gx_set_current_mtx(pos_idx / 3);
+        return;
+    }
+
+    /* CP register 0x40: MatIdxB — matrix index register B
+     * [5:0]   TEXIDX4, [11:6] TEXIDX5, [17:12] TEXIDX6, [23:18] TEXIDX7 */
+    if (addr == 0x40) {
+        /* Texture matrix indices 4-7 — rarely used in TP, log for tracking */
+        return;
+    }
+
     /* CP register 0x50: VCD_Lo — vertex descriptor low bits
      * CP register 0x60: VCD_Hi — vertex descriptor high bits
      * These set which vertex attributes are present and how they're specified
@@ -257,11 +295,36 @@ static void dl_handle_cp_reg(u8 addr, u32 value) {
             (u8)((value >> 22) & 0x1F));
         return;
     }
-}
 
-/* ================================================================ */
-/* XF register handler                                              */
-/* ================================================================ */
+    /* CP registers 0xA0-0xAF: Array base addresses
+     * From dolsdk2004 GXSave.c __SaveCPRegs (cpAddr=10):
+     *   sub-index 0x5 = POS array base     (indexed base for LOAD_INDX_A)
+     *   sub-index 0x6 = NRM array base     (indexed base for LOAD_INDX_B)
+     *   sub-index 0x8-0xB = TEX array base (indexed base for LOAD_INDX_C)
+     *   sub-index 0xC-0xF = LIGHT array base (indexed base for LOAD_INDX_D)
+     *
+     * On PC, DL-based array base writes are GCN physical addresses which
+     * we cannot resolve. J3D sets arrays via GXSetArray before the DL. */
+    if (addr >= 0xA0 && addr <= 0xAF) {
+        return;
+    }
+
+    /* CP registers 0xB0-0xBF: Array strides
+     * Same sub-index scheme as base addresses. */
+    if (addr >= 0xB0 && addr <= 0xBF) {
+        return;
+    }
+
+    /* Unknown CP register — log once for diagnostics */
+    {
+        static int s_cp_unknown_log = 0;
+        if (s_cp_unknown_log < 10) {
+            fprintf(stderr, "{\"dl_cp_unknown\":{\"addr\":\"0x%02X\",\"value\":\"0x%08X\"}}\n",
+                    (unsigned)addr, (unsigned)value);
+            s_cp_unknown_log++;
+        }
+    }
+}
 
 /**
  * Handle LOAD_XF_REG command.
@@ -382,6 +445,134 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
         pal_gx_set_num_tex_gens(n_tex_gens);
         return;
     }
+
+    /* Channel control registers: XF 0x100E-0x1011
+     * From dolsdk2004 GXLight.c GXSetChanCtrl:
+     *   XF reg idx+14 where idx = channel index (0=COLOR0, 1=COLOR1)
+     *   COLOR0A0 → writes XF 0x100E (color) and XF 0x1010 (alpha)
+     *   COLOR1A1 → writes XF 0x100F (color) and XF 0x1011 (alpha)
+     *
+     * ChanCtrl bit layout:
+     *   [0]    mat_src  (0=REG, 1=VTX)
+     *   [1]    enable   (0=no lighting, 1=use lights)
+     *   [5:2]  light_mask_lo (lights 0-3)
+     *   [6]    amb_src  (0=REG, 1=VTX)
+     *   [8:7]  diff_fn  (0=NONE, 1=SIGN, 2=CLAMP)
+     *   [9]    attn_enable (1 if attn_fn != GX_AF_SPEC)
+     *   [10]   attn_select (1 if attn_fn != GX_AF_NONE)
+     *   [14:11] light_mask_hi (lights 4-7)
+     *
+     * This is CRITICAL for J3D materials that set lighting per-material
+     * via display lists — without this, materials inherit the wrong
+     * lighting channel configuration. */
+    if (addr >= 0x100E && addr <= 0x1011) {
+        for (u16 i = 0; i < count && (addr + i) <= 0x1011; i++) {
+            u16 cur_addr = addr + i;
+            u32 v = values[i];
+
+            GXColorSrc mat_src = (GXColorSrc)((v >> 0) & 0x1);
+            GXBool     enable  = (GXBool)((v >> 1) & 0x1);
+            u32        lmask_lo = (v >> 2) & 0xF;
+            GXColorSrc amb_src = (GXColorSrc)((v >> 6) & 0x1);
+            u32        diff_bits = (v >> 7) & 0x3;
+            u32        attn_enable = (v >> 9) & 0x1;
+            u32        attn_select = (v >> 10) & 0x1;
+            u32        lmask_hi = (v >> 11) & 0xF;
+            u32        light_mask = lmask_lo | (lmask_hi << 4);
+
+            /* Reconstruct diff_fn and attn_fn from hardware bits.
+             * SDK encodes: diff_fn = (attn_fn == 0) ? 0 : actual_diff_fn
+             *              attn_enable = (attn_fn != GX_AF_SPEC)
+             *              attn_select = (attn_fn != GX_AF_NONE)
+             * Reverse: if !attn_select → GX_AF_NONE
+             *          else if !attn_enable → GX_AF_SPEC
+             *          else → GX_AF_SPOT */
+            GXDiffuseFn diff_fn;
+            GXAttnFn    attn_fn;
+            if (!attn_select) {
+                attn_fn = GX_AF_NONE;
+                diff_fn = (GXDiffuseFn)diff_bits;
+            } else if (!attn_enable) {
+                attn_fn = GX_AF_SPEC;
+                diff_fn = (GXDiffuseFn)diff_bits;
+            } else {
+                attn_fn = GX_AF_SPOT;
+                diff_fn = (GXDiffuseFn)diff_bits;
+            }
+
+            /* Map XF register address to GXChannelID:
+             * 0x100E = COLOR0, 0x100F = COLOR1,
+             * 0x1010 = ALPHA0, 0x1011 = ALPHA1 */
+            GXChannelID chan;
+            switch (cur_addr) {
+            case 0x100E: chan = GX_COLOR0; break;
+            case 0x100F: chan = GX_COLOR1; break;
+            case 0x1010: chan = GX_ALPHA0; break;
+            case 0x1011: chan = GX_ALPHA1; break;
+            default: continue;
+            }
+
+            pal_gx_set_chan_ctrl(chan, enable, amb_src, mat_src,
+                                light_mask, diff_fn, attn_fn);
+        }
+        return;
+    }
+
+    /* Light parameter memory: XF 0x0600-0x067F
+     * From dolsdk2004 GXLight.c GXLoadLightObjImm:
+     *   addr = light_idx * 0x10 + 0x600
+     *   writes 16 u32 values: 3 reserved, Color, a[3], k[3], lpos[3], ldir[3]
+     * This is how J3D loads light data via display lists. */
+    if (addr >= 0x0600 && addr < 0x0680) {
+        u32 light_offset = addr - 0x0600;
+        u32 light_idx = light_offset / 0x10;
+        u32 reg_offset = light_offset % 0x10;
+
+        if (light_idx < GX_MAX_LIGHT && reg_offset == 0 && count >= 16) {
+            /* Full light object write: 16 words starting at base.
+             * Layout: [0-2]=reserved, [3]=Color, [4-6]=a[3], [7-9]=k[3],
+             *         [10-12]=lpos[3], [13-15]=ldir[3] */
+            GXLightState* lt = &g_gx_state.lights[light_idx];
+
+            /* Color (word 3): packed RGBA8 */
+            u32 clr = values[3];
+            lt->color.r = (u8)((clr >> 24) & 0xFF);
+            lt->color.g = (u8)((clr >> 16) & 0xFF);
+            lt->color.b = (u8)((clr >> 8) & 0xFF);
+            lt->color.a = (u8)(clr & 0xFF);
+
+            /* Angle attenuation a[3] (words 4-6) */
+            for (int j = 0; j < 3; j++) {
+                union { u32 u; f32 f; } conv;
+                conv.u = values[4 + j];
+                lt->a[j] = conv.f;
+            }
+
+            /* Distance attenuation k[3] (words 7-9) */
+            for (int j = 0; j < 3; j++) {
+                union { u32 u; f32 f; } conv;
+                conv.u = values[7 + j];
+                lt->k[j] = conv.f;
+            }
+
+            /* Position (words 10-12) */
+            for (int j = 0; j < 3; j++) {
+                union { u32 u; f32 f; } conv;
+                conv.u = values[10 + j];
+                lt->lpos[j] = conv.f;
+            }
+
+            /* Direction (words 13-15) — stored negated per SDK */
+            for (int j = 0; j < 3; j++) {
+                union { u32 u; f32 f; } conv;
+                conv.u = values[13 + j];
+                lt->ldir[j] = conv.f;
+            }
+
+            lt->active = 1;
+        }
+        return;
+    }
 }
 
 /* ================================================================ */
@@ -483,16 +674,38 @@ static void dl_handle_bp_reg(u32 value) {
         return;
     }
 
-    /* GEN_MODE (register 0x00): number of TEV stages, tex gens, color channels */
+    /* GEN_MODE (register 0x00): number of TEV stages, tex gens, color channels, cull mode */
     if (addr == 0x00) {
-        /* BP_GEN_MODE bit layout:
-         * [3:0] = nTexGens, [5:4] = nChans, [13:10] = nTevs, [18:16] = nInds */
+        /* BP_GEN_MODE bit layout (from dolsdk2004 GXGeometry.c, GXInit.c):
+         * [3:0]   = nTexGens
+         * [5:4]   = nChans
+         * [13:10] = nTevs (stored as n-1)
+         * [15:14] = cull mode (HARDWARE values — swapped from API!)
+         * [18:16] = nInds
+         * [19]    = coplanar
+         *
+         * IMPORTANT: dolsdk2004 GXSetCullMode swaps FRONT↔BACK:
+         *   GX_CULL_FRONT (API=1) → hw value 2 (BACK)
+         *   GX_CULL_BACK  (API=2) → hw value 1 (FRONT)
+         * We need to reverse this swap when reading from BP. */
         u8 nTevs = (u8)(((data >> 10) & 0xF) + 1); /* stored as n-1 */
         pal_gx_set_num_tev_stages(nTevs);
         u8 nChans = (u8)((data >> 4) & 0x3);
         pal_gx_set_num_chans(nChans);
         u8 nTexGens = (u8)(data & 0xF);
         pal_gx_set_num_tex_gens(nTexGens);
+
+        /* Extract cull mode and reverse the HW swap */
+        u8 hw_cull = (u8)((data >> 14) & 0x3);
+        GXCullMode api_cull;
+        switch (hw_cull) {
+        case 0:  api_cull = GX_CULL_NONE; break;
+        case 1:  api_cull = GX_CULL_BACK;  break;  /* hw FRONT → API BACK */
+        case 2:  api_cull = GX_CULL_FRONT; break;  /* hw BACK → API FRONT */
+        case 3:  api_cull = GX_CULL_ALL;   break;
+        default: api_cull = GX_CULL_BACK;  break;
+        }
+        pal_gx_set_cull_mode(api_cull);
         return;
     }
 
