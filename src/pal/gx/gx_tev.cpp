@@ -2605,6 +2605,54 @@ void pal_tev_flush_draw(void) {
                     ts->color_a, ts->color_b, ts->color_c, ts->color_d,
                     (unsigned)nverts);
         }
+
+        /* One-shot frame-200 TEV color-pipeline dump.
+         * Fires for EVERY draw on diagnostic frame 200 (the daTitle full-draw
+         * window). Logs the full chain that determines output color:
+         *   d_src      : TEV stage-0 D input (GX_CC_C0=6, GX_CC_RASC=10, …)
+         *   tev0_before: GX_TEVREG0 value before any apply_rasc_color override
+         *   mat        : chan_ctrl[0].mat_color (source for non-ambient fallback)
+         *   amb        : chan_ctrl[0].amb_color (used when mat is dark)
+         *   const_clr  : resolved vertex/const color AFTER all fallback logic
+         *   inject     : 1 if color was injected (no CLR0 in vertex buffer)
+         *   tev_dirty  : bitmask of explicitly-set tev_regs (bit N = GX_TEVREGN)
+         * Use these fields to diagnose why frame-200 draws produce near-black
+         * avg_rgb. If mat=[0,0,0,255] the grey fallback fires but gives 200,200,
+         * 200 — if still dark, look for a blend-state alpha kill or wrong preset. */
+        if (s_diag_frame == 200) {
+            const GXTevStage* s0t = &g_gx_state.tev_stages[0];
+            fprintf(stderr, "{\"tev200\":{\"frame\":%u,\"draw_id\":%u,\"dc\":%u,"
+                    "\"preset\":\"%s\","
+                    "\"d_src\":%d,"
+                    "\"tev0_before\":[%d,%d,%d,%d],"
+                    "\"mat\":[%d,%d,%d,%d],"
+                    "\"amb\":[%d,%d,%d,%d],"
+                    "\"const_clr\":[%d,%d,%d,%d],"
+                    "\"inject\":%d,"
+                    "\"tev_dirty\":\"0x%02x\","
+                    "\"z_func\":%d,\"blend_mode\":%d}}\n",
+                    s_diag_frame, s_total_draw_count, (unsigned)gx_frame_draw_calls,
+                    (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                    (int)(s0t->color_d),
+                    g_gx_state.tev_regs[GX_TEVREG0].r,
+                    g_gx_state.tev_regs[GX_TEVREG0].g,
+                    g_gx_state.tev_regs[GX_TEVREG0].b,
+                    g_gx_state.tev_regs[GX_TEVREG0].a,
+                    (int)g_gx_state.chan_ctrl[0].mat_color.r,
+                    (int)g_gx_state.chan_ctrl[0].mat_color.g,
+                    (int)g_gx_state.chan_ctrl[0].mat_color.b,
+                    (int)g_gx_state.chan_ctrl[0].mat_color.a,
+                    (int)g_gx_state.chan_ctrl[0].amb_color.r,
+                    (int)g_gx_state.chan_ctrl[0].amb_color.g,
+                    (int)g_gx_state.chan_ctrl[0].amb_color.b,
+                    (int)g_gx_state.chan_ctrl[0].amb_color.a,
+                    (int)const_clr[0], (int)const_clr[1],
+                    (int)const_clr[2], (int)const_clr[3],
+                    inject_color,
+                    (unsigned)g_gx_state.tev_reg_dirty,
+                    (int)g_gx_state.z_func,
+                    (int)g_gx_state.blend_mode);
+        }
     }
 
     /* Apply scissor if set to a non-fullscreen region */

@@ -178,6 +178,8 @@ elif [[ "$PHASE" == "4" ]]; then
     echo "Phase 4 PROC_TITLE enable status + j3d_draw_diag at frame 200:"
     grep 'TP_ENABLE_PROC_TITLE\|j3d_draw_diag.*"frame":200' "$LOG_FILE" 2>/dev/null | head -5 || \
         echo "(check $LOG_FILE for draw counts)"
+    echo "Phase 4 frame-200 TEV color-pipeline dump (tev200 — const_clr before/after fallback):"
+    grep '"tev200"' "$LOG_FILE" 2>/dev/null || echo "(tev200 not reached — frame 200 not hit or no draws)"
     echo "Phase 4 opening scene crash catch:"
     grep 'demo/event crash at' "$LOG_FILE" 2>/dev/null || echo "(no crash catch logged)"
     echo "Phase 4 daTitle actor diagnostics (Draw/dDlst):"
