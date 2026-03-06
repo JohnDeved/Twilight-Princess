@@ -9,6 +9,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include <cstring>
+#include <cmath>
 
 #include "dolphin/types.h"
 #include "revolution/gx/GXEnum.h"
@@ -565,24 +566,112 @@ void GXSetFieldMode(GXBool field_mode, GXBool half_aspect_ratio) { (void)field_m
 /* GX Lighting                                                      */
 /* ================================================================ */
 
+/* GX Light Init functions — write directly to GXLightObj memory.
+ * Layout from dolsdk2004 GXLight.c __GXLightObjInt_struct:
+ *   +0x00: reserved[3] (12 bytes)
+ *   +0x0C: Color (4 bytes, packed R<<24|G<<16|B<<8|A)
+ *   +0x10: a[3] (12 bytes, angle attenuation)
+ *   +0x1C: k[3] (12 bytes, distance attenuation)
+ *   +0x28: lpos[3] (12 bytes, position)
+ *   +0x34: ldir[3] (12 bytes, direction — NEGATED by GXInitLightDir) */
+
 void GXInitLightAttn(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2) {
-    (void)lt_obj; (void)a0; (void)a1; (void)a2; (void)k0; (void)k1; (void)k2;
+    if (!lt_obj) return;
+    f32* a = (f32*)((u8*)lt_obj + 0x10);
+    f32* k = (f32*)((u8*)lt_obj + 0x1C);
+    a[0] = a0; a[1] = a1; a[2] = a2;
+    k[0] = k0; k[1] = k1; k[2] = k2;
 }
-void GXInitLightAttnA(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2) { (void)lt_obj; (void)a0; (void)a1; (void)a2; }
-void GXInitLightAttnK(GXLightObj* lt_obj, f32 k0, f32 k1, f32 k2) { (void)lt_obj; (void)k0; (void)k1; (void)k2; }
+void GXInitLightAttnA(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2) {
+    if (!lt_obj) return;
+    f32* a = (f32*)((u8*)lt_obj + 0x10);
+    a[0] = a0; a[1] = a1; a[2] = a2;
+}
+void GXInitLightAttnK(GXLightObj* lt_obj, f32 k0, f32 k1, f32 k2) {
+    if (!lt_obj) return;
+    f32* k = (f32*)((u8*)lt_obj + 0x1C);
+    k[0] = k0; k[1] = k1; k[2] = k2;
+}
 void GXInitLightSpot(GXLightObj* lt_obj, f32 cutoff, GXSpotFn spot_func) {
-    (void)lt_obj; (void)cutoff; (void)spot_func;
+    /* Compute spot attenuation coefficients per dolsdk2004 GXLight.c */
+    f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
+    if (cutoff > 0.0f && cutoff <= 90.0f) {
+        f32 r = (3.1415927f * cutoff) / 180.0f;
+        f32 cr = cosf(r);
+        f32 d;
+        switch (spot_func) {
+        case GX_SP_FLAT:
+            a0 = -1000.0f * cr; a1 = 1000.0f; break;
+        case GX_SP_COS:
+            a1 = 1.0f / (1.0f - cr); a0 = -cr * a1; break;
+        case GX_SP_COS2:
+            a2 = 1.0f / (1.0f - cr); a1 = -cr * a2; a0 = 0.0f; break;
+        case GX_SP_SHARP:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a0 = cr * (cr - 2.0f) * d; a1 = 2.0f * d; a2 = -d; break;
+        case GX_SP_RING1:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a2 = -4.0f * d; a0 = a2 * cr; a1 = 4.0f * (1.0f + cr) * d; break;
+        case GX_SP_RING2:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a0 = 1.0f - 2.0f * cr * cr * d; a1 = 4.0f * cr * d; a2 = -2.0f * d; break;
+        default: break;
+        }
+    }
+    GXInitLightAttnA(lt_obj, a0, a1, a2);
 }
 void GXInitLightDistAttn(GXLightObj* lt_obj, f32 ref_dist, f32 ref_br, GXDistAttnFn dist_func) {
-    (void)lt_obj; (void)ref_dist; (void)ref_br; (void)dist_func;
+    /* Compute distance attenuation coefficients per dolsdk2004 GXLight.c */
+    f32 k0 = 1.0f, k1 = 0.0f, k2 = 0.0f;
+    if (ref_dist >= 0.0f && ref_br > 0.0f && ref_br < 1.0f) {
+        switch (dist_func) {
+        case GX_DA_GENTLE:
+            k1 = (1.0f - ref_br) / (ref_br * ref_dist); break;
+        case GX_DA_MEDIUM:
+            k1 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist);
+            k2 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;
+        case GX_DA_STEEP:
+            k2 = (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;
+        default: break;
+        }
+    }
+    GXInitLightAttnK(lt_obj, k0, k1, k2);
 }
-void GXInitLightPos(GXLightObj* lt_obj, f32 x, f32 y, f32 z) { (void)lt_obj; (void)x; (void)y; (void)z; }
-void GXInitLightDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) { (void)lt_obj; (void)nx; (void)ny; (void)nz; }
-void GXInitSpecularDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) { (void)lt_obj; (void)nx; (void)ny; (void)nz; }
+void GXInitLightPos(GXLightObj* lt_obj, f32 x, f32 y, f32 z) {
+    if (!lt_obj) return;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = x; lpos[1] = y; lpos[2] = z;
+}
+void GXInitLightDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) {
+    if (!lt_obj) return;
+    /* SDK stores direction NEGATED */
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = -nx; ldir[1] = -ny; ldir[2] = -nz;
+}
+void GXInitSpecularDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) {
+    if (!lt_obj) return;
+    /* Per dolsdk2004: specular half-angle vector computed from view dir (0,0,1) */
+    f32 vx = -nx, vy = -ny, vz = -nz + 1.0f;
+    f32 mag = vx*vx + vy*vy + vz*vz;
+    if (mag != 0.0f) mag = 1.0f / sqrtf(mag);
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = vx * mag; ldir[1] = vy * mag; ldir[2] = vz * mag;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = nx * -1e18f; lpos[1] = ny * -1e18f; lpos[2] = nz * -1e18f;
+}
 void GXInitSpecularDirHA(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz, f32 hx, f32 hy, f32 hz) {
-    (void)lt_obj; (void)nx; (void)ny; (void)nz; (void)hx; (void)hy; (void)hz;
+    if (!lt_obj) return;
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = hx; ldir[1] = hy; ldir[2] = hz;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = nx * -1e18f; lpos[1] = ny * -1e18f; lpos[2] = nz * -1e18f;
 }
-void GXInitLightColor(GXLightObj* lt_obj, GXColor color) { (void)lt_obj; (void)color; }
+void GXInitLightColor(GXLightObj* lt_obj, GXColor color) {
+    if (!lt_obj) return;
+    /* Pack as R<<24|G<<16|B<<8|A per SDK */
+    u32 packed = ((u32)color.r << 24) | ((u32)color.g << 16) | ((u32)color.b << 8) | color.a;
+    memcpy((u8*)lt_obj + 0x0C, &packed, 4);
+}
 void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) {
     pal_gx_load_light_obj(lt_obj, (u32)light);
 }
