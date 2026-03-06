@@ -2,9 +2,6 @@ name: Port Test (PC Headless)
 
 on:
   push:
-    branches:
-      - port
-      - 'copilot/**'
     paths:
       - 'src/**'
       - 'include/**'
