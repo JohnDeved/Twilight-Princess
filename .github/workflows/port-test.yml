@@ -362,15 +362,7 @@ jobs:
           fi
 
           if [ -f frame-compare-results.json ]; then
-            python3 -c "
-import json, sys
-r = json.load(open('frame-compare-results.json'))
-passed = r.get('passed', True)
-results = r.get('results', [])
-n_pass = sum(1 for x in results if x.get('passed'))
-n_fail = sum(1 for x in results if not x.get('passed'))
-print(f'Frame compare: {n_pass} passed, {n_fail} failed, overall={passed}')
-"
+            python3 -c "import json; r=json.load(open('frame-compare-results.json')); passed=r.get('passed',True); results=r.get('results',[]); n_pass=sum(1 for x in results if x.get('passed')); n_fail=sum(1 for x in results if not x.get('passed')); print(f'Frame compare: {n_pass} passed, {n_fail} failed, overall={passed}')"
           fi
 
       - name: Convert frames to PNG
