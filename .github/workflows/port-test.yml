@@ -242,11 +242,14 @@ jobs:
         run: |
           # || true: Always produce the report JSON for the PR comment step.
           # Rendering issues are surfaced in the PR comment, not as build failures.
+          # --update-golden: save captured frames as new golden references when none exist
+          # (first CI run after a rendering change seeds new baselines automatically).
           python3 tools/verify_port.py milestones.log \
             --output verify-report.json \
             --verify-dir verify_output \
             --golden-dir tests/golden \
             --render-baseline tests/render-baseline.json \
+            --update-golden \
             --check-all || true
 
       - name: Validate draw-call telemetry
@@ -315,7 +318,25 @@ jobs:
             echo "✅ Baseline committed and pushed"
           fi
 
-      - name: Convert screenshots and generate video
+      - name: Commit new golden references
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          # Auto-commit any new golden reference BMPs saved by verify_port.py --update-golden.
+          # Only new files are saved (existing golden refs are never overwritten by --update-golden).
+          # This ensures the first CI run after a rendering fix seeds correct golden baselines.
+          NEW_GOLDENS=$(git ls-files --others --exclude-standard tests/golden/frame_*.bmp 2>/dev/null | wc -l || echo 0)
+          if [ "${NEW_GOLDENS}" -gt 0 ] 2>/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add tests/golden/frame_*.bmp 2>/dev/null || true
+            GOLDEN_LIST=$(git diff --cached --name-only | grep 'tests/golden/frame_' | sed 's|tests/golden/||' | tr '\n' ' ')
+            git commit -m "ci: add golden reference BMPs (${GOLDEN_LIST})" || echo "Nothing to commit"
+            git pull --rebase origin ${{ github.head_ref }} || echo "⚠️ Rebase failed — golden commit may not be pushed"
+            git push origin HEAD:${{ github.head_ref }} || echo "⚠️ Push failed — goldens will be seeded on next run"
+            echo "✅ New golden references committed: ${GOLDEN_LIST}"
+          else
+            echo "No new golden reference BMPs to commit"
+          fi
         if: always()
         run: |
           # convert_frames.py converts BMP→PNG for embedding

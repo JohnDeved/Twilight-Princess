@@ -71,11 +71,11 @@ case "$PHASE" in
     4)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase4}"
         TIMEOUT_SECS="${TIMEOUT_SECS:-120}"
-        PHASE_DESC="gameplay intro frame capture (frame 200)"
+        PHASE_DESC="gameplay intro frame capture (logo scene)"
         DISPLAY_NUM=":103"
-        CAPTURE_FRAME="0200"
-        GATE="frame_0200:1"
-        GATE_MSG="Gameplay gate FAILED: frame_0200 pct_nonblack < 1% — check PROC_TITLE draw pipeline (TP_ENABLE_PROC_TITLE=1) and daTitle_c::Draw() in d_a_title.cpp"
+        CAPTURE_FRAME="0030"
+        GATE="frame_0030:1"
+        GATE_MSG="Gameplay gate FAILED: frame_0030 pct_nonblack < 1% — clearEfb tev_reg_dirty fix may have regressed (check D=C0 dirty-bit guard in gx_tev.cpp ~line 1579) or logo scene not reaching frame 30"
         ;;
     *)
         echo "ERROR: Unknown phase: $PHASE (supported: 3, 4)" >&2
