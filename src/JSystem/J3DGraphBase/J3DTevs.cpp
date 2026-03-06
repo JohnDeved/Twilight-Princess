@@ -281,6 +281,23 @@ u16 getTexNoReg(void* pDL) {
 }
 
 void loadTexNo(u32 param_0, const u16& texNo) {
+#if PLATFORM_PC
+    /* Guard against out-of-bounds texNo from incompletely-swapped MAT3 data.
+     * getResTIMG() accesses mpRes[texNo] with no bounds check in release builds;
+     * an invalid texNo (e.g. left in big-endian byte order) causes an OOB
+     * access and SIGSEGV.  Skip the load rather than crash — affected materials
+     * will render without a texture (grey/solid-color fallback). */
+    J3DTexture* tex = j3dSys.getTexture();
+    if (tex == NULL || texNo >= tex->getNum()) {
+        static int s_loadTexNo_skip_log = 0;
+        if (s_loadTexNo_skip_log < 10) {
+            fprintf(stderr, "[PAL] loadTexNo: skip texNo=%u num=%u (out of range)\n",
+                    (unsigned)texNo, tex ? (unsigned)tex->getNum() : 0u);
+            s_loadTexNo_skip_log++;
+        }
+        return;
+    }
+#endif
     ResTIMG* resTIMG = j3dSys.getTexture()->getResTIMG(texNo);
     J3D_ASSERT_NULLPTR(462, resTIMG != NULL);
 

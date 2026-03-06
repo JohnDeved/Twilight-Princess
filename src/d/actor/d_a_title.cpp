@@ -19,6 +19,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include "pal/gx/gx_stub_tracker.h"
+#include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #endif
 
 class daTit_HIO_c {
@@ -548,23 +549,52 @@ int daTitle_c::Draw() {
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
 #else
-    /* PC: call unlock/entry/lock directly, bypassing mDoExt_modelDiff
-     * (which calls calcMaterial with uninitialised animation matrices).
+    /* PC: set j3dSys draw buffers to item3D before entry().
      *
-     * ROOT CAUSE (to be fixed): entry() crashes inside J3DJoint::entryIn()
-     * for the title model — possibly because j3dSys.getDrawBuffer(0) is NULL
-     * when the title actor runs (the draw buffer is initialised later in the
-     * render pass, after the early actors in draw_iter have already run).
-     * Tracked for Phase 5: investigate j3dSys draw-buffer init order vs
-     * the title actor draw_iter index, and fix entry() before enabling Phase 4
-     * visual confirmation.
+     * ROOT CAUSE FIX: J3DJoint::entryIn() unconditionally dereferences
+     * j3dSys.getDrawBuffer(0) and getDrawBuffer(1) to call setZMtx().
+     * These return NULL when no draw list has been pushed yet, causing a
+     * null-pointer crash.  Calling dComIfGd_setListItem3D() here — which is
+     * what the GCN path does before mDoExt_modelUpdateDL — sets the item3D
+     * draw buffers so entry() can safely register the model's shape packets.
+     *
+     * entry() may still raise SIGSEGV when makeDisplayList() accesses
+     * incompletely-swapped TEV/PE block data.  Wrap with a per-call
+     * sigsetjmp so that a crash in entry() does NOT permanently suppress
+     * this Draw() function; we fall through to viewCalc() with whatever
+     * packets were registered before the fault, allowing the model to
+     * render partially on the first call and fully once the display-list
+     * cache warms up on subsequent frames.
      *
      * For viewCalc: force mode 2 (J3DMdlFlag_UseDefaultJ3D) so viewCalc()
      * takes J3DCalcViewBaseMtx instead of calcAnmMtx() → J3DJointTree::calc()
-     * which dereferences basicMtxCalc=NULL (not set because BCK entry() skipped). */
-    mpModel->unlock();
-    mpModel->entry();
-    mpModel->lock();
+     * which dereferences basicMtxCalc=NULL (BCK entry() is skipped on PC to
+     * avoid big-endian animation crashes). */
+    dComIfGd_setListItem3D();
+    {
+        /* Protect entry() with a local sigsetjmp so that a crash during
+         * makeDisplayList() / TEV-block load does not bubble up to the
+         * outer per-actor Draw() crash handler (which permanently suppresses
+         * this profile).  Redirect pal_crash_jmpbuf for the duration. */
+        extern sigjmp_buf* pal_crash_jmpbuf;
+        sigjmp_buf entry_jb;
+        sigjmp_buf* outer_jb = pal_crash_jmpbuf;
+        pal_crash_jmpbuf = &entry_jb;
+        if (sigsetjmp(entry_jb, 1) == 0) {
+            mpModel->unlock();
+            mpModel->entry();
+            mpModel->lock();
+            pal_crash_jmpbuf = outer_jb;
+        } else {
+            pal_crash_jmpbuf = outer_jb;
+            static int s_entry_crash_log = 0;
+            if (s_entry_crash_log < 5) {
+                fprintf(stderr, "[PAL] daTitle entry() fault #%d — %d pkts registered, continuing\n",
+                        s_entry_crash_log + 1, J3DDrawBuffer::entryNum);
+                s_entry_crash_log++;
+            }
+        }
+    }
     {
         u32 saved_flags = mpModel->mFlags & (J3DMdlFlag_Unk1 | J3DMdlFlag_UseDefaultJ3D);
         mpModel->offFlag(J3DMdlFlag_Unk1);
@@ -573,6 +603,7 @@ int daTitle_c::Draw() {
         mpModel->offFlag(J3DMdlFlag_UseDefaultJ3D);
         mpModel->onFlag(saved_flags);
     }
+    dComIfGd_setList();
 #endif
 
     if (field_0x5f8) {

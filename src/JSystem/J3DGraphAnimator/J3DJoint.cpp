@@ -7,6 +7,12 @@
 #include "JSystem/J3DGraphBase/J3DMaterial.h"
 #include "JSystem/JMath/JMath.h"
 #include "m_Do/m_Do_mtx.h"
+#if PLATFORM_PC
+#include "global.h"
+#include <setjmp.h>
+#include <signal.h>
+extern sigjmp_buf* pal_crash_jmpbuf;
+#endif
 
 void J3DMtxCalcJ3DSysInitBasic::init(Vec const& scale, Mtx const& mtx) {
     J3DSys::mCurrentS = scale;
@@ -182,7 +188,35 @@ void J3DJoint::entryIn() {
             if (r24) {
                 j3dSys.setMatPacket(matPacket);
                 J3DDrawBuffer::entryNum++;
+#if PLATFORM_PC
+                /* makeDisplayList() writes GX commands using J3D block data that
+                 * may be incompletely byte-swapped on PC.  Protect with sigsetjmp
+                 * so that a crash in ONE material's DL build does not abort the
+                 * entire entryIn() loop — remaining materials are still registered. */
+                {
+                    sigjmp_buf dl_jb;
+                    sigjmp_buf* outer_jb = pal_crash_jmpbuf;
+                    pal_crash_jmpbuf = &dl_jb;
+                    if (sigsetjmp(dl_jb, 1) == 0) {
+                        mesh->makeDisplayList();
+                        pal_crash_jmpbuf = outer_jb;
+                    } else {
+                        pal_crash_jmpbuf = outer_jb;
+                        /* DL build crashed for this material — the entryNum was
+                         * already incremented so the packet is in the draw buffer.
+                         * The packet's DL may be incomplete/empty; it will render
+                         * as nothing or a partial shape, which is acceptable. */
+                        static int s_makedl_crash = 0;
+                        if (s_makedl_crash < 10) {
+                            fprintf(stderr, "[PAL] J3DJoint::entryIn: makeDisplayList fault #%d mat=%d\n",
+                                    s_makedl_crash + 1, (int)mesh->getIndex());
+                            s_makedl_crash++;
+                        }
+                    }
+                }
+#else
                 mesh->makeDisplayList();
+#endif
             }
             mesh = mesh->getNext();
         }

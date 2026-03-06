@@ -3967,6 +3967,22 @@ J3DModel* mDoExt_J3DModel__create(J3DModelData* i_modelData, u32 i_modelFlag, u3
                     i_modelFlag = J3DMdlFlag_DifferedDLBuffer;
                 }
             }
+#if PLATFORM_PC
+            else {
+                /* PC: newSharedDisplayList() is skipped for Title/other models
+                 * (see d_resorce.cpp PC guard).  When hasSharedDlistObj==false
+                 * the passed i_modelFlag may still be J3DMdlFlag_DifferedDLBuffer
+                 * (0x80000).  entryModelData() with that flag requires every
+                 * material to have a SharedDisplayListObj != NULL and will hit
+                 * the NULL-dereference assert at J3DModel.cpp:253.
+                 * Fix: clear DifferedDLBuffer so entryModelData() falls through
+                 * to the normal matPacket->newDisplayList() path which allocates
+                 * fresh GX DL buffers for each material. */
+                if (i_modelFlag & J3DMdlFlag_DifferedDLBuffer) {
+                    i_modelFlag &= ~J3DMdlFlag_DifferedDLBuffer;
+                }
+            }
+#endif
 
             // Set up the model
             s32 entryModelData = model->entryModelData(i_modelData, i_modelFlag, 1);
