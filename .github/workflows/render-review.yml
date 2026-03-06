@@ -47,11 +47,13 @@ jobs:
           # (echo "key=val\nval2" only stores the first line).
           # The [ -f "$f" ] guard drops deleted files so clang-format is never
           # given a path that no longer exists on disk.
+          # NUL-safe pipeline: keep -z through grep (-z makes grep use NUL as
+          # record separator) and use read -d '' to consume NUL-terminated records,
+          # so filenames containing newlines are never misinterpreted.
           git diff --name-only -z "$BASE" "$HEAD" -- \
             'src/pal/' 'include/pal/' 'src/pc/' 'include/pc/' \
-            | tr '\0' '\n' \
-            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
-            | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
+            | grep -z -E '\.(cpp|cc|cxx|c|h|hpp)$' \
+            | while IFS= read -r -d '' f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
             > clang-format-files.txt 2>/dev/null || true
           if [ -s clang-format-files.txt ]; then
             echo "has_files=true" >> $GITHUB_OUTPUT
@@ -158,7 +160,9 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           # Only scan C/C++ source files that were actually touched by this PR.
-          # Using -z / tr for safe filename handling.
+          # NUL-safe pipeline: keep -z through grep (-z makes grep use NUL as
+          # record separator) and use read -d '' to consume NUL-terminated records,
+          # so filenames containing newlines are never misinterpreted.
           # Filter through [ -f ] to skip files deleted in this PR — cppcheck
           # errors out when given a nonexistent path.
           #
@@ -166,10 +170,9 @@ jobs:
           # multiline-value quoting issues (echo "key=val\nval2" only stores the
           # first line in GITHUB_OUTPUT).
           git diff --name-only -z "$BASE" "$HEAD" \
-            | tr '\0' '\n' \
-            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
-            | grep -E '^(src/pal/|include/pal/|src/pc/|include/pc/)' \
-            | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
+            | grep -z -E '\.(cpp|cc|cxx|c|h|hpp)$' \
+            | grep -z -E '^(src/pal/|include/pal/|src/pc/|include/pc/)' \
+            | while IFS= read -r -d '' f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
             > cppcheck-files.txt 2>/dev/null || true
           if [ -s cppcheck-files.txt ]; then
             echo "has_files=true" >> $GITHUB_OUTPUT
