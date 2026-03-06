@@ -157,29 +157,35 @@ jobs:
           # Using -z / tr for safe filename handling.
           # Filter through [ -f ] to skip files deleted in this PR — cppcheck
           # errors out when given a nonexistent path.
-          FILES=$(git diff --name-only -z "$BASE" "$HEAD" \
+          #
+          # Write the list to a workspace file instead of GITHUB_OUTPUT to avoid
+          # multiline-value quoting issues (echo "key=val\nval2" only stores the
+          # first line in GITHUB_OUTPUT).
+          git diff --name-only -z "$BASE" "$HEAD" \
             | tr '\0' '\n' \
             | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
             | grep -E '^(src/pal/|include/pal/|src/pc/|include/pc/)' \
             | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
-            || true)
-          echo "files=$FILES" >> $GITHUB_OUTPUT
-          if [ -z "$FILES" ]; then
-            echo "No C/C++ render-backend files changed — skipping cppcheck."
+            > cppcheck-files.txt 2>/dev/null || true
+          if [ -s cppcheck-files.txt ]; then
+            echo "has_files=true" >> $GITHUB_OUTPUT
+            echo "cppcheck targets:"
+            cat cppcheck-files.txt
           else
-            echo "cppcheck targets: $FILES"
+            echo "has_files=false" >> $GITHUB_OUTPUT
+            echo "No C/C++ render-backend files changed — skipping cppcheck."
           fi
 
       - name: Run cppcheck on changed files
         id: cppcheck
-        if: steps.changed_cpp.outputs.files != ''
+        if: steps.changed_cpp.outputs.has_files == 'true'
         run: |
           # Run cppcheck only on C/C++ files changed by this PR.
           # Scoping to changed files avoids false positives from unrelated shared
           # headers (e.g. include/revolution/os.h) that are pulled in transitively.
           mkdir -p cppcheck-results
-          # Build the file list for cppcheck (one file per line → positional args)
-          readarray -t FILES <<< "${{ steps.changed_cpp.outputs.files }}"
+          # Build the file list for cppcheck from the workspace file (one file per line).
+          mapfile -t FILES < cppcheck-files.txt
           cppcheck \
             --enable=warning,performance,portability \
             --suppress=missingInclude \
@@ -222,7 +228,7 @@ jobs:
           echo "issues_count=$(python3 -c "import json; d=json.load(open('cppcheck-results/issues.json')); print(len(d))")" >> $GITHUB_OUTPUT
 
       - name: Write empty results when no files changed
-        if: steps.changed_cpp.outputs.files == ''
+        if: steps.changed_cpp.outputs.has_files != 'true'
         run: |
           mkdir -p cppcheck-results
           echo '[]' > cppcheck-results/issues.json
@@ -314,44 +320,54 @@ jobs:
             const fs = require('fs');
             const path = require('path');
 
-            // Find the most recent completed port-test run for this PR's head SHA
-            const headSha = context.payload.pull_request.head.sha;
-            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              event: 'pull_request',
-              status: 'completed',
-              per_page: 10,
-            });
+            // Wrap everything in a try-catch so transient GitHub API errors
+            // (HTTP 500 "Unicorn" responses, rate-limits, etc.) do not fail
+            // the workflow — treat them the same as "no port-test run found".
+            try {
+              // Find the most recent completed port-test run for this PR's head SHA
+              const headSha = context.payload.pull_request.head.sha;
+              const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                event: 'pull_request',
+                status: 'completed',
+                per_page: 10,
+              });
 
-            const portRun = runs.workflow_runs.find(r =>
-              r.name === 'Port Test (PC Headless)' && r.head_sha === headSha
-            );
+              const portRun = runs.workflow_runs.find(r =>
+                r.name === 'Port Test (PC Headless)' && r.head_sha === headSha
+              );
 
-            if (!portRun) {
-              console.log('No completed port-test run found for this commit.');
+              if (!portRun) {
+                console.log('No completed port-test run found for this commit.');
+                core.setOutput('has_diffs', 'false');
+                return;
+              }
+
+              // List artifacts from that run
+              const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: portRun.id,
+              });
+
+              const resultsArtifact = artifacts.artifacts.find(a => a.name === 'port-test-results');
+              if (!resultsArtifact) {
+                console.log('No port-test-results artifact found.');
+                core.setOutput('has_diffs', 'false');
+                return;
+              }
+
+              core.setOutput('has_diffs', 'true');
+              core.setOutput('run_id', portRun.id.toString());
+              core.setOutput('artifact_url',
+                `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${portRun.id}`);
+
+            } catch (error) {
+              // Transient API error — log it and proceed as if no port-test run exists.
+              console.log(`GitHub API error while fetching port-test artifacts: ${error.message}`);
               core.setOutput('has_diffs', 'false');
-              return;
             }
-
-            // List artifacts from that run
-            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: portRun.id,
-            });
-
-            const resultsArtifact = artifacts.artifacts.find(a => a.name === 'port-test-results');
-            if (!resultsArtifact) {
-              console.log('No port-test-results artifact found.');
-              core.setOutput('has_diffs', 'false');
-              return;
-            }
-
-            core.setOutput('has_diffs', 'true');
-            core.setOutput('run_id', portRun.id.toString());
-            core.setOutput('artifact_url',
-              `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${portRun.id}`);
 
       - name: Post frame diff comment
         if: steps.download_diffs.outputs.has_diffs == 'true'
