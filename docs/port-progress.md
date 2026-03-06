@@ -30,8 +30,13 @@
 | **Depth/blend** | GXSetZMode/GXSetBlendMode propagation to bgfx state (frames_with_depth=0) | 1 session | P1 |
 | **RASC color fix** | ✅ DONE: `apply_rasc_color()` now uses `chan_ctrl.enable` and `mat_src` per dolsdk2004 SDK instead of projection-type heuristic. enable=0→mat_color/vtx_color, enable=1→amb approximation. Also fixed GX_COLOR0A0 to replicate to alpha channel per SDK. | Done | P0 done |
 | **Light object capture** | ✅ DONE: `GXInitLight*` functions now write to `GXLightObj` internal layout per dolsdk2004 `__GXLightObjInt_struct`. `GXLoadLightObjImm` captures into `g_gx_state.lights[]` array. Foundation for full lighting (Recipe 3). | Done | P0 done |
-| **TEV expansion** | Additional TEV combiner patterns for J3D 3D materials (beyond 5 presets). See [dolsdk2004-reference.md](dolsdk2004-reference.md) Recipe 2 for generic uber-shader approach. | 2-3 sessions | P2 |
-| **Lighting** | Ambient/diffuse/specular from GX light state into shaders. Light data now captured via `GXLoadLightObjImm`. See [dolsdk2004-reference.md](dolsdk2004-reference.md) Recipe 3 for full lighting equation from SDK. | 2 sessions | P2 |
+| **TEV uber-shader** | ✅ DONE: New `fs_gx_tev.sc` uber-shader with uniform-driven mode selection (all 5 modes + generic fallback). Pre-compiled for GLSL/ESSL/SPIR-V. [Recipe 2](dolsdk2004-reference.md#recipe-2). | Done | P1 done |
+| **Alpha compare/discard** | ✅ DONE: Fragment shader alpha test with dual comparisons and AND/OR/XOR/XNOR logic ops. Activated when alpha_comp != GX_ALWAYS. Fixes foliage/grass transparency. [Recipe 4](dolsdk2004-reference.md#recipe-4). | Done | P1 done |
+| **GX lighting pipeline** | ✅ DONE: CPU-side ambient + diffuse + attenuation computation. Uses captured light state from `g_gx_state.lights[]`. Replaces grey fallback for lit materials. [Recipe 3](dolsdk2004-reference.md#recipe-3). | Done | P2 done |
+| **DL indexed matrix loads** | ✅ DONE: DL parser forwards LOAD_INDX_A/B/C/D to `pal_gx_fifo_load_indx()` for position/normal matrix resolution from vertex arrays. Enables skeletal animation in DL mode. [Recipe 6](dolsdk2004-reference.md#recipe-6). | Done | P1 done |
+| **VAT color sizes** | ✅ DONE: Color attribute sizes use dolsdk2004 `clrCompSize[6]` table (RGB565=2, RGB8=3, RGBX8=4, RGBA4=2, RGBA6=3, RGBA8=4). Was hardcoded to 4 bytes. [Recipe 7](dolsdk2004-reference.md#recipe-7). | Done | P0 done |
+| **Mipmap utilities** | ✅ FOUNDATION: `pal_gx_tex_mipmap_chain_size()` and `pal_gx_tex_mip_offset()` for mip level addressing. Needs wiring into texture upload for multi-LOD support. [Recipe 5](dolsdk2004-reference.md#recipe-5). | Partial | P2 partial |
+| **Lighting** | Per-vertex lighting with position-based attenuation and normal-based diffuse. Current approximation uses average incidence (0.5). | Future | P2 |
 | **Audio** | Software mixer replacing DSP/ARAM → SDL3 PCM output | 3-4 sessions | P3 |
 | **Gameplay** | Title → Ordon → Faron → Forest Temple loop (auto-input injection) | 2-3 sessions | P3 |
 | **NX Homebrew** | libnx/EGL, HID, audren, romfs backends | 3-4 sessions | P4 |

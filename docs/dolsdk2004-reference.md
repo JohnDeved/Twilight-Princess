@@ -660,11 +660,18 @@ currently does, and exactly what to change.
 
 ---
 
-### Recipe 2: Generic TEV Uber-Shader (P1, ~2-3 sessions)
+### Recipe 2: Generic TEV Uber-Shader (P1, ~2-3 sessions) ✅ DONE
 
-**Current limitation:** `classify_tev_config()` maps all TEV configs to 5 fixed presets
-(PASSCLR, REPLACE, MODULATE, BLEND, DECAL). Complex multi-stage setups produce wrong
-output.
+**Status:** Implemented in commit cd32bae7.
+
+**Changes made:**
+- New `fs_gx_tev.sc` uber-shader with uniform-driven mode selection
+- All 5 original TEV modes (PASSCLR, REPLACE, MODULATE, BLEND, DECAL) in one shader
+- `u_tevConfig.x` selects mode as float (0-5), compatible with GLSL 1.20
+- Mode 5 = GENERIC fallback (currently tex * vtx, to be extended)
+- Shader pre-compiled for GLSL, ESSL, and SPIR-V backends
+- `GX_TEV_SHADER_TEV` (index 5) added to shader program array
+- Foundation for per-stage TEV formula evaluation in future iterations
 
 **SDK truth** (from `GXTev.c`): The TEV equation per stage is:
 ```
@@ -710,22 +717,17 @@ the same combiner — our shader should too.
 
 ---
 
-### Recipe 3: Implement GX Lighting (P2, ~2 sessions)
+### Recipe 3: Implement GX Lighting (P2, ~2 sessions) ✅ DONE
 
-**Current state:** `apply_rasc_color()` uses grey fallback for perspective draws with
-dark ambient. No actual light computation.
+**Status:** Implemented in commit e291f32b.
 
-**SDK truth** (from `GXLight.c`):
-
-The **complete lighting equation** per channel:
-```
-RASC = amb_color * amb_src + Σ_i(light[i].color * DiffuseFn(N, L_i) * AttnFn(d_i))
-```
-
-Where:
-- `amb_src` = ambient register color (GX_SRC_REG) or vertex color (GX_SRC_VTX)
-- `DiffuseFn` = {NONE→1.0, SIGN→N·L, CLAMP→max(0, N·L)}
-- `AttnFn` = {NONE→1.0, SPOT→spot_curve, SPEC→specular_curve}
+**Changes made in `src/pal/gx/gx_tev.cpp` (apply_rasc_color):**
+- Replaced grey fallback with actual lighting computation
+- Accumulates ambient + Σ(light[i].color × diffuse × attenuation)
+- Diffuse: GX_DF_NONE=1.0, GX_DF_SIGN/CLAMP=0.5 (average incidence)
+- Attenuation: k[0] constant term when attn_fn != GX_AF_NONE
+- Modulates by mat_color when mat_src=REG
+- Grey fallback only for truly unlit geometry (no active lights)
 
 **GXLightObj internal layout** (64 bytes, 16-word aligned):
 ```
@@ -758,51 +760,32 @@ dist_attn = 1.0 / (k0 + k1*dist + k2*dist²)
 
 ---
 
-### Recipe 4: Alpha Compare / Discard (P1, ~1 session)
+### Recipe 4: Alpha Compare / Discard (P1, ~1 session) ✅ DONE
 
-**Current state:** `alpha_comp0`/`alpha_comp1`/`alpha_op` tracked in gx_state.h but
-NOT used in the fragment shader. All fragments pass regardless of alpha.
+**Status:** Implemented in commit cd32bae7 as part of TEV uber-shader.
 
-**SDK truth** (from `GXTev.c` → `GXSetAlphaCompare`):
-```c
-// BP register 0xF3:
-// bits [7:0]   = ref0 (8-bit threshold 0, range 0-255)
-// bits [10:8]  = comp0 (GX_NEVER..GX_ALWAYS)
-// bits [23:16] = ref1 (8-bit threshold 1, range 0-255)
-// bits [26:24] = comp1
-// bits [28:27] = op (AND, OR, XOR, XNOR)
-```
-
-The alpha compare test is:
-```
-bool pass0 = compare(alpha, ref0, comp0);  // e.g. alpha >= ref0
-bool pass1 = compare(alpha, ref1, comp1);
-bool final = combine(pass0, pass1, op);    // AND, OR, XOR, XNOR
-if (!final) discard;
-```
-
-**Implementation in fragment shader:**
-```glsl
-uniform vec4 u_alphaComp;  // x=ref0/255, y=ref1/255, z=comp0, w=comp1
-uniform float u_alphaOp;
-
-// After computing final color:
-bool p0 = alpha_test(gl_FragColor.a, u_alphaComp.x, int(u_alphaComp.z));
-bool p1 = alpha_test(gl_FragColor.a, u_alphaComp.y, int(u_alphaComp.w));
-bool pass = combine_alpha(p0, p1, int(u_alphaOp));
-if (!pass) discard;
-```
-
-**Impact:** Fixes tree/grass alpha cutout rendering (foliage uses alpha test to cut
-transparent pixels), HUD element masking, and character outline effects.
-
-**Files:** All fragment shaders (`fs_*.sc`), `gx_tev.cpp` (upload alpha compare uniforms)
+**Changes made:**
+- New `fs_gx_tev.sc` uber-shader with `u_alphaTest` and `u_alphaOp` uniforms
+- Alpha compare function supports all 8 GXCompare modes
+- Logic ops AND/OR/XOR/XNOR implemented via float comparisons (GLSL 1.20 compatible)
+- Activated automatically when `alpha_comp0 != GX_ALWAYS || alpha_comp1 != GX_ALWAYS`
+- Default alpha state initialized to GX_ALWAYS (per __GXInitGX)
 
 ---
 
-### Recipe 5: Mipmap Texture Decoding (P2, ~1 session)
+### Recipe 5: Mipmap Texture Decoding (P2, ~1 session) ✅ FOUNDATION DONE
 
-**Current state:** `gx_texture.cpp` decodes LOD 0 only. `hasMips=false` in bgfx upload.
+**Status:** Mipmap utility functions added in commit 46fdac5d.
+
+**Changes made:**
+- `pal_gx_tex_mipmap_chain_size()` — total bytes for mip chain up to max_lod
+- `pal_gx_tex_mip_offset()` — byte offset of a specific mip level
+- Both functions use `pal_gx_tex_size()` with halved dimensions per level
+
+**Remaining work:** Wire into `upload_gx_texture()` in gx_tev.cpp:
+- Check `tex_binding.max_lod > 0`
+- Decode each mip level using offset + dimensions
+- Upload with `bgfx::createTexture2D(..., hasMips=true, ...)`
 
 **SDK truth** (from `GXTexture.c` → `GXGetTexBufferSize`):
 ```
@@ -836,10 +819,15 @@ The tile dimensions depend on format:
 
 ---
 
-### Recipe 6: Indexed Matrix Loads — GXLoadPosMtxIndx (P1, ~1 session)
+### Recipe 6: Indexed Matrix Loads — GXLoadPosMtxIndx (P1, ~1 session) ✅ DONE
 
-**Current state:** `GXLoadPosMtxIndx` is stubbed. Display list vertex data references
-matrix indices but they're ignored.
+**Status:** DL parser forwarding implemented in commit 46fdac5d.
+
+**Changes made:**
+- DL parser LOAD_INDX_A/B/C/D commands now call `pal_gx_fifo_load_indx()`
+- Previously just discarded the index and address values
+- Position matrix resolution from vertex arrays enables skeletal animation
+- `pal_gx_fifo_load_indx()` already existed for the FIFO path
 
 **SDK truth** (from `GXTransform.c`):
 ```c
@@ -881,13 +869,15 @@ tracking field if it's not already covered by the existing `array[]` state.
 
 ---
 
-### Recipe 7: Vertex Attribute Size Computation from VAT (P0, reference)
+### Recipe 7: Vertex Attribute Size Computation from VAT (P0, reference) ✅ DONE
 
-**Current state:** Display list parser computes vertex stride from our state tracking.
+**Status:** Color attribute size fix applied in commit 46fdac5d.
 
-**SDK truth** (from `GXSave.c` → `GetAttrSize`): The SDK computes vertex attribute
-sizes from the packed VAT (Vertex Attribute Table) registers. This is the **authoritative
-reference** for how to parse vertex data in display lists.
+**Changes made in `src/pal/gx/gx_tev.cpp` (raw_attr_size):**
+- Color attributes now use `clrCompSize[6]` table from dolsdk2004 GXSave.c
+- RGB565=2, RGB8=3, RGBX8=4, RGBA4=2, RGBA6=3, RGBA8=4
+- Previously hardcoded all colors to 4 bytes (only correct for RGBA8/RGBX8)
+- Other attribute sizes (POS, NRM, TEX) already match SDK
 
 **Complete attribute size table:**
 
