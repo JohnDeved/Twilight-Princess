@@ -1,6 +1,6 @@
 # dolsdk2004 Reference Guide for TP Port
 
-Reference: https://github.com/doldecomp/dolsdk2004
+Reference: [doldecomp/dolsdk2004](https://github.com/doldecomp/dolsdk2004)
 
 This document captures key findings from the dolsdk2004 (Dolphin SDK 2004) decompilation
 that are directly useful for the Twilight Princess PC/NX port. The dolsdk2004 project
@@ -185,7 +185,7 @@ typedef struct {
 
 **Key details:**
 - Light direction is **stored negated** internally (`-nx, -ny, -nz`)
-- For specular lights, position = `direction * -1e18` (representing infinity)
+- For specular lights, position = `direction * -1e18` (large negative = pseudo-infinity)
 - The half-angle vector for specular is computed as: `H = normalize(-dir + (0,0,1))`
 - Light data is loaded to XF (Transform unit) at address `0x600 + lightIdx * 0x10`
 
@@ -285,8 +285,8 @@ projection type, then extract the 6 matrix elements from `ptr[1..6]`.
 // Internal viewport transform:
 sx = vpWd / 2.0f;
 sy = -vpHt / 2.0f;      // NOTE: negated!
-ox = 342.0f + vpLeft + vpWd/2;  // 342 is GX screen origin offset
-oy = 342.0f + vpTop + vpHt/2;
+ox = 342.0f + vpLeft + vpWd/2;  // 342 = GX EFB guard band offset (hardware constant)
+oy = 342.0f + vpTop + vpHt/2;  // same offset for Y; accounts for clipping guard band
 zmin = vpNearz * zScale;
 zmax = vpFarz * zScale;
 sz = zmax - zmin;
