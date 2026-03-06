@@ -1897,12 +1897,18 @@ void pal_tev_flush_draw(void) {
             }
         } else if (preset == GX_TEV_SHADER_MODULATE ||
                    preset == GX_TEV_SHADER_BLEND ||
-                   preset == GX_TEV_SHADER_DECAL) {
+                   preset == GX_TEV_SHADER_DECAL ||
+                   preset == GX_TEV_SHADER_TEV) {
             inject_color = 1;
             /* Check if any TEV stage references rasterized color (RASC/RASA).
              * If not, vertex/material color is irrelevant to the TEV formula
              * and the injected color should be white (pass-through) so the
-             * shader's "* v_color0" multiplication doesn't darken the output. */
+             * shader's "* v_color0" multiplication doesn't darken the output.
+             *
+             * This is critical for the TEV uber-shader: on GCN, vertex CLR0
+             * is often set to (0,0,0,0) as a placeholder when TEV doesn't
+             * reference RASC (the channel combiner provides color instead).
+             * Without injection, v_color0=(0,0,0,0) zeros out the result. */
             int uses_rasc = 0;
             int uses_konst = 0;
             int num_stages = g_gx_state.num_tev_stages;

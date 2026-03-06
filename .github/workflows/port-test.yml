@@ -148,7 +148,8 @@ jobs:
           export TP_TEST_FRAMES=130
           export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,128"
           export TP_SKIP_DL_DRAWS=1
-          timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
+          export TP_SYNC_RENDER=1
+          timeout -k 10 180s build/tp-pc 2>&1 | tee milestones_pixel.log || true
           PIXEL_EXIT=${PIPESTATUS[0]}
           echo "Phase 2 exit: $PIXEL_EXIT"
           kill $XVFB_PID 2>/dev/null || true

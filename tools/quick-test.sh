@@ -61,7 +61,7 @@ fi
 case "$PHASE" in
     3)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase3}"
-        TIMEOUT_SECS="${TIMEOUT_SECS:-590}"
+        TIMEOUT_SECS="${TIMEOUT_SECS:-180}"
         PHASE_DESC="3D room frame capture (frame 129)"
         DISPLAY_NUM=":102"
         CAPTURE_FRAME="0129"
@@ -126,14 +126,16 @@ export LIBGL_ALWAYS_SOFTWARE=1
 export TP_VERIFY=1
 export TP_VERIFY_DIR="$OUTPUT_DIR"
 unset TP_SKIP_DL_DRAWS  2>/dev/null || true
-unset TP_SYNC_RENDER    2>/dev/null || true
 
 case "$PHASE" in
     3)
         export TP_TEST_FRAMES=130
         export TP_VERIFY_CAPTURE_FRAMES="129"
-        export TP_FRAME_DELAY_MS=350000
-        export TP_FRAME_DELAY_START=129
+        # Use TP_SYNC_RENDER=1: bgfx runs single-threaded, renderFrame() blocks
+        # until Mesa softpipe finishes. No frame delay needed — the frame is fully
+        # rasterized before pal_verify_frame() reads the capture buffer.
+        export TP_SYNC_RENDER=1
+        export TP_FRAME_DELAY_MS=0
         export TP_SKIP_FADE=1
         export TP_BMP_INTERVAL="${BMP_INTERVAL_OVERRIDE:-9999}"
         unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
@@ -141,11 +143,9 @@ case "$PHASE" in
     4)
         export TP_TEST_FRAMES=401
         export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,128,150,180,200,250,300,350,400"
-        # Delay at frame 128 — the first frame where the J3D title logo renders
-        # grey (RASC fallback vtx_clr=[200,200,200,255]).  The delay lets Mesa
-        # softpipe rasterise the ~7335 DL draws before the BMP is captured.
-        export TP_FRAME_DELAY_MS=60000
-        export TP_FRAME_DELAY_START=128
+        # Use TP_SYNC_RENDER=1: single-threaded bgfx, no frame delay needed.
+        export TP_SYNC_RENDER=1
+        export TP_FRAME_DELAY_MS=0
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
         ;;
