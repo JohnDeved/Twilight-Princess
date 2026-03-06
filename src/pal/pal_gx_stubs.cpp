@@ -295,8 +295,36 @@ void GXGetVtxAttrFmtv(GXVtxFmt fmt, GXVtxAttrFmtList* vat) { (void)fmt; (void)va
 /* ================================================================ */
 
 u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, u8 mipmap, u8 max_lod) {
-    (void)format; (void)mipmap; (void)max_lod;
-    return (u32)width * height * 4;
+    /* Compute bits-per-pixel based on GX texture format.
+     * From dolsdk2004 GXTexture.c / GXGetTexBufferSize. */
+    u32 bpp;
+    switch (format) {
+    case GX_TF_I4:
+    case GX_TF_C4:
+    case GX_TF_CMPR:   bpp = 4; break;
+    case GX_TF_I8:
+    case GX_TF_IA4:
+    case GX_TF_C8:     bpp = 8; break;
+    case GX_TF_IA8:
+    case GX_TF_RGB565:
+    case GX_TF_RGB5A3:
+    case GX_TF_C14X2:  bpp = 16; break;
+    case GX_TF_RGBA8:  bpp = 32; break;
+    default:           bpp = 32; break;
+    }
+    /* Base mip level size (rounded up to block boundaries for 4bpp formats) */
+    u32 w = (width  < 1) ? 1 : width;
+    u32 h = (height < 1) ? 1 : height;
+    u32 size = (w * h * bpp) / 8;
+    if (mipmap && max_lod > 0) {
+        /* Accumulate mipmap chain sizes */
+        for (u8 lod = 1; lod <= max_lod; lod++) {
+            w = (w > 1) ? w / 2 : 1;
+            h = (h > 1) ? h / 2 : 1;
+            size += (w * h * bpp) / 8;
+        }
+    }
+    return size;
 }
 void GXInitTexObj(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                   GXTexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, u8 mipmap) {

@@ -802,11 +802,15 @@ static const uint8_t* resolve_attr_data(int attr, const uint8_t* src, uint32_t* 
         return NULL;
     }
     if (type == GX_INDEX16) {
-        /* DL vertex data is stored in big-endian from bulk memcpy.
-         * Byte-swap the u16 index for correct attribute resolution. */
+        /* DL vertex data (vtx_data_be=1) stores INDEX16 in big-endian.
+         * Direct API vertex data (vtx_data_be=0) stores in native endian. */
         uint16_t idx;
-        uint8_t b0 = src[*si], b1 = src[*si + 1];
-        idx = (uint16_t)((b0 << 8) | b1);
+        if (g_gx_state.draw.vtx_data_be) {
+            uint8_t b0 = src[*si], b1 = src[*si + 1];
+            idx = (uint16_t)((b0 << 8) | b1);
+        } else {
+            memcpy(&idx, src + *si, 2);
+        }
         (*si) += 2;
         const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
         if (arr->base_ptr && arr->stride > 0)
@@ -860,6 +864,61 @@ static uint32_t raw_attr_size(int attr) {
     ((g_gx_state.draw.vtx_data_be && (attr_type) == GX_DIRECT) \
         ? read_gx_component_be((data) + (c) * (csz), (type), (frac)) \
         : read_gx_component((data) + (c) * (csz), (type), (frac)))
+
+/**
+ * Decode a GX color attribute from source bytes into 4-byte RGBA8.
+ * Handles all GX color component types per dolsdk2004 clrCompSize table.
+ * is_be: 1 if source data is big-endian (DL DIRECT), 0 for native endian.
+ */
+static void decode_gx_color_to_rgba8(const uint8_t* src, GXCompType type,
+                                      int is_be, uint8_t dst[4]) {
+    switch (type) {
+    case GX_RGB565: {
+        /* 16-bit packed: RRRRR GGGGGG BBBBB (2 bytes) */
+        uint16_t c;
+        if (is_be) c = (uint16_t)((src[0] << 8) | src[1]);
+        else memcpy(&c, src, 2);
+        dst[0] = (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
+        dst[1] = (uint8_t)(((c >> 5) & 0x3F) * 255 / 63);
+        dst[2] = (uint8_t)((c & 0x1F) * 255 / 31);
+        dst[3] = 255;
+        break;
+    }
+    case GX_RGB8:
+        /* 24-bit: R, G, B bytes (3 bytes) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = 255;
+        break;
+    case GX_RGBX8:
+        /* 32-bit: R, G, B, X bytes (4 bytes, X ignored) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = 255;
+        break;
+    case GX_RGBA4: {
+        /* 16-bit packed: RRRR GGGG BBBB AAAA (2 bytes) */
+        uint16_t c;
+        if (is_be) c = (uint16_t)((src[0] << 8) | src[1]);
+        else memcpy(&c, src, 2);
+        dst[0] = (uint8_t)(((c >> 12) & 0xF) * 17);
+        dst[1] = (uint8_t)(((c >> 8) & 0xF) * 17);
+        dst[2] = (uint8_t)(((c >> 4) & 0xF) * 17);
+        dst[3] = (uint8_t)((c & 0xF) * 17);
+        break;
+    }
+    case GX_RGBA6: {
+        /* 24-bit packed: RRRRRR GGGGGG BBBBBB AAAAAA (3 bytes) */
+        uint32_t c = ((uint32_t)src[0] << 16) | ((uint32_t)src[1] << 8) | src[2];
+        dst[0] = (uint8_t)(((c >> 18) & 0x3F) * 255 / 63);
+        dst[1] = (uint8_t)(((c >> 12) & 0x3F) * 255 / 63);
+        dst[2] = (uint8_t)(((c >> 6) & 0x3F) * 255 / 63);
+        dst[3] = (uint8_t)((c & 0x3F) * 255 / 63);
+        break;
+    }
+    case GX_RGBA8:
+    default:
+        /* 32-bit: R, G, B, A bytes (4 bytes) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        break;
+    }
+}
 
 static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
@@ -931,8 +990,11 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     /* Color0 */
     if (desc[GX_VA_CLR0].type != GX_NONE) {
         const uint8_t* data = resolve_attr_data(GX_VA_CLR0, src, &si);
-        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += 4;
-        if (data) { memcpy(dst + di, data, 4); }
+        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += raw_attr_size(GX_VA_CLR0);
+        if (data) {
+            int is_be = (g_gx_state.draw.vtx_data_be && desc[GX_VA_CLR0].type == GX_DIRECT);
+            decode_gx_color_to_rgba8(data, afmt[GX_VA_CLR0].comp_type, is_be, dst + di);
+        }
         else { memset(dst + di, 0xFF, 4); }
         /* GCN doesn't use framebuffer alpha for TV display — vertex color
          * alpha can legitimately be 0. On PC, force alpha=255 so the
@@ -943,8 +1005,11 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     /* Color1 */
     if (desc[GX_VA_CLR1].type != GX_NONE) {
         const uint8_t* data = resolve_attr_data(GX_VA_CLR1, src, &si);
-        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += 4;
-        if (data) { memcpy(dst + di, data, 4); }
+        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += raw_attr_size(GX_VA_CLR1);
+        if (data) {
+            int is_be = (g_gx_state.draw.vtx_data_be && desc[GX_VA_CLR1].type == GX_DIRECT);
+            decode_gx_color_to_rgba8(data, afmt[GX_VA_CLR1].comp_type, is_be, dst + di);
+        }
         else { memset(dst + di, 0xFF, 4); }
         /* Force alpha=255 — same GCN→PC alpha fix as Color0 */
         dst[di + 3] = 0xFF;
@@ -1971,9 +2036,7 @@ void pal_tev_flush_draw(void) {
                 if (desc[GX_VA_CLR0 + ci].type != GX_NONE) {
                     resolve_attr_data(GX_VA_CLR0 + ci, src, &si);
                     if (desc[GX_VA_CLR0 + ci].type == GX_DIRECT) {
-                        int clr_sz = (af[GX_VA_CLR0 + ci].comp_type <= GX_RGB565) ? 2 :
-                                     (af[GX_VA_CLR0 + ci].comp_type == GX_RGB8) ? 3 : 4;
-                        si += clr_sz;
+                        si += raw_attr_size(GX_VA_CLR0 + ci);
                     }
                 }
             }
