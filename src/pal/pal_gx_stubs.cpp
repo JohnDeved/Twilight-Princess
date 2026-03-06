@@ -550,7 +550,7 @@ void GXInitFogAdjTable(GXFogAdjTable* table, u16 width, const f32 projmtx[4][4])
 void GXSetFogRangeAdj(GXBool enable, u16 center, const GXFogAdjTable* table) {
     (void)enable; (void)center; (void)table;
 }
-void GXSetFogColor(GXColor color) { (void)color; }
+void GXSetFogColor(GXColor color) { g_gx_state.fog_color = color; }
 void GXSetBlendMode(GXBlendMode type, GXBlendFactor src_factor, GXBlendFactor dst_factor, GXLogicOp op) {
     pal_gx_set_blend_mode(type, src_factor, dst_factor, op);
 }

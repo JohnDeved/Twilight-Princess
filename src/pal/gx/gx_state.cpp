@@ -148,12 +148,33 @@ void pal_gx_state_init(void) {
     g_gx_state.draw.vtx_data_size = GX_VTX_BUF_SIZE;
     g_gx_state.draw.active = 0;
 
-    /* 1 channel default */
-    g_gx_state.num_chans = 1;
-    g_gx_state.chan_ctrl[0].mat_color.r = 255;
-    g_gx_state.chan_ctrl[0].mat_color.g = 255;
-    g_gx_state.chan_ctrl[0].mat_color.b = 255;
-    g_gx_state.chan_ctrl[0].mat_color.a = 255;
+    /* 1 channel default (per dolsdk2004 __GXInitGX):
+     *   GXSetNumChans(0)
+     *   GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE)
+     *   GXSetChanAmbColor(GX_COLOR0A0, black)
+     *   GXSetChanMatColor(GX_COLOR0A0, white)
+     *   GXSetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE)
+     *   GXSetChanAmbColor(GX_COLOR1A1, black)
+     *   GXSetChanMatColor(GX_COLOR1A1, white) */
+    g_gx_state.num_chans = 0;
+    for (int i = 0; i < 4; i++) {
+        g_gx_state.chan_ctrl[i].enable = GX_FALSE;
+        g_gx_state.chan_ctrl[i].amb_src = GX_SRC_REG;
+        g_gx_state.chan_ctrl[i].mat_src = GX_SRC_VTX;  /* SDK default is VTX, not REG! */
+        g_gx_state.chan_ctrl[i].light_mask = 0;
+        g_gx_state.chan_ctrl[i].diff_fn = GX_DF_NONE;
+        g_gx_state.chan_ctrl[i].attn_fn = GX_AF_NONE;
+        /* amb=black */
+        g_gx_state.chan_ctrl[i].amb_color.r = 0;
+        g_gx_state.chan_ctrl[i].amb_color.g = 0;
+        g_gx_state.chan_ctrl[i].amb_color.b = 0;
+        g_gx_state.chan_ctrl[i].amb_color.a = 0;
+        /* mat=white */
+        g_gx_state.chan_ctrl[i].mat_color.r = 255;
+        g_gx_state.chan_ctrl[i].mat_color.g = 255;
+        g_gx_state.chan_ctrl[i].mat_color.b = 255;
+        g_gx_state.chan_ctrl[i].mat_color.a = 255;
+    }
 }
 
 /* ================================================================ */

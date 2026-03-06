@@ -711,13 +711,17 @@ static void dl_handle_bp_reg(u32 value) {
 
     /* Alpha compare (register 0xF3) */
     if (addr == 0xF3) {
-        /* BP_ALPHA_COMPARE bit layout:
-         * [7:0]=ref0, [10:8]=comp0, [12:11]=op, [15:13]=comp1, [23:16]=ref1 */
+        /* BP_ALPHA_COMPARE bit layout (from dolsdk2004 GXTev.c GXSetAlphaCompare):
+         * [7:0]   = ref0
+         * [15:8]  = ref1
+         * [18:16] = comp0
+         * [21:19] = comp1
+         * [23:22] = op */
         u8 ref0 = (u8)(data & 0xFF);
-        GXCompare comp0 = (GXCompare)((data >> 8) & 0x7);
-        GXAlphaOp op = (GXAlphaOp)((data >> 11) & 0x3);
-        GXCompare comp1 = (GXCompare)((data >> 13) & 0x7);
-        u8 ref1 = (u8)((data >> 16) & 0xFF);
+        u8 ref1 = (u8)((data >> 8) & 0xFF);
+        GXCompare comp0 = (GXCompare)((data >> 16) & 0x7);
+        GXCompare comp1 = (GXCompare)((data >> 19) & 0x7);
+        GXAlphaOp op = (GXAlphaOp)((data >> 22) & 0x3);
         pal_gx_set_alpha_compare(comp0, ref0, op, comp1, ref1);
         return;
     }
@@ -759,23 +763,42 @@ static void dl_handle_bp_reg(u32 value) {
         return;
     }
 
-    /* TEV konst color selector (register 0x18-0x1F, covers 2 stages each) */
-    if (addr >= 0x18 && addr <= 0x1F) {
-        /* 4 stages per register, alternating k_color_sel and k_alpha_sel */
-        /* Actually: 0x18-0x1B = kcolor sel for stages 0-15 (4 per reg)
-         * 0x1C-0x1F = kalpha sel for stages 0-15 (4 per reg) */
-        if (addr <= 0x1B) {
-            int base = (addr - 0x18) * 4;
-            for (int i = 0; i < 4 && base + i < GX_MAX_TEVSTAGE; i++) {
-                GXTevKColorSel sel = (GXTevKColorSel)((data >> (i * 5)) & 0x1F);
-                pal_gx_set_tev_k_color_sel((GXTevStageID)(base + i), sel);
-            }
-        } else {
-            int base = (addr - 0x1C) * 4;
-            for (int i = 0; i < 4 && base + i < GX_MAX_TEVSTAGE; i++) {
-                GXTevKAlphaSel sel = (GXTevKAlphaSel)((data >> (i * 5)) & 0x1F);
-                pal_gx_set_tev_k_alpha_sel((GXTevStageID)(base + i), sel);
-            }
+    /* TEV konst color/alpha selector + swap mode table
+     * BP registers 0xF6-0xFD (from dolsdk2004 GXInit.c: tevKsel[0-7] at 0xF6+idx)
+     *
+     * Each register covers 2 stages and swap table entries:
+     * Bit layout:
+     *   [1:0]   swap_r/b  (swap table entry, even/odd based on register index)
+     *   [3:2]   swap_g/a
+     *   [8:4]   kcsel_even (konst color sel for even stage)
+     *   [13:9]  kasel_even (konst alpha sel for even stage)
+     *   [18:14] kcsel_odd  (konst color sel for odd stage)
+     *   [23:19] kasel_odd  (konst alpha sel for odd stage)
+     *
+     * Stage mapping: register N covers stages 2*N and 2*N+1 */
+    if (addr >= 0xF6 && addr <= 0xFD) {
+        int ksel_idx = addr - 0xF6;
+        int stage_even = ksel_idx * 2;
+        int stage_odd  = ksel_idx * 2 + 1;
+
+        /* Konst color selector */
+        if (stage_even < GX_MAX_TEVSTAGE) {
+            GXTevKColorSel kcsel_even = (GXTevKColorSel)((data >> 4) & 0x1F);
+            pal_gx_set_tev_k_color_sel((GXTevStageID)stage_even, kcsel_even);
+        }
+        if (stage_odd < GX_MAX_TEVSTAGE) {
+            GXTevKColorSel kcsel_odd = (GXTevKColorSel)((data >> 14) & 0x1F);
+            pal_gx_set_tev_k_color_sel((GXTevStageID)stage_odd, kcsel_odd);
+        }
+
+        /* Konst alpha selector */
+        if (stage_even < GX_MAX_TEVSTAGE) {
+            GXTevKAlphaSel kasel_even = (GXTevKAlphaSel)((data >> 9) & 0x1F);
+            pal_gx_set_tev_k_alpha_sel((GXTevStageID)stage_even, kasel_even);
+        }
+        if (stage_odd < GX_MAX_TEVSTAGE) {
+            GXTevKAlphaSel kasel_odd = (GXTevKAlphaSel)((data >> 19) & 0x1F);
+            pal_gx_set_tev_k_alpha_sel((GXTevStageID)stage_odd, kasel_odd);
         }
         return;
     }
