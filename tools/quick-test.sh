@@ -132,10 +132,9 @@ case "$PHASE" in
         export TP_TEST_FRAMES=130
         export TP_VERIFY_CAPTURE_FRAMES="129"
         # Use TP_SYNC_RENDER=1: bgfx runs single-threaded, renderFrame() blocks
-        # until Mesa softpipe finishes. No frame delay needed — the frame is fully
-        # rasterized before pal_verify_frame() reads the capture buffer.
+        # until Mesa softpipe finishes. No TP_FRAME_DELAY_MS needed — the frame
+        # is fully rasterized before pal_verify_frame() reads the capture buffer.
         export TP_SYNC_RENDER=1
-        export TP_FRAME_DELAY_MS=0
         export TP_SKIP_FADE=1
         export TP_BMP_INTERVAL="${BMP_INTERVAL_OVERRIDE:-9999}"
         unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
@@ -145,7 +144,6 @@ case "$PHASE" in
         export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,128,150,180,200,250,300,350,400"
         # Use TP_SYNC_RENDER=1: single-threaded bgfx, no frame delay needed.
         export TP_SYNC_RENDER=1
-        export TP_FRAME_DELAY_MS=0
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
         ;;
