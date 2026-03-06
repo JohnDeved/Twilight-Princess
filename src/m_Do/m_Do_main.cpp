@@ -43,9 +43,12 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 #include "pal/pal_milestone.h"
 #include "pal/gx/gx_stub_tracker.h"
+#include "pal/gx/gx_tev.h"
+#include "pal/gx/gx_displaylist.h"
 #include "pal/pal_verify.h"
 #include <stdlib.h>
 #include <time.h>
+extern "C" { void pal_collision_stub_report(void); }
 #endif
 
 class mDoMain_HIO_c : public mDoHIO_entry_c {
@@ -763,7 +766,7 @@ void main01(void) {
             if (frame > 1) {
                 long elapsed_ms = (now_ts.tv_sec - s_prev_ts.tv_sec) * 1000 +
                                   (now_ts.tv_nsec - s_prev_ts.tv_nsec) / 1000000;
-                if (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200)) {
+                if (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200) || elapsed_ms > 100) {
                     fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
                 }
                 /* Per-frame timeout: if a single frame took > 60s, the softpipe
@@ -781,13 +784,21 @@ void main01(void) {
                     s_is_softpipe = (dpy && dpy[0] != '\0') ? 1 : 0;
                 }
                 if (elapsed_ms > 60000 && s_headless_cached && s_is_softpipe) {
-                    fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
-                            "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
-                            frame, elapsed_ms);
-                    pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
-                    gx_stub_report();
-                    pal_verify_summary();
-                    _Exit(0);
+                    /* Skip timeout if TP_FRAME_DELAY_MS is set to a non-zero value:
+                     * user is intentionally throttling softpipe rendering
+                     * (e.g. Phase 3 3D frame capture). */
+                    const char* delay_ev = getenv("TP_FRAME_DELAY_MS");
+                    if (!delay_ev || atoi(delay_ev) == 0) {
+                        fprintf(stderr, "{\"frame_timeout\":{\"frame\":%u,\"ms\":%ld,"
+                                "\"reason\":\"single frame exceeded 60s (softpipe hang)\"}}\n",
+                                frame, elapsed_ms);
+                        pal_milestone("FRAME_TIMEOUT", -3 /* error: timeout */, "softpipe_hang");
+                        gx_stub_report();
+                        pal_tev_report_diagnostics();
+                        pal_collision_stub_report();
+                        pal_verify_summary();
+                        _Exit(0);
+                    }
                 }
             }
             s_prev_ts = now_ts;
@@ -813,7 +824,12 @@ void main01(void) {
             if (frame >= max_frames) {
                 pal_milestone("TEST_COMPLETE", MILESTONE_TEST_COMPLETE, "max_frames_reached");
                 gx_stub_report();
+                pal_tev_report_diagnostics();
+                pal_collision_stub_report();
+                pal_gx_dl_report_validation();
                 pal_verify_summary();
+                fflush(stdout);
+                fflush(stderr);
                 _Exit(0);  /* skip C++ destructors — dRes_info_c::deleteArchiveRes crashes on exit */
             }
         }

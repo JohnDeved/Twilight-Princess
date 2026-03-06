@@ -302,6 +302,8 @@ def main():
                         help="Output path for MP4 video")
     parser.add_argument("--fps", type=int, default=4,
                         help="Frames per second for video (default: 4)")
+    parser.add_argument("--name-prefix", default="",
+                        help="Prefix to prepend to output PNG filenames (e.g. '3d_' → 3d_frame_0129.png)")
     args = parser.parse_args()
 
     bmp_dir = Path(args.bmp_dir)
@@ -326,7 +328,8 @@ def main():
 
     converted = 0
     for bmp in bmps:
-        png_path = png_dir / bmp.with_suffix(".png").name
+        out_name = args.name_prefix + bmp.with_suffix(".png").name
+        png_path = png_dir / out_name
         # Extract frame number from filename (frame_NNNN.bmp)
         frame_num = None
         try:

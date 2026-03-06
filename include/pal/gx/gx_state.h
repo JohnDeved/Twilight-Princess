@@ -175,6 +175,7 @@ typedef struct {
     u32         vtx_data_size;
 
     u8          active;  /* 1 while between GXBegin and GXEnd */
+    u8          vtx_data_be;  /* 1 if vtx_data is big-endian (from DL bulk copy) */
 } GXDrawState;
 
 /* ================================================================ */
@@ -198,6 +199,7 @@ typedef struct {
     /* TEV registers (color constants) */
     GXColor    tev_regs[GX_MAX_TEVREG];    /* GX_TEVPREV, GX_TEVREG0-2 */
     GXColor    tev_kregs[GX_MAX_TEVKREG];  /* GX_KCOLOR0-3 */
+    u8         tev_reg_dirty;              /* bitmask: bit N set when GXSetTevColor(regN) called since last flush */
 
     /* Texture bindings */
     GXTexBinding tex_bindings[GX_MAX_TEXMAP];
@@ -328,6 +330,9 @@ void pal_gx_load_tex_mtx_imm(const f32 mtx[][4], u32 id, GXTexMtxType type);
 void pal_gx_set_current_mtx(u32 id);
 void pal_gx_set_viewport(f32 left, f32 top, f32 wd, f32 ht, f32 nearz, f32 farz);
 void pal_gx_set_scissor(u32 left, u32 top, u32 wd, u32 ht);
+
+/* FIFO indexed matrix loading (GX_LOAD_INDX_A/B/C/D) */
+void pal_gx_fifo_load_indx(u8 cmd, u16 indx, u16 addr);
 
 /* Pixel / Blend / Z */
 void pal_gx_set_blend_mode(GXBlendMode type, GXBlendFactor src, GXBlendFactor dst, GXLogicOp op);

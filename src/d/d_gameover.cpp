@@ -118,6 +118,10 @@ dGov_HIO_c::dGov_HIO_c() {
     mWhite.a = 255;
 }
 
+#if PLATFORM_PC || PLATFORM_NX_HB
+void dGov_HIO_c::genMessage(JORMContext*) {}
+#endif
+
 int dGameover_c::_create() {
     int phase = dComIfG_resLoad(&mPhase, "Gover");
 

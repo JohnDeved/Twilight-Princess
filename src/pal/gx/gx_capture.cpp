@@ -52,6 +52,7 @@ static FILE* s_raw_video = NULL;     /* raw RGBA video file */
 static int s_record_frames = 0;     /* record every frame */
 static uint32_t s_frame_number = 0; /* current frame counter */
 static int s_bmp_interval = 30;     /* save BMP every N frames */
+static char s_capture_dir[300];     /* output directory (from TP_VERIFY_DIR) */
 
 /* Debug text overlay — stored per-frame, written to metadata file */
 static char s_debug_line0[128];
@@ -97,17 +98,27 @@ void pal_capture_init(void) {
 
     /* Enable per-frame recording when TP_VERIFY=1 */
     if (verify && verify[0] == '1') {
+        const char* dir = getenv("TP_VERIFY_DIR");
+        if (dir && dir[0] != '\0')
+            snprintf(s_capture_dir, sizeof(s_capture_dir), "%s", dir);
+        else
+            snprintf(s_capture_dir, sizeof(s_capture_dir), "verify_output");
+
         s_record_frames = 1;
-        mkdir("verify_output", 0755);
+        mkdir(s_capture_dir, 0755);
 
         /* Open raw video file for ffmpeg conversion */
-        s_raw_video = fopen("verify_output/raw_frames.bin", "wb");
+        char raw_path[300];
+        snprintf(raw_path, sizeof(raw_path), "%s/raw_frames.bin", s_capture_dir);
+        s_raw_video = fopen(raw_path, "wb");
         if (s_raw_video) {
-            fprintf(stderr, "{\"capture\":\"recording\",\"output\":\"verify_output/\"}\n");
+            fprintf(stderr, "{\"capture\":\"recording\",\"output\":\"%s/\"}\n", s_capture_dir);
         }
 
         /* Open metadata file for debug text (burned in by external tooling) */
-        s_metadata_file = fopen("verify_output/frame_metadata.txt", "w");
+        char meta_path[300];
+        snprintf(meta_path, sizeof(meta_path), "%s/frame_metadata.txt", s_capture_dir);
+        s_metadata_file = fopen(meta_path, "w");
         if (s_metadata_file) {
             fprintf(s_metadata_file, "# frame_number|line0|line1\n");
         }
@@ -190,12 +201,13 @@ void pal_capture_frame(const void* data, uint32_t size) {
         fwrite(s_fb, 1, FB_W * FB_H * 4, s_raw_video);
     }
 
-    /* Save periodic BMP snapshots */
-    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0
-                            || s_frame_number == 1)) {
-        char bmp_path[256];
+    /* Save periodic BMP snapshots — only on interval-aligned frames.
+     * NOTE: do NOT add an s_frame_number==1 exception; see the readback_noop
+     * version for the rationale. */
+    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0)) {
+        char bmp_path[300];
         snprintf(bmp_path, sizeof(bmp_path),
-                 "verify_output/frame_%04u.bmp", s_frame_number);
+                 "%s/frame_%04u.bmp", s_capture_dir, s_frame_number);
         write_bmp(bmp_path, s_fb, FB_W, FB_H);
     }
 }
@@ -253,12 +265,15 @@ void pal_capture_readback_gl(uint32_t width, uint32_t height) {
         fwrite(s_fb, 1, FB_W * FB_H * 4, s_raw_video);
     }
 
-    /* Save periodic BMP snapshots */
-    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0
-                            || s_frame_number == 1)) {
-        char bmp_path[256];
+    /* Save periodic BMP snapshots — only on interval-aligned frames.
+     * NOTE: do NOT add an s_frame_number==1 exception here; the
+     * BMP_INTERVAL=9999 override in quick-test.sh Phase 3 relies on this
+     * guard to suppress all periodic saves and keep verify_output_3d/
+     * clean (only frame_0129 from pal_verify_capture_frame). */
+    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0)) {
+        char bmp_path[300];
         snprintf(bmp_path, sizeof(bmp_path),
-                 "verify_output/frame_%04u.bmp", s_frame_number);
+                 "%s/frame_%04u.bmp", s_capture_dir, s_frame_number);
         write_bmp(bmp_path, s_fb, FB_W, FB_H);
     }
 #else

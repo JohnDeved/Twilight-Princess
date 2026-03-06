@@ -414,6 +414,28 @@ void J3DMtxBuffer::calcDrawMtx(u32 mdlFlag, Vec const& param_1, Mtx const& param
     u16 local_6a;
     u16 local_6c;
 
+#if PLATFORM_PC
+    {
+        static int s_calcDrawMtx_log = 0;
+        if (s_calcDrawMtx_log < 3) {
+            u16 drawNum = mJointTree->getDrawMtxNum();
+            u16 fwNum = mJointTree->getDrawFullWgtMtxNum();
+            /* Log first anmMtx diagonal to check if populated */
+            float anm00 = 0.0f, anm11 = 0.0f, anm22 = 0.0f;
+            if (mpAnmMtx && fwNum > 0) {
+                u16 idx = mJointTree->getDrawMtxIndex(0);
+                MtxP am = getAnmMtx(idx);
+                anm00 = am[0][0]; anm11 = am[1][1]; anm22 = am[2][2];
+            }
+            fprintf(stderr, "{\"calcDrawMtx\":{\"mode\":%u,\"drawNum\":%u,\"fullWgtNum\":%u,"
+                    "\"anmMtx\":\"%p\",\"anm_diag\":[%.6f,%.6f,%.6f]}}\n",
+                    mdlFlag, (unsigned)drawNum, (unsigned)fwNum,
+                    (void*)mpAnmMtx, anm00, anm11, anm22);
+            s_calcDrawMtx_log++;
+        }
+    }
+#endif
+
     switch (mdlFlag) {
     case 0:
         viewMtx = j3dSys.getViewMtx();

@@ -30,6 +30,9 @@ int pal_gx_dl_get_vert_count(void);
 int pal_gx_dl_get_call_count(void);
 void pal_gx_dl_reset_counters(void);
 
+/** Emit DL validation summary (stride/index/bulk-copy counters) as JSON to stdout */
+void pal_gx_dl_report_validation(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -18,6 +18,7 @@
 #if PLATFORM_PC
 #include <setjmp.h>
 #include <signal.h>
+#include "pal/gx/gx_stub_tracker.h"
 #endif
 
 class daTit_HIO_c {
@@ -192,8 +193,14 @@ int daTitle_c::Execute() {
     /* Auto-advance past title screen in headless mode.  Simulates
      * the Start-button press that the GCN path uses.  With the
      * overlap leak fixed (fopScnRq_Request skips overlap creation
-     * on PC), IsPeek returns FALSE and nextScene_proc() can run. */
-    if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS")) {
+     * on PC), IsPeek returns FALSE and nextScene_proc() can run.
+     *
+     * When TP_ENABLE_PROC_TITLE=1 (Phase 4 title-screen capture), keep
+     * the title actor alive for the full test window — do not auto-advance.
+     * The capture needs frames 128–400 of sustained J3D draws to confirm
+     * the grey RASC fallback renders correctly. */
+    if (mProcID >= 1 && mProcID <= 3 && getenv("TP_HEADLESS") &&
+        !getenv("TP_ENABLE_PROC_TITLE")) {
         static int s_auto_advance_timer = 0;
         if (++s_auto_advance_timer >= 30) {
             nextScene_init();  /* sets mProcID=4, same as Start button */
@@ -252,8 +259,19 @@ void daTitle_c::loadWait_init() {
 void daTitle_c::loadWait_proc() {
 #if PLATFORM_PC
     if (mpMount == NULL) {
+        fprintf(stderr, "{\"loadWait_sync\":{\"sync\":0,\"reason\":\"mpMount_null\"}}\n");
         logoDispWaitInit();
         return;
+    }
+    /* Log the sync result once per loadWait_proc call to diagnose archive timing */
+    {
+        static int s_sync_logged = 0;
+        if (!s_sync_logged) {
+            s_sync_logged = 1;
+            fprintf(stderr, "{\"loadWait_sync\":{\"sync\":%d,\"mpMount\":%p,\"mIsDone\":%d}}\n",
+                    (int)mpMount->sync(), (void*)mpMount,
+                    (int)mpMount->sync());
+        }
     }
 #endif
     if (mpMount->sync()) {
@@ -273,6 +291,9 @@ void daTitle_c::loadWait_proc() {
         bool bloOk = mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
 
 #if PLATFORM_PC
+        /* Log whether BLO load succeeded — blo_swap emits its own JSON on success */
+        fprintf(stderr, "{\"loadWait_blo\":{\"bloOk\":%d,\"archive\":%p,\"Scr\":%p}}\n",
+                (int)bloOk, (void*)mpMount->getArchive(), (void*)mTitle.Scr);
         if (!bloOk) {
             /* BLO layout is big-endian binary — skip 2D overlay setup on PC
              * until endian conversion is implemented. The 3D model still renders. */
@@ -467,6 +488,23 @@ int daTitle_c::getDemoPrm() {
 
 int daTitle_c::Draw() {
 #if PLATFORM_PC
+    {
+        static u32 s_draw_count = 0;
+        /* Log first 60 Draw calls so we can track proc/Scr progression over
+         * several frames after PROC_TITLE initialises. */
+        if (s_draw_count < 60) {
+            /* JSON: n=call index, proc=state-machine mProcID (0=loadWait,1=logoDispWait,
+             * 2=logoDispAnm,3=keyWait,4=nextScene,5=fastLogoDisp),
+             * model=J3D model loaded, j2d_queued=field_0x5f8
+             * (J2D press-start overlay flag), Scr=J2DScreen resource loaded,
+             * dc=gx_frame_draw_calls at diagnostic point (before setListItem3D/modelUpdateDL) */
+            fprintf(stderr, "{\"daTitle_draw\":{\"n\":%u,\"proc\":%d,\"model\":%d,\"j2d_queued\":%d,\"Scr\":%d,\"dc\":%u}}\n",
+                    s_draw_count, (int)mProcID, mpModel != NULL ? 1 : 0,
+                    (int)field_0x5f8, mTitle.Scr != NULL ? 1 : 0,
+                    gx_frame_draw_calls);
+            s_draw_count++;
+        }
+    }
     if (mpModel == NULL) {
         if (field_0x5f8) {
             dComIfGd_set2DOpaTop(&mTitle);
@@ -478,14 +516,64 @@ int daTitle_c::Draw() {
     MTXTrans(mpModel->getBaseTRMtx(), 0.0f, 0.0f, -430.0f);
     mpModel->getBaseScale()->x = -1.0f;
 
+#if !PLATFORM_PC
     mBck.entry(modelData);
     mBpk.entry(modelData);
     mBrk.entry(modelData);
     mBtk.entry(modelData);
+#else
+    /* On PC, skip big-endian animation entry() (crashes in entryMatColorAnimator).
+     * Clear ALL joint mtxCalc pointers so viewCalc() → calcAnmMtx() does not
+     * dereference stale or big-endian J3DMtxCalc objects from animation binding.
+     * Without this, the first Draw() crashes → actor permanently suppressed. */
+    {
+        u16 jntNum = modelData->getJointNum();
+        for (u16 ji = 0; ji < jntNum; ji++) {
+            modelData->getJointNodePointer(ji)->setMtxCalc(NULL);
+        }
+        static int s_clear_done = 0;
+        if (!s_clear_done) {
+            s_clear_done = 1;
+            fprintf(stderr, "[PAL] daTitle Draw: cleared %u joint mtxCalc for static BMD render\n",
+                    (unsigned)jntNum);
+        }
+    }
+#endif
 
+#if !PLATFORM_PC
+    /* GCN: register in deferred display-list pass (setListItem3D/setList).
+     * mDoExt_modelUpdateDL updates the locked display-list matrices; the
+     * scene's render pass later executes the hardware DL via GXCallDisplayList. */
     dComIfGd_setListItem3D();
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
+#else
+    /* PC: call unlock/entry/lock directly, bypassing mDoExt_modelDiff
+     * (which calls calcMaterial with uninitialised animation matrices).
+     *
+     * ROOT CAUSE (to be fixed): entry() crashes inside J3DJoint::entryIn()
+     * for the title model — possibly because j3dSys.getDrawBuffer(0) is NULL
+     * when the title actor runs (the draw buffer is initialised later in the
+     * render pass, after the early actors in draw_iter have already run).
+     * Tracked for Phase 5: investigate j3dSys draw-buffer init order vs
+     * the title actor draw_iter index, and fix entry() before enabling Phase 4
+     * visual confirmation.
+     *
+     * For viewCalc: force mode 2 (J3DMdlFlag_UseDefaultJ3D) so viewCalc()
+     * takes J3DCalcViewBaseMtx instead of calcAnmMtx() → J3DJointTree::calc()
+     * which dereferences basicMtxCalc=NULL (not set because BCK entry() skipped). */
+    mpModel->unlock();
+    mpModel->entry();
+    mpModel->lock();
+    {
+        u32 saved_flags = mpModel->mFlags & (J3DMdlFlag_Unk1 | J3DMdlFlag_UseDefaultJ3D);
+        mpModel->offFlag(J3DMdlFlag_Unk1);
+        mpModel->onFlag(J3DMdlFlag_UseDefaultJ3D);  /* force mode 2 */
+        mpModel->viewCalc();
+        mpModel->offFlag(J3DMdlFlag_UseDefaultJ3D);
+        mpModel->onFlag(saved_flags);
+    }
+#endif
 
     if (field_0x5f8) {
         dComIfGd_set2DOpaTop(&mTitle);
@@ -530,17 +618,18 @@ static int daTitle_Create(fopAc_ac_c* i_this) {
 
 void dDlst_daTitle_c::draw() {
 #if PLATFORM_PC
-    if (Scr == NULL) return;
-    /* Title scene J2D draw diagnostic — confirm draw dispatch fires and
-     * track per-frame rendering of the press-start overlay. */
+    /* Always log the first few calls to confirm draw dispatch fires,
+     * even when Scr is NULL (to distinguish "not called" from "called but empty").
+     * JSON: n=call index, Scr=J2DScreen resource loaded (0=NULL/no BLO data) */
     {
         static u32 s_title_draw_count = 0;
-        if (s_title_draw_count < 30) {
-            fprintf(stderr, "[PAL] dDlst_daTitle_c::draw #%u  Scr=%p\n",
-                    s_title_draw_count, (void*)Scr);
+        if (s_title_draw_count < 5) {
+            fprintf(stderr, "{\"dDlst_daTitle_draw\":{\"n\":%u,\"Scr\":%d}}\n",
+                    s_title_draw_count, Scr != NULL ? 1 : 0);
             s_title_draw_count++;
         }
     }
+    if (Scr == NULL) return;
 #endif
     J2DGrafContext* ctx = dComIfGp_getCurrentGrafPort();
     Scr->draw(0.0f, 0.0f, ctx);

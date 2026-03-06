@@ -16,17 +16,9 @@
 #if PLATFORM_PC
 #include <signal.h>
 #include <setjmp.h>
-static thread_local sigjmp_buf s_draw_jmpbuf;
-static thread_local volatile sig_atomic_t s_draw_guard_active = 0;
-
-static void draw_signal_handler(int sig) {
-    if (s_draw_guard_active) {
-        siglongjmp(s_draw_jmpbuf, sig);
-    }
-    /* If not in guarded region, re-raise with default handler */
-    signal(sig, SIG_DFL);
-    raise(sig);
-}
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 #endif
 
 class dDlst_2Dm_c {
@@ -1812,12 +1804,18 @@ void dDlst_list_c::entryZSortXluDrawList(J3DDrawBuffer* param_0, J3DPacket* para
 
 
 void dDlst_list_c::drawOpaDrawList(J3DDrawBuffer* pDrawBuf) {
+#if PLATFORM_PC
+    if (pDrawBuf == NULL) return;
+#endif
     J3DShape::resetVcdVatCache();
     j3dSys.setDrawModeOpaTexEdge();
     pDrawBuf->draw();
 }
 
 void dDlst_list_c::drawXluDrawList(J3DDrawBuffer* pDrawBuf) {
+#if PLATFORM_PC
+    if (pDrawBuf == NULL) return;
+#endif
     J3DShape::resetVcdVatCache();
     j3dSys.setDrawModeXlu();
     pDrawBuf->draw();
@@ -1856,27 +1854,20 @@ void dDlst_list_c::draw(dDlst_base_c** p_start, dDlst_base_c** p_end) {
                 continue;
             }
         }
-        /* Guard against SIGSEGV/SIGBUS/SIGABRT inside draw() from corrupted object data. */
+        /* Guard against crash inside draw() using global handler — no per-entry sigaction. */
         {
-            struct sigaction sa, old_segv, old_bus, old_abrt;
-            sa.sa_handler = draw_signal_handler;
-            sigemptyset(&sa.sa_mask);
-            sa.sa_flags = 0;
-            sigaction(SIGSEGV, &sa, &old_segv);
-            sigaction(SIGBUS, &sa, &old_bus);
-            sigaction(SIGABRT, &sa, &old_abrt);
-            s_draw_guard_active = 1;
-            int crash_sig = sigsetjmp(s_draw_jmpbuf, 1);
-            if (crash_sig == 0) {
+            pal_crash_handler_init();
+            sigjmp_buf jb;
+            sigjmp_buf* prev_target = pal_crash_jmpbuf;
+            pal_crash_jmpbuf = &jb;
+            pal_crash_occurred = 0;
+            if (sigsetjmp(jb, 1) == 0) {
                 dlst->draw();
             } else {
-                fprintf(stderr, "frame=? cat=DRAW_CRASH detail=\"dDlst_list_c::draw: caught signal %d in draw() at dlst=%p, skipping\"\n",
-                        crash_sig, (void*)dlst);
+                fprintf(stderr, "frame=? cat=DRAW_CRASH detail=\"dDlst_list_c::draw: caught crash in draw() at dlst=%p, skipping\"\n",
+                        (void*)dlst);
             }
-            s_draw_guard_active = 0;
-            sigaction(SIGSEGV, &old_segv, NULL);
-            sigaction(SIGBUS, &old_bus, NULL);
-            sigaction(SIGABRT, &old_abrt, NULL);
+            pal_crash_jmpbuf = prev_target;
         }
 #else
         dlst->draw();

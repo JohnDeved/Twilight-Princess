@@ -19,6 +19,9 @@
 #include "f_pc/f_pc_deletor.h"
 #include "f_pc/f_pc_draw.h"
 #include "f_pc/f_pc_fstcreate_req.h"
+#if PLATFORM_PC
+#include "f_pc/f_pc_layer_iter.h"
+#endif
 #include "f_pc/f_pc_line.h"
 #include "f_pc/f_pc_pause.h"
 #include "f_pc/f_pc_priority.h"
@@ -29,7 +32,16 @@ void fpcM_Draw(void* i_proc) {
 }
 
 int fpcM_DrawIterater(fpcM_DrawIteraterFunc i_drawIterFunc) {
+#if PLATFORM_PC
+    /* On PC, iterate ALL layers for drawing (not just root).
+     * Scene change requests (type 2) on PC create the new scene in a child
+     * layer because the overlap/fade system is disabled.  The child layer
+     * is never promoted to the root layer, so processes there are invisible
+     * to fpcLyIt_OnlyHere(root).  fpcLyIt_All visits all layers. */
+    return fpcLyIt_All((fpcLyIt_OnlyHereFunc)i_drawIterFunc, NULL);
+#else
     return fpcLyIt_OnlyHere(fpcLy_RootLayer(), (fpcLyIt_OnlyHereFunc)i_drawIterFunc, NULL);
+#endif
 }
 
 int fpcM_Execute(void* i_proc) {

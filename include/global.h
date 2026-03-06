@@ -21,8 +21,16 @@
 #define PLATFORM_GCN    (VERSION >= VERSION_GCN_USA && VERSION <= VERSION_GCN_JPN)
 #define PLATFORM_WII    (VERSION >= VERSION_WII_USA_R0 && VERSION <= VERSION_WII_PAL_KIOSK)
 #define PLATFORM_SHIELD (VERSION >= VERSION_SHIELD && VERSION <= VERSION_SHIELD_DEBUG)
+/* PLATFORM_PC / PLATFORM_NX_HB may be pre-defined by the build system
+ * (e.g. CMake -DPLATFORM_PC=1) so that header-only templates in JSystem
+ * can access the flag without a transitive include of global.h.  Only define
+ * them here if they are not already defined. */
+#ifndef PLATFORM_PC
 #define PLATFORM_PC     (VERSION == VERSION_PC)
+#endif
+#ifndef PLATFORM_NX_HB
 #define PLATFORM_NX_HB  (VERSION == VERSION_NX_HB)
+#endif
 
 #define REGION_USA (VERSION == VERSION_GCN_USA || VERSION == VERSION_WII_USA_R0 || VERSION == VERSION_WII_USA_R2 || VERSION == VERSION_WII_USA_KIOSK)
 #define REGION_PAL (VERSION == VERSION_GCN_PAL || VERSION == VERSION_WII_PAL || VERSION == VERSION_WII_PAL_KIOSK)

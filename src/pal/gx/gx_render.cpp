@@ -42,6 +42,14 @@ static uint32_t s_frame_width = GX_DEFAULT_WIDTH;
 static uint32_t s_frame_height = GX_DEFAULT_HEIGHT;
 static int s_using_noop = 0;
 static int s_fb_capture_enabled = 0;
+/* TP_SYNC_RENDER=1: single-threaded bgfx mode for synchronous frame completion.
+ * bgfx::renderFrame() before bgfx::init() disables the internal render thread;
+ * the API thread must call bgfx::renderFrame() after each bgfx::frame() to
+ * actually execute the GL draw calls.  This ensures Mesa softpipe has fully
+ * rasterised a frame before the next submission, eliminating TVB overflow
+ * on heavy 3-D frames.  captureFrame() fires inside renderFrame(), so
+ * pal_verify_frame() reads the CURRENT frame's pixels (no 1-frame pipeline lag). */
+static int s_sync_render = 0;
 
 /**
  * bgfx callback — captures every rendered frame via BGFX_RESET_CAPTURE.
@@ -103,6 +111,23 @@ int pal_render_init(void) {
     if (s_initialized)
         return 1;
 
+    /* TP_SYNC_RENDER=1: activate bgfx single-threaded mode by calling
+     * bgfx::renderFrame() exactly once BEFORE bgfx::init().  This signals
+     * bgfx not to spawn an internal render thread; the application is
+     * responsible for calling bgfx::renderFrame() after each bgfx::frame().
+     * Each bgfx::renderFrame() call blocks until all GL commands for that
+     * frame are complete, giving Mesa softpipe time to rasterise heavy 3-D
+     * frames (7587 draws) without TVB pool exhaustion. */
+    {
+        const char* ev = getenv("TP_SYNC_RENDER");
+        if (ev && ev[0] == '1') {
+            bgfx::renderFrame(); /* single-threaded mode activation */
+            s_sync_render = 1;
+            fprintf(stderr, "{\"render\":\"sync_render_mode\",\"active\":true,"
+                    "\"note\":\"bgfx single-threaded; renderFrame() called per frame\"}\n");
+        }
+    }
+
     pal_window_init(s_frame_width, s_frame_height, "Twilight Princess");
 
     bgfx::Init init;
@@ -159,6 +184,13 @@ int pal_render_init(void) {
         }
     }
 
+    /* Increase transient buffer pools to handle sustained high-draw frames.
+     * Default 6MB TVB exhausts after ~7 frames of 7615 dl_draws × ~80-byte
+     * vertex stride.  32MB provides headroom for sustained play-scene rendering
+     * without alloc FAIL stalls.  TIB scaled proportionally from 2MB → 8MB. */
+    init.limits.transientVbSize = 32u * 1024u * 1024u;  /* 32 MB (was 6 MB) */
+    init.limits.transientIbSize =  8u * 1024u * 1024u;  /*  8 MB (was 2 MB) */
+
     if (!bgfx::init(init)) {
         if (!s_using_noop) {
             fprintf(stderr, "{\"render\":\"opengl_failed\",\"fallback\":\"Noop\"}\n");
@@ -209,6 +241,12 @@ void pal_render_shutdown(void) {
         pal_error_shutdown();
         pal_tev_shutdown();
         bgfx::shutdown();
+        /* In single-threaded mode, bgfx::shutdown() puts a terminate command in
+         * the queue; one more bgfx::renderFrame() is required to process it and
+         * tear down the GL context cleanly. */
+        if (s_sync_render) {
+            bgfx::renderFrame();
+        }
         s_initialized = 0;
         gx_shim_active = 0;
     }
@@ -223,13 +261,16 @@ void pal_render_begin_frame(void) {
     gx_fifo_reset();
     pal_window_poll();
 
-    GXColor cc = g_gx_state.clear_color;
-    cc.a = 255;
-    uint32_t clear_rgba = ((uint32_t)cc.r << 24) | ((uint32_t)cc.g << 16) |
-                          ((uint32_t)cc.b << 8) | (uint32_t)cc.a;
-
+    /* Always clear to black — GXSetCopyClear (g_gx_state.clear_color) sets the
+     * EFB-to-XFB copy clear color used on GCN hardware after GXCopyDisp.  On PC
+     * there is no XFB copy step; the game's clearEfb draw calls (JFWDisplay::
+     * clearEfb, z_func=GX_ALWAYS) are the mechanism that paints the background.
+     * Using clear_color here caused a white-background regression: before the
+     * logo scene GXSetCopyClear(white,...) makes clear_color={255,255,255} and
+     * the bgfx view would start white instead of black, producing avg_rgb near
+     * [242,242,242] at frame_0010 even though clearEfb draws are working. */
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
-                        clear_rgba, 1.0f, 0);
+                        0x000000ff, 1.0f, 0);
 
     uint16_t vp_x = (uint16_t)g_gx_state.vp_left;
     uint16_t vp_y = (uint16_t)g_gx_state.vp_top;
@@ -246,14 +287,28 @@ void pal_render_begin_frame(void) {
     float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     bgfx::setViewTransform(0, identity, identity);
 
-    /* View 1: fade overlay — renders after all view 0 content.
-     * No clear (preserves view 0 framebuffer), same rect. */
+    /* View 1: centroid camera 3D room draws.
+     * Pre-centroid background fills (draws 0-~1000) write depth=~0.950 using the
+     * original MVP, contaminating the depth buffer.  Post-centroid draws at
+     * NDC.z≈0.9996 then fail LEQUAL (0.9996 > 0.950 → rejected).  Giving the
+     * centroid pass its own depth-clear view fixes this: BGFX_CLEAR_DEPTH resets
+     * the depth to 1.0 before the first centroid draw, so all room geometry at
+     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  No color clear — view 0's
+     * framebuffer is preserved and the 3D room composites over it. */
     bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(1, BGFX_CLEAR_NONE);
+    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
     bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
     bgfx::setViewTransform(1, identity, identity);
-    bgfx::touch(1);
 
+    /* View 2: fade overlay — renders last, after all 3D content.
+     * No clear (preserves composite framebuffer), same rect. */
+    bgfx::setViewRect(2, vp_x, vp_y, vp_w, vp_h);
+    bgfx::setViewClear(2, BGFX_CLEAR_NONE);
+    bgfx::setViewMode(2, bgfx::ViewMode::Sequential);
+    bgfx::setViewTransform(2, identity, identity);
+    bgfx::touch(2);
+
+    bgfx::touch(1);
     bgfx::touch(0);
 
     /* Enable bgfx debug text overlay for frame diagnostics */
@@ -307,6 +362,10 @@ void pal_render_end_frame(void) {
         fprintf(stderr, "{\"render\":\"frame_stats\",\"frame\":%u,"
                 "\"draw_calls\":%u,\"verts\":%u}\n",
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
+        fprintf(stderr, "{\"zblend_prop\":{\"frame\":%u,\"gx_set_z\":%u,\"gx_set_blend\":%u,"
+                "\"submit_depth\":%u,\"submit_blend\":%u}}\n",
+                s_frame_count, gx_frame_zmode_calls, gx_frame_blendmode_calls,
+                gx_frame_submit_with_depth_state, gx_frame_submit_with_blend_state);
     }
 
     /* Submit frame — triggers rendering and capture.
@@ -314,8 +373,30 @@ void pal_render_end_frame(void) {
      * bgfx uses multi-threaded rendering by default (BGFX_CONFIG_MULTITHREADED=1).
      * The capture at frame N contains frame N-1's rendering (1-frame pipeline
      * delay). This is acceptable for regression testing — we compare frame
-     * content rather than frame number. */
+     * content rather than frame number.
+     *
+     * In TP_SYNC_RENDER=1 mode (single-threaded), bgfx::renderFrame() is called
+     * immediately after bgfx::frame().  renderFrame() blocks until ALL GL draw
+     * calls for this frame complete, then fires captureFrame() with current
+     * frame's pixels — no pipeline delay. */
     bgfx::frame();
+
+    /* TP_SYNC_RENDER=1: process the submitted frame synchronously.
+     * bgfx::renderFrame() executes the OpenGL draw calls and blocks until
+     * Mesa softpipe has fully rasterised the frame.  captureFrame() fires
+     * inside renderFrame(), so s_fb contains the CURRENT frame's pixels
+     * after this call returns — pal_verify_frame() below sees fresh data. */
+    if (s_sync_render) {
+        bgfx::renderFrame();
+        /* Log sync completion for every frame in the 3D-geometry window
+         * (frame 128+) and every 10 frames otherwise — limits log volume
+         * while preserving visibility around the heavy-render transition. */
+        if (s_frame_count % 10 == 0 || s_frame_count >= 128) {
+            fprintf(stderr, "{\"sync_render\":\"frame_complete\",\"frame\":%u,"
+                    "\"draw_calls\":%u}\n",
+                    s_frame_count, g_gx_state.draw_calls);
+        }
+    }
 
     /* Log bgfx stats for title scene frames to see actual GPU draw counts */
     if (s_frame_count >= 120 && s_frame_count <= 125) {
@@ -334,7 +415,59 @@ void pal_render_end_frame(void) {
         }
     }
 
-    /* Verify after bgfx::frame() so capture buffer is up-to-date */
+    /* Per-frame draw_calls log for frames 125-410 to diagnose proc transition.
+     * The 3D BG actor is active at frame 129 (~7400 draws); PROC_TITLE takes
+     * over at frame ~152.  This range shows when draws drop to zero and when
+     * PROC_TITLE/J2D submits visible draws in headless mode.
+     * Extended to 410 to cover the Phase 4 capture window (up to frame 400). */
+    if (s_frame_count >= 125 && s_frame_count <= 410) {
+        fprintf(stderr, "{\"frame_dc\":{\"f\":%u,\"dc\":%u,\"verts\":%u}}\n",
+                s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
+    }
+
+    /* TP_FRAME_DELAY_MS=N: sleep N milliseconds after bgfx::frame() starting at
+     * TP_FRAME_DELAY_START frame (default 129), stopping after TP_FRAME_DELAY_END
+     * (default = TP_FRAME_DELAY_START, i.e. delay fires exactly once).
+     *
+     * IMPORTANT: this sleep must fire BEFORE pal_verify_frame() so that Mesa
+     * softpipe has fully rasterised the submitted batch before we read s_fb.
+     * bgfx is multi-threaded: bgfx::frame(N) queues the accumulated draw commands
+     * for the render thread, but pal_verify_frame reads s_fb which is populated by
+     * the render thread's captureFrame callback.  Without the sleep here, the
+     * capture may still contain the previous frame's data when verify runs.
+     *
+     * Default start frame = 129: the J3D 3D room draws (7587 calls) are accumulated
+     * during game iteration 129 and flushed by bgfx::frame(129).  Sleeping at
+     * frame 128 (old default) flushed game iter 128's 2-draw title batch instead.
+     *
+     * Used by Phase 3 CI to let Mesa softpipe rasterise the 7587-draw 3D frame
+     * before the BMP capture.  Set to 0 (default) for normal operation. */
+    {
+        static int s_frame_delay_ms = -1;
+        static uint32_t s_frame_delay_start = 129; /* default: 3D geometry batch ready at 129 */
+        static uint32_t s_frame_delay_end = 0;     /* 0 = same as start (fire exactly once) */
+        if (s_frame_delay_ms < 0) {
+            const char* ev = getenv("TP_FRAME_DELAY_MS");
+            s_frame_delay_ms = ev ? atoi(ev) : 0;
+            const char* ev_start = getenv("TP_FRAME_DELAY_START");
+            if (ev_start) s_frame_delay_start = (uint32_t)atoi(ev_start);
+            const char* ev_end = getenv("TP_FRAME_DELAY_END");
+            s_frame_delay_end = ev_end ? (uint32_t)atoi(ev_end) : s_frame_delay_start;
+            if (s_frame_delay_ms > 0)
+                fprintf(stderr, "{\"render\":\"frame_delay_ms\":%d,"
+                        "\"start_frame\":%u,\"end_frame\":%u}\n",
+                        s_frame_delay_ms, s_frame_delay_start, s_frame_delay_end);
+        }
+        if (s_frame_delay_ms > 0 && s_frame_count >= s_frame_delay_start
+                && s_frame_count <= s_frame_delay_end) {
+            fprintf(stderr, "{\"frame_delay\":{\"frame\":%u,\"ms\":%d}}\n",
+                    s_frame_count, s_frame_delay_ms);
+            usleep((useconds_t)s_frame_delay_ms * 1000u);
+        }
+    }
+
+    /* Verify after bgfx::frame() (and after any TP_FRAME_DELAY_MS sleep) so the
+     * capture buffer contains the just-rendered frame's pixels. */
     pal_verify_frame(s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts,
                      gx_frame_stub_count, (u32)gx_stub_frame_is_valid());
 

@@ -8159,6 +8159,11 @@ void dKy_undwater_filter_draw() {
 
 static int dKy_Draw(sub_kankyo__class* i_this) {
     UNUSED(i_this);
+#if PLATFORM_PC
+    /* GX lighting calls (SetBaseLight, setLight, dKy_setLight_nowroom) are
+     * GCN-only. Skip entirely on PC since kankyo weather rendering is stubbed. */
+    return 1;
+#endif
     g_env_light.drawKankyo();
 
     #if DEBUG
@@ -8179,6 +8184,11 @@ static int dKy_Draw(sub_kankyo__class* i_this) {
 
 static int dKy_Execute(sub_kankyo__class* i_this) {
     UNUSED(i_this);
+#if PLATFORM_PC
+    /* kankyo manager Execute calls GCN-only GX lighting/weather/TEV updates
+     * (exeKankyo, dKyw_wind_set, dKy_twilight_camelight_set) that crash on PC. */
+    return 1;
+#endif
     dScnKy_env_light_c* kankyo = dKy_getEnvlight();
     g_env_light.exeKankyo();
     dKyw_wind_set();

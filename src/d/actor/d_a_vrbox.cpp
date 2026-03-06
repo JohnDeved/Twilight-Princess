@@ -47,6 +47,24 @@ static int daVrbox_Draw(vrbox_class* i_this) {
     dKy_GxFog_set();
 
     // these casts look like fake matches, but this ptr is used as both J3DModel and J3DModelData?
+#if PLATFORM_PC
+    /* On PC (64-bit), casting J3DModel* to J3DModelData* is invalid because
+     * pointer sizes and struct padding differ from GC 32-bit ABI.  Use the
+     * accessor path instead.  Also guard the fogInfo_p dereference which is
+     * conditionalized on PC to avoid UB when material_p is NULL. */
+    {
+        J3DModelData* pModelData_fog = soraModel_p->getModelData();
+        if (pModelData_fog != NULL) {
+            for (int i = (int)pModelData_fog->getMaterialNum() - 1; i >= 0; i--) {
+                J3DMaterial* material_p = pModelData_fog->getMaterialNodePointer(i);
+                if (material_p != NULL) {
+                    J3DFogInfo* fogInfo_p = material_p->getFog()->getFogInfo();
+                    if (fogInfo_p != NULL) fogInfo_p->mType = 2;
+                }
+            }
+        }
+    }
+#else
     for (int i = ((J3DModelData*)soraModel_p)->getMaterialNum() - 1; i >= 0; i--) {
         J3DMaterial* material_p = ((J3DModelData*)soraModel_p)->getMaterialNodePointer(i);
 
@@ -57,6 +75,7 @@ static int daVrbox_Draw(vrbox_class* i_this) {
 
         fogInfo_p->mType = 2;
     }
+#endif
 
     dComIfGd_setListSky();
     mDoExt_modelUpdateDL(soraModel_p);

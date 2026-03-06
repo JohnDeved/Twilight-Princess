@@ -192,6 +192,10 @@ int dEnvSe_c::execute_common(dStage_SoundInfo_c* i_soundInf, s8* param_1, u8 par
 }
 
 int dEnvSe_c::execute() {
+#if PLATFORM_PC
+    /* Audio subsystem (JAudio/DSP/ARAM) not initialized on PC. */
+    return 1;
+#endif
     int roomNo = dComIfGp_roomControl_getStayNo();
     dStage_roomDt_c* roomDt_p = dComIfGp_roomControl_getStatusRoomDt(roomNo);
 

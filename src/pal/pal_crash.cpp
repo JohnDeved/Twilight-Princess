@@ -20,6 +20,8 @@
 #endif
 
 extern "C" uint32_t pal_capture_get_frame_count(void);
+extern "C" void pal_tev_report_diagnostics(void);
+extern "C" void gx_stub_report(void);
 
 static void crash_handler_sa(int sig, siginfo_t* info, void* ucontext) {
     /* Emit CRASH JSON to stdout so parse_milestones.py can consume it */
@@ -67,6 +69,12 @@ static void term_handler(int sig) {
     uint32_t frame = pal_capture_get_frame_count();
     fprintf(stdout, "{\"milestone\":\"TERMINATED\",\"id\":-2,\"signal\":%d,\"frame\":%u}\n", sig, frame);
     fflush(stdout);
+    /* Emit TEV/draw diagnostics so validate_telemetry.py has tev_config_summary
+     * even when killed by CI timeout (avoids spurious "0 TEV configs" regression). */
+    pal_tev_report_diagnostics();
+    gx_stub_report();
+    fflush(stdout);
+    fflush(stderr);
     _exit(0);
 }
 

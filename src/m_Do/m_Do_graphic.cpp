@@ -41,14 +41,14 @@
 #include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
+#include "pal/gx/gx_tev.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
 #include <signal.h>
 #include <setjmp.h>
 extern "C" void pal_gd_reset_dummy(void);
-static sigjmp_buf s_painter_jmpbuf;
-static void pal_painter_crash_handler(int sig) {
-    siglongjmp(s_painter_jmpbuf, sig);
-}
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 #endif
 
 #if PLATFORM_WII
@@ -419,6 +419,18 @@ void mDoGph_gInf_c::fadeOut(f32 fadeSpeed) {
 
 void darwFilter(GXColor matColor) {
 #if PLATFORM_PC
+    /* Diagnostic: always log the fade colour so CI can confirm whether a black-
+     * fade overlay is covering the 3D scene at capture frames (e.g. frame 129).
+     * JSON key "darwFilter" intentionally preserves the original spelling. */
+    fprintf(stderr, "{\"darwFilter\":{\"r\":%d,\"g\":%d,\"b\":%d,\"a\":%d}}\n",
+            (int)matColor.r, (int)matColor.g,
+            (int)matColor.b, (int)matColor.a);
+    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3/4 CI
+     * to bypass a fully-black fade transition that would cover the 3D geometry.
+     * Any non-empty value enables the skip (consistent with other TP_ env vars). */
+    if (getenv("TP_SKIP_FADE")) {
+        return;
+    }
     g_gx_state.fade_overlay_active = 1;
 #endif
     GXSetNumChans(1);
@@ -1556,8 +1568,13 @@ int mDoGph_Painter() {
         /* Ensure __GDCurrentDL is valid at the start of each frame.
          * endDL() may have set it to NULL during previous-frame model setup. */
         pal_gd_reset_dummy();
-        /* Reset the cumulative J3D draw buffer entry counter per frame
-         * so j3d_draw_diag reports per-frame model registration count. */
+        /* Capture J3D entry count from the previous frame's complete cycle
+         * (Paint+Execute+Draw all happen sequentially within one frame,
+         * with Draw running last).  entryNum here reflects models that were
+         * registered during the previous frame's Draw pass.  Reset it for
+         * the next cycle so Paint draws from the fresh buffer. */
+        static int s_prev_j3d_entries = 0;
+        s_prev_j3d_entries = J3DDrawBuffer::entryNum;
         J3DDrawBuffer::entryNum = 0;
 #endif
         if (dComIfGp_getWindowNum() != 0) {
@@ -1606,53 +1623,65 @@ int mDoGph_Painter() {
                 j3dSys.setViewMtx(camera_p->viewMtx);
                 dKy_setLight();
 
-                /* Wrap 3D draw list flush with crash protection — texture
-                 * decode or bad model data can crash during rendering.
-                 * Protects so j3d_draw_diag still emits. */
+                /* Wrap 3D draw list flush with global crash handler —
+                 * no per-frame sigaction overhead.  Each draw list that
+                 * crashes once is permanently skipped (zero signal work
+                 * on subsequent frames). */
                 {
-                    struct sigaction sa_new, sa_segv_old, sa_abrt_old;
-                    memset(&sa_new, 0, sizeof(sa_new));
-                    sa_new.sa_handler = pal_painter_crash_handler;
-                    sigemptyset(&sa_new.sa_mask);
-                    sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-                    sigaction(SIGSEGV, &sa_new, &sa_segv_old);
-                    sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+                    static int s_drawlist_frame = 0;
+                    pal_crash_handler_init();
+                    J3DDrawBuffer::palDiagFrameReset();
 
-                    /* Per-draw-list crash protection: if one list crashes,
-                     * subsequent lists can still execute and produce dl_draws. */
-#define PAL_SAFE_DRAW(label, code) \
-    if (sigsetjmp(s_painter_jmpbuf, 1) == 0) { code; } \
-    else { static int c = 0; if (c++ < 3) fprintf(stderr, "[PAL] draw crash: " label "\n"); }
+#define PAL_SAFE_DRAW_RETRY(label, retry_frames, code) \
+    /* _suppressed/_retry_frame are per-drawlist (macro expansion-site statics). */ \
+    { static int _suppressed = 0; static int _retry_frame = 0; \
+      if (_suppressed && (retry_frames) > 0 && s_drawlist_frame >= _retry_frame) { \
+        _suppressed = 0; \
+      } \
+      if (!_suppressed) { \
+        J3DDrawBuffer::palDiagCrashMarkerReset(); \
+        sigjmp_buf _jb; sigjmp_buf* _prev = pal_crash_jmpbuf; \
+        pal_crash_jmpbuf = &_jb; pal_crash_occurred = 0; \
+        if (sigsetjmp(_jb, 1) == 0) { code; } \
+        else { _suppressed = 1; _retry_frame = s_drawlist_frame + (retry_frames); \
+          fprintf(stderr, "[PAL] draw list crash: " label " — suppressed%s (phase=%d slot=%d pkt=%d packet=%p vptr=%p)\n", \
+                  (retry_frames) > 0 ? " (will retry)" : " permanently", \
+                  J3DDrawBuffer::palDiagCrashPhase(), \
+                  J3DDrawBuffer::palDiagCrashSlot(), \
+                  J3DDrawBuffer::palDiagCrashPacketIndex(), \
+                  J3DDrawBuffer::palDiagCrashPacketPtr(), \
+                  J3DDrawBuffer::palDiagCrashPacketVptr()); } \
+        pal_crash_jmpbuf = _prev; \
+      } }
 
                     /* Sky */
-                    PAL_SAFE_DRAW("OpaListSky", dComIfGd_drawOpaListSky());
-                    PAL_SAFE_DRAW("XluListSky", dComIfGd_drawXluListSky());
+                    PAL_SAFE_DRAW_RETRY("OpaListSky", 0, dComIfGd_drawOpaListSky());
+                    PAL_SAFE_DRAW_RETRY("XluListSky", 30, dComIfGd_drawXluListSky());
                     GXSetClipMode(GX_CLIP_ENABLE);
 
                     /* Background / terrain */
-                    PAL_SAFE_DRAW("OpaListBG", dComIfGd_drawOpaListBG());
-                    PAL_SAFE_DRAW("OpaListDarkBG", dComIfGd_drawOpaListDarkBG());
-                    PAL_SAFE_DRAW("OpaListMiddle", dComIfGd_drawOpaListMiddle());
+                    PAL_SAFE_DRAW_RETRY("OpaListBG", 30, dComIfGd_drawOpaListBG());
+                    PAL_SAFE_DRAW_RETRY("OpaListDarkBG", 0, dComIfGd_drawOpaListDarkBG());
+                    PAL_SAFE_DRAW_RETRY("OpaListMiddle", 0, dComIfGd_drawOpaListMiddle());
 
                     /* Opaque objects */
-                    PAL_SAFE_DRAW("OpaList", dComIfGd_drawOpaList());
-                    PAL_SAFE_DRAW("OpaListDark", dComIfGd_drawOpaListDark());
-                    PAL_SAFE_DRAW("OpaListPacket", dComIfGd_drawOpaListPacket());
+                    PAL_SAFE_DRAW_RETRY("OpaList", 0, dComIfGd_drawOpaList());
+                    PAL_SAFE_DRAW_RETRY("OpaListDark", 0, dComIfGd_drawOpaListDark());
+                    PAL_SAFE_DRAW_RETRY("OpaListPacket", 0, dComIfGd_drawOpaListPacket());
 
                     /* Translucent background */
-                    PAL_SAFE_DRAW("XluListBG", dComIfGd_drawXluListBG());
-                    PAL_SAFE_DRAW("XluListDarkBG", dComIfGd_drawXluListDarkBG());
+                    PAL_SAFE_DRAW_RETRY("XluListBG", 30, dComIfGd_drawXluListBG());
+                    PAL_SAFE_DRAW_RETRY("XluListDarkBG", 0, dComIfGd_drawXluListDarkBG());
 
                     /* Translucent objects */
-                    PAL_SAFE_DRAW("XluList", dComIfGd_drawXluList());
-                    PAL_SAFE_DRAW("XluListDark", dComIfGd_drawXluListDark());
+                    PAL_SAFE_DRAW_RETRY("XluList", 0, dComIfGd_drawXluList());
+                    PAL_SAFE_DRAW_RETRY("XluListDark", 0, dComIfGd_drawXluListDark());
 
                     /* Late 3D */
-                    PAL_SAFE_DRAW("OpaList3Dlast", dComIfGd_drawOpaList3Dlast());
+                    PAL_SAFE_DRAW_RETRY("OpaList3Dlast", 0, dComIfGd_drawOpaList3Dlast());
 
-#undef PAL_SAFE_DRAW
-                    sigaction(SIGSEGV, &sa_segv_old, NULL);
-                    sigaction(SIGABRT, &sa_abrt_old, NULL);
+#undef PAL_SAFE_DRAW_RETRY
+                    s_drawlist_frame++;
                 }
 
                 j3dSys.reinitGX();
@@ -1661,48 +1690,81 @@ int mDoGph_Painter() {
         }
         {
             static int s_3d_diag_frame = 0;
+            static u32 s_prev_tev_attempts = 0;
+            static u32 s_prev_tev_submits = 0;
+            static u32 s_prev_tev_filters = 0;
+            static u32 s_prev_tev_fill = 0;
+            static u32 s_prev_tev_alpha = 0;
+            static u32 s_prev_tev_env = 0;
             int dl_draws = pal_gx_dl_get_draw_count();
             int dl_verts = pal_gx_dl_get_vert_count();
             int dl_calls = pal_gx_dl_get_call_count();
-            if (s_3d_diag_frame < 10 || (s_3d_diag_frame >= 120 && s_3d_diag_frame <= 200) || (s_3d_diag_frame % 30 == 0 && s_3d_diag_frame < 600)) {
+            u32 tev_attempts = pal_tev_get_total_attempt_count();
+            u32 tev_submits = pal_tev_get_ok_submitted_count();
+            u32 tev_filters = pal_tev_get_filter_skip_count();
+            u32 tev_fill = pal_tev_get_skip_passclr_fill_count();
+            u32 tev_alpha = pal_tev_get_skip_passclr_alpha_count();
+            u32 tev_env = pal_tev_get_skip_passclr_env_count();
+            int visited_packets = J3DDrawBuffer::palDiagPacketsVisited();
+            int virtual_draws = J3DDrawBuffer::palDiagVirtualDrawCalls();
+            enum {
+                DIAG_EARLY_FRAMES = 10,
+                DIAG_PLAY_START = 120,
+                DIAG_PLAY_END = 400,
+                DIAG_SAMPLING_STRIDE = 30,
+                DIAG_SAMPLING_CAP = 600,
+            };
+            if (s_3d_diag_frame < DIAG_EARLY_FRAMES ||
+                (s_3d_diag_frame >= DIAG_PLAY_START && s_3d_diag_frame <= DIAG_PLAY_END) ||
+                (s_3d_diag_frame % DIAG_SAMPLING_STRIDE == 0 && s_3d_diag_frame < DIAG_SAMPLING_CAP)) {
                 u32 gh_free = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getTotalFreeSize() : 0;
                 u32 gh_size = mDoExt_getGameHeap() ? mDoExt_getGameHeap()->getHeapSize() : 0;
-                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d}}\n",
-                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, J3DDrawBuffer::entryNum);
+                fprintf(stderr, "{\"j3d_draw_diag\":{\"frame\":%d,\"windowNum\":%d,\"dl_draws\":%d,\"dl_verts\":%d,\"dl_calls\":%d,\"gh_free\":%u,\"gh_size\":%u,\"j3d_entries\":%d,\"pkt_visited\":%d,\"pkt_virtual\":%d,\"tev_attempts\":%u,\"tev_submits\":%u,\"tev_filters\":%u,\"tev_fill\":%u,\"tev_alpha\":%u,\"tev_env\":%u}}\n",
+                        s_3d_diag_frame, dComIfGp_getWindowNum(), dl_draws, dl_verts, dl_calls, gh_free, gh_size, s_prev_j3d_entries,
+                        visited_packets, virtual_draws,
+                        tev_attempts - s_prev_tev_attempts,
+                        tev_submits - s_prev_tev_submits,
+                        tev_filters - s_prev_tev_filters,
+                        tev_fill - s_prev_tev_fill,
+                        tev_alpha - s_prev_tev_alpha,
+                        tev_env - s_prev_tev_env);
             }
+            s_prev_tev_attempts = tev_attempts;
+            s_prev_tev_submits = tev_submits;
+            s_prev_tev_filters = tev_filters;
+            s_prev_tev_fill = tev_fill;
+            s_prev_tev_alpha = tev_alpha;
+            s_prev_tev_env = tev_env;
             s_3d_diag_frame++;
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        /* Wrap 2D/item draws with crash protection — NULL packet
-         * pointers or uninitialized display list objects can crash. */
+        /* Wrap 2D/item draws with global crash handler.
+         * Permanently skip after first crash — zero overhead on subsequent frames. */
         {
-            struct sigaction sa_new, sa_segv_old2, sa_abrt_old2;
-            memset(&sa_new, 0, sizeof(sa_new));
-            sa_new.sa_handler = pal_painter_crash_handler;
-            sigemptyset(&sa_new.sa_mask);
-            sa_new.sa_flags = SA_NODEFER | SA_ONSTACK;
-            sigaction(SIGSEGV, &sa_new, &sa_segv_old2);
-            sigaction(SIGABRT, &sa_new, &sa_abrt_old2);
-            if (sigsetjmp(s_painter_jmpbuf, 1) == 0) {
-                J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
-                ortho.setPort();
+            static int s_2d_suppressed = 0;
+            if (!s_2d_suppressed) {
+                pal_crash_handler_init();
+                sigjmp_buf jb;
+                sigjmp_buf* prev_target = pal_crash_jmpbuf;
+                pal_crash_jmpbuf = &jb;
+                pal_crash_occurred = 0;
+                if (sigsetjmp(jb, 1) == 0) {
+                    J2DOrthoGraph ortho(0.0f, 0.0f, FB_WIDTH, FB_HEIGHT, -1.0f, 1.0f);
+                    ortho.setPort();
 
-                dComIfGd_draw2DOpa();
-                dComIfGd_draw2DXlu();
-                dComIfGd_draw2DOpaTop();
+                    dComIfGd_draw2DOpa();
+                    dComIfGd_draw2DXlu();
+                    dComIfGd_draw2DOpaTop();
 
-                /* --- Item/3D model draw list (with proper camera setup) --- */
-                drawItem3D();
-            } else {
-                static int s_2d_crash_count = 0;
-                if (s_2d_crash_count < 5) {
-                    fprintf(stderr, "[PAL] 2D/item draw crash caught (count=%d)\n", s_2d_crash_count);
+                    /* --- Item/3D model draw list (with proper camera setup) --- */
+                    drawItem3D();
+                } else {
+                    s_2d_suppressed = 1;
+                    fprintf(stderr, "[PAL] 2D/item draw crash — permanently skipped\n");
                 }
-                s_2d_crash_count++;
+                pal_crash_jmpbuf = prev_target;
             }
-            sigaction(SIGSEGV, &sa_segv_old2, NULL);
-            sigaction(SIGABRT, &sa_abrt_old2, NULL);
         }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */

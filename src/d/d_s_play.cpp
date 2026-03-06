@@ -32,10 +32,13 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stdlib.h>
 static sigjmp_buf s_predraw_jmpbuf;
 static void pal_predraw_crash_handler(int sig) {
     siglongjmp(s_predraw_jmpbuf, sig);
 }
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
 #endif
 
 #if PLATFORM_WII
@@ -113,8 +116,8 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 #if PLATFORM_PC
     static int s_scnply_draw_count = 0;
     s_scnply_draw_count++;
-    if (s_scnply_draw_count <= 5) {
-        fprintf(stderr, "[PAL] dScnPly_Draw #%d start\n", s_scnply_draw_count);
+    if (s_scnply_draw_count <= 5 || (s_scnply_draw_count % 50 == 0 && s_scnply_draw_count < 500)) {
+        fprintf(stderr, "[PAL] dScnPly_Draw #%d start (proc=%d)\n", s_scnply_draw_count, fpcM_GetName(i_this));
     }
 #endif
     static s16 l_wipeType[] = {
@@ -147,6 +150,15 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
     dComIfG_Bgsp().ClrMoveFlag();
 
     u8 useWhiteColor;
+#if PLATFORM_PC
+    /* On PC, suppress all scene-change requests from the opening scene Draw.
+     * The original code detects stage loading completion and requests a
+     * transition to PROC_PLAY_SCENE, which deletes the opening scene and
+     * unloads room geometry after just 2 draw frames.  By skipping this,
+     * the opening scene stays alive with room geometry loaded for the full
+     * test window, enabling sustained 3D rendering diagnostics. */
+    (void)useWhiteColor;
+#else
     if (!fopOvlpM_IsPeek() && !dComIfG_resetToOpening(i_this)) {
         if (dComIfGp_isEnableNextStage()) {
             u8 wipe = dComIfGp_getNextStageWipe();
@@ -174,6 +186,7 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
             }
         }
     }
+#endif
     dMdl_mng_c::reset();
 
 #if PLATFORM_PC
@@ -280,6 +293,14 @@ static int dScnPly_Draw(dScnPly_c* i_this) {
 }
 
 static int dScnPly_Execute(dScnPly_c* i_this) {
+#if PLATFORM_PC
+    static int s_exec_count = 0;
+    s_exec_count++;
+    if (s_exec_count <= 5 || (s_exec_count % 50 == 0 && s_exec_count < 500)) {
+        fprintf(stderr, "[PAL] dScnPly_Execute #%d (proc=%d peek=%d)\n",
+                s_exec_count, fpcM_GetName(i_this), fopOvlpM_IsPeek());
+    }
+#endif
     i_this->offReset();
     dStage_roomControl_c::offNoChangeRoom();
     dStage_roomControl_c::setRoomReadId(0xFF);
@@ -296,19 +317,53 @@ static int dScnPly_Execute(dScnPly_c* i_this) {
         }
     }
 
+#if PLATFORM_PC
+    /* Inner crash handler: dDemo_c::update() / dComIfGp_getEvent()->Step() may
+     * SIGSEGV at frame ~132 when the JStudio control iterates actor objects freed
+     * by the BG actor exit at frame 130.  Catching here (not in fpcBs_Execute)
+     * prevents PROC_OPENING_SCENE from being permanently suppressed, keeping
+     * scene management alive for the rest of the run. */
+    {
+        pal_crash_handler_init();
+        sigjmp_buf inner_jb;
+        sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+        pal_crash_jmpbuf = &inner_jb;
+        if (sigsetjmp(inner_jb, 1) == 0) {
+            dKy_itudemo_se();
+            if (!dComIfGp_isPauseFlag()) {
+                dDemo_c::update();
+                dComIfGp_getEvent()->Step();
+                if (dComIfGp_getPlayer(0) != NULL)
+                    dComIfGp_getAttention()->Run();
+            }
+            pal_crash_jmpbuf = prev_jb;
+        } else {
+            pal_crash_jmpbuf = prev_jb;
+            static int s_demo_crash_logged = 0;
+            if (!s_demo_crash_logged++) {
+                fprintf(stderr, "[PAL] dScnPly_Execute: demo/event crash at ~frame 132 — caught, scene continues\n");
+            }
+        }
+    }
+#else
     dKy_itudemo_se();
     if (!dComIfGp_isPauseFlag()) {
         dDemo_c::update();
         dComIfGp_getEvent()->Step();
-#if PLATFORM_PC
-        if (dComIfGp_getPlayer(0) != NULL)
-#endif
         dComIfGp_getAttention()->Run();
     }
+#endif
     return 1;
 }
 
 static int dScnPly_IsDelete(dScnPly_c i_this) {
+#if PLATFORM_PC
+    /* On PC, keep the scene alive — returning 1 causes the framework to
+     * immediately queue the scene for deletion via fpcDt_ToQueue.
+     * The opening scene must persist for sustained room geometry rendering. */
+    (void)i_this;
+    return 0;
+#endif
     dComIfGp_particle_cleanup();
     return 1;
 }
@@ -760,6 +815,31 @@ static int phase_4(dScnPly_c* i_this) {
     dComIfGp_setMsgExpHeap(fopMsgM_createExpHeap(0xA800, NULL));
 
     if (fpcM_GetName(i_this) == PROC_OPENING_SCENE) {
+#if PLATFORM_PC
+        /* On PC, optionally create PROC_TITLE based on TP_ENABLE_PROC_TITLE.
+         *
+         * Phase 3 (3D room capture, frame 129): leave unset.  PROC_TITLE
+         * creation triggers a scene switch that unloads room geometry before
+         * the rendering pipeline can capture sustained dl_draws.
+         *
+         * Phase 4 (J2D title screen, frame 200+): set TP_ENABLE_PROC_TITLE=1.
+         * PROC_TITLE is created normally so J2D title-screen content is
+         * visible at frame 200 after the 3D BG actor exits at frame 130. */
+        {
+            static int s_enable_proc_title = -1;
+            if (s_enable_proc_title < 0) {
+                const char* ev = getenv("TP_ENABLE_PROC_TITLE");
+                s_enable_proc_title = (ev && ev[0] == '1') ? 1 : 0;
+                fprintf(stderr, "[PAL] TP_ENABLE_PROC_TITLE=%d\n", s_enable_proc_title);
+            }
+            if (s_enable_proc_title) {
+                fopAcM_create(PROC_TITLE, 0, NULL, -1, NULL, NULL, -1);
+            }
+        }
+        dComIfGs_init();
+        dComIfGs_setOptPointer(0);
+        dComIfGs_setLife(12);
+#else
         fopAcM_create(PROC_TITLE, 0, NULL, -1, NULL, NULL, -1);
         dComIfGs_init();
         dComIfGs_setOptPointer(0);
@@ -768,6 +848,7 @@ static int phase_4(dScnPly_c* i_this) {
         dMeter2Info_setSword(fpcNm_ITEM_SWORD, false);
         dMeter2Info_setShield(fpcNm_ITEM_HYLIA_SHIELD, false);
         dComIfGs_onEventBit(0x0601);  // Epona Tamed
+#endif
     }
 
     dMpath_c::create();

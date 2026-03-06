@@ -181,4 +181,86 @@ void GFSetZMode(u8 compare_enable, GXCompare func, u8 update_enable) {
 
 /* JSU stream stubs are in pal_remaining_stubs.cpp; JSUInputStream is compiled from source */
 
+/* ================================================================ */
+/* dBgp_c — BG parts (collision geometry) stubs                     */
+/* ================================================================ */
+
+#include "d/d_bg_parts.h"
+#include "d/d_stage.h"
+
+/* ================================================================ */
+/* Collision stub call-frequency counters (Task 3)                  */
+/* ================================================================ */
+static uint32_t s_dBgp_create       = 0;
+static uint32_t s_dBgp_registBg     = 0;
+static uint32_t s_dBgp_releaseBg    = 0;
+static uint32_t s_dBgp_execute      = 0;
+static uint32_t s_dBgp_draw         = 0;
+static uint32_t s_dBgS_ChkDelete    = 0;
+static uint32_t s_dCcS_ChkActor     = 0;
+
+extern "C" {
+void pal_collision_stub_report(void) {
+    fprintf(stdout, "{\"collision_stub_calls\":{"
+            "\"dBgp_create\":%u,"
+            "\"dBgp_registBg\":%u,"
+            "\"dBgp_releaseBg\":%u,"
+            "\"dBgp_execute\":%u,"
+            "\"dBgp_draw\":%u,"
+            "\"dBgS_ChkDeleteActorRegist\":%u,"
+            "\"dCcS_ChkActor\":%u}}\n",
+            s_dBgp_create,
+            s_dBgp_registBg,
+            s_dBgp_releaseBg,
+            s_dBgp_execute,
+            s_dBgp_draw,
+            s_dBgS_ChkDelete,
+            s_dCcS_ChkActor);
+    fflush(stdout);
+}
+}
+
+dBgp_c::dBgp_c() : mPointer(NULL), mHeap(NULL) {
+    memset(mArcName, 0, sizeof(mArcName));
+}
+
+dBgp_c::~dBgp_c() {}
+
+void dBgp_c::create(s8, void*) { s_dBgp_create++; }
+void dBgp_c::registBg(fopAc_ac_c*) { s_dBgp_registBg++; }
+void dBgp_c::releaseBg() { s_dBgp_releaseBg++; }
+int dBgp_c::registBg(int, fopAc_ac_c*) { s_dBgp_registBg++; return 0; }
+void dBgp_c::releaseBg(int) { s_dBgp_releaseBg++; }
+int dBgp_c::execute(bool) { s_dBgp_execute++; return 0; }
+void dBgp_c::draw(fopAc_ac_c*) { s_dBgp_draw++; }
+void dBgp_c::setPointer(void*) {}
+void dBgp_c::createShare() {}
+void dBgp_c::removeShare() {}
+void dBgp_c::addShare(u16) {}
+void dBgp_c::cutShare(u16) {}
+bool dBgp_c::executeShare() { return false; }
+void dBgp_c::drawShare() {}
+void dBgp_c::entryShare(packet_c*) {}
+
+JKRSolidHeap* dBgp_c::mShareHeap;
+dBgp_c::share_c* dBgp_c::mShare;
+
+/* dBgp_c::packet_c (nested class) */
+dBgp_c::packet_c::packet_c() {}
+dBgp_c::packet_c::~packet_c() {}
+
+/* dStage_roomControl_c static member */
+#if DEBUG
+void dStage_roomControl_c::setBgp(int, void*) {}
+void* dStage_roomControl_c::mBgp[64];
+#endif
+
+/* dBgS — collision system stubs */
+#include "d/d_bg_s.h"
+void dBgS::ChkDeleteActorRegist(fopAc_ac_c*) { s_dBgS_ChkDelete++; }
+
+/* dCcS — collision check system stubs */
+#include "d/d_cc_s.h"
+void dCcS::ChkActor(fopAc_ac_c*) { s_dCcS_ChkActor++; }
+
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

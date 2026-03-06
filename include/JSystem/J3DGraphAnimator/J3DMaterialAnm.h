@@ -31,6 +31,12 @@ public:
 
     void calc(GXColor* pColor) const {
         J3D_ASSERT_NULLPTR(507, pColor != NULL);
+#if PLATFORM_PC
+        /* BPK (material colour animation) keyframe data is big-endian GCN format.
+         * Reading it directly may produce garbage or SIGSEGV.  Leave pColor at
+         * its pre-initialised value (the static material colour from the BMD). */
+        return;
+#endif
         mAnmColor->getColor(field_0x0, pColor);
     }
 
@@ -66,6 +72,12 @@ public:
 
     void calc(J3DTextureSRTInfo* pSRTInfo) const {
         J3D_ASSERT_NULLPTR(519, pSRTInfo != NULL);
+#if PLATFORM_PC
+        /* BTK (texture SRT animation) keyframe data is big-endian GCN format.
+         * Reading it directly may produce garbage or SIGSEGV.  Leave pSRTInfo
+         * at its pre-initialised value (the static SRT from the BMD). */
+        return;
+#endif
         mAnmTransform->getTransform(field_0x0, pSRTInfo);
     }
 
@@ -95,6 +107,11 @@ public:
 
     virtual void calc(u16* param_0) const {
         J3D_ASSERT_NULLPTR(532, param_0);
+#if PLATFORM_PC
+        /* BTP (texture pattern animation) data is big-endian GCN format.
+         * Skip to avoid out-of-bounds access from misread offset field. */
+        return;
+#endif
         mAnmTexPattern->getTexNo(field_0x4, param_0);
     }
 
@@ -141,6 +158,13 @@ public:
 
     void calc(GXColorS10* pColor) const {
         J3D_ASSERT_NULLPTR(545, pColor != NULL);
+#if PLATFORM_PC
+        /* BRK (TEV register animation) keyframe data is big-endian GCN format.
+         * Reading mAnmCRegKeyTable or mAnmCRegDataR/G/B arrays directly may
+         * produce a SIGSEGV via a swapped big-endian offset used as an index.
+         * Leave *pColor at the GX state value already set by the material DL. */
+        return;
+#endif
         mAnmTevReg->getTevColorReg(field_0x0, pColor);
     }
 

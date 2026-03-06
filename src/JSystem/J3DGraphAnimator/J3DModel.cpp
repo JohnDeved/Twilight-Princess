@@ -476,6 +476,25 @@ void J3DModel::entry() {
 }
 
 void J3DModel::viewCalc() {
+#if PLATFORM_PC
+    {
+        static int s_viewcalc_log = 0;
+        u32 mode = getMtxCalcMode();
+        u16 flag0x10 = getModelData()->checkFlag(0x10) ? 1 : 0;
+        u16 skinning = isCpuSkinningOn() ? 1 : 0;
+        u16 skinPosCpu = checkFlag(J3DMdlFlag_SkinPosCpu) ? 1 : 0;
+        u16 skinNrmCpu = checkFlag(J3DMdlFlag_SkinNrmCpu) ? 1 : 0;
+        u16 drawMtxNum = mModelData->getDrawMtxNum();
+        if (s_viewcalc_log < 5) {
+            fprintf(stderr, "{\"viewCalc\":{\"model\":\"%p\",\"mode\":%u,"
+                    "\"flag0x10\":%u,\"skinning\":%u,\"skinPosCpu\":%u,\"skinNrmCpu\":%u,"
+                    "\"drawMtxNum\":%u,\"flags\":0x%x}}\n",
+                    (void*)this, mode, flag0x10, skinning, skinPosCpu, skinNrmCpu,
+                    (unsigned)drawMtxNum, mFlags);
+            s_viewcalc_log++;
+        }
+    }
+#endif
     mMtxBuffer->swapDrawMtx();
     mMtxBuffer->swapNrmMtx();
 
@@ -484,6 +503,37 @@ void J3DModel::viewCalc() {
             J3DCalcViewBaseMtx(j3dSys.getViewMtx(), mBaseScale, mBaseTransformMtx,
                                (MtxP)&mInternalView);
         }
+#if PLATFORM_PC || PLATFORM_NX_HB
+        else {
+            /* Flag 0x10 models on GCN skip draw matrix computation — the GX
+             * hardware XF engine reads matrices by index from the array set by
+             * GXSetArray(GX_POS_MTX_ARRAY).  On PC, the software ConcatView
+             * pipeline needs populated draw matrices.
+             *
+             * Also ensure animation matrices are computed: mDoExt_modelEntryDL
+             * does not call calc(), so mpAnmMtx may be zero-initialized.
+             * calcAnmMtx() populates the joint transforms from the joint tree.
+             * Use mode 1 (copy anmMtx without view) so ConcatView PNGP
+             * correctly computes view * anmMtx. */
+            calcAnmMtx();
+            calcWeightEnvelopeMtx();
+            /* If calcAnmMtx produced zero matrices (model not fully initialized
+             * or joint tree calc didn't populate), force anmMtx to identity.
+             * ConcatView PNGP then computes view * identity = view. */
+            {
+                u16 fwn = mMtxBuffer->getJointTree()->getDrawFullWgtMtxNum();
+                for (u16 i = 0; i < fwn; i++) {
+                    u16 idx = mMtxBuffer->getJointTree()->getDrawMtxIndex(i);
+                    MtxP am = mMtxBuffer->getAnmMtx(idx);
+                    if (am[0][0] == 0.0f && am[1][1] == 0.0f && am[2][2] == 0.0f) {
+                        MTXIdentity(am);
+                    }
+                }
+            }
+            mMtxBuffer->calcDrawMtx(1, mBaseScale, mBaseTransformMtx);
+            calcNrmMtx();
+        }
+#endif
     } else if (isCpuSkinningOn()) {
         if (getMtxCalcMode() == 2) {
             J3DCalcViewBaseMtx(j3dSys.getViewMtx(), mBaseScale, mBaseTransformMtx,

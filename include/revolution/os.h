@@ -2,6 +2,7 @@
 #define _REVOLUTION_OS_H_
 
 #include <cstdio>
+#include <cstring>
 
 #include <revolution/types.h>
 #include <revolution/gx/GXStruct.h>
@@ -349,49 +350,56 @@ extern BOOL __OSInReboot;
 #define ASSERT(cond) ASSERTLINE(__LINE__, cond)
 
 static inline u8 __OSf32tou8(__REGISTER f32 in) {
-	f32 a;
+	f32 a = 0.0f;
 	__REGISTER f32* ptr = &a;
-	u8 r;
+	u8 r = 0;
 
 #if defined(__MWERKS__)
 	asm { psq_st in, 0(ptr), 1, 2 };
 #else
-# pragma unused(in)
+	/* Non-GCN stub: psq_st is a GCN paired-single store that quantises the
+	 * f32 argument into a u8 via hardware.  This path is never reached in
+	 * PC / NX builds. */
+	(void)in;
 #endif
 
-	r = *(u8 *)ptr;
+	memcpy(&r, ptr, sizeof(r));
 
 	return r;
 }
 
 static inline u16 __OSf32tou16(__REGISTER f32 in) {
-	f32 a;
+	f32 a = 0.0f;
 	__REGISTER f32* ptr = &a;
-	u16 r;
+	u16 r = 0;
 
 #if defined(__MWERKS__)
 	asm { psq_st in, 0(ptr), 1, 3 };
 #else
-# pragma unused(in)
+	/* Non-GCN stub: psq_st quantises f32 → u16 via GCN hardware.
+	 * Not called in PC / NX builds. */
+	(void)in;
 #endif
 
-	r = *(u16 *)ptr;
+	memcpy(&r, ptr, sizeof(r));
 
 	return r;
 }
 
 static inline s16 __OSf32tos16(__REGISTER f32 in) {
-	f32 a;
+	f32 a = 0.0f;
 	__REGISTER f32* ptr = &a;
-	s16 r;
+	s16 r = 0;
 
 #if defined(__MWERKS__)
 	asm { psq_st in, 0(ptr), 1, 5 };
 #else
-# pragma unused(in)
+	/* Non-GCN stub: psq_st quantises f32 → s16 via GCN hardware.
+	 * Not called in PC / NX builds. */
+	(void)in;
 #endif
 
-	r = *(s16*)ptr;
+	memcpy(&r, ptr, sizeof(r));
 
 	return r;
 }

@@ -31,6 +31,11 @@ enum {
     MILESTONE_RENDER_FRAME  = 15,
     MILESTONE_COUNT         = 16, /* must equal highest milestone ID + 1 */
     MILESTONE_TEST_COMPLETE = 99,
+    /* Goal-tracking milestones (informational only, not counted in MILESTONE_COUNT) */
+    MILESTONE_GOAL_INTRO_GEOMETRY = 100,
+    MILESTONE_GOAL_INTRO_VISIBLE = 101,
+    MILESTONE_GOAL_DEPTH_BLEND_ACTIVE = 102,
+    MILESTONE_GOAL_TITLE_VISIBLE = 103,
     MILESTONE_CRASH         = -1
 };
 

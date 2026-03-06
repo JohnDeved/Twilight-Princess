@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_tev.h"
 
 /* ================================================================ */
@@ -259,6 +260,7 @@ void pal_gx_set_num_tev_stages(u8 n) {
 void pal_gx_set_tev_color(GXTevRegID id, GXColor color) {
     if ((unsigned)id < GX_MAX_TEVREG) {
         g_gx_state.tev_regs[id] = color;
+        g_gx_state.tev_reg_dirty |= (u8)(1u << (unsigned)id);
     }
 }
 
@@ -429,6 +431,20 @@ void pal_gx_load_pos_mtx_imm(const f32 mtx[3][4], u32 id) {
     u32 slot = id / 3;
     if (slot < GX_MAX_POS_MTX) {
         memcpy(g_gx_state.pos_mtx[slot], mtx, 3 * 4 * sizeof(f32));
+        /* Trace non-identity matrix loads for slot 0 during 3D scene (draw count > 500) */
+        static int s_mtx_load_log = 0;
+        if (s_mtx_load_log < 5 && slot == 0 && g_gx_state.draw_calls > 500) {
+            int is_identity = (mtx[0][0] == 1.0f && mtx[0][1] == 0.0f && mtx[0][2] == 0.0f && mtx[0][3] == 0.0f &&
+                               mtx[1][0] == 0.0f && mtx[1][1] == 1.0f && mtx[1][2] == 0.0f && mtx[1][3] == 0.0f &&
+                               mtx[2][0] == 0.0f && mtx[2][1] == 0.0f && mtx[2][2] == 1.0f && mtx[2][3] == 0.0f) ? 1 : 0;
+            fprintf(stderr, "{\"pos_mtx_load\":{\"slot\":%u,\"id\":%u,\"draw_calls\":%u,\"identity\":%d,"
+                    "\"mtx\":[%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f]}}\n",
+                    slot, id, g_gx_state.draw_calls, is_identity,
+                    mtx[0][0], mtx[0][1], mtx[0][2], mtx[0][3],
+                    mtx[1][0], mtx[1][1], mtx[1][2], mtx[1][3],
+                    mtx[2][0], mtx[2][1], mtx[2][2], mtx[2][3]);
+            s_mtx_load_log++;
+        }
     }
 }
 
@@ -437,6 +453,73 @@ void pal_gx_load_nrm_mtx_imm(const f32 mtx[3][4], u32 id) {
     if (slot < GX_MAX_POS_MTX) {
         memcpy(g_gx_state.nrm_mtx[slot], mtx, 3 * 4 * sizeof(f32));
     }
+}
+
+void pal_gx_fifo_load_indx(u8 cmd, u16 indx, u16 addr) {
+    /* On GCN, LOAD_INDX_A/B/C/D reads matrix data from a vertex-data array
+     * configured via GXSetArray(GX_POS_MTX_ARRAY / GX_NRM_MTX_ARRAY / ...).
+     * On PC, these arrays are stored in g_gx_state.vtx_arrays.
+     *
+     * addr layout: [15:12] = count-1, [11:0] = XF destination address
+     * For position matrices:  XF addr = slot * 12, count = 12 (3x4 matrix)
+     * For normal matrices:    XF addr = slot * 3 + 0x400, count = 9 (3x3 matrix)
+     */
+    u16 xf_addr = addr & 0x0FFF;
+    u16 count   = ((addr >> 12) & 0xF) + 1;
+
+    if (cmd == 0x20 /* GX_LOAD_INDX_A — position matrix */) {
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[GX_POS_MTX_ARRAY];
+        if (arr->base_ptr != NULL && arr->stride > 0 && count >= 12) {
+            const u8* src = (const u8*)arr->base_ptr + (u32)indx * (u32)arr->stride;
+            u32 slot = xf_addr / 12;
+            if (slot < GX_MAX_POS_MTX) {
+                memcpy(g_gx_state.pos_mtx[slot], src, 12 * sizeof(f32));
+                /* Trace first indexed pos matrix loads during 3D scene */
+                static int s_indx_log = 0;
+                if (s_indx_log < 3 && g_gx_state.draw_calls > 500) {
+                    const f32* fm = (const f32*)src;
+                    fprintf(stderr, "{\"fifo_load_indx_a\":{\"indx\":%u,\"slot\":%u,\"stride\":%u,"
+                            "\"base\":\"%p\",\"src\":\"%p\","
+                            "\"mtx\":[%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f]}}\n",
+                            (unsigned)indx, slot, (unsigned)arr->stride,
+                            arr->base_ptr, (void*)src,
+                            fm[0],fm[1],fm[2],fm[3],fm[4],fm[5],fm[6],fm[7],fm[8],fm[9],fm[10],fm[11]);
+                    s_indx_log++;
+                }
+            }
+        } else {
+            static int s_indx_null_log = 0;
+            if (s_indx_null_log < 3) {
+                fprintf(stderr, "{\"fifo_load_indx_a_skip\":{\"base\":\"%p\",\"stride\":%u,\"count\":%u}}\n",
+                        arr->base_ptr, (unsigned)arr->stride, (unsigned)count);
+                s_indx_null_log++;
+            }
+        }
+    } else if (cmd == 0x28 /* GX_LOAD_INDX_B — normal matrix */) {
+        const GXArrayState* arr = &g_gx_state.vtx_arrays[GX_NRM_MTX_ARRAY];
+        if (arr->base_ptr != NULL && arr->stride > 0) {
+            const u8* src = (const u8*)arr->base_ptr + (u32)indx * (u32)arr->stride;
+            /* Normal matrices are stored at XF addr 0x400+. Slot = (xf_addr - 0x400) / 3 */
+            u32 nrm_xf = xf_addr;
+            if (nrm_xf >= 0x400) nrm_xf -= 0x400;
+            u32 slot = nrm_xf / 3;
+            if (slot < GX_MAX_POS_MTX && count >= 9) {
+                /* 3x3 normal matrix: copy 9 floats into 3x4 storage (ignore column 3) */
+                const f32* fptr = (const f32*)src;
+                g_gx_state.nrm_mtx[slot][0][0] = fptr[0];
+                g_gx_state.nrm_mtx[slot][0][1] = fptr[1];
+                g_gx_state.nrm_mtx[slot][0][2] = fptr[2];
+                g_gx_state.nrm_mtx[slot][1][0] = fptr[3];
+                g_gx_state.nrm_mtx[slot][1][1] = fptr[4];
+                g_gx_state.nrm_mtx[slot][1][2] = fptr[5];
+                g_gx_state.nrm_mtx[slot][2][0] = fptr[6];
+                g_gx_state.nrm_mtx[slot][2][1] = fptr[7];
+                g_gx_state.nrm_mtx[slot][2][2] = fptr[8];
+            }
+        }
+    }
+    /* GX_LOAD_INDX_C (texture matrix) and GX_LOAD_INDX_D (light) are not
+     * currently needed for the intro scene rendering. */
 }
 
 void pal_gx_load_tex_mtx_imm(const f32 mtx[][4], u32 id, GXTexMtxType type) {
@@ -482,12 +565,14 @@ void pal_gx_set_blend_mode(GXBlendMode type, GXBlendFactor src, GXBlendFactor ds
     g_gx_state.blend_src = src;
     g_gx_state.blend_dst = dst;
     g_gx_state.blend_logic_op = op;
+    gx_frame_blendmode_calls++;
 }
 
 void pal_gx_set_z_mode(GXBool compare, GXCompare func, GXBool update) {
     g_gx_state.z_compare_enable = compare;
     g_gx_state.z_func = func;
     g_gx_state.z_update_enable = update;
+    gx_frame_zmode_calls++;
 }
 
 void pal_gx_set_alpha_compare(GXCompare comp0, u8 ref0, GXAlphaOp op, GXCompare comp1, u8 ref1) {
@@ -584,6 +669,7 @@ void pal_gx_begin(GXPrimitive prim, GXVtxFmt fmt, u16 nverts) {
     g_gx_state.draw.verts_written = 0;
     g_gx_state.draw.vtx_data_pos = 0;
     g_gx_state.draw.active = 1;
+    g_gx_state.draw.vtx_data_be = 0;
 }
 
 void pal_gx_end(void) {

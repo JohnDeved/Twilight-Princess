@@ -36,6 +36,10 @@ MILESTONE_NAMES = {
     14: "SCENE_CREATED",
     15: "RENDER_FRAME",
     99: "TEST_COMPLETE",
+    100: "GOAL_INTRO_GEOMETRY",
+    101: "GOAL_INTRO_VISIBLE",
+    102: "GOAL_DEPTH_BLEND_ACTIVE",
+    103: "GOAL_TITLE_VISIBLE",
 }
 
 # Milestones that require specific prerequisites.
@@ -168,6 +172,11 @@ def main():
                         help="Output summary JSON file")
     parser.add_argument("--min-milestone", type=int, default=0,
                         help="Fail if milestone count < this value")
+    parser.add_argument("--goal-log", default=None, action='append',
+                        help="Optional supplementary log file (e.g. milestones_pixel.log) "
+                             "used to supplement goal milestones (id>=100) only. "
+                             "May be specified multiple times. "
+                             "Does not affect the 16/16 boot milestone count.")
     args = parser.parse_args()
 
     milestones = []
@@ -196,10 +205,35 @@ def main():
             elif "frame_validation" in obj:
                 frame_validation = obj["frame_validation"]
 
-    # Build list of all reached milestone names (exclude TEST_COMPLETE for clarity)
-    reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] < 99))
+    # Supplement goal milestones (id>=100) from supplementary log files if provided.
+    # Boot milestones (id < 100, i.e., 0-99) are intentionally excluded to
+    # avoid duplicate IDs being flagged as integrity failures.
+    for goal_log_path in (args.goal_log or []):
+        try:
+            with open(goal_log_path, errors='replace') as f:
+                for line in f:
+                    line = ansi_escape.sub('', line.strip())
+                    if not line.startswith("{"):
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if "milestone" in obj:
+                        mid = obj.get("id", -1)
+                        if mid >= 100:
+                            milestones.append(obj)
+        except FileNotFoundError:
+            pass
+
+    # Build list of all reached milestone names.
+    # Include TEST_COMPLETE (id=99) — previously excluded by `< 99`, causing a
+    # 15→16 regression when the baseline was set with TEST_COMPLETE in the count.
+    reached_ids = sorted(set(m["id"] for m in milestones if 0 <= m["id"] <= 99))
     milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in reached_ids]
     milestone_count = len(reached_ids)
+    goal_ids = sorted(set(m["id"] for m in milestones if m.get("id", -1) >= 100))
+    goal_milestones_reached = [MILESTONE_NAMES.get(mid, f"UNKNOWN_{mid}") for mid in goal_ids]
 
     # Build timing info
     timing = {}
@@ -223,6 +257,7 @@ def main():
     summary = {
         "milestones_reached_count": valid_milestone_count,
         "milestones_reached": valid_milestones_reached,
+        "goal_milestones_reached": goal_milestones_reached,
         "last_milestone": milestones[-1] if milestones else None,
         "crash": crash,
         "total_milestones": valid_milestone_count,
@@ -244,8 +279,11 @@ def main():
     print(f"\n{'=' * 60}")
     print("PORT TEST SUMMARY")
     print(f"{'=' * 60}")
-    print(f"Milestones reached: {valid_milestone_count}/{len(MILESTONE_NAMES) - 1}")
+    base_total_milestones = sum(1 for mid in MILESTONE_NAMES.keys() if 0 <= mid < 99)
+    print(f"Milestones reached: {valid_milestone_count}/{base_total_milestones}")
     print(f"Milestones: {', '.join(valid_milestones_reached) if valid_milestones_reached else 'NONE'}")
+    if goal_milestones_reached:
+        print(f"Goal milestones: {', '.join(goal_milestones_reached)}")
     if disqualified_names:
         print(f"Disqualified (integrity failed): {', '.join(disqualified_names)}")
     if timing:

@@ -43,6 +43,10 @@ extern unsigned int gx_frame_depth_draws;       /* draws with z_compare enabled 
 extern unsigned int gx_frame_blend_draws;       /* draws with alpha blending */
 extern unsigned int gx_frame_unique_textures;   /* distinct texture pointers seen */
 extern unsigned int gx_frame_prim_mask;         /* bitmask of primitive types used */
+extern unsigned int gx_frame_zmode_calls;       /* GXSetZMode calls this frame */
+extern unsigned int gx_frame_blendmode_calls;   /* GXSetBlendMode calls this frame */
+extern unsigned int gx_frame_submit_with_depth_state; /* bgfx submits with depth bits */
+extern unsigned int gx_frame_submit_with_blend_state; /* bgfx submits with blend bits */
 
 /* Reset per-frame counters. Call at beginning of each frame. */
 void gx_stub_frame_reset(void);

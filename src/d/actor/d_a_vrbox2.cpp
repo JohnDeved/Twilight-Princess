@@ -24,6 +24,22 @@ static void texScrollCheck(f32& param_0) {
         param_0 -= 1.0f;
 }
 
+#if PLATFORM_PC
+/* Helper: set fog type=2 on all materials in a model data.
+ * On PC the J3DModel*→J3DModelData* cast from GC is invalid (64-bit ABI
+ * mismatch), so we use getModelData() and add null guards. */
+static void daVrbox2_setFogType(J3DModelData* md) {
+    if (md == NULL) return;
+    for (int i = (int)md->getMaterialNum() - 1; i >= 0; i--) {
+        J3DMaterial* mp = md->getMaterialNodePointer(i);
+        if (mp != NULL) {
+            J3DFogInfo* fp = mp->getFog()->getFogInfo();
+            if (fp != NULL) fp->mType = 2;
+        }
+    }
+}
+#endif
+
 static int daVrbox2_Draw(vrbox2_class* i_this) {
 #if PLATFORM_PC
     if (i_this->mpKumoModel == NULL) return 1;
@@ -55,6 +71,16 @@ static int daVrbox2_Draw(vrbox2_class* i_this) {
     dKy_GxFog_set();
 
     // these casts look like fake matches, but this ptr is used as both J3DModel and J3DModelData?
+#if PLATFORM_PC
+    /* On PC (64-bit), casting J3DModel* to J3DModelData* is invalid; use getModelData().
+     * Also guard against NULL models (kasumim/sun may not exist in all stages). */
+    sp38 = kumo_model_p ? kumo_model_p->getModelData() : NULL;
+    sp34 = sun_model_p ? sun_model_p->getModelData() : NULL;
+    sp30 = kasumim_model_p ? kasumim_model_p->getModelData() : NULL;
+    daVrbox2_setFogType(sp38);
+    daVrbox2_setFogType(sp34);
+    daVrbox2_setFogType(sp30);
+#else
     sp38 = (J3DModelData*)kumo_model_p;
     sp34 = (J3DModelData*)sun_model_p;
     sp30 = (J3DModelData*)kasumim_model_p;
@@ -90,6 +116,7 @@ static int daVrbox2_Draw(vrbox2_class* i_this) {
 
         fogInfo_p->mType = 2;
     }
+#endif
 
     if ((g_env_light.vrbox_kasumi_outer_col.r + g_env_light.vrbox_kasumi_outer_col.g +
          g_env_light.vrbox_kasumi_outer_col.b + g_env_light.vrbox_sky_col.r + g_env_light.vrbox_sky_col.g +

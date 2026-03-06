@@ -867,6 +867,16 @@ void GXTexCoord1x16(u16 index) { pal_gx_write_vtx_u16(index); }
 
 void GXMatrixIndex1x8(u8 index) { pal_gx_write_vtx_u8(index); }
 
+/* GXCmd* — raw FIFO byte writers used by J3D and GF code.
+ * On PC, forward to the gx_fifo_write_* functions. */
+void gx_fifo_write_u8(unsigned char ub);
+void gx_fifo_write_u16(unsigned short us);
+void gx_fifo_write_u32(unsigned int ui);
+
+void GXCmd1u8(u8 val) { gx_fifo_write_u8(val); }
+void GXCmd1u16(u16 val) { gx_fifo_write_u16(val); }
+void GXCmd1u32(u32 val) { gx_fifo_write_u32(val); }
+
 } /* extern "C" */
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

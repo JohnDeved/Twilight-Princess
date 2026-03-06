@@ -1,47 +1,87 @@
 {
-  "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. These values represent minimum acceptable metrics and must not be lowered without justification.",
-  "version": 2,
-  "frames": {
-    "30": {
-      "min_draw_calls": 0,
-      "min_verts": 0,
-      "min_pct_nonblack": 0,
-      "min_unique_colors": 0,
-      "expected_fb_hash": null,
-      "note": "Frame 30: early boot — may not have rendering yet"
+    "_comment": "Render baseline — expected per-frame metrics at specific capture frames. CI compares actual metrics against these thresholds. These values represent minimum acceptable metrics and must not be lowered without justification.",
+    "version": 2,
+    "frames": {
+        "10": {
+            "min_draw_calls": 3,
+            "min_verts": 12,
+            "min_pct_nonblack": 3,
+            "min_unique_colors": 2,
+            "expected_fb_hash": null,
+            "note": "Frame 10: Nintendo/TP logo fade-in — black background + logo elements (J2D orthographic draws). After RASC ortho fix, background is correctly black; nonblack area is the logo only (~5-30%). Previously 95% nonblack was a RASC grey fallback bug (grey background), not a real logo."
+        },
+        "30": {
+            "min_draw_calls": 3,
+            "min_verts": 12,
+            "min_pct_nonblack": 3,
+            "min_unique_colors": 2,
+            "expected_fb_hash": null,
+            "note": "Frame 30: Nintendo/TP logo visible — black background + logo (J2D). Nonblack from logo elements only. After RASC ortho fix, background stays black."
+        },
+        "60": {
+            "min_draw_calls": 2,
+            "min_verts": 8,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 1,
+            "expected_fb_hash": null,
+            "note": "Frame 60: Nintendo logo fade animation — expected ~4% nonblack (maroon logo on black background). clearEfb correctly outputs black after tev_reg_dirty fix. Logo is near bottom of fade-down cycle at this frame."
+        },
+        "90": {
+            "min_draw_calls": 2,
+            "min_verts": 8,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 1,
+            "expected_fb_hash": null,
+            "note": "Frame 90: Nintendo logo fade animation — expected ~4% nonblack (maroon logo on black background), same phase as frame 60. avg_rgb=[9,0,0] is consistent expected behavior — maroon logo with correct black background from clearEfb tev_reg_dirty fix."
+        },
+        "120": {
+            "min_draw_calls": 3,
+            "min_verts": 12,
+            "min_pct_nonblack": 3,
+            "min_unique_colors": 2,
+            "expected_fb_hash": null,
+            "note": "Frame 120: logo fade-out — black background + remaining logo elements. After RASC ortho fix, background is correctly black; nonblack only for logo draw area."
+        },
+        "300": {
+            "min_draw_calls": 0,
+            "min_verts": 0,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 0,
+            "expected_fb_hash": null,
+            "note": "Frame 300: Phase 4 title scene — PROC_TITLE active, J3D logo model should be rendering grey (RASC fallback) after mDoExt_modelEntryDL fix. Threshold starts at 0 until CI confirms nonblack%; raise to 1 after first confirmed grey frame."
+        },
+        "350": {
+            "min_draw_calls": 0,
+            "min_verts": 0,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 0,
+            "expected_fb_hash": null,
+            "note": "Frame 350: Phase 4 title scene — title logo should be rendering. Threshold at 0 until CI confirms; raise to 1 after frame_300 confirmed."
+        },
+        "400": {
+            "min_draw_calls": 0,
+            "min_verts": 0,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 0,
+            "expected_fb_hash": null,
+            "note": "Frame 400: Phase 4 title scene — sustained title rendering. Threshold at 0 until CI confirms."
+        }
     },
-    "60": {
-      "min_draw_calls": 0,
-      "min_verts": 0,
-      "min_pct_nonblack": 0,
-      "min_unique_colors": 0,
-      "expected_fb_hash": null,
-      "note": "Frame 60: logo scene should be loading"
+    "global": {
+        "min_peak_draw_calls": 1,
+        "min_peak_verts": 1,
+        "min_frames_with_draws_pct": 0,
+        "min_render_health_pct": 0,
+        "_note": "All global fields are enforced by verify_port.py. Raise thresholds as rendering improves, never lower."
     },
-    "300": {
-      "min_draw_calls": 0,
-      "min_verts": 0,
-      "min_pct_nonblack": 0,
-      "min_unique_colors": 0,
-      "expected_fb_hash": null,
-      "note": "Frame 300: logo should be rendering if assets available"
-    }
-  },
-  "global": {
-    "min_peak_draw_calls": 1,
-    "min_peak_verts": 1,
-    "min_frames_with_draws_pct": 0,
-    "min_render_health_pct": 0,
-    "_note": "All global fields are enforced by verify_port.py. Raise thresholds as rendering improves, never lower."
-  },
-  "pipeline": {
-    "require_geometry": true,
-    "require_textures": false,
-    "require_textured_shaders": false,
-    "require_depth": false,
-    "require_blend": false,
-    "min_visual_complexity": 0,
-    "_note": "Pipeline requirements. Set require_textures=true once texture loading works, require_textured_shaders=true once TEV applies textures, etc. Each flag gates a pipeline stage check. Raise these as rendering progresses — never disable a requirement that was previously enabled."
-  },
-  "_anti_cheat_note": "Do not lower these thresholds. Global min_peak values ensure the rendering pipeline is functional. Per-frame thresholds should be raised as rendering improves, never lowered. Pipeline requirements gate each rendering stage. Changes to this file should be reviewed carefully."
+    "pipeline": {
+        "require_geometry": true,
+        "require_textures": false,
+        "require_textured_shaders": false,
+        "require_depth": false,
+        "require_blend": false,
+        "min_visual_complexity": 0,
+        "_note": "Pipeline requirements. Set require_textures=true once texture loading works, require_textured_shaders=true once TEV applies textures, etc. Each flag gates a pipeline stage check. Raise these as rendering progresses — never disable a requirement that was previously enabled."
+    },
+    "_anti_cheat_note": "Do not lower these thresholds. Global min_peak values ensure the rendering pipeline is functional. Per-frame thresholds should be raised as rendering improves, never lowered. Pipeline requirements gate each rendering stage. Changes to this file should be reviewed carefully."
 }

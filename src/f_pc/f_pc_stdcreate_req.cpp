@@ -20,13 +20,9 @@
 #include "m_Do/m_Do_ext.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "d/d_procname.h"
-static volatile sig_atomic_t s_create_crash = 0;
-static sigjmp_buf s_create_jmpbuf;
-static void create_sigsegv_handler(int sig) {
-    (void)sig;
-    s_create_crash = 1;
-    siglongjmp(s_create_jmpbuf, 1);
-}
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 
 /* Per-profile crash counter: suppress re-creation after too many failures.
  * Each crashed actor retry leaks 8MB+ of game heap; suppressing retries
@@ -163,19 +159,16 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
     }
 
     /* On PC, actor creation may crash due to endian/layout issues in model
-     * data or function pointer tables. Catch SIGSEGV so one bad actor doesn't
-     * crash the whole process. */
-    struct sigaction sa_new, sa_old_segv, sa_old_abrt;
-    memset(&sa_new, 0, sizeof(sa_new));
-    sa_new.sa_handler = create_sigsegv_handler;
-    sigemptyset(&sa_new.sa_mask);
-    sa_new.sa_flags = SA_NODEFER;
-    sigaction(SIGSEGV, &sa_new, &sa_old_segv);
-    sigaction(SIGABRT, &sa_new, &sa_old_abrt);
-    s_create_crash = 0;
+     * data or function pointer tables. Use global crash handler — no
+     * per-call sigaction overhead. */
+    pal_crash_handler_init();
+    sigjmp_buf jb;
+    sigjmp_buf* prev_target = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &jb;
+    pal_crash_occurred = 0;
 
     int phase_state;
-    if (sigsetjmp(s_create_jmpbuf, 1) == 0) {
+    if (sigsetjmp(jb, 1) == 0) {
         phase_state = cPhs_Do(&i_request->phase_request, i_request);
     } else {
         /* SIGSEGV/SIGABRT caught during actor creation.
@@ -211,8 +204,7 @@ int fpcSCtRq_Handler(standard_create_request_class* i_request) {
         }
         phase_state = cPhs_ERROR_e;
     }
-    sigaction(SIGSEGV, &sa_old_segv, NULL);
-    sigaction(SIGABRT, &sa_old_abrt, NULL);
+    pal_crash_jmpbuf = prev_target;
 
     if (phase_state == cPhs_ERROR_e)
         return cPhs_ERROR_e;
