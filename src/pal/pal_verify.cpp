@@ -509,8 +509,9 @@ void pal_verify_summary(void) {
     /* Regression assertions: check pixel-coverage thresholds at key frames.
      * Logo (frames 40-90): expect >=2% non-black (red Nintendo logo).
      *   Fade-in completes ~frame 33, fade-out starts ~frame 93.
-     * Title (frames 130-200): expect >=100 non-black pixels (grayscale
-     * "PRESS START" text renders ~900 pixels = 0.3% of 640x480). */
+     * Title (frames 200-400): expect >=100 non-black pixels (grayscale
+     * title logo renders once PROC_TITLE initialises, ~frame 152-160).
+     * Frame 300 is the key capture: J3D title logo should be grey by then. */
     int regress_pass = 1;
     int regress_logo_found = 0;
     int regress_checked = 0;
@@ -532,14 +533,14 @@ void pal_verify_summary(void) {
             label = "logo";
             regress_logo_found = 1;
         }
-        /* Title scene: frames 130-200 — PROC_TITLE is active.
-         * After the clearEfb depth-write-on-ALWAYS fix, daTitle's 3D model draws
-         * should pass the LEQUAL depth test (depth buffer stays at 1.0 after clearEfb,
-         * not corrupted to 0.0).  Frame 200 pct_nonblack may now be > 0 (gray model
-         * via apply_rasc_color fallback).  No minimum enforced yet — tracked as
-         * label="title" for diagnostic visibility in PR comments. */
-        else if (f >= 130 && f <= 200) {
-            pixel_threshold = 0;   /* informational only — raise once depth fix confirmed */
+        /* Title scene: frames 200-400 — PROC_TITLE is active.
+         * PROC_TITLE initialises at ~frame 152 when PROC_OPENING_SCENE fires.
+         * After create() + loadWait_proc complete, the J3D title logo should
+         * render in grey (RASC fallback) from frame ~160 onwards.
+         * Frame 300 is the first reliable capture window for title content.
+         * No minimum enforced yet — tracked as label="title" for diagnostics. */
+        else if (f >= 200 && f <= 400) {
+            pixel_threshold = 0;   /* informational only — raise once grey model confirmed */
             label = "title";
         }
         /* Play scene: frames 250-400 — tracking-only checkpoint to detect

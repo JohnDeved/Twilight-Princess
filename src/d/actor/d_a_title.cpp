@@ -253,8 +253,19 @@ void daTitle_c::loadWait_init() {
 void daTitle_c::loadWait_proc() {
 #if PLATFORM_PC
     if (mpMount == NULL) {
+        fprintf(stderr, "{\"loadWait_sync\":{\"sync\":0,\"reason\":\"mpMount_null\"}}\n");
         logoDispWaitInit();
         return;
+    }
+    /* Log the sync result once per loadWait_proc call to diagnose archive timing */
+    {
+        static int s_sync_logged = 0;
+        if (!s_sync_logged) {
+            s_sync_logged = 1;
+            fprintf(stderr, "{\"loadWait_sync\":{\"sync\":%d,\"mpMount\":%p,\"mIsDone\":%d}}\n",
+                    (int)mpMount->sync(), (void*)mpMount,
+                    (int)mpMount->sync());
+        }
     }
 #endif
     if (mpMount->sync()) {
@@ -274,6 +285,9 @@ void daTitle_c::loadWait_proc() {
         bool bloOk = mTitle.Scr->setPriority("zelda_press_start.blo", 0x100000, mpMount->getArchive());
 
 #if PLATFORM_PC
+        /* Log whether BLO load succeeded — blo_swap emits its own JSON on success */
+        fprintf(stderr, "{\"loadWait_blo\":{\"bloOk\":%d,\"archive\":%p,\"Scr\":%p}}\n",
+                (int)bloOk, (void*)mpMount->getArchive(), (void*)mTitle.Scr);
         if (!bloOk) {
             /* BLO layout is big-endian binary — skip 2D overlay setup on PC
              * until endian conversion is implemented. The 3D model still renders. */
@@ -470,7 +484,9 @@ int daTitle_c::Draw() {
 #if PLATFORM_PC
     {
         static u32 s_draw_count = 0;
-        if (s_draw_count < 5) {
+        /* Log first 20 Draw calls so we can track proc/Scr progression over
+         * several frames after PROC_TITLE initialises (~frame 152-160). */
+        if (s_draw_count < 20) {
             /* JSON: n=call index, proc=state-machine mProcID (0=loadWait,1=logoDispWait,
              * 2=logoDispAnm,3=keyWait,4=nextScene,5=fastLogoDisp),
              * model=J3D model loaded, j2d_queued=field_0x5f8

@@ -415,11 +415,12 @@ void pal_render_end_frame(void) {
         }
     }
 
-    /* Per-frame draw_calls log for frames 125-210 to diagnose proc transition.
+    /* Per-frame draw_calls log for frames 125-410 to diagnose proc transition.
      * The 3D BG actor is active at frame 129 (~7400 draws); PROC_TITLE takes
-     * over at frame 130.  This range shows exactly when draws drop to zero and
-     * whether PROC_TITLE/J2D submits any draws in headless mode. */
-    if (s_frame_count >= 125 && s_frame_count <= 210) {
+     * over at frame ~152.  This range shows when draws drop to zero and when
+     * PROC_TITLE/J2D submits visible draws in headless mode.
+     * Extended to 410 to cover the Phase 4 capture window (up to frame 400). */
+    if (s_frame_count >= 125 && s_frame_count <= 410) {
         fprintf(stderr, "{\"frame_dc\":{\"f\":%u,\"dc\":%u,\"verts\":%u}}\n",
                 s_frame_count, g_gx_state.draw_calls, g_gx_state.total_verts);
     }

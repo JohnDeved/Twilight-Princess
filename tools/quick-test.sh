@@ -75,9 +75,16 @@ case "$PHASE" in
         ;;
     4)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase4}"
-        TIMEOUT_SECS="${TIMEOUT_SECS:-120}"
-        PHASE_DESC="gameplay intro frame capture (logo scene)"
+        TIMEOUT_SECS="${TIMEOUT_SECS:-180}"
+        PHASE_DESC="gameplay intro frame capture (title scene, frame 300)"
         DISPLAY_NUM=":103"
+        # Gate on frame 30 (maroon Nintendo logo, reliable 4% nonblack) while
+        # we extend the run to frame 400 to capture the PROC_TITLE actor.
+        # PROC_TITLE is created at ~frame 152 when PROC_OPENING_SCENE fires;
+        # it needs several frames to initialise before producing visible draws.
+        # frame_0300 is the first frame where the J3D title logo should be
+        # rendering in grey (RASC fallback).  If it shows nonblack content,
+        # update CAPTURE_FRAME/GATE to "0300:1" in a follow-up commit.
         CAPTURE_FRAME="0030"
         GATE="frame_0030:1"
         GATE_MSG="Gameplay gate FAILED: frame_0030 pct_nonblack < 1% — clearEfb tev_reg_dirty fix may have regressed (check D=C0 dirty-bit guard in gx_tev.cpp ~line 1579) or logo scene not reaching frame 30"
@@ -134,10 +141,13 @@ case "$PHASE" in
         unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
         ;;
     4)
-        export TP_TEST_FRAMES=201
-        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,150,180,200"
-        export TP_FRAME_DELAY_MS=60000
-        export TP_FRAME_DELAY_START=200
+        export TP_TEST_FRAMES=401
+        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,150,180,200,250,300,350,400"
+        # Delay at frame 300 — by then PROC_TITLE has had ~150 frames to initialise
+        # and the J3D title logo should be rendering grey (RASC fallback).
+        # Using 350ms (same as Phase 3) to give Mesa softpipe time to rasterise.
+        export TP_FRAME_DELAY_MS=350000
+        export TP_FRAME_DELAY_START=300
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
         ;;
@@ -175,21 +185,23 @@ if [[ "$PHASE" == "3" ]]; then
 elif [[ "$PHASE" == "4" ]]; then
     echo "Phase 4 RASC grey fallback (daTitle/dynamic-light-only draws):"
     grep '"rasc_grey_fallback"' "$LOG_FILE" 2>/dev/null || echo "(no grey fallback draws)"
-    echo "Phase 4 per-frame draw counts (frames 125-210):"
-    grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -90 || echo "(none found)"
-    echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 200:"
+    echo "Phase 4 per-frame draw counts (frames 125-410):"
+    grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -290 || echo "(none found)"
+    echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 300:"
     grep '"darwFilter"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no fade overlay calls)"
-    echo "Phase 4 PROC_TITLE enable status + j3d_draw_diag at frame 200:"
-    grep 'TP_ENABLE_PROC_TITLE\|j3d_draw_diag.*"frame":200' "$LOG_FILE" 2>/dev/null | head -5 || \
+    echo "Phase 4 PROC_TITLE enable status + loadWait diagnostics:"
+    grep 'TP_ENABLE_PROC_TITLE\|loadWait_sync\|j3d_draw_diag' "$LOG_FILE" 2>/dev/null | head -10 || \
         echo "(check $LOG_FILE for draw counts)"
     echo "Phase 4 frame-200 TEV color-pipeline dump (tev200 — const_clr before/after fallback):"
     grep '"tev200"' "$LOG_FILE" 2>/dev/null || echo "(tev200 not reached — frame 200 not hit or no draws)"
     echo "Phase 4 opening scene crash catch:"
     grep 'demo/event crash at' "$LOG_FILE" 2>/dev/null || echo "(no crash catch logged)"
-    echo "Phase 4 daTitle actor diagnostics (Draw/dDlst):"
-    grep 'daTitle_draw\|dDlst_daTitle_draw' "$LOG_FILE" 2>/dev/null | head -10 || echo "(daTitle Draw never called)"
+    echo "Phase 4 daTitle actor diagnostics (Draw/dDlst) — first 20 calls:"
+    grep 'daTitle_draw\|dDlst_daTitle_draw' "$LOG_FILE" 2>/dev/null | head -20 || echo "(daTitle Draw never called)"
     echo "Phase 4 daTitle CreateHeap resource load:"
     grep 'daTitle_c::CreateHeap' "$LOG_FILE" 2>/dev/null | head -5 || echo "(CreateHeap not reached)"
+    echo "Phase 4 blo_swap result (Title2D.arc BLO endian conversion):"
+    grep '"blo_swap"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(blo_swap not triggered — Title2D.arc not loaded or BLO not found)"
 fi
 
 # --- Coverage gate ---
