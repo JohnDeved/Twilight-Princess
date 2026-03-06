@@ -43,36 +43,40 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           # Gather C/C++ files touched by this PR that are in the render backend.
-          # Use null-terminated output (-z) and xargs for safe handling of filenames.
-          FILES=$(git diff --name-only -z "$BASE" "$HEAD" -- \
+          # Write to a workspace file to avoid multiline GITHUB_OUTPUT truncation
+          # (echo "key=val\nval2" only stores the first line).
+          # The [ -f "$f" ] guard drops deleted files so clang-format is never
+          # given a path that no longer exists on disk.
+          git diff --name-only -z "$BASE" "$HEAD" -- \
             'src/pal/' 'include/pal/' 'src/pc/' 'include/pc/' \
             | tr '\0' '\n' \
-            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' || true)
-          echo "files=$FILES" >> $GITHUB_OUTPUT
-          if [ -z "$FILES" ]; then
-            echo "No render backend C/C++ files changed."
+            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' \
+            | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
+            > clang-format-files.txt 2>/dev/null || true
+          if [ -s clang-format-files.txt ]; then
+            echo "has_files=true" >> $GITHUB_OUTPUT
+            echo "Changed files:"
+            cat clang-format-files.txt
           else
-            echo "Changed files: $FILES"
+            echo "has_files=false" >> $GITHUB_OUTPUT
+            echo "No render backend C/C++ files changed."
           fi
 
       - name: Run clang-format
-        if: steps.changed.outputs.files != ''
+        if: steps.changed.outputs.has_files == 'true'
         id: fmt
         run: |
-          CHANGED="${{ steps.changed.outputs.files }}"
           DIFF_OUTPUT=""
           EXIT=0
-          for f in $CHANGED; do
-            if [ -f "$f" ]; then
-              FORMATTED=$(clang-format --style=file "$f" 2>/dev/null)
-              ORIGINAL=$(cat "$f")
-              if [ "$FORMATTED" != "$ORIGINAL" ]; then
-                FILE_DIFF=$(diff -u "$f" <(echo "$FORMATTED") || true)
-                DIFF_OUTPUT="$DIFF_OUTPUT\n\`\`\`diff\n$FILE_DIFF\n\`\`\`\n"
-                EXIT=1
-              fi
+          while IFS= read -r f; do
+            FORMATTED=$(clang-format --style=file "$f" 2>/dev/null)
+            ORIGINAL=$(cat "$f")
+            if [ "$FORMATTED" != "$ORIGINAL" ]; then
+              FILE_DIFF=$(diff -u "$f" <(echo "$FORMATTED") || true)
+              DIFF_OUTPUT="$DIFF_OUTPUT\n\`\`\`diff\n$FILE_DIFF\n\`\`\`\n"
+              EXIT=1
             fi
-          done
+          done < clang-format-files.txt
           if [ $EXIT -ne 0 ]; then
             echo "diff_output<<EOF" >> $GITHUB_OUTPUT
             printf "%b" "$DIFF_OUTPUT" >> $GITHUB_OUTPUT
