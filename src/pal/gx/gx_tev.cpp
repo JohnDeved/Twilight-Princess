@@ -1389,72 +1389,76 @@ void pal_tev_report_diagnostics(void) {
  * visible on all common display gamma curves without being blinding white. */
 #define RASC_FALLBACK_GRAY  200
 
-/* apply_rasc_color: compute the RASC approximation for a draw.
+/* apply_rasc_color: compute the RASC (rasterized color) for a draw.
  *
- * GCN hardware: RASC = clamp(amb_color + Σ(lights × mat_color)).
+ * Based on dolsdk2004 GXLight.c / GXSetChanCtrl:
+ *   GCN hardware channel combiner output depends on chan_ctrl.enable:
  *
- * Two fundamentally different rendering contexts use RASC:
+ *   enable=0 (lighting disabled):
+ *     Output = mat_src value:
+ *       mat_src=GX_SRC_REG → mat_color (register)
+ *       mat_src=GX_SRC_VTX → vertex color attribute
+ *     This is the DIRECT output — no lighting computation at all.
+ *     Most J2D (2D) draws and many J3D materials use this path.
  *
- * 1. Orthographic / J2D draws (BLO screen overlays, fade panes):
- *    mat_color is the game's intended solid colour for the pane.
- *    A black background pane has mat_color=(0,0,0) deliberately — it should
- *    stay black.  Do NOT override with a grey fallback: grey backgrounds
- *    produce a "white fade" instead of the expected "black fade" transition.
- *    This function returns early (see 'if GX_ORTHOGRAPHIC' below) so mat_color
- *    is already copied to const_clr before the return.
- *    Alpha is handled by the inject_color block in pal_tev_flush_draw():
- *      - Normal J2D panes: alpha forced to 255 (g_gx_state.fade_overlay_active=false).
- *      - darwFilter fade overlay: alpha preserved from mat_color.a
- *        (g_gx_state.fade_overlay_active=true), allowing SRC_ALPHA fade effect.
+ *   enable=1 (lighting enabled):
+ *     Output = amb_color * amb_src + Σ(light[i].color × DiffuseFn(N·L) × AttnFn(d))
+ *     Until we implement full lighting (Recipe 3), approximate as:
+ *       if amb_color is usable → use amb_color
+ *       else → grey fallback (geometry at least visible)
  *
- * 2. Perspective / J3D draws (3D geometry with GX lighting):
- *    mat_color is the base reflectivity, not the output colour.
- *    Without GX lights, RASC ≈ amb_color (the static ambient term).
- *    This applies for any mat brightness: a bright mat_color like (255,255,255)
- *    is a reflectivity coefficient, not the pixel colour.
- *
- *    - If amb is usable (>= RASC_DARK_THRESHOLD): output amb_color.
- *      Example: room geometry with ambient lighting set.
- *    - If both mat and amb are dark: output RASC_FALLBACK_GRAY.
- *      This covers "dynamic-light-only" materials (e.g. the daTitle castle
- *      model: mat=(0,0,0), amb=(0,0,0)) where the game expects GX lights to
- *      supply all colour.  RASC_FALLBACK_GRAY (200) makes geometry at least
- *      visible at the cost of incorrect tone.  When GX lighting is implemented
- *      (port roadmap P2), replace this fallback with: compute the per-vertex
- *      lit colour from g_gx_state.light[] + g_gx_state.chan_ctrl[].
+ * References:
+ *   dolsdk2004 src/gx/GXLight.c:  GXSetChanCtrl() register layout
+ *   dolsdk2004 src/gx/__gx.h:     GXData.ambColor[], GXData.matColor[]
+ *   docs/dolsdk2004-reference.md:  Recipe 1 (RASC fix)
  *
  * The game engine is single-threaded (one render thread); no locking needed. */
 static void apply_rasc_color(uint8_t* const_clr) {
-    const uint8_t mr = g_gx_state.chan_ctrl[0].mat_color.r;
-    const uint8_t mg = g_gx_state.chan_ctrl[0].mat_color.g;
-    const uint8_t mb = g_gx_state.chan_ctrl[0].mat_color.b;
-    const_clr[0] = mr;
-    const_clr[1] = mg;
-    const_clr[2] = mb;
-    const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+    const GXChanCtrl* ch = &g_gx_state.chan_ctrl[0];
 
-    /* ---- Orthographic (J2D) path ---- */
-    /* mat_color IS the intended pane colour; respect it regardless of brightness.
-     * A black background pane (mat=(0,0,0)) must stay black — do not substitute
-     * a grey fallback.  Alpha is handled by the caller's inject_color block,
-     * which forces alpha=255 for non-overlay draws (fade_overlay_active=false)
-     * and preserves mat.a for the darwFilter fade overlay. */
-    if (g_gx_state.proj_type == GX_ORTHOGRAPHIC)
+    if (!ch->enable) {
+        /* ---- Lighting DISABLED (SDK: enable=0) ---- */
+        /* Output is determined solely by mat_src.
+         *
+         * mat_src=GX_SRC_REG: use mat_color register value directly.
+         *   J2D panes: mat_color IS the intended pane colour.  A black
+         *   background pane (mat=(0,0,0)) must stay black.
+         *   J3D materials with lighting off: mat_color is the direct output.
+         *
+         * mat_src=GX_SRC_VTX: output = vertex color attribute.
+         *   Signal to caller by returning white (multiply-neutral) so that
+         *   the real vertex color passes through the "* v_color0" shader multiply.
+         *   The caller already copies vertex CLR0 into the vertex buffer. */
+        if (ch->mat_src == GX_SRC_VTX) {
+            const_clr[0] = 255;
+            const_clr[1] = 255;
+            const_clr[2] = 255;
+            const_clr[3] = 255;
+        } else {
+            const_clr[0] = ch->mat_color.r;
+            const_clr[1] = ch->mat_color.g;
+            const_clr[2] = ch->mat_color.b;
+            const_clr[3] = ch->mat_color.a;
+        }
         return;
+    }
 
-    /* ---- Perspective (J3D) path ---- */
-    /* Approximate RASC = amb_color (static ambient without dynamic lights).
-     * This applies for any mat brightness: a bright mat_color like (255,255,255)
-     * is a reflectivity base, not the output colour — returning it directly
-     * produces blinding-white unlit geometry.  amb_color is the correct static
-     * approximation.  If amb is also dark (dynamic-light-only materials), use
-     * a neutral grey so the geometry is at least visible.
+    /* ---- Lighting ENABLED (SDK: enable=1) ---- */
+    /* Full equation: RASC = amb + Σ(light[i] × diffuse × attn × mat)
      *
-     * TODO (lighting P2): when GX lighting is implemented, replace amb fallback
-     * with per-vertex lit colour from g_gx_state.light[] + chan_ctrl[]. */
-    const uint8_t ar = g_gx_state.chan_ctrl[0].amb_color.r;
-    const uint8_t ag = g_gx_state.chan_ctrl[0].amb_color.g;
-    const uint8_t ab = g_gx_state.chan_ctrl[0].amb_color.b;
+     * Until Recipe 3 (full GX lighting) is implemented, approximate:
+     *   1. If amb_color is usable (bright enough) → use amb_color.
+     *      This is the static ambient term — the dominant contribution
+     *      in most TP scenes (rooms with ambient lighting set).
+     *   2. If amb is dark (dynamic-light-only material like daTitle castle
+     *      model: mat=(0,0,0), amb=(0,0,0)) → grey fallback so geometry is
+     *      at least visible.
+     *
+     * TODO (lighting P2 / Recipe 3): replace this approximation with the
+     * full per-vertex lit colour from g_gx_state.light[] + chan_ctrl[]. */
+    const uint8_t ar = ch->amb_color.r;
+    const uint8_t ag = ch->amb_color.g;
+    const uint8_t ab = ch->amb_color.b;
     if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
         const_clr[0] = ar;
         const_clr[1] = ag;
@@ -1464,7 +1468,7 @@ static void apply_rasc_color(uint8_t* const_clr) {
         /* No usable ambient — dynamic-light-only material (e.g. daTitle castle
          * model: mat=(0,0,0), amb=(0,0,0)).  Use neutral grey so geometry is
          * at least visible.  This is a known approximation; correct rendering
-         * requires the lighting TODO above to be implemented. */
+         * requires Recipe 3 (full lighting) to be implemented. */
         const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
         const_clr[3] = 255;
 
@@ -1478,11 +1482,12 @@ static void apply_rasc_color(uint8_t* const_clr) {
                     "{\"rasc_grey_fallback\":{\"n\":%u,"
                     "\"mat\":[%u,%u,%u,%u],"
                     "\"amb\":[%u,%u,%u],"
-                    "\"proj\":\"perspective\","
+                    "\"enable\":%d,\"mat_src\":%d,"
                     "\"fallback_gray\":%u}}\n",
                     s_grey_fallback_log_count,
-                    mr, mg, mb, g_gx_state.chan_ctrl[0].mat_color.a,
+                    ch->mat_color.r, ch->mat_color.g, ch->mat_color.b, ch->mat_color.a,
                     ar, ag, ab,
+                    (int)ch->enable, (int)ch->mat_src,
                     (unsigned)RASC_FALLBACK_GRAY);
             }
         }
