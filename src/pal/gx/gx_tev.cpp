@@ -1433,6 +1433,7 @@ void pal_tev_flush_draw(void) {
             gx_frame_depth_draws++;
         if (g_gx_state.blend_mode != 0)
             gx_frame_blend_draws++;
+        g_gx_state.tev_reg_dirty = 0;
         return;
     }
 
@@ -1575,8 +1576,12 @@ void pal_tev_flush_draw(void) {
                 /* GX_TEVREG0 (tev_regs[1]) may be unset/dark on PC if the game
                  * relies on GX lights to provide visible color (daTitle model
                  * uses D=C0 but never calls GXSetTevColor(GX_TEVREG0,...)).
-                 * Fall back to mat/amb color so the mesh is visible. */
-                if ((int)const_clr[0] + (int)const_clr[1] + (int)const_clr[2] < RASC_DARK_THRESHOLD)
+                 * Fall back to mat/amb color so the mesh is visible.
+                 * Exception: if GXSetTevColor(GX_TEVREG0) was explicitly called
+                 * since the last flush (e.g. clearEfb setting register to black),
+                 * honour that value even if dark — do NOT apply the fallback. */
+                if (!(g_gx_state.tev_reg_dirty & (1u << GX_TEVREG0)) &&
+                    (int)const_clr[0] + (int)const_clr[1] + (int)const_clr[2] < RASC_DARK_THRESHOLD)
                     apply_rasc_color(const_clr);
             } else if (s0->color_d == GX_CC_KONST) {
                 resolve_konst_color(s0, const_clr);
@@ -2653,6 +2658,11 @@ void pal_tev_flush_draw(void) {
                 gx_stub_track_texture(tb->image_ptr);
         }
     }
+
+    /* Reset the per-draw TEV register dirty flags.  Each draw must call
+     * GXSetTevColor explicitly if it wants to lock in a dark register value;
+     * otherwise the dark-TEV-register fallback fires to keep geometry visible. */
+    g_gx_state.tev_reg_dirty = 0;
 }
 
 } /* extern "C" */

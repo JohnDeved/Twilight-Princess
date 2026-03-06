@@ -260,6 +260,7 @@ void pal_gx_set_num_tev_stages(u8 n) {
 void pal_gx_set_tev_color(GXTevRegID id, GXColor color) {
     if ((unsigned)id < GX_MAX_TEVREG) {
         g_gx_state.tev_regs[id] = color;
+        g_gx_state.tev_reg_dirty |= (u8)(1u << (unsigned)id);
     }
 }
 

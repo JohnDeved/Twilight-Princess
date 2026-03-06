@@ -199,6 +199,7 @@ typedef struct {
     /* TEV registers (color constants) */
     GXColor    tev_regs[GX_MAX_TEVREG];    /* GX_TEVPREV, GX_TEVREG0-2 */
     GXColor    tev_kregs[GX_MAX_TEVKREG];  /* GX_KCOLOR0-3 */
+    u8         tev_reg_dirty;              /* bitmask: bit N set when GXSetTevColor(regN) called since last flush */
 
     /* Texture bindings */
     GXTexBinding tex_bindings[GX_MAX_TEXMAP];

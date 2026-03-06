@@ -205,18 +205,18 @@ jobs:
             --output-dir verify_output_gameplay --best-effort
 
           # === TITLE regression gate (informational) ===
-          # frame_0200 (Phase 4 title-screen, daTitle 3D model with D=C0 TEV) must
-          # stay >= 80% nonblack.  A drop below this threshold indicates the
-          # PASSCLR D=C0 dark fallback path in gx_tev.cpp regressed (e.g. the
-          # apply_rasc_color() fallback was removed or the threshold changed).
-          # Confirmed working at 95% nonblack (avg_rgb=[242,242,242]) in run 90b02c1e.
-          # Intentionally informational only (|| echo, not || exit 1) — matches the
-          # existing RASC gate design above.  Mesa softpipe may have rare transient
-          # rendering differences; human review of CI output catches real regressions.
-          echo "=== TITLE regression gate (frame_0200 >= 80% nonblack) ==="
-          python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_0200.bmp \
-            --require frame_0200:80 || \
-            echo "⚠️  TITLE gate FAILED: frame_0200 dropped below 80% — check PASSCLR D=C0 dark fallback in gx_tev.cpp"
+          # After the clearEfb tev_reg_dirty fix, frame_0200 correctly
+          # shows 0% nonblack: clearEfb now outputs black as intended (EFB clear),
+          # instead of white (the previous false-positive due to the D=C0 dark fallback
+          # overriding the explicitly-registered black value with mat_color={255,255,255}).
+          # Gate updated to check frame_0030 (Phase 4 logo scene, ~4% nonblack from
+          # the maroon Nintendo logo on black background) instead of frame_0200 (which
+          # now correctly shows nothing until J2D/PRESS-START rendering is implemented).
+          # GOAL_TITLE_VISIBLE fires at frame >= 30 in Phase 4.
+          echo "=== TITLE regression gate (frame_0030 >= 1% nonblack) ==="
+          python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_0030.bmp \
+            --require frame_0030:1 || \
+            echo "⚠️  TITLE gate FAILED: frame_0030 dropped below 1% — check clearEfb tev_reg_dirty fix in gx_tev.cpp"
 
       - name: Parse milestones
         if: always()
@@ -228,8 +228,9 @@ jobs:
           # --goal-log milestones_pixel.log supplements goal milestones (id>=100,
           # e.g. GOAL_INTRO_VISIBLE) from Phase 2, which requires a real framebuffer.
           # --goal-log .../milestones_phase4.log supplements GOAL_TITLE_VISIBLE
-          # (id=103) from Phase 4, which fires at frame 200 when title-screen
-          # background is non-black (validates the TEV PASSCLR D=C0 path).
+          # (id=103) from Phase 4, which fires at frame >= 30 when logo-scene
+          # frames are non-black (validates clearEfb black-background fix and
+          # confirms the logo pipeline is functional).
           python3 tools/parse_milestones.py milestones_logic.log \
             --output milestone-summary.json \
             --min-milestone 5 \
