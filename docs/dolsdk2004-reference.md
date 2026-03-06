@@ -475,7 +475,11 @@ static void apply_rasc_color(uint8_t* const_clr) {
     const_clr[1] = ch->amb_color.g;
     const_clr[2] = ch->amb_color.b;
     const_clr[3] = 255;
-    // If amb is dark, grey fallback (current behavior)
+    /* If amb is dark (<threshold), fall back to RASC_FALLBACK_GRAY.
+     * Remove this fallback once Recipe 3 (full lighting) is done. */
+    if ((int)const_clr[0] + const_clr[1] + const_clr[2] < RASC_DARK_THRESHOLD) {
+        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+    }
 }
 ```
 
@@ -590,11 +594,11 @@ NOT used in the fragment shader. All fragments pass regardless of alpha.
 **SDK truth** (from `GXTev.c` → `GXSetAlphaCompare`):
 ```c
 // BP register 0xF3:
-// bits [7:0]   = ref0 (threshold 0)
+// bits [7:0]   = ref0 (8-bit threshold 0, range 0-255)
 // bits [10:8]  = comp0 (GX_NEVER..GX_ALWAYS)
-// bits [15:11] = ref1 (threshold 1, upper 5 bits... actually 8 bits)
-// bits [18:16] = comp1
-// bits [20:19] = op (AND, OR, XOR, XNOR)
+// bits [23:16] = ref1 (8-bit threshold 1, range 0-255)
+// bits [26:24] = comp1
+// bits [28:27] = op (AND, OR, XOR, XNOR)
 ```
 
 The alpha compare test is:
@@ -695,6 +699,10 @@ different matrix from the array.
 // CP register 11 (0xB): index stride
 // These are set per array (position=idx0, normal=idx1, texture=idx2, light=idx3)
 ```
+
+**Note:** `g_gx_state.array[]` (GXArrayState) already exists in `gx_state.h` for
+indexed vertex drawing. The position matrix array base/stride may need a separate
+tracking field if it's not already covered by the existing `array[]` state.
 
 **Files:** `src/pal/gx/gx_displaylist.cpp` (handle LOAD_INDX matrix copy),
 `include/pal/gx/gx_state.h` (ensure matrix array tracking)
