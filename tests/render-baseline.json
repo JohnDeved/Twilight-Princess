@@ -48,7 +48,23 @@
             "min_pct_nonblack": 0,
             "min_unique_colors": 0,
             "expected_fb_hash": null,
-            "note": "Frame 300: play scene / title — not currently captured; reserved for future use"
+            "note": "Frame 300: Phase 4 title scene — PROC_TITLE active, J3D logo model should be rendering grey (RASC fallback) after mDoExt_modelEntryDL fix. Threshold starts at 0 until CI confirms nonblack%; raise to 1 after first confirmed grey frame."
+        },
+        "350": {
+            "min_draw_calls": 0,
+            "min_verts": 0,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 0,
+            "expected_fb_hash": null,
+            "note": "Frame 350: Phase 4 title scene — title logo should be rendering. Threshold at 0 until CI confirms; raise to 1 after frame_300 confirmed."
+        },
+        "400": {
+            "min_draw_calls": 0,
+            "min_verts": 0,
+            "min_pct_nonblack": 0,
+            "min_unique_colors": 0,
+            "expected_fb_hash": null,
+            "note": "Frame 400: Phase 4 title scene — sustained title rendering. Threshold at 0 until CI confirms."
         }
     },
     "global": {

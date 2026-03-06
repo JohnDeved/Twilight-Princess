@@ -145,8 +145,10 @@ case "$PHASE" in
         export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,150,180,200,250,300,350,400"
         # Delay at frame 300 — by then PROC_TITLE has had ~150 frames to initialise
         # and the J3D title logo should be rendering grey (RASC fallback).
-        # Using 350ms (same as Phase 3) to give Mesa softpipe time to rasterise.
-        export TP_FRAME_DELAY_MS=350000
+        # Phase 4 has only a few dozen draw calls per frame (vs 7587 for Phase 3)
+        # so 60 seconds is ample for Mesa softpipe to rasterise.  Using 350000ms
+        # (Phase 3's value) would exceed the 180s timeout.
+        export TP_FRAME_DELAY_MS=60000
         export TP_FRAME_DELAY_START=300
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
@@ -190,7 +192,7 @@ elif [[ "$PHASE" == "4" ]]; then
     echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 300:"
     grep '"darwFilter"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no fade overlay calls)"
     echo "Phase 4 PROC_TITLE enable status + loadWait diagnostics:"
-    grep 'TP_ENABLE_PROC_TITLE\|loadWait_sync\|j3d_draw_diag' "$LOG_FILE" 2>/dev/null | head -10 || \
+    grep 'TP_ENABLE_PROC_TITLE\|loadWait_sync\|loadWait_blo\|j3d_draw_diag' "$LOG_FILE" 2>/dev/null | head -10 || \
         echo "(check $LOG_FILE for draw counts)"
     echo "Phase 4 frame-200 TEV color-pipeline dump (tev200 — const_clr before/after fallback):"
     grep '"tev200"' "$LOG_FILE" 2>/dev/null || echo "(tev200 not reached — frame 200 not hit or no draws)"
@@ -202,6 +204,10 @@ elif [[ "$PHASE" == "4" ]]; then
     grep 'daTitle_c::CreateHeap' "$LOG_FILE" 2>/dev/null | head -5 || echo "(CreateHeap not reached)"
     echo "Phase 4 blo_swap result (Title2D.arc BLO endian conversion):"
     grep '"blo_swap"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(blo_swap not triggered — Title2D.arc not loaded or BLO not found)"
+    echo "Phase 4 J3D model_probe (title logo shape/vtx/DL diagnostics):"
+    grep '"model_probe"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(model_probe not triggered — mDoExt_modelEntryDL not called)"
+    echo "Phase 4 J3D display-list calls (first 5 — shapedraw ptr/size):"
+    grep '"shapedraw"\|"dl_call"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no shapedraw/dl_call — DL execution not reached)"
 fi
 
 # --- Coverage gate ---

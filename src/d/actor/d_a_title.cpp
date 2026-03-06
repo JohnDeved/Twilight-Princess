@@ -518,7 +518,7 @@ int daTitle_c::Draw() {
 #else
     /* On PC, calling entry() with big-endian animation data crashes inside
      * entryMatColorAnimator (misread mColorUpdateMaterialNum loops OOB).
-     * Also clear joint 0's inherited mtxCalc pointer so mDoExt_modelUpdateDL
+     * Also clear joint 0's inherited mtxCalc pointer so mDoExt_modelEntryDL
      * uses the static BMD transform, not a stale big-endian calc from another
      * actor that left J3DJoint::mCurrentMtxCalc pointing at animation data. */
     modelData->getJointNodePointer(0)->setMtxCalc(NULL);
@@ -531,9 +531,20 @@ int daTitle_c::Draw() {
     }
 #endif
 
+#if !PLATFORM_PC
+    /* GCN: register in deferred display-list pass (setListItem3D/setList).
+     * mDoExt_modelUpdateDL updates the locked display-list matrices; the
+     * scene's render pass later executes the hardware DL via GXCallDisplayList. */
     dComIfGd_setListItem3D();
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
+#else
+    /* PC: mDoExt_modelUpdateDL only calls viewCalc() (matrix computation) —
+     * it does NOT emit GX draw calls because there is no hardware DL execution.
+     * Use mDoExt_modelEntryDL instead: it calls entry() → lock/unlock → the J3D
+     * rendering pipeline emits actual GX commands (same path as the 3D BG room). */
+    mDoExt_modelEntryDL(mpModel);
+#endif
 
     if (field_0x5f8) {
         dComIfGd_set2DOpaTop(&mTitle);
