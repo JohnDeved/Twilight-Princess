@@ -378,10 +378,26 @@ jobs:
               }
 
               if (release) {
-                // Only delete assets from THIS commit (handles re-runs).
-                // Assets from other commits are kept so old PR comments still show images.
+                // Delete assets from THIS commit (re-run cleanup) and prune old assets.
+                // Keep assets from the most recent 10 commits to prevent unbounded growth.
+                const assetsByPrefix = {};
                 for (const asset of release.assets || []) {
-                  if (asset.name.startsWith(`${sha7}-`)) {
+                  const prefix = asset.name.substring(0, 7);
+                  if (!assetsByPrefix[prefix]) assetsByPrefix[prefix] = [];
+                  assetsByPrefix[prefix].push(asset);
+                }
+                // Sort prefixes by newest first (most recently created asset)
+                const prefixes = Object.keys(assetsByPrefix).sort((a, b) => {
+                  const aTime = Math.max(...assetsByPrefix[a].map(x => new Date(x.created_at).getTime()));
+                  const bTime = Math.max(...assetsByPrefix[b].map(x => new Date(x.created_at).getTime()));
+                  return bTime - aTime;
+                });
+                // Delete assets from current commit (will re-upload) and from commits beyond the 10th
+                const keepPrefixes = new Set(prefixes.slice(0, 10));
+                keepPrefixes.delete(sha7); // always re-upload current
+                for (const asset of release.assets || []) {
+                  const prefix = asset.name.substring(0, 7);
+                  if (prefix === sha7 || !keepPrefixes.has(prefix)) {
                     try {
                       await github.rest.repos.deleteReleaseAsset({
                         owner: context.repo.owner,

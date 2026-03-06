@@ -126,8 +126,7 @@ static void decode_ia4(const u8* src, u8* dst, u16 width, u16 height) {
             for (y = 0; y < 4; y++) {
                 for (x = 0; x < 8; x++) {
                     u8 val = src[si++];
-                    /* IA4: Alpha in high nibble (bits 7-4), Intensity in low nibble (bits 3-0).
-                     * GCN convention: Alpha is in the upper bits. */
+                    /* IA4: high nibble = alpha, low nibble = intensity */
                     u8 a = (u8)((val >> 4) * 17);
                     u8 i = (u8)((val & 0xF) * 17);
                     if (bx + x < width && by + y < height)
@@ -152,8 +151,7 @@ static void decode_ia8(const u8* src, u8* dst, u16 width, u16 height) {
         for (bx = 0; bx < tw; bx += 4) {
             for (y = 0; y < 4; y++) {
                 for (x = 0; x < 4; x++) {
-                    /* IA8: 16-bit big-endian texel, Alpha in high byte, Intensity in low byte.
-                     * In memory: byte 0 = Alpha, byte 1 = Intensity (GCN big-endian). */
+                    /* IA8: byte 0 = alpha, byte 1 = intensity (GCN big-endian) */
                     u8 a = src[si++];
                     u8 i = src[si++];
                     if (bx + x < width && by + y < height)
