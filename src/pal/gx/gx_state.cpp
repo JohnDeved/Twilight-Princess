@@ -652,12 +652,17 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
         case GX_COLOR1A1: idx = 1; break;
         default: return;
     }
+    /* dolsdk2004 GXLight.c GXSetChanCtrl: when attn_fn == GX_AF_NONE,
+     * the hardware diff_fn field is forced to 0 (GX_DF_NONE):
+     *   SET_REG_FIELD(911, reg, 2, 7, (attn_fn == 0) ? 0 : diff_fn);
+     * Apply the same transformation so our lighting computation matches. */
+    GXDiffuseFn effective_diff = (attn_fn == GX_AF_NONE) ? GX_DF_NONE : diff_fn;
     if (idx < 4) {
         g_gx_state.chan_ctrl[idx].enable = enable;
         g_gx_state.chan_ctrl[idx].amb_src = amb_src;
         g_gx_state.chan_ctrl[idx].mat_src = mat_src;
         g_gx_state.chan_ctrl[idx].light_mask = light_mask;
-        g_gx_state.chan_ctrl[idx].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[idx].diff_fn = effective_diff;
         g_gx_state.chan_ctrl[idx].attn_fn = attn_fn;
     }
     /* dolsdk2004 GXLight.c: GX_COLOR0A0 writes the SAME ctrl register
@@ -669,39 +674,80 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
         g_gx_state.chan_ctrl[2].amb_src = amb_src;
         g_gx_state.chan_ctrl[2].mat_src = mat_src;
         g_gx_state.chan_ctrl[2].light_mask = light_mask;
-        g_gx_state.chan_ctrl[2].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[2].diff_fn = effective_diff;
         g_gx_state.chan_ctrl[2].attn_fn = attn_fn;
     } else if (chan == GX_COLOR1A1) {
         g_gx_state.chan_ctrl[3].enable = enable;
         g_gx_state.chan_ctrl[3].amb_src = amb_src;
         g_gx_state.chan_ctrl[3].mat_src = mat_src;
         g_gx_state.chan_ctrl[3].light_mask = light_mask;
-        g_gx_state.chan_ctrl[3].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[3].diff_fn = effective_diff;
         g_gx_state.chan_ctrl[3].attn_fn = attn_fn;
     }
 }
 
 void pal_gx_set_chan_amb_color(GXChannelID chan, GXColor color) {
-    u32 idx;
+    /* dolsdk2004 GXLight.c GXSetChanAmbColor:
+     *   GX_COLOR0:   updates RGB only, preserves alpha
+     *   GX_COLOR1:   updates RGB only, preserves alpha
+     *   GX_ALPHA0:   updates alpha only, preserves RGB
+     *   GX_ALPHA1:   updates alpha only, preserves RGB
+     *   GX_COLOR0A0: updates all RGBA
+     *   GX_COLOR1A1: updates all RGBA */
     switch (chan) {
-        case GX_COLOR0:   case GX_COLOR0A0: idx = 0; break;
-        case GX_COLOR1:   case GX_COLOR1A1: idx = 1; break;
-        default: return;
-    }
-    if (idx < 4) {
-        g_gx_state.chan_ctrl[idx].amb_color = color;
+        case GX_COLOR0:
+            g_gx_state.chan_ctrl[0].amb_color.r = color.r;
+            g_gx_state.chan_ctrl[0].amb_color.g = color.g;
+            g_gx_state.chan_ctrl[0].amb_color.b = color.b;
+            break;
+        case GX_COLOR1:
+            g_gx_state.chan_ctrl[1].amb_color.r = color.r;
+            g_gx_state.chan_ctrl[1].amb_color.g = color.g;
+            g_gx_state.chan_ctrl[1].amb_color.b = color.b;
+            break;
+        case GX_ALPHA0:
+            g_gx_state.chan_ctrl[0].amb_color.a = color.a;
+            break;
+        case GX_ALPHA1:
+            g_gx_state.chan_ctrl[1].amb_color.a = color.a;
+            break;
+        case GX_COLOR0A0:
+            g_gx_state.chan_ctrl[0].amb_color = color;
+            break;
+        case GX_COLOR1A1:
+            g_gx_state.chan_ctrl[1].amb_color = color;
+            break;
+        default: break;
     }
 }
 
 void pal_gx_set_chan_mat_color(GXChannelID chan, GXColor color) {
-    u32 idx;
+    /* dolsdk2004 GXLight.c GXSetChanMatColor:
+     *   Same per-channel update rules as GXSetChanAmbColor */
     switch (chan) {
-        case GX_COLOR0:   case GX_COLOR0A0: idx = 0; break;
-        case GX_COLOR1:   case GX_COLOR1A1: idx = 1; break;
-        default: return;
-    }
-    if (idx < 4) {
-        g_gx_state.chan_ctrl[idx].mat_color = color;
+        case GX_COLOR0:
+            g_gx_state.chan_ctrl[0].mat_color.r = color.r;
+            g_gx_state.chan_ctrl[0].mat_color.g = color.g;
+            g_gx_state.chan_ctrl[0].mat_color.b = color.b;
+            break;
+        case GX_COLOR1:
+            g_gx_state.chan_ctrl[1].mat_color.r = color.r;
+            g_gx_state.chan_ctrl[1].mat_color.g = color.g;
+            g_gx_state.chan_ctrl[1].mat_color.b = color.b;
+            break;
+        case GX_ALPHA0:
+            g_gx_state.chan_ctrl[0].mat_color.a = color.a;
+            break;
+        case GX_ALPHA1:
+            g_gx_state.chan_ctrl[1].mat_color.a = color.a;
+            break;
+        case GX_COLOR0A0:
+            g_gx_state.chan_ctrl[0].mat_color = color;
+            break;
+        case GX_COLOR1A1:
+            g_gx_state.chan_ctrl[1].mat_color = color;
+            break;
+        default: break;
     }
 }
 

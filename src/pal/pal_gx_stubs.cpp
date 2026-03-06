@@ -484,28 +484,50 @@ void GXGetTexObjAll(const GXTexObj* obj, void** image_ptr, u16* width, u16* heig
 /* ================================================================ */
 
 void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
-    /* GXSetTevOp is a convenience that configures color+alpha inputs+ops based on mode */
+    /* dolsdk2004 GXTev.c: GXSetTevOp uses SEPARATE tables for stage 0
+     * (TEVCOpTableST0/TEVAOpTableST0) and stage 1+ (TEVCOpTableST1/TEVAOpTableST1).
+     * Stage 0 references RASC/RASA (rasterized color from lighting channel).
+     * Stage 1+ references CPREV/APREV (output of previous TEV stage). */
+    int is_st0 = (id == GX_TEVSTAGE0);
     switch (mode) {
         case GX_MODULATE:
-            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            /* ST0: (ZERO, TEXC, RASC, ZERO) → tex*rasc
+             * ST1: (ZERO, TEXC, CPREV, ZERO) → tex*cprev */
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_TEXC,
+                                     is_st0 ? GX_CC_RASC : GX_CC_CPREV, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV, GX_CA_ZERO);
             break;
         case GX_DECAL:
-            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_TEXC, GX_CC_TEXA, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            /* ST0: (RASC, TEXC, TEXA, ZERO)
+             * ST1: (CPREV, TEXC, TEXA, ZERO) */
+            pal_gx_set_tev_color_in(id, is_st0 ? GX_CC_RASC : GX_CC_CPREV,
+                                     GX_CC_TEXC, GX_CC_TEXA, GX_CC_ZERO);
+            /* Alpha: ST0→RASA, ST1→APREV */
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV);
             break;
         case GX_BLEND:
-            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_ONE, GX_CC_TEXC, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            /* ST0: (RASC, ONE, TEXC, ZERO)
+             * ST1: (CPREV, ONE, TEXC, ZERO) */
+            pal_gx_set_tev_color_in(id, is_st0 ? GX_CC_RASC : GX_CC_CPREV,
+                                     GX_CC_ONE, GX_CC_TEXC, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV, GX_CA_ZERO);
             break;
         case GX_REPLACE:
+            /* REPLACE is the same for both ST0 and ST1 */
             pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
             pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA);
             break;
         case GX_PASSCLR:
         default:
-            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            /* ST0: (ZERO, ZERO, ZERO, RASC)
+             * ST1: (ZERO, ZERO, ZERO, CPREV) */
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO,
+                                     is_st0 ? GX_CC_RASC : GX_CC_CPREV);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV);
             break;
     }
     pal_gx_set_tev_color_op(id, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
