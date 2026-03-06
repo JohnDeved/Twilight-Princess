@@ -583,7 +583,9 @@ void GXInitSpecularDirHA(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz, f32 hx, f32
     (void)lt_obj; (void)nx; (void)ny; (void)nz; (void)hx; (void)hy; (void)hz;
 }
 void GXInitLightColor(GXLightObj* lt_obj, GXColor color) { (void)lt_obj; (void)color; }
-void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) { (void)lt_obj; (void)light; }
+void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) {
+    pal_gx_load_light_obj(lt_obj, (u32)light);
+}
 void GXLoadLightObjIndx(u32 lt_obj_indx, GXLightID light) { (void)lt_obj_indx; (void)light; }
 void GXSetChanAmbColor(GXChannelID chan, GXColor amb_color) { pal_gx_set_chan_amb_color(chan, amb_color); }
 void GXSetChanMatColor(GXChannelID chan, GXColor mat_color) { pal_gx_set_chan_mat_color(chan, mat_color); }

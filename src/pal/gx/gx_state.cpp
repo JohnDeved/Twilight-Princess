@@ -632,6 +632,25 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
         g_gx_state.chan_ctrl[idx].diff_fn = diff_fn;
         g_gx_state.chan_ctrl[idx].attn_fn = attn_fn;
     }
+    /* dolsdk2004 GXLight.c: GX_COLOR0A0 writes the SAME ctrl register
+     * to both the color channel (XF reg idx+14) and the alpha channel
+     * (XF reg idx+16).  Replicate to the alpha channel slot so that
+     * alpha-channel queries see the same enable/src state. */
+    if (chan == GX_COLOR0A0) {
+        g_gx_state.chan_ctrl[2].enable = enable;
+        g_gx_state.chan_ctrl[2].amb_src = amb_src;
+        g_gx_state.chan_ctrl[2].mat_src = mat_src;
+        g_gx_state.chan_ctrl[2].light_mask = light_mask;
+        g_gx_state.chan_ctrl[2].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[2].attn_fn = attn_fn;
+    } else if (chan == GX_COLOR1A1) {
+        g_gx_state.chan_ctrl[3].enable = enable;
+        g_gx_state.chan_ctrl[3].amb_src = amb_src;
+        g_gx_state.chan_ctrl[3].mat_src = mat_src;
+        g_gx_state.chan_ctrl[3].light_mask = light_mask;
+        g_gx_state.chan_ctrl[3].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[3].attn_fn = attn_fn;
+    }
 }
 
 void pal_gx_set_chan_amb_color(GXChannelID chan, GXColor color) {
@@ -656,6 +675,50 @@ void pal_gx_set_chan_mat_color(GXChannelID chan, GXColor color) {
     if (idx < 4) {
         g_gx_state.chan_ctrl[idx].mat_color = color;
     }
+}
+
+/* pal_gx_load_light_obj: Capture light parameters from GXLoadLightObjImm.
+ *
+ * Based on dolsdk2004 GXLight.c __GXLightObjInt_struct layout:
+ *   offset 0x00: reserved[3] (12 bytes, unused)
+ *   offset 0x0C: Color (4 bytes, packed RGBA8: R<<24|G<<16|B<<8|A)
+ *   offset 0x10: a[3] (12 bytes, angle attenuation)
+ *   offset 0x1C: k[3] (12 bytes, distance attenuation)
+ *   offset 0x28: lpos[3] (12 bytes, world position)
+ *   offset 0x34: ldir[3] (12 bytes, direction — STORED NEGATED)
+ *
+ * light_id is the GXLightID bitmask (GX_LIGHT0=1, GX_LIGHT1=2, etc.).
+ * Convert to slot index using __cntlzw pattern from the SDK. */
+void pal_gx_load_light_obj(const void* lt_obj, u32 light_id) {
+    if (!lt_obj) return;
+
+    /* Convert bitmask to index: GX_LIGHT0=1→idx0, GX_LIGHT1=2→idx1, etc. */
+    u32 idx = 0;
+    u32 tmp = light_id;
+    while (tmp > 1 && idx < GX_MAX_LIGHT) { tmp >>= 1; idx++; }
+    if (idx >= GX_MAX_LIGHT) return;
+
+    /* Read from the __GXLightObjInt_struct layout */
+    const u8* raw = (const u8*)lt_obj;
+    GXLightState* ls = &g_gx_state.lights[idx];
+
+    /* Color at offset 0x0C (packed as R<<24|G<<16|B<<8|A) */
+    u32 packed_color;
+    memcpy(&packed_color, raw + 0x0C, 4);
+    ls->color.r = (u8)(packed_color >> 24);
+    ls->color.g = (u8)(packed_color >> 16);
+    ls->color.b = (u8)(packed_color >> 8);
+    ls->color.a = (u8)(packed_color);
+
+    /* Attenuation coefficients */
+    memcpy(ls->a, raw + 0x10, 12);
+    memcpy(ls->k, raw + 0x1C, 12);
+
+    /* Position and direction */
+    memcpy(ls->lpos, raw + 0x28, 12);
+    memcpy(ls->ldir, raw + 0x34, 12);
+
+    ls->active = 1;
 }
 
 /* ================================================================ */
