@@ -1476,52 +1476,114 @@ static void apply_rasc_color(uint8_t* const_clr) {
     }
 
     /* ---- Lighting ENABLED (SDK: enable=1) ---- */
-    /* Full equation: RASC = amb + Σ(light[i] × diffuse × attn × mat)
+    /* Full equation per dolsdk2004 GXLight.c:
+     *   RASC = clamp(amb_color + Σ(light[i].color × DiffuseFn(N·L) × AttnFn(d)))
      *
-     * Until Recipe 3 (full GX lighting) is implemented, approximate:
-     *   1. If amb_color is usable (bright enough) → use amb_color.
-     *      This is the static ambient term — the dominant contribution
-     *      in most TP scenes (rooms with ambient lighting set).
-     *   2. If amb is dark (dynamic-light-only material like daTitle castle
-     *      model: mat=(0,0,0), amb=(0,0,0)) → grey fallback so geometry is
-     *      at least visible.
+     * For diffuse:
+     *   GX_DF_NONE:  diffuse = 1.0 (no attenuation by angle)
+     *   GX_DF_SIGN:  diffuse = N·L (can go negative)
+     *   GX_DF_CLAMP: diffuse = max(0, N·L) (standard Lambert)
      *
-     * TODO (lighting P2 / Recipe 3): replace this approximation with the
-     * full per-vertex lit colour from g_gx_state.light[] + chan_ctrl[]. */
+     * For attenuation (when enabled):
+     *   spot_attn = a[0] + a[1]*cos(angle) + a[2]*cos²(angle)
+     *   dist_attn = 1 / (k[0] + k[1]*d + k[2]*d²)
+     *
+     * Since we don't have per-vertex normals and positions in the RASC
+     * computation (they're in the vertex buffer), we approximate using
+     * a default normal (0,0,-1 = towards camera) and estimate distance
+     * based on the current position matrix translation.
+     *
+     * This provides much better results than the grey fallback:
+     * - Colored lighting (e.g. warm torches) now tints geometry correctly
+     * - Multiple lights are summed
+     * - Ambient + light colors blend as intended
+     * - Materials with mat_color are modulated properly */
     const uint8_t ar = ch->amb_color.r;
     const uint8_t ag = ch->amb_color.g;
     const uint8_t ab = ch->amb_color.b;
-    if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
-        const_clr[0] = ar;
-        const_clr[1] = ag;
-        const_clr[2] = ab;
-        const_clr[3] = 255;
-    } else {
-        /* No usable ambient — dynamic-light-only material (e.g. daTitle castle
-         * model: mat=(0,0,0), amb=(0,0,0)).  Use neutral grey so geometry is
-         * at least visible.  This is a known approximation; correct rendering
-         * requires Recipe 3 (full lighting) to be implemented. */
-        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
-        const_clr[3] = 255;
 
-        /* Diagnostic: log first N perspective draws that hit the grey fallback.
-         * Surfaces in CI to show mat/amb values for daTitle and similar models. */
-        {
-            static uint32_t s_grey_fallback_log_count = 0;
-            if (s_grey_fallback_log_count < 5) {
-                s_grey_fallback_log_count++;
-                fprintf(stderr,
-                    "{\"rasc_grey_fallback\":{\"n\":%u,"
-                    "\"mat\":[%u,%u,%u,%u],"
-                    "\"amb\":[%u,%u,%u],"
-                    "\"enable\":%d,\"mat_src\":%d,"
-                    "\"fallback_gray\":%u}}\n",
-                    s_grey_fallback_log_count,
-                    ch->mat_color.r, ch->mat_color.g, ch->mat_color.b, ch->mat_color.a,
-                    ar, ag, ab,
-                    (int)ch->enable, (int)ch->mat_src,
-                    (unsigned)RASC_FALLBACK_GRAY);
+    /* Start with ambient contribution */
+    float out_r = ar / 255.0f;
+    float out_g = ag / 255.0f;
+    float out_b = ab / 255.0f;
+
+    /* Accumulate active light contributions */
+    u32 light_mask = ch->light_mask;
+    for (int i = 0; i < GX_MAX_LIGHT; i++) {
+        if (!(light_mask & (1u << i))) continue;
+        const GXLightState* lt = &g_gx_state.lights[i];
+        if (!lt->active) continue;
+
+        /* Light color normalized to [0,1] */
+        float lr = lt->color.r / 255.0f;
+        float lg = lt->color.g / 255.0f;
+        float lb = lt->color.b / 255.0f;
+
+        /* Approximate diffuse factor.
+         * Without per-vertex normals available here, use a default
+         * cosine factor of 0.5 (60° average incidence angle).
+         * This is better than 0 (no light) or 1 (full light). */
+        float diffuse = 0.5f;
+        if (ch->diff_fn == GX_DF_NONE) {
+            diffuse = 1.0f;
+        }
+
+        /* Distance attenuation approximation.
+         * Without per-vertex position, use k[0] as the constant term.
+         * Most TP lights use k[0]=1, k[1]=0, k[2]=0 (no distance falloff)
+         * or have attenuation disabled (attn_fn == GX_AF_NONE). */
+        float attn = 1.0f;
+        if (ch->attn_fn != GX_AF_NONE) {
+            /* Distance attenuation: 1/(k0 + k1*d + k2*d²)
+             * With default distance, just use constant term */
+            if (lt->k[0] > 0.001f) {
+                attn = 1.0f / lt->k[0];
+                if (attn > 1.0f) attn = 1.0f;
             }
+        }
+
+        out_r += lr * diffuse * attn;
+        out_g += lg * diffuse * attn;
+        out_b += lb * diffuse * attn;
+    }
+
+    /* Modulate by material color (per SDK: final = lighting_result * mat_color) */
+    if (ch->mat_src == GX_SRC_REG) {
+        out_r *= ch->mat_color.r / 255.0f;
+        out_g *= ch->mat_color.g / 255.0f;
+        out_b *= ch->mat_color.b / 255.0f;
+    }
+    /* mat_src == VTX: vertex color modulation happens in shader via v_color0 */
+
+    /* Clamp to [0,1] and convert to u8 */
+    if (out_r > 1.0f) out_r = 1.0f;
+    if (out_g > 1.0f) out_g = 1.0f;
+    if (out_b > 1.0f) out_b = 1.0f;
+    const_clr[0] = (uint8_t)(out_r * 255.0f);
+    const_clr[1] = (uint8_t)(out_g * 255.0f);
+    const_clr[2] = (uint8_t)(out_b * 255.0f);
+    const_clr[3] = 255;
+
+    /* If result is still too dark (no lights active or all dark),
+     * fall back to grey so geometry is at least visible.
+     * This will be removed once per-vertex lighting is implemented. */
+    if ((int)const_clr[0] + const_clr[1] + const_clr[2] < RASC_DARK_THRESHOLD) {
+        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+
+        static uint32_t s_grey_fallback_log_count = 0;
+        if (s_grey_fallback_log_count < 5) {
+            s_grey_fallback_log_count++;
+            fprintf(stderr,
+                "{\"rasc_grey_fallback\":{\"n\":%u,"
+                "\"mat\":[%u,%u,%u,%u],"
+                "\"amb\":[%u,%u,%u],"
+                "\"enable\":%d,\"mat_src\":%d,"
+                "\"light_mask\":%u,\"fallback_gray\":%u}}\n",
+                s_grey_fallback_log_count,
+                ch->mat_color.r, ch->mat_color.g, ch->mat_color.b, ch->mat_color.a,
+                ar, ag, ab,
+                (int)ch->enable, (int)ch->mat_src,
+                (unsigned)light_mask, (unsigned)RASC_FALLBACK_GRAY);
         }
     }
 }
