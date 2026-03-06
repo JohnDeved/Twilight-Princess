@@ -77,14 +77,12 @@ static int s_goal_intro_visible = 0;
 static int s_goal_depth_blend = 0;
 static int s_goal_title_visible = 0;
 
-/* Frame 30+ threshold for GOAL_TITLE_VISIBLE (Phase 4 logo scene capture).
+/* Frame threshold for GOAL_TITLE_VISIBLE (Phase 4 logo/3D scene capture).
  * Logo frames 30-120 in Phase 4 have pct_nonblack>=1% (maroon Nintendo logo on black
  * background), so GOAL_TITLE_VISIBLE fires there.
- *
- * TODO Phase 5: Once daTitle_c::Draw() entry() crash is fixed (j3dSys draw-buffer
- * init order — j3dSys.mDrawBuffer[0] may be NULL when the early draw_iter actors run),
- * raise this to 128: the first frame where the J3D title model renders grey
- * (RASC fallback vtx_clr=[200,200,200,255], ~78% nonblack). */
+ * GOAL_TITLE_VISIBLE also fires at frame 129 when the 3D BG room renders grey
+ * via the RASC fallback (passclr_skip_alpha filter now ortho-only, so perspective
+ * 3D geometry is no longer filtered — ~79% nonblack at frame 129). */
 #define GOAL_TITLE_VISIBLE_FRAME 30
 
 /* Regression assertion: per-capture-frame pixel coverage */
@@ -505,9 +503,9 @@ void pal_verify_summary(void) {
     /* Regression assertions: check pixel-coverage thresholds at key frames.
      * Logo (frames 40-90): expect >=2% non-black (red Nintendo logo).
      *   Fade-in completes ~frame 33, fade-out starts ~frame 93.
-     * Title model (frames 128-400): gated at 1 pixel once the entry() crash
-     *   is fixed (Phase 5: j3dSys draw-buffer init order for early draw_iter
-     *   actors).  Until then tracked as informational (pixel_threshold=0). */
+     * 3D scene (frame 129): expect >=1% non-black after passclr perspective fix.
+     *   Frame 129 captures the 7335 DL draws of the title screen's 3D BG room
+     *   rendered via the RASC grey fallback (~79% nonblack confirmed). */
     int regress_pass = 1;
     int regress_logo_found = 0;
     int regress_checked = 0;
@@ -529,10 +527,15 @@ void pal_verify_summary(void) {
             label = "logo";
             regress_logo_found = 1;
         }
-        /* Title model: frames 128-400 — informational until entry() is fixed.
-         * TODO Phase 5: raise pixel_threshold to 1 once draw-buffer init fixed. */
+        /* 3D BG room (frame 129): passclr perspective fix enables this frame.
+         * Expect >=50% (actual ~79%) from 7335 DL draws of title screen 3D geometry. */
+        else if (f == 129) {
+            threshold = 50;   /* >=50% non-black pixels — 3D room renders grey at ~79% */
+            label = "3d_scene";
+        }
+        /* Title model: other frames 128-400 — informational only. */
         else if (f >= 128 && f <= 400) {
-            pixel_threshold = 0;   /* informational only — raise once title model renders */
+            pixel_threshold = 0;
             label = "title";
         }
 

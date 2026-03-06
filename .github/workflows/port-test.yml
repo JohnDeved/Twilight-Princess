@@ -99,7 +99,7 @@ jobs:
           TP_SCREENSHOT: "logo_render.bmp"
           TP_VERIFY: "1"
           TP_VERIFY_DIR: "verify_output"
-          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,120,128"
+          TP_VERIFY_CAPTURE_FRAMES: "1,10,30,60,90,120,128"
         run: |
           set -o pipefail
           mkdir -p verify_output
@@ -146,7 +146,7 @@ jobs:
           export TP_VERIFY=1
           export TP_SCREENSHOT=logo_render.bmp
           export TP_TEST_FRAMES=130
-          export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,128"
+          export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,90,120,128"
           export TP_SKIP_DL_DRAWS=1
           timeout -k 10 600s build/tp-pc 2>&1 | tee milestones_pixel.log || true
           PIXEL_EXIT=${PIPESTATUS[0]}
