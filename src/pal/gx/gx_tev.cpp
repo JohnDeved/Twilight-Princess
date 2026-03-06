@@ -2616,11 +2616,18 @@ void pal_tev_flush_draw(void) {
          *   const_clr  : resolved vertex/const color AFTER all fallback logic
          *   inject     : 1 if color was injected (no CLR0 in vertex buffer)
          *   tev_dirty  : bitmask of explicitly-set tev_regs (bit N = GX_TEVREGN)
+         *   blend_src  : GX blend source factor (0=ZERO,1=ONE,4=SRC_ALPHA, …)
+         *   blend_dst  : GX blend destination factor
+         *   bgfx_state : computed bgfx STATE bits (depth+blend+cull+write masks)
+         *   view_id    : bgfx view the draw will be submitted to (0/1/2)
          * Use these fields to diagnose why frame-200 draws produce near-black
          * avg_rgb. If mat=[0,0,0,255] the grey fallback fires but gives 200,200,
-         * 200 — if still dark, look for a blend-state alpha kill or wrong preset. */
+         * 200 — if still dark, look for blend_mode!=0 or z_func rejection. */
         if (s_diag_frame == 200) {
             const GXTevStage* s0t = &g_gx_state.tev_stages[0];
+            /* Compute view_id inline (same logic as the submit block below) */
+            int tev200_view = g_gx_state.fade_overlay_active ? 2
+                              : (s_geom_centroid_active ? 1 : 0);
             fprintf(stderr, "{\"tev200\":{\"frame\":%u,\"draw_id\":%u,\"dc\":%u,"
                     "\"preset\":\"%s\","
                     "\"d_src\":%d,"
@@ -2630,7 +2637,10 @@ void pal_tev_flush_draw(void) {
                     "\"const_clr\":[%d,%d,%d,%d],"
                     "\"inject\":%d,"
                     "\"tev_dirty\":\"0x%02x\","
-                    "\"z_func\":%d,\"blend_mode\":%d}}\n",
+                    "\"z_func\":%d,\"blend_mode\":%d,"
+                    "\"blend_src\":%d,\"blend_dst\":%d,"
+                    "\"bgfx_state\":\"0x%016llx\","
+                    "\"view_id\":%d}}\n",
                     s_diag_frame, s_total_draw_count, (unsigned)gx_frame_draw_calls,
                     (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
                     (int)(s0t->color_d),
@@ -2651,7 +2661,11 @@ void pal_tev_flush_draw(void) {
                     inject_color,
                     (unsigned)g_gx_state.tev_reg_dirty,
                     (int)g_gx_state.z_func,
-                    (int)g_gx_state.blend_mode);
+                    (int)g_gx_state.blend_mode,
+                    (int)g_gx_state.blend_src,
+                    (int)g_gx_state.blend_dst,
+                    (unsigned long long)state,
+                    tev200_view);
         }
     }
 

@@ -261,13 +261,16 @@ void pal_render_begin_frame(void) {
     gx_fifo_reset();
     pal_window_poll();
 
-    GXColor cc = g_gx_state.clear_color;
-    cc.a = 255;
-    uint32_t clear_rgba = ((uint32_t)cc.r << 24) | ((uint32_t)cc.g << 16) |
-                          ((uint32_t)cc.b << 8) | (uint32_t)cc.a;
-
+    /* Always clear to black — GXSetCopyClear (g_gx_state.clear_color) sets the
+     * EFB-to-XFB copy clear color used on GCN hardware after GXCopyDisp.  On PC
+     * there is no XFB copy step; the game's clearEfb draw calls (JFWDisplay::
+     * clearEfb, z_func=GX_ALWAYS) are the mechanism that paints the background.
+     * Using clear_color here caused a white-background regression: before the
+     * logo scene GXSetCopyClear(white,...) makes clear_color={255,255,255} and
+     * the bgfx view would start white instead of black, producing avg_rgb near
+     * [242,242,242] at frame_0010 even though clearEfb draws are working. */
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
-                        clear_rgba, 1.0f, 0);
+                        0x000000ff, 1.0f, 0);
 
     uint16_t vp_x = (uint16_t)g_gx_state.vp_left;
     uint16_t vp_y = (uint16_t)g_gx_state.vp_top;
