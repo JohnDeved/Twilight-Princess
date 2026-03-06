@@ -73,15 +73,6 @@ jobs:
             --extract-dir build/extract/GZ2E01 \
             --tools-dir build/tools
 
-      - name: Build PC port
-        run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DTP_VERSION=PC
-          ninja -C build tp-pc
-
       - name: Start Xvfb
         run: |
           Xvfb :99 -screen 0 640x480x24 &
@@ -98,7 +89,7 @@ jobs:
           echo "Copilot setup running on ${{ runner.name }}"
           echo "OS: ${{ runner.os }}"
           echo "Arch: ${{ runner.arch }}"
-          echo "Build: $(test -f build/tp-pc && echo 'OK' || echo 'MISSING')"
+          echo "Build: (skipped in setup — run 'cmake -B build -G Ninja -DTP_VERSION=PC && ninja -C build tp-pc' to build)"
           echo "Game data: $(test -d data/res && echo 'OK' || echo 'MISSING (no ROMS_TOKEN)')"
           echo "Xvfb: $(xdpyinfo -display :99 >/dev/null 2>&1 && echo 'OK' || echo 'NOT RUNNING')"
           echo "GDB: $(gdb --version | head -1)"
