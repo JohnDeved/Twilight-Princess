@@ -2,7 +2,7 @@
 """Parse Phase 1 JSON telemetry and flag regressions in rendering metrics.
 
 Usage:
-    TP_HEADLESS=1 TP_TEST_FRAMES=400 build/tp-pc 2>stderr.log 1>stdout.log
+    TP_HEADLESS=1 TP_TEST_FRAMES=2000 build/tp-pc 2>stderr.log 1>stdout.log
     python3 tools/validate_telemetry.py stdout.log stderr.log
 
 Parses stdout for:

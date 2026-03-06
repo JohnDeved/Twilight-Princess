@@ -107,17 +107,20 @@ jobs:
           # Runs without DISPLAY to use bgfx Noop backend.
           # Verifies game logic milestones (PROC_BG creation, dl_draws,
           # j3d_entries, heap stability) without slow softpipe rendering.
-          # Uses 400 frames to reach FRAMES_300 milestone.
-          # Phase 1 timeout: 120s. The Noop renderer fast-path in pal_tev_flush_draw
-          # skips TVB allocation and vertex copy (frames 1-129 complete in <1s).
+          # Uses 2000 frames to reach FRAMES_1800 milestone.
+          # Phase 1 timeout: 240s (raised from 120s for 2000-frame run).
+          # The Noop renderer fast-path in pal_tev_flush_draw skips TVB allocation
+          # and vertex copy (frames 1-129 complete in <1s).
           # Frames 130+ may have one-time actor-list cycle recovery (cNdIt_Method cap
           # at 10000 iterations breaks circular linked-lists from camera Execute crash
-          # at frame 130); after cycle break, frames 131-400 are <5ms each.
-          # 400 frames complete well within 120s.
+          # at frame 130); after cycle break, frames 131-2000 are <5ms each.
+          # TP_ENABLE_PROC_TITLE is NOT set in Phase 1, so daTitle auto-advance does
+          # not run — game stays in play-scene loop for all 2000 frames.
+          # 2000 frames complete well within 240s (estimated ~30s total).
           echo "=== Phase 1: Logic test (Noop renderer) ==="
           unset DISPLAY
-          export TP_TEST_FRAMES=400
-          timeout -k 10 120s build/tp-pc 2>&1 | tee milestones_logic.log || true
+          export TP_TEST_FRAMES=2000
+          timeout -k 10 240s build/tp-pc 2>&1 | tee milestones_logic.log || true
           LOGIC_EXIT=${PIPESTATUS[0]}
           echo "Phase 1 exit: $LOGIC_EXIT"
 
@@ -200,6 +203,20 @@ jobs:
           unset DISPLAY
           tools/quick-test.sh --phase 4 --binary build/tp-pc \
             --output-dir verify_output_gameplay --best-effort
+
+          # === TITLE regression gate (informational) ===
+          # frame_0200 (Phase 4 title-screen, daTitle 3D model with D=C0 TEV) must
+          # stay >= 80% nonblack.  A drop below this threshold indicates the
+          # PASSCLR D=C0 dark fallback path in gx_tev.cpp regressed (e.g. the
+          # apply_rasc_color() fallback was removed or the threshold changed).
+          # Confirmed working at 95% nonblack (avg_rgb=[242,242,242]) in run 90b02c1e.
+          # Intentionally informational only (|| echo, not || exit 1) — matches the
+          # existing RASC gate design above.  Mesa softpipe may have rare transient
+          # rendering differences; human review of CI output catches real regressions.
+          echo "=== TITLE regression gate (frame_0200 >= 80% nonblack) ==="
+          python3 tools/check_bmp_coverage.py verify_output_gameplay/frame_0200.bmp \
+            --require frame_0200:80 || \
+            echo "⚠️  TITLE gate FAILED: frame_0200 dropped below 80% — check PASSCLR D=C0 dark fallback in gx_tev.cpp"
 
       - name: Parse milestones
         if: always()
