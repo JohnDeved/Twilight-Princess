@@ -326,6 +326,52 @@ jobs:
             echo "No new golden reference BMPs to commit"
           fi
 
+      - name: Frame comparison (perceptual diff vs GCN reference)
+        if: always()
+        id: frame_compare
+        run: |
+          # Compare captured frames against reference frames in tests/reference_frames/.
+          # Uses tools/frame_compare/frame_compare.py (RMSE + optional SSIM).
+          #
+          # --allow-missing-reference: skip gracefully when no reference frames are
+          # committed yet (expected during early development). Set to empty once
+          # reference frames are present to enforce the gate.
+          pip install --quiet Pillow 2>/dev/null || echo "Pillow install failed — PNG diff output disabled, BMP fallback active"
+
+          mkdir -p frame_compare_diffs
+
+          python3 tools/frame_compare/frame_compare.py \
+            --captured-dir  verify_output/ \
+            --reference-dir tests/reference_frames/ \
+            --diff-dir      frame_compare_diffs/ \
+            --threshold     0.05 \
+            --json-out      frame-compare-results.json \
+            --allow-missing-reference \
+          && echo "frame_compare_status=pass" >> $GITHUB_OUTPUT \
+          || echo "frame_compare_status=fail" >> $GITHUB_OUTPUT
+
+          # Also compare Phase 3 (3D room) and Phase 4 (gameplay) captures when present
+          if [ -d verify_output_3d ] && ls verify_output_3d/*.bmp 2>/dev/null | head -1 >/dev/null; then
+            python3 tools/frame_compare/frame_compare.py \
+              --captured-dir  verify_output_3d/ \
+              --reference-dir tests/reference_frames/ \
+              --diff-dir      frame_compare_diffs/ \
+              --threshold     0.05 \
+              --allow-missing-reference 2>/dev/null || true
+          fi
+
+          if [ -f frame-compare-results.json ]; then
+            python3 -c "
+import json, sys
+r = json.load(open('frame-compare-results.json'))
+passed = r.get('passed', True)
+results = r.get('results', [])
+n_pass = sum(1 for x in results if x.get('passed'))
+n_fail = sum(1 for x in results if not x.get('passed'))
+print(f'Frame compare: {n_pass} passed, {n_fail} failed, overall={passed}')
+"
+          fi
+
       - name: Convert frames to PNG
         if: always()
         run: |
@@ -703,6 +749,27 @@ jobs:
               }
             }
 
+            // Frame comparison results (GCN reference vs PC port)
+            let frameCmp = null;
+            try { frameCmp = JSON.parse(fs.readFileSync('frame-compare-results.json', 'utf8')); } catch (e) {}
+            if (frameCmp && frameCmp.results && frameCmp.results.length > 0) {
+              body += `\n### 🎯 Frame Comparison (GCN Reference)\n`;
+              body += `| Frame | RMSE | SSIM | % Diff | Status |\n|---|---|---|---|---|\n`;
+              for (const r of frameCmp.results) {
+                const fname = r.captured ? r.captured.split('/').pop() : '?';
+                const status = r.error ? `❌ ${r.error}` : (r.passed ? '✅ PASS' : `❌ FAIL (>${r.threshold})`);
+                const ssim = (r.ssim != null) ? r.ssim.toFixed(3) : '—';
+                body += `| ${fname} | ${r.rmse?.toFixed(4) ?? '—'} | ${ssim} | ${r.pct_diff?.toFixed(1) ?? '—'}% | ${status} |\n`;
+              }
+              if (!frameCmp.passed) {
+                body += `\n⚠️ **Frame comparison failed** — some frames exceeded the RMSE threshold.\n`;
+              }
+            } else {
+              body += `\n### 🎯 Frame Comparison (GCN Reference)\n`;
+              body += `ℹ️ No reference frames in \`tests/reference_frames/\` yet. `;
+              body += `See \`tools/frame_compare/README.md\` for instructions.\n`;
+            }
+
             // Artifacts download link
             body += `\n### 📦 Artifacts\n`;
             body += `[Download full test results](${artifactsUrl})\n`;
@@ -750,8 +817,10 @@ jobs:
             regression-report.json
             verify-report.json
             telemetry-validation.txt
+            frame-compare-results.json
             verify_output/
             verify_output_3d/
             verify_output_gameplay/
+            frame_compare_diffs/
             verify_png/
             logo_render.bmp

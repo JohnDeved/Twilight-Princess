@@ -1,0 +1,358 @@
+name: Render Review Helpers
+
+# Runs on every PR targeting any branch.
+# Performs:
+#   1. clang-format check — posts a suggestion comment if formatting differs
+#   2. cppcheck / clang-tidy on render backend — reports warnings as annotations
+#   3. Uploads frame diff images from the latest port-test run as a comment artifact
+
+on:
+  pull_request:
+    paths:
+      - 'src/pal/**'
+      - 'include/pal/**'
+      - 'src/pc/**'
+      - 'include/pc/**'
+      - 'tools/frame_compare/**'
+      - 'tools/render_dev.py'
+      - 'CMakeLists.txt'
+
+jobs:
+  # --------------------------------------------------------------------------
+  # 1. clang-format check
+  # --------------------------------------------------------------------------
+  format-check:
+    name: clang-format
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y clang-format
+
+      - name: Find changed C/C++ files in render backend
+        id: changed
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Gather C/C++ files touched by this PR that are in the render backend.
+          # Use null-terminated output (-z) and xargs for safe handling of filenames.
+          FILES=$(git diff --name-only -z "$BASE" "$HEAD" -- \
+            'src/pal/' 'include/pal/' 'src/pc/' 'include/pc/' \
+            | tr '\0' '\n' \
+            | grep -E '\.(cpp|cc|cxx|c|h|hpp)$' || true)
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          if [ -z "$FILES" ]; then
+            echo "No render backend C/C++ files changed."
+          else
+            echo "Changed files: $FILES"
+          fi
+
+      - name: Run clang-format
+        if: steps.changed.outputs.files != ''
+        id: fmt
+        run: |
+          CHANGED="${{ steps.changed.outputs.files }}"
+          DIFF_OUTPUT=""
+          EXIT=0
+          for f in $CHANGED; do
+            if [ -f "$f" ]; then
+              FORMATTED=$(clang-format --style=file "$f" 2>/dev/null)
+              ORIGINAL=$(cat "$f")
+              if [ "$FORMATTED" != "$ORIGINAL" ]; then
+                FILE_DIFF=$(diff -u "$f" <(echo "$FORMATTED") || true)
+                DIFF_OUTPUT="$DIFF_OUTPUT\n\`\`\`diff\n$FILE_DIFF\n\`\`\`\n"
+                EXIT=1
+              fi
+            fi
+          done
+          if [ $EXIT -ne 0 ]; then
+            echo "diff_output<<EOF" >> $GITHUB_OUTPUT
+            printf "%b" "$DIFF_OUTPUT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "has_diff=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_diff=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post formatting comment
+        if: steps.fmt.outputs.has_diff == 'true'
+        uses: actions/github-script@v7
+        env:
+          DIFF_OUTPUT: ${{ steps.fmt.outputs.diff_output }}
+        with:
+          script: |
+            // Read diff content from env to avoid injection via template literal interpolation
+            const diff = process.env.DIFF_OUTPUT || '';
+            const body = [
+              '## 🎨 clang-format Suggestion',
+              '',
+              'The following render backend files need formatting adjustments according to `.clang-format`:',
+              '',
+              diff,
+              '',
+              'To auto-fix locally:',
+              '```bash',
+              'clang-format --style=file -i src/pal/**/*.cpp include/pal/**/*.h',
+              '```',
+              'Or use `git clang-format HEAD~1` to format only changed lines.',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('clang-format Suggestion')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+  # --------------------------------------------------------------------------
+  # 2. cppcheck static analysis on render backend
+  # --------------------------------------------------------------------------
+  cppcheck:
+    name: cppcheck (render backend)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck on render backend
+        id: cppcheck
+        run: |
+          # Run cppcheck on the GX render backend and PAL layer.
+          # We use --suppress=missingInclude because GX headers reference game-specific
+          # paths that are not available as include paths outside the full build.
+          mkdir -p cppcheck-results
+          cppcheck \
+            --enable=warning,performance,portability \
+            --suppress=missingInclude \
+            --suppress=missingIncludeSystem \
+            --suppress=unknownMacro \
+            --inline-suppr \
+            --xml --xml-version=2 \
+            -I include \
+            -I include/pal \
+            -I include/pal/gx \
+            src/pal/gx/ \
+            2> cppcheck-results/cppcheck.xml || true
+
+          # Convert XML to human-readable text for annotation
+          python3 - <<'PYEOF'
+          import xml.etree.ElementTree as ET, json, os
+          try:
+              tree = ET.parse('cppcheck-results/cppcheck.xml')
+              root = tree.getroot()
+              issues = []
+              for error in root.iter('error'):
+                  severity = error.get('severity', 'unknown')
+                  if severity in ('information',):
+                      continue
+                  msg = error.get('msg', '')
+                  eid = error.get('id', '')
+                  for loc in error.findall('location'):
+                      f = loc.get('file', '')
+                      line = loc.get('line', '0')
+                      issues.append({'file': f, 'line': int(line), 'severity': severity, 'id': eid, 'msg': msg})
+              with open('cppcheck-results/issues.json', 'w') as out:
+                  json.dump(issues, out, indent=2)
+              print(f'cppcheck: {len(issues)} issues found')
+          except Exception as e:
+              print(f'cppcheck parse error: {e}')
+              with open('cppcheck-results/issues.json', 'w') as out:
+                  json.dump([], out)
+          PYEOF
+
+          echo "issues_count=$(python3 -c "import json; d=json.load(open('cppcheck-results/issues.json')); print(len(d))")" >> $GITHUB_OUTPUT
+
+      - name: Emit GitHub annotations for cppcheck issues
+        if: steps.cppcheck.outputs.issues_count != '0'
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          issues = json.load(open('cppcheck-results/issues.json'))
+          for issue in issues:
+              level = 'warning' if issue['severity'] in ('warning','performance','portability') else 'notice'
+              f = issue['file']
+              line = issue['line']
+              msg = f"[cppcheck/{issue['id']}] {issue['msg']}"
+              print(f"::{level} file={f},line={line}::{msg}")
+          PYEOF
+
+      - name: Post cppcheck summary comment
+        if: steps.cppcheck.outputs.issues_count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let issues = [];
+            try { issues = JSON.parse(fs.readFileSync('cppcheck-results/issues.json', 'utf8')); } catch(e) {}
+            if (issues.length === 0) return;
+            let body = `## 🔍 cppcheck: ${issues.length} issue(s) in render backend\n\n`;
+            body += `| File | Line | Severity | Issue |\n|---|---|---|---|\n`;
+            for (const i of issues.slice(0, 20)) {
+              const f = i.file.replace(/^.*src\/pal\//, 'src/pal/');
+              body += `| \`${f}\` | ${i.line} | ${i.severity} | \`${i.id}\`: ${i.msg} |\n`;
+            }
+            if (issues.length > 20) body += `\n_…and ${issues.length - 20} more. See artifacts._\n`;
+            body += '\nFix these issues or add `// cppcheck-suppress <issue-id>` inline suppression if intentional.';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('cppcheck:')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+      - name: Upload cppcheck results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-results
+          path: cppcheck-results/
+          if-no-files-found: ignore
+
+  # --------------------------------------------------------------------------
+  # 3. Post frame diff images from the latest port-test CI run
+  # --------------------------------------------------------------------------
+  post-frame-diffs:
+    name: Post frame diff images
+    runs-on: ubuntu-latest
+    # Only run if a port-test run has completed for this PR
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frame-compare artifacts from latest port-test run
+        uses: actions/github-script@v7
+        id: download_diffs
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Find the most recent completed port-test run for this PR's head SHA
+            const headSha = context.payload.pull_request.head.sha;
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event: 'pull_request',
+              status: 'completed',
+              per_page: 10,
+            });
+
+            const portRun = runs.workflow_runs.find(r =>
+              r.name === 'Port Test (PC Headless)' && r.head_sha === headSha
+            );
+
+            if (!portRun) {
+              console.log('No completed port-test run found for this commit.');
+              core.setOutput('has_diffs', 'false');
+              return;
+            }
+
+            // List artifacts from that run
+            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: portRun.id,
+            });
+
+            const resultsArtifact = artifacts.artifacts.find(a => a.name === 'port-test-results');
+            if (!resultsArtifact) {
+              console.log('No port-test-results artifact found.');
+              core.setOutput('has_diffs', 'false');
+              return;
+            }
+
+            core.setOutput('has_diffs', 'true');
+            core.setOutput('run_id', portRun.id.toString());
+            core.setOutput('artifact_url',
+              `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${portRun.id}`);
+
+      - name: Post frame diff comment
+        if: steps.download_diffs.outputs.has_diffs == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = '${{ steps.download_diffs.outputs.run_id }}';
+            const artifactUrl = '${{ steps.download_diffs.outputs.artifact_url }}';
+
+            let body = `## 📊 Frame Diff Images\n\n`;
+            body += `Frame comparison diff images from the latest port-test run are available in the CI artifacts.\n\n`;
+            body += `🔗 [**Download frame_compare_diffs from port-test-results**](${artifactUrl})\n\n`;
+            body += `The diff images show (**left**: PC port capture | **center**: GCN reference | **right**: amplified diff ×8).\n`;
+            body += `If no reference frames exist yet, see \`tests/reference_frames/README.md\` for setup instructions.\n`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Frame Diff Images')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
