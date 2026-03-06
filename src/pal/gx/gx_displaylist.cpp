@@ -648,16 +648,22 @@ static void dl_handle_bp_reg(u32 value) {
          * [2:0] = map0, [5:3] = coord0, [6] = enable0, [9:7] = color0 (stage N)
          * [14:12] = map1, [17:15] = coord1, [18] = enable1, [21:19] = color1 (stage N+1)
          *
-         * BP color channel encoding (3 bits):
-         *   0=COLOR0A0, 1=COLOR1A1, 2..6=unused, 7=NULL
-         * (NOT the same as GXChannelID enum) */
+         * BP color channel encoding (3 bits, from dolsdk2004 GXTev.c c2r[]):
+         *   0=COLOR0A0, 1=COLOR1A1, 5=ALPHA_BUMP, 6=ALPHA_BUMPN, 7=NULL
+         * (reverse of GXChannelID → c2r mapping in SDK) */
         if (base_stage < GX_MAX_TEVSTAGE) {
             GXTexMapID map0 = (GXTexMapID)((data >> 0) & 0x7);
             GXTexCoordID coord0 = (GXTexCoordID)((data >> 3) & 0x7);
             int enable0 = (data >> 6) & 0x1;
             u32 bp_chan0 = (data >> 7) & 0x7;
-            GXChannelID color0 = (bp_chan0 == 0) ? GX_COLOR0A0 :
-                                 (bp_chan0 == 1) ? GX_COLOR1A1 : GX_COLOR_NULL;
+            GXChannelID color0;
+            switch (bp_chan0) {
+            case 0:  color0 = GX_COLOR0A0;    break;
+            case 1:  color0 = GX_COLOR1A1;    break;
+            case 5:  color0 = GX_ALPHA_BUMP;  break;
+            case 6:  color0 = GX_ALPHA_BUMPN; break;
+            default: color0 = GX_COLOR_NULL;  break;
+            }
             if (!enable0) map0 = GX_TEXMAP_NULL;
             pal_gx_set_tev_order((GXTevStageID)base_stage, coord0, map0, color0);
         }
@@ -666,8 +672,14 @@ static void dl_handle_bp_reg(u32 value) {
             GXTexCoordID coord1 = (GXTexCoordID)((data >> 15) & 0x7);
             int enable1 = (data >> 18) & 0x1;
             u32 bp_chan1 = (data >> 19) & 0x7;
-            GXChannelID color1 = (bp_chan1 == 0) ? GX_COLOR0A0 :
-                                 (bp_chan1 == 1) ? GX_COLOR1A1 : GX_COLOR_NULL;
+            GXChannelID color1;
+            switch (bp_chan1) {
+            case 0:  color1 = GX_COLOR0A0;    break;
+            case 1:  color1 = GX_COLOR1A1;    break;
+            case 5:  color1 = GX_ALPHA_BUMP;  break;
+            case 6:  color1 = GX_ALPHA_BUMPN; break;
+            default: color1 = GX_COLOR_NULL;  break;
+            }
             if (!enable1) map1 = GX_TEXMAP_NULL;
             pal_gx_set_tev_order((GXTevStageID)(base_stage + 1), coord1, map1, color1);
         }
@@ -803,24 +815,43 @@ static void dl_handle_bp_reg(u32 value) {
         return;
     }
 
-    /* TEV color register (registers 0xE0-0xE7): Pairs of 24-bit values (R/A then B/G)
-     * 0xE0/0xE1 = TEVREG0, 0xE2/0xE3 = TEVREG1, etc. */
+    /* TEV color / konst color registers (0xE0-0xE7): Pairs covering TEVREG0-3 or KCOLOR0-3
+     *
+     * From dolsdk2004 GXTev.c:
+     *   GXSetTevColor: R/A pair at even addr, B/G pair at odd addr
+     *     RA: [10:0]=A(11bit), [22:12]=R(11bit), type=0 at [23:20]
+     *     BG: [10:0]=B(11bit), [22:12]=G(11bit), type=0 at [23:20]
+     *   GXSetTevKColor: same addresses but type=8 at [23:20]
+     *     RA: [7:0]=R(8bit), [19:12]=A(8bit), [23:20]=8
+     *     BG: [7:0]=B(8bit), [19:12]=G(8bit), [23:20]=8
+     *
+     * 0xE0/0xE1 = reg 0, 0xE2/0xE3 = reg 1, etc. */
     if (addr >= 0xE0 && addr <= 0xE7) {
-        int reg = (addr - 0xE0) / 2;
-        int is_bg = (addr & 1); /* even = R+A (lo), odd = B+G (hi) */
-        if (reg < GX_MAX_TEVREG) {
+        int reg_idx = (addr - 0xE0) / 2;
+        int is_bg = (addr & 1);
+        u32 type_field = (data >> 20) & 0xF;
+
+        if (type_field == 0x8 && reg_idx < GX_MAX_TEVKREG) {
+            /* Konst color register (GXSetTevKColor) */
             if (!is_bg) {
-                /* [10:0] = A, [22:12] = R */
+                g_gx_state.tev_kregs[reg_idx].r = (u8)(data & 0xFF);
+                g_gx_state.tev_kregs[reg_idx].a = (u8)((data >> 12) & 0xFF);
+            } else {
+                g_gx_state.tev_kregs[reg_idx].b = (u8)(data & 0xFF);
+                g_gx_state.tev_kregs[reg_idx].g = (u8)((data >> 12) & 0xFF);
+            }
+        } else if (reg_idx < GX_MAX_TEVREG) {
+            /* TEV color register (GXSetTevColor / GXSetTevColorS10) */
+            if (!is_bg) {
                 u16 a_val = (u16)(data & 0x7FF);
                 u16 r_val = (u16)((data >> 12) & 0x7FF);
-                g_gx_state.tev_regs[reg].r = (u8)(r_val & 0xFF);
-                g_gx_state.tev_regs[reg].a = (u8)(a_val & 0xFF);
+                g_gx_state.tev_regs[reg_idx].r = (u8)(r_val & 0xFF);
+                g_gx_state.tev_regs[reg_idx].a = (u8)(a_val & 0xFF);
             } else {
-                /* [10:0] = B, [22:12] = G */
                 u16 b_val = (u16)(data & 0x7FF);
                 u16 g_val = (u16)((data >> 12) & 0x7FF);
-                g_gx_state.tev_regs[reg].g = (u8)(g_val & 0xFF);
-                g_gx_state.tev_regs[reg].b = (u8)(b_val & 0xFF);
+                g_gx_state.tev_regs[reg_idx].g = (u8)(g_val & 0xFF);
+                g_gx_state.tev_regs[reg_idx].b = (u8)(b_val & 0xFF);
             }
         }
         return;

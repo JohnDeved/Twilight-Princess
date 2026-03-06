@@ -615,7 +615,25 @@ to identify the highest-value improvements.
 | **Konst alpha sel not resolved** | Alpha channel effects wrong | `GXTev.c` k_alpha_sel | — |
 | **No fog** | No distance fade on 3D geometry | `GXPixel.c` fog formulas | — |
 | **No indirect texturing** | Water/heat shimmer missing | `GXBump.c` indirect system | — |
-| **Cull mode may be swapped** | Backfaces visible on some models | `GXGeometry.c` front↔back | — |
+| **Cull mode may be swapped** | Backfaces visible on some models | `GXGeometry.c` front↔back | ✅ Fixed |
+
+### Bugs Found and Fixed via SDK Verification
+
+These bugs were discovered by comparing our DL parser bit layouts against the actual
+dolsdk2004 source code:
+
+| Bug | Impact | SDK Source | Status |
+|-----|--------|-----------|--------|
+| **BP alpha compare bit layout wrong** | Alpha test misreads ref1/comp0/comp1/op — foliage alpha broken for DL materials | `GXTev.c` GXSetAlphaCompare | ✅ Fixed |
+| **BP konst selector at wrong address** | Konst color/alpha selection broken for all DL materials using KCOLOR | `GXInit.c` tevKsel[0-7] at 0xF6-0xFD | ✅ Fixed |
+| **BP TEV color reg didn't distinguish konst** | GXSetTevKColor via DL wrote to tev_regs instead of tev_kregs | `GXTev.c` type=8 flag at bits [23:20] | ✅ Fixed |
+| **Channel control defaults wrong** | mat_src=GX_SRC_REG (should be VTX), num_chans=1 (should be 0) | `GXInit.c` __GXInitGX | ✅ Fixed |
+| **XF channel control not parsed** | J3D materials that set lighting via DL had no effect | `GXLight.c` GXSetChanCtrl → XF 0x100E-0x1011 | ✅ Fixed |
+| **XF light memory not parsed** | Lights loaded via DL (GXLoadLightObjImm in DL) had no effect | `GXLight.c` light addr = idx*0x10+0x600 | ✅ Fixed |
+| **GEN_MODE cull mode not extracted** | Per-material cull mode from DL ignored | `GXGeometry.c` genMode bits [15:14] + FRONT↔BACK swap | ✅ Fixed |
+| **TEV order ALPHA_BUMP/BUMPN unmapped** | Bump-alpha channels mapped to NULL instead of correct enum | `GXTev.c` c2r[] = {0,1,0,1,0,1,7,5,6} | ✅ Fixed |
+| **CP MatIdxA/B not handled** | Position matrix selection via DL didn't work | `GXAttr.c` CP reg 0x30/0x40 | ✅ Fixed |
+| **GXSetFogColor was no-op** | Fog color always default | `GXPixel.c` GXSetFogColor | ✅ Fixed |
 
 ### Display List Command Coverage
 
@@ -624,15 +642,15 @@ From `GXSave.c` `__GXShadowDispList`, the complete FIFO command set:
 | Cmd Op | Name | Our Support | Notes |
 |--------|------|-------------|-------|
 | 0x00 | NOP | ✅ Skip | |
-| 0x08 | LOAD_CP | ✅ VCD/VAT | Regs 5-11 supported |
-| 0x10 | LOAD_XF | ✅ Full | Position/normal/texture matrices |
-| 0x20 | LOAD_INDX_A | ⚠️ Partial | Position matrix index — needs Recipe 6 |
-| 0x28 | LOAD_INDX_B | ⚠️ Partial | Normal matrix index |
-| 0x30 | LOAD_INDX_C | ⚠️ Partial | Texture matrix index |
-| 0x38 | LOAD_INDX_D | ⚠️ Partial | Light index |
-| 0x40 | CALL_DL | ❌ Skipped | Nested display lists not supported |
-| 0x45 | CALL_DL (alt) | ❌ Skipped | Same |
-| 0x61 | LOAD_BP | ✅ Full | Blitting processor registers |
+| 0x08 | LOAD_CP | ✅ Full | VCD/VAT/MatIdx/array base+stride + unknown logging |
+| 0x10 | LOAD_XF | ✅ Full | Matrices, colors, channels, tex gens, lights |
+| 0x20 | LOAD_INDX_A | ✅ Done | Position matrix index via pal_gx_fifo_load_indx |
+| 0x28 | LOAD_INDX_B | ✅ Done | Normal matrix index |
+| 0x30 | LOAD_INDX_C | ✅ Done | Texture matrix index |
+| 0x38 | LOAD_INDX_D | ✅ Done | Light index |
+| 0x40 | CALL_DL | ❌ Skipped | Nested display lists (GCN address, not resolvable) |
+| 0x48 | INVAL_VTX | ✅ No-op | Vertex cache invalidation (not needed on PC) |
+| 0x61 | LOAD_BP | ✅ Full | TEV, alpha compare, konst sel, blend, z-mode, cull, textures |
 | 0x80-0xB8 | DRAW | ✅ Full | All primitive types |
 
 ## Implementation Recipes
@@ -940,17 +958,17 @@ tracking field if it's not already covered by the existing `array[]` state.
 
 | dolsdk2004 file | TP Port equivalent | Status | Key Knowledge |
 |-----------------|-------------------|--------|---------------|
-| `src/gx/__gx.h` | `include/pal/gx/gx_state.h` | Partial | GXData struct → our GXState; missing light objects |
-| `src/gx/GXTev.c` | `src/pal/gx/gx_tev.cpp` | 5 presets | TEV equation, stage 0 vs 1+ tables, k_alpha_sel |
-| `src/gx/GXLight.c` | `src/pal/gx/gx_tev.cpp` (RASC) | Stub | Light obj layout, ChanCtrl bits, attn formulas |
-| `src/gx/GXPixel.c` | `src/pal/gx/gx_tev.cpp` (blend) | Basic | cmode0 bits done; fog + alpha compare missing |
-| `src/gx/GXTransform.c` | `src/pal/gx/gx_tev.cpp` (proj) | Done | Proj storage + viewport done; mtx indx stub |
-| `src/gx/GXTexture.c` | `src/pal/gx/gx_texture.cpp` | LOD 0 | Decode done; mipmap layout for multi-LOD |
+| `src/gx/__gx.h` | `include/pal/gx/gx_state.h` | Done | GXData struct → our GXState |
+| `src/gx/GXTev.c` | `src/pal/gx/gx_tev.cpp` | Done | TEV equation + uber-shader + alpha compare |
+| `src/gx/GXLight.c` | `src/pal/gx/gx_tev.cpp` (RASC) | Done | Light obj layout, ChanCtrl, CPU lighting |
+| `src/gx/GXPixel.c` | `src/pal/gx/gx_tev.cpp` (blend) | Done | Blend, z-mode, fog; cmode0 bits verified |
+| `src/gx/GXTransform.c` | `src/pal/gx/gx_tev.cpp` (proj) | Done | Proj storage + viewport done |
+| `src/gx/GXTexture.c` | `src/pal/gx/gx_texture.cpp` | LOD 0 | Decode done; mipmap utilities added |
 | `src/gx/GXDisplayList.c` | `src/pal/gx/gx_displaylist.cpp` | Done | DL replay working |
-| `src/gx/GXSave.c` | `src/pal/gx/gx_displaylist.cpp` | Ref | Vertex size computation, DL shadow parser |
-| `src/gx/GXInit.c` | Various PAL init | Partial | Default state table, GXInit flow |
-| `src/gx/GXGeometry.c` | `src/pal/gx/gx_fifo.cpp` | Done | Cull mode swap detail |
-| `src/gx/GXAttr.c` | `include/pal/gx/gx_state.h` | Done | VCD/VAT bit layout for vertex parsing |
+| `src/gx/GXSave.c` | `src/pal/gx/gx_displaylist.cpp` | Done | Vertex size + konst bit layouts verified |
+| `src/gx/GXInit.c` | Various PAL init | Done | Default state, konst reg addresses verified |
+| `src/gx/GXGeometry.c` | `src/pal/gx/gx_displaylist.cpp` | Done | Cull mode FRONT↔BACK swap verified |
+| `src/gx/GXAttr.c` | `include/pal/gx/gx_state.h` | Done | VCD/VAT bit layout + MatIdx CP regs |
 | `src/gx/GXBump.c` | Not implemented | Stub | Indirect tex system (water/heat) |
 | `src/gx/GXDraw.c` | Not needed | N/A | Debug shapes only |
 | `src/gx/GXFifo.c` | `src/pal/gx/gx_fifo.cpp` | Done | FIFO management (not needed for PC) |
