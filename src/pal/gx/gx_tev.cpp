@@ -254,7 +254,8 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         binding->image_ptr, rgba_data,
         binding->width, binding->height,
         binding->format,
-        binding->tlut_ptr, binding->tlut_fmt);
+        binding->tlut_ptr, binding->tlut_fmt,
+        binding->tlut_num_entries);
 
     if (decoded == 0) {
         free(rgba_data);

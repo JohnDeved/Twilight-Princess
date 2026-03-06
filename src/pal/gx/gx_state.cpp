@@ -383,9 +383,11 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         if (fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2) {
             bind->tlut_ptr = s_tlut_state[id].ptr;
             bind->tlut_fmt = s_tlut_state[id].fmt;
+            bind->tlut_num_entries = s_tlut_state[id].num_entries;
         } else {
             bind->tlut_ptr = NULL;
             bind->tlut_fmt = 0;
+            bind->tlut_num_entries = 0;
         }
 
         bind->valid = 1;
@@ -653,8 +655,9 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
         default: return;
     }
     /* dolsdk2004 GXLight.c GXSetChanCtrl: when attn_fn == GX_AF_NONE,
-     * the hardware diff_fn field is forced to 0 (GX_DF_NONE):
-     *   SET_REG_FIELD(911, reg, 2, 7, (attn_fn == 0) ? 0 : diff_fn);
+     * the hardware diffuse function selector is forced to GX_DF_NONE
+     * regardless of what the caller passed. This means lighting with
+     * attn_fn=NONE always uses diffuse=1.0 (no angular attenuation).
      * Apply the same transformation so our lighting computation matches. */
     GXDiffuseFn effective_diff = (attn_fn == GX_AF_NONE) ? GX_DF_NONE : diff_fn;
     if (idx < 4) {

@@ -132,6 +132,7 @@ typedef struct {
     f32           lod_bias;
     void*         tlut_ptr;   /* palette data for CI formats */
     u32           tlut_fmt;   /* GX_TL_IA8, GX_TL_RGB565, GX_TL_RGB5A3 */
+    u16           tlut_num_entries; /* number of entries in the TLUT */
     u8            valid;      /* 1 if this slot has been loaded */
 } GXTexBinding;
 
