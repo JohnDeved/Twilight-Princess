@@ -112,7 +112,7 @@ void pal_gx_state_init(void) {
     /* Default alpha compare: always pass (per __GXInitGX in dolsdk2004) */
     g_gx_state.alpha_comp0 = GX_ALWAYS;
     g_gx_state.alpha_ref0  = 0;
-    g_gx_state.alpha_op    = (GXAlphaOp)0; /* AND */
+    g_gx_state.alpha_op    = GX_AOP_AND;
     g_gx_state.alpha_comp1 = GX_ALWAYS;
     g_gx_state.alpha_ref1  = 0;
 

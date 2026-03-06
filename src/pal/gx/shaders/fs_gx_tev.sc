@@ -28,15 +28,20 @@ uniform vec4 u_tevReg1;
 uniform vec4 u_alphaTest;
 uniform vec4 u_alphaOp;
 
+/* Tolerance for alpha comparison equality checks.
+ * 0.004 ≈ 1/255, compensating for float precision loss when
+ * converting u8 alpha values (0-255) to normalized floats. */
+#define ALPHA_CMP_EPSILON 0.004
+
 bool alphaComp(float val, float ref, float comp) {
     if (comp < 0.5) return false;
     if (comp > 6.5) return true;
     if (comp < 1.5) return val < ref;
-    if (comp < 2.5) return abs(val - ref) < 0.004;
-    if (comp < 3.5) return val < ref + 0.004;
+    if (comp < 2.5) return abs(val - ref) < ALPHA_CMP_EPSILON;
+    if (comp < 3.5) return val < ref + ALPHA_CMP_EPSILON;
     if (comp < 4.5) return val > ref;
-    if (comp < 5.5) return abs(val - ref) >= 0.004;
-    return val > ref - 0.004;
+    if (comp < 5.5) return abs(val - ref) >= ALPHA_CMP_EPSILON;
+    return val > ref - ALPHA_CMP_EPSILON;
 }
 
 void main()

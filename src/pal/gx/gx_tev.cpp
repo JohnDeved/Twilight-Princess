@@ -1428,6 +1428,12 @@ void pal_tev_report_diagnostics(void) {
 /* Neutral grey used when both mat_color and amb_color are dark.  200 is
  * visible on all common display gamma curves without being blinding white. */
 #define RASC_FALLBACK_GRAY  200
+/* Default diffuse factor when per-vertex normals are not available.
+ * 0.5 approximates ~60° average incidence angle for general scene geometry. */
+#define RASC_DEFAULT_DIFFUSE 0.5f
+/* Minimum k[0] constant attenuation value below which we skip attenuation
+ * (avoids division by near-zero). */
+#define RASC_ATTN_K0_MIN 0.001f
 
 /* apply_rasc_color: compute the RASC (rasterized color) for a draw.
  *
@@ -1529,9 +1535,9 @@ static void apply_rasc_color(uint8_t* const_clr) {
 
         /* Approximate diffuse factor.
          * Without per-vertex normals available here, use a default
-         * cosine factor of 0.5 (60° average incidence angle).
+         * cosine factor (RASC_DEFAULT_DIFFUSE ≈ 60° average incidence).
          * This is better than 0 (no light) or 1 (full light). */
-        float diffuse = 0.5f;
+        float diffuse = RASC_DEFAULT_DIFFUSE;
         if (ch->diff_fn == GX_DF_NONE) {
             diffuse = 1.0f;
         }
@@ -1544,7 +1550,7 @@ static void apply_rasc_color(uint8_t* const_clr) {
         if (ch->attn_fn != GX_AF_NONE) {
             /* Distance attenuation: 1/(k0 + k1*d + k2*d²)
              * With default distance, just use constant term */
-            if (lt->k[0] > 0.001f) {
+            if (lt->k[0] > RASC_ATTN_K0_MIN) {
                 attn = 1.0f / lt->k[0];
                 if (attn > 1.0f) attn = 1.0f;
             }

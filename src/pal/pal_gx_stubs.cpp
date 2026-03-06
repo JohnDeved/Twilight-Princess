@@ -37,6 +37,10 @@
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
 
+/* GX constants from dolsdk2004 */
+#define GX_PI 3.1415927f
+#define GX_SPECULAR_FAR_DIST (-1e18f)
+
 extern "C" {
 
 /* ================================================================ */
@@ -596,7 +600,7 @@ void GXInitLightSpot(GXLightObj* lt_obj, f32 cutoff, GXSpotFn spot_func) {
     /* Compute spot attenuation coefficients per dolsdk2004 GXLight.c */
     f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
     if (cutoff > 0.0f && cutoff <= 90.0f) {
-        f32 r = (3.1415927f * cutoff) / 180.0f;
+        f32 r = (GX_PI * cutoff) / 180.0f;
         f32 cr = cosf(r);
         f32 d;
         switch (spot_func) {
@@ -657,14 +661,14 @@ void GXInitSpecularDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) {
     f32* ldir = (f32*)((u8*)lt_obj + 0x34);
     ldir[0] = vx * mag; ldir[1] = vy * mag; ldir[2] = vz * mag;
     f32* lpos = (f32*)((u8*)lt_obj + 0x28);
-    lpos[0] = nx * -1e18f; lpos[1] = ny * -1e18f; lpos[2] = nz * -1e18f;
+    lpos[0] = nx * GX_SPECULAR_FAR_DIST; lpos[1] = ny * GX_SPECULAR_FAR_DIST; lpos[2] = nz * GX_SPECULAR_FAR_DIST;
 }
 void GXInitSpecularDirHA(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz, f32 hx, f32 hy, f32 hz) {
     if (!lt_obj) return;
     f32* ldir = (f32*)((u8*)lt_obj + 0x34);
     ldir[0] = hx; ldir[1] = hy; ldir[2] = hz;
     f32* lpos = (f32*)((u8*)lt_obj + 0x28);
-    lpos[0] = nx * -1e18f; lpos[1] = ny * -1e18f; lpos[2] = nz * -1e18f;
+    lpos[0] = nx * GX_SPECULAR_FAR_DIST; lpos[1] = ny * GX_SPECULAR_FAR_DIST; lpos[2] = nz * GX_SPECULAR_FAR_DIST;
 }
 void GXInitLightColor(GXLightObj* lt_obj, GXColor color) {
     if (!lt_obj) return;

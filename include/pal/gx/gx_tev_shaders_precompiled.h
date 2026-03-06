@@ -679,7 +679,6 @@ static const uint8_t fs_gx_decal_spv[1107] =
 	0x00, 0x00, 0x00,                                                                               // ...
 };
 
-
 /* TEV uber-shader (Recipe 2 + Recipe 4: alpha compare) */
 static const uint8_t fs_gx_tev_glsl[3633] =
 {
