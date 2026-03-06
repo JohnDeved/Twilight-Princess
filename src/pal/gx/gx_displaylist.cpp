@@ -811,9 +811,12 @@ void pal_gx_call_display_list(const void* list, u32 nbytes) {
 
         if (opcode == GX_LOAD_INDX_A || opcode == GX_LOAD_INDX_B ||
             opcode == GX_LOAD_INDX_C || opcode == GX_LOAD_INDX_D) {
-            /* Index load: u16 index_value + u16 register_addr */
-            dl_read_u16(&reader); /* index */
-            dl_read_u16(&reader); /* addr */
+            /* Index load: u16 index_value + u16 register_addr
+             * Forward to pal_gx_fifo_load_indx for position/normal matrix
+             * resolution from vertex arrays (Recipe 6). */
+            u16 indx = dl_read_u16(&reader);
+            u16 addr = dl_read_u16(&reader);
+            pal_gx_fifo_load_indx(opcode, indx, addr);
             continue;
         }
 

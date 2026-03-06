@@ -837,7 +837,15 @@ static uint32_t raw_attr_size(int attr) {
     if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
         return 3 * gx_comp_size(afmt[attr].comp_type);
     }
-    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) return 4;
+    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
+        /* Match dolsdk2004 GXSave.c clrCompSize table:
+         * GX_RGB565=2, GX_RGB8=3, GX_RGBX8=4, GX_RGBA4=2, GX_RGBA6=3, GX_RGBA8=4 */
+        static const uint32_t clr_comp_size[6] = { 2, 3, 4, 2, 3, 4 };
+        GXCompType ct = afmt[attr].comp_type;
+        if (ct <= GX_RGBA8)
+            return clr_comp_size[ct];
+        return 4; /* fallback */
+    }
     if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
         int n = (afmt[attr].cnt == GX_TEX_S) ? 1 : 2;
         return n * gx_comp_size(afmt[attr].comp_type);

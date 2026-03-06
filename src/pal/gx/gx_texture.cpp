@@ -520,4 +520,56 @@ u32 pal_gx_tex_size(u16 width, u16 height, GXTexFmt format) {
     }
 }
 
+/**
+ * Compute the total data size of a mipmap chain.
+ *
+ * GX texture mipmap data is stored contiguously after the base level:
+ *   [mip0 = base] [mip1 = w/2 × h/2] [mip2 = w/4 × h/4] ... [1×1]
+ *
+ * Each mip level's size is computed using pal_gx_tex_size with halved
+ * dimensions (rounded down, minimum 1×1).
+ *
+ * Reference: dolsdk2004 src/gx/GXTexture.c — mip level addressing.
+ *
+ * @param width     Base level width
+ * @param height    Base level height
+ * @param format    GX texture format
+ * @param max_lod   Maximum LOD level (0 = base only, 1 = base + 1 mip, etc.)
+ * @return Total bytes for the mipmap chain
+ */
+u32 pal_gx_tex_mipmap_chain_size(u16 width, u16 height, GXTexFmt format, u8 max_lod) {
+    u32 total = 0;
+    u16 w = width, h = height;
+
+    for (int lod = 0; lod <= (int)max_lod; lod++) {
+        total += pal_gx_tex_size(w, h, format);
+        if (w == 1 && h == 1) break;
+        w = (w > 1) ? w / 2 : 1;
+        h = (h > 1) ? h / 2 : 1;
+    }
+    return total;
+}
+
+/**
+ * Get the byte offset of a specific mip level within a mipmap chain.
+ *
+ * @param width     Base level width
+ * @param height    Base level height
+ * @param format    GX texture format
+ * @param lod       LOD level to get offset for (0 = base)
+ * @return Byte offset from start of texture data to the requested mip level
+ */
+u32 pal_gx_tex_mip_offset(u16 width, u16 height, GXTexFmt format, u8 lod) {
+    u32 offset = 0;
+    u16 w = width, h = height;
+
+    for (int i = 0; i < (int)lod; i++) {
+        offset += pal_gx_tex_size(w, h, format);
+        if (w == 1 && h == 1) break;
+        w = (w > 1) ? w / 2 : 1;
+        h = (h > 1) ? h / 2 : 1;
+    }
+    return offset;
+}
+
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

@@ -42,6 +42,17 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
  */
 u32 pal_gx_tex_size(u16 width, u16 height, GXTexFmt format);
 
+/**
+ * Get the total size of a mipmap chain (base + all mip levels up to max_lod).
+ * Reference: dolsdk2004 GXTexture.c mip addressing.
+ */
+u32 pal_gx_tex_mipmap_chain_size(u16 width, u16 height, GXTexFmt format, u8 max_lod);
+
+/**
+ * Get the byte offset of a specific mip level within a mipmap chain.
+ */
+u32 pal_gx_tex_mip_offset(u16 width, u16 height, GXTexFmt format, u8 lod);
+
 #ifdef __cplusplus
 }
 #endif
