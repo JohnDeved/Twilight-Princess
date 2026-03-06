@@ -201,9 +201,10 @@ void pal_capture_frame(const void* data, uint32_t size) {
         fwrite(s_fb, 1, FB_W * FB_H * 4, s_raw_video);
     }
 
-    /* Save periodic BMP snapshots */
-    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0
-                            || s_frame_number == 1)) {
+    /* Save periodic BMP snapshots — only on interval-aligned frames.
+     * NOTE: do NOT add an s_frame_number==1 exception; see the readback_noop
+     * version for the rationale. */
+    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0)) {
         char bmp_path[300];
         snprintf(bmp_path, sizeof(bmp_path),
                  "%s/frame_%04u.bmp", s_capture_dir, s_frame_number);
@@ -264,9 +265,12 @@ void pal_capture_readback_gl(uint32_t width, uint32_t height) {
         fwrite(s_fb, 1, FB_W * FB_H * 4, s_raw_video);
     }
 
-    /* Save periodic BMP snapshots */
-    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0
-                            || s_frame_number == 1)) {
+    /* Save periodic BMP snapshots — only on interval-aligned frames.
+     * NOTE: do NOT add an s_frame_number==1 exception here; the
+     * BMP_INTERVAL=9999 override in quick-test.sh Phase 3 relies on this
+     * guard to suppress all periodic saves and keep verify_output_3d/
+     * clean (only frame_0129 from pal_verify_capture_frame). */
+    if (s_record_frames && (s_frame_number % (uint32_t)s_bmp_interval == 0)) {
         char bmp_path[300];
         snprintf(bmp_path, sizeof(bmp_path),
                  "%s/frame_%04u.bmp", s_capture_dir, s_frame_number);
