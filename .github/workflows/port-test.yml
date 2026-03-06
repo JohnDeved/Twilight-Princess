@@ -109,9 +109,10 @@ jobs:
           echo "Phase 1 exit: ${PIPESTATUS[0]}"
 
           # === Phase 2: Render test (softpipe, 200 frames — single pass) ===
-          # Replaces the old 3-phase approach (DL-skip + 3D room + gameplay).
-          # TP_SYNC_RENDER=1: bgfx single-threaded, renderFrame() blocks until
-          # softpipe finishes each frame. No frame delays needed.
+          # Uses bgfx multithreaded mode (TP_SYNC_RENDER is NOT set).
+          # bgfx single-threaded mode crashes on Mesa software renderers due
+          # to a SIGSEGV in the first renderFrame() call.  Multithreaded mode
+          # avoids this and completes ~200 frames in ~60s with softpipe.
           # Full DL draws enabled (no TP_SKIP_DL_DRAWS). PROC_TITLE enabled.
           # Key frames: 10 (logo), 30 (logo visible), 120 (title screen),
           #   129 (3D room, ~7600 DL draws), 150+ (title after transition).
@@ -129,7 +130,6 @@ jobs:
           export TP_VERIFY_DIR=verify_output
           export TP_TEST_FRAMES=200
           export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,128,129,150,180,200"
-          export TP_SYNC_RENDER=1
           export TP_SKIP_FADE=1
           export TP_ENABLE_PROC_TITLE=1
           timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_render.log || true

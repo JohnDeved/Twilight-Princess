@@ -238,6 +238,39 @@ int pal_render_init(void) {
     pal_capture_init();
     pal_verify_init();
 
+    /* TP_SYNC_RENDER: bgfx single-threaded mode crashes with Mesa software
+     * renderers (softpipe/llvmpipe) on Ubuntu 22.04 CI runners due to a
+     * SIGSEGV in the first bgfx::renderFrame() call.  Multithreaded mode
+     * (the default) works fine.  If TP_SYNC_RENDER is requested but we
+     * detect a software renderer, fall back to multithreaded mode. */
+    if (s_sync_render && !s_using_noop) {
+        /* Test if renderFrame works with a warmup frame */
+        bgfx::frame(); /* submit empty frame */
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_render_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
+            bgfx::renderFrame(); /* warm-up render */
+            fprintf(stderr, "{\"render\":\"sync_render_warmup_ok\"}\n");
+        } else {
+            /* bgfx::renderFrame() crashed — fall back to multithreaded mode.
+             * The OpenGL context may be broken, but bgfx::frame() still works
+             * (the bgfx internal render thread takes over). */
+            s_sync_render = 0;
+            s_render_crash_count++;
+            fprintf(stderr, "{\"render\":\"sync_render_disabled\","
+                    "\"reason\":\"warmup_crash\","
+                    "\"note\":\"falling back to multithreaded bgfx\"}\n");
+            fflush(stderr);
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+    }
+
     /* s_fb_capture_enabled was already set before bgfx::init above */
 
     fprintf(stderr, "{\"render\":\"ready\",\"width\":%u,\"height\":%u,"
