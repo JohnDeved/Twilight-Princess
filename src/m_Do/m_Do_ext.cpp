@@ -28,10 +28,24 @@
 #include <signal.h>
 #include <setjmp.h>
 #include "pal/pal_error.h"
+#include "JSystem/J3DGraphAnimator/J3DModel.h"
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "JSystem/J3DGraphBase/J3DShapeDraw.h"
 static volatile sig_atomic_t s_mdl_crash = 0;
 static sigjmp_buf s_mdl_jmpbuf;
+static const u32 kJ3DModelDataFlag_Static = 0x10;
+static const u32 kJ3DModelCalcModeFlags = J3DMdlFlag_Unk1 | J3DMdlFlag_UseDefaultJ3D;
+
+static bool pal_needs_safe_viewcalc(J3DModelData* model_data, J3DModel* i_model) {
+    return model_data->checkFlag(kJ3DModelDataFlag_Static) &&
+           model_data->getDrawMtxNum() == 1 &&
+           !i_model->isCpuSkinningOn();
+}
+
+static void pal_restore_j3d_calc_mode_flags(J3DModel* i_model, u32 saved_flags) {
+    i_model->mFlags = (i_model->mFlags & ~kJ3DModelCalcModeFlags) | saved_flags;
+}
+
 static void mdl_sigsegv_handler(int sig) {
     (void)sig;
     s_mdl_crash = 1;
@@ -517,6 +531,16 @@ void mDoExt_modelEntryDL(J3DModel* i_model) {
             s_model_probe_count++;
         }
     }
+
+    /* Static single-matrix models (room BG, title logo, etc.) are more stable
+     * on PC when viewCalc() takes the mode-2 J3DCalcViewBaseMtx path instead of
+     * the calcAnmMtx()/calcDrawMtx() path. That keeps their draw matrices valid
+     * across frames without affecting skinned or multi-matrix models. */
+    bool force_default_j3d =
+        /* J3DModel::viewCalc() already special-cases model-data flag 0x10
+         * (the static model-data path that normally bypasses draw-matrix
+         * generation on GCN). */
+        pal_needs_safe_viewcalc(model_data, i_model);
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -529,6 +553,16 @@ void mDoExt_modelEntryDL(J3DModel* i_model) {
         i_model->lock();
     }
 
+#if PLATFORM_PC
+    if (force_default_j3d) {
+        u32 saved_calc_flags = i_model->mFlags & kJ3DModelCalcModeFlags;
+        i_model->offFlag(J3DMdlFlag_Unk1);
+        i_model->onFlag(J3DMdlFlag_UseDefaultJ3D);
+        i_model->viewCalc();
+        pal_restore_j3d_calc_mode_flags(i_model, saved_calc_flags);
+        return;
+    }
+#endif
     i_model->viewCalc();
 }
 
