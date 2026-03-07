@@ -92,10 +92,11 @@ void pal_gx_state_init(void) {
     g_gx_state.sc_wd = 640;
     g_gx_state.sc_ht = 480;
 
-    /* Default blend */
+    /* Default blend (per dolsdk2004 __GXInitGX:
+     * GXSetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR)) */
     g_gx_state.blend_mode = GX_BM_NONE;
-    g_gx_state.blend_src = GX_BL_ONE;
-    g_gx_state.blend_dst = GX_BL_ZERO;
+    g_gx_state.blend_src = GX_BL_SRCALPHA;
+    g_gx_state.blend_dst = GX_BL_INVSRCALPHA;
 
     /* Default Z mode */
     g_gx_state.z_compare_enable = GX_TRUE;
@@ -109,19 +110,28 @@ void pal_gx_state_init(void) {
     g_gx_state.color_update = GX_TRUE;
     g_gx_state.alpha_update = GX_TRUE;
 
-    /* Default clear */
-    g_gx_state.clear_color.r = 0;
-    g_gx_state.clear_color.g = 0;
-    g_gx_state.clear_color.b = 0;
+    /* Default alpha compare: always pass (per __GXInitGX in dolsdk2004) */
+    g_gx_state.alpha_comp0 = GX_ALWAYS;
+    g_gx_state.alpha_ref0  = 0;
+    g_gx_state.alpha_op    = GX_AOP_AND;
+    g_gx_state.alpha_comp1 = GX_ALWAYS;
+    g_gx_state.alpha_ref1  = 0;
+
+    /* Default clear (per dolsdk2004 __GXInitGX: GXSetCopyClear({64,64,64,255}, 0xFFFFFF)) */
+    g_gx_state.clear_color.r = 64;
+    g_gx_state.clear_color.g = 64;
+    g_gx_state.clear_color.b = 64;
     g_gx_state.clear_color.a = 255;
     g_gx_state.clear_z = 0x00FFFFFF;
 
-    /* 1 TEV stage, passthrough */
+    /* 1 TEV stage, REPLACE (per dolsdk2004 __GXInitGX:
+     * GXSetNumTevStages(1), GXSetTevOp(GX_TEVSTAGE0, GX_REPLACE)
+     * REPLACE: color_d=TEXC, alpha_d=TEXA) */
     g_gx_state.num_tev_stages = 1;
-    g_gx_state.tev_stages[0].color_d = GX_CC_RASC;
+    g_gx_state.tev_stages[0].color_d = GX_CC_TEXC;
     g_gx_state.tev_stages[0].color_op = GX_TEV_ADD;
     g_gx_state.tev_stages[0].color_clamp = GX_TRUE;
-    g_gx_state.tev_stages[0].alpha_d = GX_CA_RASA;
+    g_gx_state.tev_stages[0].alpha_d = GX_CA_TEXA;
     g_gx_state.tev_stages[0].alpha_op = GX_TEV_ADD;
     g_gx_state.tev_stages[0].alpha_clamp = GX_TRUE;
 
@@ -141,12 +151,33 @@ void pal_gx_state_init(void) {
     g_gx_state.draw.vtx_data_size = GX_VTX_BUF_SIZE;
     g_gx_state.draw.active = 0;
 
-    /* 1 channel default */
-    g_gx_state.num_chans = 1;
-    g_gx_state.chan_ctrl[0].mat_color.r = 255;
-    g_gx_state.chan_ctrl[0].mat_color.g = 255;
-    g_gx_state.chan_ctrl[0].mat_color.b = 255;
-    g_gx_state.chan_ctrl[0].mat_color.a = 255;
+    /* 1 channel default (per dolsdk2004 __GXInitGX):
+     *   GXSetNumChans(0)
+     *   GXSetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE)
+     *   GXSetChanAmbColor(GX_COLOR0A0, black)
+     *   GXSetChanMatColor(GX_COLOR0A0, white)
+     *   GXSetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE)
+     *   GXSetChanAmbColor(GX_COLOR1A1, black)
+     *   GXSetChanMatColor(GX_COLOR1A1, white) */
+    g_gx_state.num_chans = 0;
+    for (int i = 0; i < 4; i++) {
+        g_gx_state.chan_ctrl[i].enable = GX_FALSE;
+        g_gx_state.chan_ctrl[i].amb_src = GX_SRC_REG;
+        g_gx_state.chan_ctrl[i].mat_src = GX_SRC_VTX;  /* SDK default is VTX, not REG! */
+        g_gx_state.chan_ctrl[i].light_mask = 0;
+        g_gx_state.chan_ctrl[i].diff_fn = GX_DF_NONE;
+        g_gx_state.chan_ctrl[i].attn_fn = GX_AF_NONE;
+        /* amb=black */
+        g_gx_state.chan_ctrl[i].amb_color.r = 0;
+        g_gx_state.chan_ctrl[i].amb_color.g = 0;
+        g_gx_state.chan_ctrl[i].amb_color.b = 0;
+        g_gx_state.chan_ctrl[i].amb_color.a = 0;
+        /* mat=white */
+        g_gx_state.chan_ctrl[i].mat_color.r = 255;
+        g_gx_state.chan_ctrl[i].mat_color.g = 255;
+        g_gx_state.chan_ctrl[i].mat_color.b = 255;
+        g_gx_state.chan_ctrl[i].mat_color.a = 255;
+    }
 }
 
 /* ================================================================ */
@@ -355,9 +386,11 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         if (fmt == GX_TF_C4 || fmt == GX_TF_C8 || fmt == GX_TF_C14X2) {
             bind->tlut_ptr = s_tlut_state[id].ptr;
             bind->tlut_fmt = s_tlut_state[id].fmt;
+            bind->tlut_num_entries = s_tlut_state[id].num_entries;
         } else {
             bind->tlut_ptr = NULL;
             bind->tlut_fmt = 0;
+            bind->tlut_num_entries = 0;
         }
 
         bind->valid = 1;
@@ -422,6 +455,28 @@ void pal_gx_set_tex_coord_gen(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc s
 void pal_gx_set_projection(const f32 mtx[4][4], GXProjectionType type) {
     memcpy(g_gx_state.proj_mtx, mtx, sizeof(g_gx_state.proj_mtx));
     g_gx_state.proj_type = type;
+
+    /* Snapshot perspective projections for centroid camera.
+     * The 3D camera sets perspective before room rendering, but J2D code
+     * overwrites it with orthographic before DL draws flush.  The TEV
+     * system uses the saved perspective for centroid camera draws. */
+    if (type == GX_PERSPECTIVE) {
+        pal_tev_set_persp_proj(mtx);
+    }
+
+    /* Log projection changes for debugging — perspective vs ortho. */
+    {
+        static int s_proj_log = 0;
+        if (type == GX_PERSPECTIVE && s_proj_log < 100) {
+            fprintf(stderr, "{\"proj_set\":{\"n\":%d,\"type\":%d,"
+                    "\"m00\":%.6f,\"m11\":%.6f,\"m22\":%.6f,\"m23\":%.6f,"
+                    "\"m03\":%.6f,\"m13\":%.6f,\"m33\":%.6f}}\n",
+                    s_proj_log, (int)type,
+                    mtx[0][0], mtx[1][1], mtx[2][2], mtx[2][3],
+                    mtx[0][3], mtx[1][3], mtx[3][3]);
+            s_proj_log++;
+        }
+    }
 }
 
 void pal_gx_load_pos_mtx_imm(const f32 mtx[3][4], u32 id) {
@@ -624,38 +679,148 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
         case GX_COLOR1A1: idx = 1; break;
         default: return;
     }
+    /* dolsdk2004 GXLight.c GXSetChanCtrl: when attn_fn == GX_AF_NONE,
+     * the hardware diffuse function selector is forced to GX_DF_NONE
+     * regardless of what the caller passed. This means lighting with
+     * attn_fn=NONE always uses diffuse=1.0 (no angular attenuation).
+     * Apply the same transformation so our lighting computation matches. */
+    GXDiffuseFn effective_diff = (attn_fn == GX_AF_NONE) ? GX_DF_NONE : diff_fn;
     if (idx < 4) {
         g_gx_state.chan_ctrl[idx].enable = enable;
         g_gx_state.chan_ctrl[idx].amb_src = amb_src;
         g_gx_state.chan_ctrl[idx].mat_src = mat_src;
         g_gx_state.chan_ctrl[idx].light_mask = light_mask;
-        g_gx_state.chan_ctrl[idx].diff_fn = diff_fn;
+        g_gx_state.chan_ctrl[idx].diff_fn = effective_diff;
         g_gx_state.chan_ctrl[idx].attn_fn = attn_fn;
+    }
+    /* dolsdk2004 GXLight.c: GX_COLOR0A0 writes the SAME ctrl register
+     * to both the color channel (XF reg idx+14) and the alpha channel
+     * (XF reg idx+16).  Replicate to the alpha channel slot so that
+     * alpha-channel queries see the same enable/src state. */
+    if (chan == GX_COLOR0A0) {
+        g_gx_state.chan_ctrl[2].enable = enable;
+        g_gx_state.chan_ctrl[2].amb_src = amb_src;
+        g_gx_state.chan_ctrl[2].mat_src = mat_src;
+        g_gx_state.chan_ctrl[2].light_mask = light_mask;
+        g_gx_state.chan_ctrl[2].diff_fn = effective_diff;
+        g_gx_state.chan_ctrl[2].attn_fn = attn_fn;
+    } else if (chan == GX_COLOR1A1) {
+        g_gx_state.chan_ctrl[3].enable = enable;
+        g_gx_state.chan_ctrl[3].amb_src = amb_src;
+        g_gx_state.chan_ctrl[3].mat_src = mat_src;
+        g_gx_state.chan_ctrl[3].light_mask = light_mask;
+        g_gx_state.chan_ctrl[3].diff_fn = effective_diff;
+        g_gx_state.chan_ctrl[3].attn_fn = attn_fn;
     }
 }
 
 void pal_gx_set_chan_amb_color(GXChannelID chan, GXColor color) {
-    u32 idx;
+    /* dolsdk2004 GXLight.c GXSetChanAmbColor:
+     *   GX_COLOR0:   updates RGB only, preserves alpha
+     *   GX_COLOR1:   updates RGB only, preserves alpha
+     *   GX_ALPHA0:   updates alpha only, preserves RGB
+     *   GX_ALPHA1:   updates alpha only, preserves RGB
+     *   GX_COLOR0A0: updates all RGBA
+     *   GX_COLOR1A1: updates all RGBA */
     switch (chan) {
-        case GX_COLOR0:   case GX_COLOR0A0: idx = 0; break;
-        case GX_COLOR1:   case GX_COLOR1A1: idx = 1; break;
-        default: return;
-    }
-    if (idx < 4) {
-        g_gx_state.chan_ctrl[idx].amb_color = color;
+        case GX_COLOR0:
+            g_gx_state.chan_ctrl[0].amb_color.r = color.r;
+            g_gx_state.chan_ctrl[0].amb_color.g = color.g;
+            g_gx_state.chan_ctrl[0].amb_color.b = color.b;
+            break;
+        case GX_COLOR1:
+            g_gx_state.chan_ctrl[1].amb_color.r = color.r;
+            g_gx_state.chan_ctrl[1].amb_color.g = color.g;
+            g_gx_state.chan_ctrl[1].amb_color.b = color.b;
+            break;
+        case GX_ALPHA0:
+            g_gx_state.chan_ctrl[0].amb_color.a = color.a;
+            break;
+        case GX_ALPHA1:
+            g_gx_state.chan_ctrl[1].amb_color.a = color.a;
+            break;
+        case GX_COLOR0A0:
+            g_gx_state.chan_ctrl[0].amb_color = color;
+            break;
+        case GX_COLOR1A1:
+            g_gx_state.chan_ctrl[1].amb_color = color;
+            break;
+        default: break;
     }
 }
 
 void pal_gx_set_chan_mat_color(GXChannelID chan, GXColor color) {
-    u32 idx;
+    /* dolsdk2004 GXLight.c GXSetChanMatColor:
+     *   Same per-channel update rules as GXSetChanAmbColor */
     switch (chan) {
-        case GX_COLOR0:   case GX_COLOR0A0: idx = 0; break;
-        case GX_COLOR1:   case GX_COLOR1A1: idx = 1; break;
-        default: return;
+        case GX_COLOR0:
+            g_gx_state.chan_ctrl[0].mat_color.r = color.r;
+            g_gx_state.chan_ctrl[0].mat_color.g = color.g;
+            g_gx_state.chan_ctrl[0].mat_color.b = color.b;
+            break;
+        case GX_COLOR1:
+            g_gx_state.chan_ctrl[1].mat_color.r = color.r;
+            g_gx_state.chan_ctrl[1].mat_color.g = color.g;
+            g_gx_state.chan_ctrl[1].mat_color.b = color.b;
+            break;
+        case GX_ALPHA0:
+            g_gx_state.chan_ctrl[0].mat_color.a = color.a;
+            break;
+        case GX_ALPHA1:
+            g_gx_state.chan_ctrl[1].mat_color.a = color.a;
+            break;
+        case GX_COLOR0A0:
+            g_gx_state.chan_ctrl[0].mat_color = color;
+            break;
+        case GX_COLOR1A1:
+            g_gx_state.chan_ctrl[1].mat_color = color;
+            break;
+        default: break;
     }
-    if (idx < 4) {
-        g_gx_state.chan_ctrl[idx].mat_color = color;
-    }
+}
+
+/* pal_gx_load_light_obj: Capture light parameters from GXLoadLightObjImm.
+ *
+ * Based on dolsdk2004 GXLight.c __GXLightObjInt_struct layout:
+ *   offset 0x00: reserved[3] (12 bytes, unused)
+ *   offset 0x0C: Color (4 bytes, packed RGBA8: R<<24|G<<16|B<<8|A)
+ *   offset 0x10: a[3] (12 bytes, angle attenuation)
+ *   offset 0x1C: k[3] (12 bytes, distance attenuation)
+ *   offset 0x28: lpos[3] (12 bytes, world position)
+ *   offset 0x34: ldir[3] (12 bytes, direction — STORED NEGATED)
+ *
+ * light_id is the GXLightID bitmask (GX_LIGHT0=1, GX_LIGHT1=2, etc.).
+ * Convert to slot index using __cntlzw pattern from the SDK. */
+void pal_gx_load_light_obj(const void* lt_obj, u32 light_id) {
+    if (!lt_obj) return;
+
+    /* Convert bitmask to index: GX_LIGHT0=1→idx0, GX_LIGHT1=2→idx1, etc. */
+    u32 idx = 0;
+    u32 tmp = light_id;
+    while (tmp > 1 && idx < GX_MAX_LIGHT) { tmp >>= 1; idx++; }
+    if (idx >= GX_MAX_LIGHT) return;
+
+    /* Read from the __GXLightObjInt_struct layout */
+    const u8* raw = (const u8*)lt_obj;
+    GXLightState* ls = &g_gx_state.lights[idx];
+
+    /* Color at offset 0x0C (packed as R<<24|G<<16|B<<8|A) */
+    u32 packed_color;
+    memcpy(&packed_color, raw + 0x0C, 4);
+    ls->color.r = (u8)(packed_color >> 24);
+    ls->color.g = (u8)(packed_color >> 16);
+    ls->color.b = (u8)(packed_color >> 8);
+    ls->color.a = (u8)(packed_color);
+
+    /* Attenuation coefficients */
+    memcpy(ls->a, raw + 0x10, 12);
+    memcpy(ls->k, raw + 0x1C, 12);
+
+    /* Position and direction */
+    memcpy(ls->lpos, raw + 0x28, 12);
+    memcpy(ls->ldir, raw + 0x34, 12);
+
+    ls->active = 1;
 }
 
 /* ================================================================ */
@@ -810,9 +975,21 @@ u32 pal_gx_calc_vtx_stride(GXVtxFmt fmt) {
         if (desc == GX_NONE) continue;
 
         if (desc == GX_INDEX8) {
-            stride += 1;
+            /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+            if ((i == GX_VA_NRM || i == GX_VA_NBT) &&
+                g_gx_state.vtx_attr_fmt[fmt][i].cnt == GX_NRM_NBT3) {
+                stride += 3;
+            } else {
+                stride += 1;
+            }
         } else if (desc == GX_INDEX16) {
-            stride += 2;
+            /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+            if ((i == GX_VA_NRM || i == GX_VA_NBT) &&
+                g_gx_state.vtx_attr_fmt[fmt][i].cnt == GX_NRM_NBT3) {
+                stride += 6;
+            } else {
+                stride += 2;
+            }
         } else if (desc == GX_DIRECT) {
             GXVtxAttrFmtEntry* af = &g_gx_state.vtx_attr_fmt[fmt][i];
             u32 n_comps = 0;

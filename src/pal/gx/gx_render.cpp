@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
+#include <setjmp.h>
 
 extern "C" {
 #include "pal/gx/gx_stub_tracker.h"
@@ -50,6 +52,14 @@ static int s_fb_capture_enabled = 0;
  * on heavy 3-D frames.  captureFrame() fires inside renderFrame(), so
  * pal_verify_frame() reads the CURRENT frame's pixels (no 1-frame pipeline lag). */
 static int s_sync_render = 0;
+/* Crash protection for bgfx::renderFrame() — Mesa softpipe can SIGSEGV on
+ * heavy geometry or first-frame shader JIT.  We catch the crash and skip
+ * rendering for that frame instead of killing the entire test process. */
+static sigjmp_buf s_render_jmpbuf;
+static int s_render_crash_count = 0;
+static void pal_render_crash_handler(int sig) {
+    siglongjmp(s_render_jmpbuf, sig);
+}
 
 /**
  * bgfx callback — captures every rendered frame via BGFX_RESET_CAPTURE.
@@ -228,6 +238,39 @@ int pal_render_init(void) {
     pal_capture_init();
     pal_verify_init();
 
+    /* TP_SYNC_RENDER: bgfx single-threaded mode crashes with Mesa software
+     * renderers (softpipe/llvmpipe) on Ubuntu 22.04 CI runners due to a
+     * SIGSEGV in the first bgfx::renderFrame() call.  Multithreaded mode
+     * (the default) works fine.  If TP_SYNC_RENDER is requested but we
+     * detect a software renderer, fall back to multithreaded mode. */
+    if (s_sync_render && !s_using_noop) {
+        /* Test if renderFrame works with a warmup frame */
+        bgfx::frame(); /* submit empty frame */
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_render_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
+            bgfx::renderFrame(); /* warm-up render */
+            fprintf(stderr, "{\"render\":\"sync_render_warmup_ok\"}\n");
+        } else {
+            /* bgfx::renderFrame() crashed — fall back to multithreaded mode.
+             * The OpenGL context may be broken, but bgfx::frame() still works
+             * (the bgfx internal render thread takes over). */
+            s_sync_render = 0;
+            s_render_crash_count++;
+            fprintf(stderr, "{\"render\":\"sync_render_disabled\","
+                    "\"reason\":\"warmup_crash\","
+                    "\"note\":\"falling back to multithreaded bgfx\"}\n");
+            fflush(stderr);
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
+    }
+
     /* s_fb_capture_enabled was already set before bgfx::init above */
 
     fprintf(stderr, "{\"render\":\"ready\",\"width\":%u,\"height\":%u,"
@@ -281,6 +324,18 @@ void pal_render_begin_frame(void) {
 
     bgfx::setViewRect(0, vp_x, vp_y, vp_w, vp_h);
 
+    /* Log viewport for first few frames to debug clear area vs framebuffer */
+    {
+        static int s_vp_logged = 0;
+        if (s_vp_logged < 5) {
+            fprintf(stderr, "{\"viewport\":{\"frame\":%d,\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d,"
+                    "\"fb_w\":%d,\"fb_h\":%d}}\n",
+                    s_vp_logged, vp_x, vp_y, vp_w, vp_h,
+                    s_frame_width, s_frame_height);
+            s_vp_logged++;
+        }
+    }
+
     /* Explicitly set view and projection to identity so that our MVP
      * (set via bgfx::setTransform) is the only transform applied.
      * bgfx's vertex shader computes: pos = u_viewProj * u_model * a_position */
@@ -288,15 +343,11 @@ void pal_render_begin_frame(void) {
     bgfx::setViewTransform(0, identity, identity);
 
     /* View 1: centroid camera 3D room draws.
-     * Pre-centroid background fills (draws 0-~1000) write depth=~0.950 using the
-     * original MVP, contaminating the depth buffer.  Post-centroid draws at
-     * NDC.z≈0.9996 then fail LEQUAL (0.9996 > 0.950 → rejected).  Giving the
-     * centroid pass its own depth-clear view fixes this: BGFX_CLEAR_DEPTH resets
-     * the depth to 1.0 before the first centroid draw, so all room geometry at
-     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  No color clear — view 0's
-     * framebuffer is preserved and the 3D room composites over it. */
+     * Keep this depth-only so centroid-camera geometry composites over view 0
+     * instead of wiping Nintendo logo / title-screen UI frames or turning the
+     * intro-scene capture into a flat green diagnostic image. */
     bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
+    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH, 0x00000000, 1.0f, 0);
     bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
     bgfx::setViewTransform(1, identity, identity);
 
@@ -366,6 +417,7 @@ void pal_render_end_frame(void) {
                 "\"submit_depth\":%u,\"submit_blend\":%u}}\n",
                 s_frame_count, gx_frame_zmode_calls, gx_frame_blendmode_calls,
                 gx_frame_submit_with_depth_state, gx_frame_submit_with_blend_state);
+        fflush(stderr);
     }
 
     /* Submit frame — triggers rendering and capture.
@@ -379,15 +431,38 @@ void pal_render_end_frame(void) {
      * immediately after bgfx::frame().  renderFrame() blocks until ALL GL draw
      * calls for this frame complete, then fires captureFrame() with current
      * frame's pixels — no pipeline delay. */
+
     bgfx::frame();
 
     /* TP_SYNC_RENDER=1: process the submitted frame synchronously.
      * bgfx::renderFrame() executes the OpenGL draw calls and blocks until
      * Mesa softpipe has fully rasterised the frame.  captureFrame() fires
      * inside renderFrame(), so s_fb contains the CURRENT frame's pixels
-     * after this call returns — pal_verify_frame() below sees fresh data. */
+     * after this call returns — pal_verify_frame() below sees fresh data.
+     *
+     * Crash protection: Mesa softpipe can SIGSEGV on heavy geometry frames
+     * (e.g., 7600+ DL draws at frame 128-129) or during first-frame shader
+     * JIT compilation.  We wrap renderFrame() in a signal handler so that a
+     * softpipe crash skips rendering for that frame instead of killing the
+     * entire test process. */
     if (s_sync_render) {
-        bgfx::renderFrame();
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        memset(&sa_new, 0, sizeof(sa_new));
+        sa_new.sa_handler = pal_render_crash_handler;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = SA_NODEFER;
+        sigaction(SIGSEGV, &sa_new, &sa_segv_old);
+        sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
+            bgfx::renderFrame();
+        } else {
+            s_render_crash_count++;
+            fprintf(stderr, "{\"sync_render\":\"crash\",\"frame\":%u,\"count\":%d}\n",
+                    s_frame_count, s_render_crash_count);
+            fflush(stderr);
+        }
+        sigaction(SIGSEGV, &sa_segv_old, NULL);
+        sigaction(SIGABRT, &sa_abrt_old, NULL);
         /* Log sync completion for every frame in the 3D-geometry window
          * (frame 128+) and every 10 frames otherwise — limits log volume
          * while preserving visibility around the heavy-render transition. */

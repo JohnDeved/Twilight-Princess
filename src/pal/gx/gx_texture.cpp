@@ -126,6 +126,7 @@ static void decode_ia4(const u8* src, u8* dst, u16 width, u16 height) {
             for (y = 0; y < 4; y++) {
                 for (x = 0; x < 8; x++) {
                     u8 val = src[si++];
+                    /* IA4: high nibble = alpha, low nibble = intensity */
                     u8 a = (u8)((val >> 4) * 17);
                     u8 i = (u8)((val & 0xF) * 17);
                     if (bx + x < width && by + y < height)
@@ -150,6 +151,7 @@ static void decode_ia8(const u8* src, u8* dst, u16 width, u16 height) {
         for (bx = 0; bx < tw; bx += 4) {
             for (y = 0; y < 4; y++) {
                 for (x = 0; x < 4; x++) {
+                    /* IA8: byte 0 = alpha, byte 1 = intensity (GCN big-endian) */
                     u8 a = src[si++];
                     u8 i = src[si++];
                     if (bx + x < width && by + y < height)
@@ -330,12 +332,19 @@ static void decode_cmpr(const u8* src, u8* dst, u16 width, u16 height) {
 /* TLUT (palette) lookup helper                                     */
 /* ================================================================ */
 
-static inline void tlut_lookup(const u8* tlut, u32 tlut_fmt, u32 index, u8* r, u8* g, u8* b, u8* a) {
+static inline void tlut_lookup(const u8* tlut, u32 tlut_fmt, u32 index,
+                               u32 num_entries, u8* r, u8* g, u8* b, u8* a) {
+    /* Bounds check to prevent buffer overflow — CI indices can exceed
+     * the actual TLUT size (C4 max=15, C8 max=255, C14X2 max=16383) */
+    if (index >= num_entries) {
+        *r = 255; *g = 0; *b = 255; *a = 255; /* magenta = out-of-bounds */
+        return;
+    }
     const u8* entry = tlut + index * 2;
     u16 val = read_be16(entry);
 
     switch (tlut_fmt) {
-        case 0: /* GX_TL_IA8 */
+        case 0: /* GX_TL_IA8: Alpha in high byte, Intensity in low byte (GCN big-endian) */
             *r = *g = *b = (u8)(val & 0xFF);
             *a = (u8)(val >> 8);
             break;
@@ -354,7 +363,7 @@ static inline void tlut_lookup(const u8* tlut, u32 tlut_fmt, u32 index, u8* r, u
 /* ================================================================ */
 
 static void decode_c4(const u8* src, u8* dst, u16 width, u16 height,
-                      const u8* tlut, u32 tlut_fmt) {
+                      const u8* tlut, u32 tlut_fmt, u32 num_entries) {
     u16 tw = align_up(width, 8);
     u16 th = align_up(height, 8);
     u32 si = 0;
@@ -369,11 +378,11 @@ static void decode_c4(const u8* src, u8* dst, u16 width, u16 height,
                     u8 idx1 = val & 0xF;
                     u8 r, g, b, a;
                     if (bx + x < width && by + y < height) {
-                        tlut_lookup(tlut, tlut_fmt, idx0, &r, &g, &b, &a);
+                        tlut_lookup(tlut, tlut_fmt, idx0, num_entries, &r, &g, &b, &a);
                         set_pixel(dst, width, bx + x, by + y, r, g, b, a);
                     }
                     if (bx + x + 1 < width && by + y < height) {
-                        tlut_lookup(tlut, tlut_fmt, idx1, &r, &g, &b, &a);
+                        tlut_lookup(tlut, tlut_fmt, idx1, num_entries, &r, &g, &b, &a);
                         set_pixel(dst, width, bx + x + 1, by + y, r, g, b, a);
                     }
                 }
@@ -387,7 +396,7 @@ static void decode_c4(const u8* src, u8* dst, u16 width, u16 height,
 /* ================================================================ */
 
 static void decode_c8(const u8* src, u8* dst, u16 width, u16 height,
-                      const u8* tlut, u32 tlut_fmt) {
+                      const u8* tlut, u32 tlut_fmt, u32 num_entries) {
     u16 tw = align_up(width, 8);
     u16 th = align_up(height, 4);
     u32 si = 0;
@@ -400,7 +409,7 @@ static void decode_c8(const u8* src, u8* dst, u16 width, u16 height,
                     u8 idx = src[si++];
                     u8 r, g, b, a;
                     if (bx + x < width && by + y < height) {
-                        tlut_lookup(tlut, tlut_fmt, idx, &r, &g, &b, &a);
+                        tlut_lookup(tlut, tlut_fmt, idx, num_entries, &r, &g, &b, &a);
                         set_pixel(dst, width, bx + x, by + y, r, g, b, a);
                     }
                 }
@@ -414,7 +423,7 @@ static void decode_c8(const u8* src, u8* dst, u16 width, u16 height,
 /* ================================================================ */
 
 static void decode_c14x2(const u8* src, u8* dst, u16 width, u16 height,
-                         const u8* tlut, u32 tlut_fmt) {
+                         const u8* tlut, u32 tlut_fmt, u32 num_entries) {
     u16 tw = align_up(width, 4);
     u16 th = align_up(height, 4);
     u32 si = 0;
@@ -428,7 +437,7 @@ static void decode_c14x2(const u8* src, u8* dst, u16 width, u16 height,
                     u16 idx = val & 0x3FFF;
                     u8 r, g, b, a;
                     if (bx + x < width && by + y < height) {
-                        tlut_lookup(tlut, tlut_fmt, idx, &r, &g, &b, &a);
+                        tlut_lookup(tlut, tlut_fmt, idx, num_entries, &r, &g, &b, &a);
                         set_pixel(dst, width, bx + x, by + y, r, g, b, a);
                     }
                 }
@@ -444,7 +453,8 @@ static void decode_c14x2(const u8* src, u8* dst, u16 width, u16 height,
 u32 pal_gx_decode_texture(const void* src, void* dst,
                           u16 width, u16 height,
                           GXTexFmt format,
-                          const void* tlut, u32 tlut_fmt) {
+                          const void* tlut, u32 tlut_fmt,
+                          u32 tlut_num_entries) {
 
     if (!src || !dst || width == 0 || height == 0)
         return 0;
@@ -467,13 +477,33 @@ u32 pal_gx_decode_texture(const void* src, void* dst,
         case GX_TF_RGBA8:  decode_rgba8((const u8*)src, (u8*)dst, width, height);  break;
         case GX_TF_CMPR:   decode_cmpr((const u8*)src, (u8*)dst, width, height);   break;
         case GX_TF_C4:
-            if (tlut) decode_c4((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
-            break;
         case GX_TF_C8:
-            if (tlut) decode_c8((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
-            break;
         case GX_TF_C14X2:
-            if (tlut) decode_c14x2((const u8*)src, (u8*)dst, width, height, (const u8*)tlut, tlut_fmt);
+            if (!tlut || tlut_num_entries == 0) {
+                /* TLUT missing — fill with magenta for visibility instead of
+                 * silently rendering black/transparent */
+                static int s_tlut_warn = 0;
+                if (s_tlut_warn < 10) {
+                    s_tlut_warn++;
+                    fprintf(stderr, "{\"gx_decode_texture_no_tlut\":{\"fmt\":%d,"
+                            "\"w\":%u,\"h\":%u,\"ptr\":\"%p\"}}\n",
+                            (int)format, (unsigned)width, (unsigned)height, src);
+                }
+                u8* p = (u8*)dst;
+                for (u32 i = 0; i < (u32)width * height; i++) {
+                    p[i*4+0] = 255; p[i*4+1] = 0; p[i*4+2] = 255; p[i*4+3] = 255;
+                }
+            } else {
+                if (format == GX_TF_C4)
+                    decode_c4((const u8*)src, (u8*)dst, width, height,
+                              (const u8*)tlut, tlut_fmt, tlut_num_entries);
+                else if (format == GX_TF_C8)
+                    decode_c8((const u8*)src, (u8*)dst, width, height,
+                              (const u8*)tlut, tlut_fmt, tlut_num_entries);
+                else
+                    decode_c14x2((const u8*)src, (u8*)dst, width, height,
+                                 (const u8*)tlut, tlut_fmt, tlut_num_entries);
+            }
             break;
         default:
             /* Unknown format - fill with magenta for visibility */
@@ -518,6 +548,58 @@ u32 pal_gx_tex_size(u16 width, u16 height, GXTexFmt format) {
         default:
             return (u32)width * height * 4;
     }
+}
+
+/**
+ * Compute the total data size of a mipmap chain.
+ *
+ * GX texture mipmap data is stored contiguously after the base level:
+ *   [mip0 = base] [mip1 = w/2 × h/2] [mip2 = w/4 × h/4] ... [1×1]
+ *
+ * Each mip level's size is computed using pal_gx_tex_size with halved
+ * dimensions (rounded down, minimum 1×1).
+ *
+ * Reference: dolsdk2004 src/gx/GXTexture.c — mip level addressing.
+ *
+ * @param width     Base level width
+ * @param height    Base level height
+ * @param format    GX texture format
+ * @param max_lod   Maximum LOD level (0 = base only, 1 = base + 1 mip, etc.)
+ * @return Total bytes for the mipmap chain
+ */
+u32 pal_gx_tex_mipmap_chain_size(u16 width, u16 height, GXTexFmt format, u8 max_lod) {
+    u32 total = 0;
+    u16 w = width, h = height;
+
+    for (int lod = 0; lod <= (int)max_lod; lod++) {
+        total += pal_gx_tex_size(w, h, format);
+        if (w == 1 && h == 1) break;
+        w = (w > 1) ? w / 2 : 1;
+        h = (h > 1) ? h / 2 : 1;
+    }
+    return total;
+}
+
+/**
+ * Get the byte offset of a specific mip level within a mipmap chain.
+ *
+ * @param width     Base level width
+ * @param height    Base level height
+ * @param format    GX texture format
+ * @param lod       LOD level to get offset for (0 = base)
+ * @return Byte offset from start of texture data to the requested mip level
+ */
+u32 pal_gx_tex_mip_offset(u16 width, u16 height, GXTexFmt format, u8 lod) {
+    u32 offset = 0;
+    u16 w = width, h = height;
+
+    for (int i = 0; i < (int)lod; i++) {
+        offset += pal_gx_tex_size(w, h, format);
+        if (w == 1 && h == 1) break;
+        w = (w > 1) ? w / 2 : 1;
+        h = (h > 1) ? h / 2 : 1;
+    }
+    return offset;
 }
 
 #endif /* PLATFORM_PC || PLATFORM_NX_HB */

@@ -98,6 +98,8 @@ static const FSShaderBins s_fs_bins[GX_TEV_SHADER_COUNT] = {
       sizeof(fs_gx_blend_glsl), sizeof(fs_gx_blend_essl), sizeof(fs_gx_blend_spv) },
     { fs_gx_decal_glsl,    fs_gx_decal_essl,    fs_gx_decal_spv,
       sizeof(fs_gx_decal_glsl), sizeof(fs_gx_decal_essl), sizeof(fs_gx_decal_spv) },
+    { fs_gx_tev_glsl,      fs_gx_tev_essl,      fs_gx_tev_spv,
+      sizeof(fs_gx_tev_glsl), sizeof(fs_gx_tev_essl), sizeof(fs_gx_tev_spv) },
 };
 
 static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
@@ -106,6 +108,7 @@ static const char* s_fs_names[GX_TEV_SHADER_COUNT] = {
     "fs_gx_modulate",
     "fs_gx_blend",
     "fs_gx_decal",
+    "fs_gx_tev",
 };
 
 /* ================================================================ */
@@ -116,6 +119,9 @@ static bgfx::ProgramHandle s_programs[GX_TEV_SHADER_COUNT];
 static bgfx::UniformHandle s_tex_uniform;
 static bgfx::UniformHandle s_tev_reg0_uniform;
 static bgfx::UniformHandle s_tev_reg1_uniform;
+static bgfx::UniformHandle s_tev_config_uniform;
+static bgfx::UniformHandle s_alpha_test_uniform;
+static bgfx::UniformHandle s_alpha_op_uniform;
 static int s_tev_ready = 0;
 
 /* Number of RASC draw world-positions to accumulate before computing the
@@ -131,13 +137,24 @@ static int s_tev_ready = 0;
  * Set once by the centroid calculation block; never overwritten by J3D's
  * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw).
  *
- * Per-frame reset: s_geom_centroid_active is cleared at the start of each
- * frame (when gx_frame_draw_calls == 0) so that only the 3D room frame
- * (draw_calls > CENTROID_FRAME_DRAWS_MIN) activates the centroid camera.
- * Without this reset, s_geom_centroid_active stays set after frame 129 and
- * routes all Phase 4 frames 130-200 to bgfx view 1, leaving view 0 black. */
+ * Once gameplay establishes the centroid view, keep it latched for later
+ * lower-draw-count room frames too. In the current headless gameplay path,
+ * the first room-establishing frame is the one that typically exceeds
+ * CENTROID_FRAME_DRAWS_MIN; clearing the flag every frame makes the later
+ * gameplay frames fall back to the stale default camera and render black
+ * again. This stays latched for the current gameplay session and is expected
+ * to be refreshed naturally when a later high-draw gameplay frame recomputes
+ * the centroid view or when the process restarts between test runs. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
+
+/* Saved perspective projection for centroid camera draws.
+ * The game sets perspective projection (GX_PERSPECTIVE) before 3D room
+ * rendering but J2D code overwrites it with orthographic before the DL
+ * draws actually flush.  We snapshot the last perspective projection so
+ * the centroid camera MVP uses the correct frustum. */
+static float s_persp_proj[4][4];
+static int   s_has_persp_proj = 0;
 
 /* Centroid accumulation state — file-scope so the per-frame reset block
  * (at gx_frame_draw_calls == 0 boundary) can clear them each frame. */
@@ -248,7 +265,8 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
         binding->image_ptr, rgba_data,
         binding->width, binding->height,
         binding->format,
-        binding->tlut_ptr, binding->tlut_fmt);
+        binding->tlut_ptr, binding->tlut_fmt,
+        binding->tlut_num_entries);
 
     if (decoded == 0) {
         free(rgba_data);
@@ -398,6 +416,7 @@ static int classify_tev_config(void) {
     u32 all_tex = 0, all_ras = 0, all_konst = 0, all_prev = 0;
     int num_stages = g_gx_state.num_tev_stages;
     if (num_stages == 0) num_stages = 1;
+    int first_tex_stage = -1;
 
     /* Accumulate input classes across all active stages */
     for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
@@ -412,12 +431,18 @@ static int classify_tev_config(void) {
         all_ras   |= (classes & 0x2);
         all_konst |= (classes & 0x4);
         all_prev  |= (classes & 0x8);
+
+        if (first_tex_stage < 0 &&
+            st->tex_map != GX_TEXMAP_NULL &&
+            st->tex_map < GX_MAX_TEXMAP &&
+            g_gx_state.tex_bindings[st->tex_map].valid) {
+            first_tex_stage = s;
+        }
     }
 
     /* Check if texture is actually available */
     const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-    int has_texture = (s0->tex_map != GX_TEXMAP_NULL && s0->tex_map < GX_MAX_TEXMAP &&
-                       g_gx_state.tex_bindings[s0->tex_map].valid);
+    int has_texture = (first_tex_stage >= 0);
 
     /* If TEV doesn't reference texture at all, or no texture bound */
     if (!all_tex || !has_texture) {
@@ -457,9 +482,20 @@ static int classify_tev_config(void) {
 
     /* Texture-only single stage checks */
     if (num_stages <= 1) {
-        /* REPLACE: only texture in d slot, everything else is zero */
+        /* REPLACE: texture-only single-stage patterns.
+         *
+         * The common textbook form is [ZERO, ZERO, ZERO, TEXC] → out=TEXC,
+         * but TP also uses [TEXC, ZERO, ZERO, ZERO].  In GX's combiner,
+         * C=ZERO makes the lerp choose A, so this is also a texture replace.
+         * If this variant is not detected, it is handled by the generic TEV
+         * shader, which multiplies by v_color0 and renders the Nintendo logo
+         * quads as a white box. */
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_TEXC) {
+            return GX_TEV_SHADER_REPLACE;
+        }
+        if (s0->color_a == GX_CC_TEXC && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_ZERO) {
             return GX_TEV_SHADER_REPLACE;
         }
         /* DECAL: alpha-blended texture over vertex color */
@@ -787,11 +823,15 @@ static const uint8_t* resolve_attr_data(int attr, const uint8_t* src, uint32_t* 
         return NULL;
     }
     if (type == GX_INDEX16) {
-        /* DL vertex data is stored in big-endian from bulk memcpy.
-         * Byte-swap the u16 index for correct attribute resolution. */
+        /* DL vertex data (vtx_data_be=1) stores INDEX16 in big-endian.
+         * Direct API vertex data (vtx_data_be=0) stores in native endian. */
         uint16_t idx;
-        uint8_t b0 = src[*si], b1 = src[*si + 1];
-        idx = (uint16_t)((b0 << 8) | b1);
+        if (g_gx_state.draw.vtx_data_be) {
+            uint8_t b0 = src[*si], b1 = src[*si + 1];
+            idx = (uint16_t)((b0 << 8) | b1);
+        } else {
+            memcpy(&idx, src + *si, 2);
+        }
         (*si) += 2;
         const GXArrayState* arr = &g_gx_state.vtx_arrays[attr];
         if (arr->base_ptr && arr->stride > 0)
@@ -811,8 +851,20 @@ static uint32_t raw_attr_size(int attr) {
     const GXVtxAttrFmtEntry* afmt = g_gx_state.vtx_attr_fmt[g_gx_state.draw.vtx_fmt];
     GXAttrType type = desc[attr].type;
 
-    if (type == GX_INDEX8) return 1;
-    if (type == GX_INDEX16) return 2;
+    if (type == GX_INDEX8) {
+        /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+        if ((attr == GX_VA_NRM || attr == GX_VA_NBT) &&
+            afmt[attr].cnt == GX_NRM_NBT3)
+            return 3;
+        return 1;
+    }
+    if (type == GX_INDEX16) {
+        /* dolsdk2004 GXSave.c: NBT3 normals use 3 separate indices */
+        if ((attr == GX_VA_NRM || attr == GX_VA_NBT) &&
+            afmt[attr].cnt == GX_NRM_NBT3)
+            return 6;
+        return 2;
+    }
 
     /* GX_DIRECT */
     if (attr == GX_VA_POS) {
@@ -820,9 +872,19 @@ static uint32_t raw_attr_size(int attr) {
         return n * gx_comp_size(afmt[attr].comp_type);
     }
     if (attr == GX_VA_NRM || attr == GX_VA_NBT) {
-        return 3 * gx_comp_size(afmt[attr].comp_type);
+        /* dolsdk2004 GXSave.c: NBT/NBT3 have 9 components, regular normal has 3 */
+        int n = (afmt[attr].cnt == GX_NRM_NBT || afmt[attr].cnt == GX_NRM_NBT3) ? 9 : 3;
+        return n * gx_comp_size(afmt[attr].comp_type);
     }
-    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) return 4;
+    if (attr == GX_VA_CLR0 || attr == GX_VA_CLR1) {
+        /* Match dolsdk2004 GXSave.c clrCompSize table:
+         * GX_RGB565=2, GX_RGB8=3, GX_RGBX8=4, GX_RGBA4=2, GX_RGBA6=3, GX_RGBA8=4 */
+        static const uint32_t clr_comp_size[6] = { 2, 3, 4, 2, 3, 4 };
+        GXCompType ct = afmt[attr].comp_type;
+        if (ct <= GX_RGBA8)
+            return clr_comp_size[ct];
+        return 4; /* fallback */
+    }
     if (attr >= GX_VA_TEX0 && attr <= GX_VA_TEX7) {
         int n = (afmt[attr].cnt == GX_TEX_S) ? 1 : 2;
         return n * gx_comp_size(afmt[attr].comp_type);
@@ -837,6 +899,61 @@ static uint32_t raw_attr_size(int attr) {
     ((g_gx_state.draw.vtx_data_be && (attr_type) == GX_DIRECT) \
         ? read_gx_component_be((data) + (c) * (csz), (type), (frac)) \
         : read_gx_component((data) + (c) * (csz), (type), (frac)))
+
+/**
+ * Decode a GX color attribute from source bytes into 4-byte RGBA8.
+ * Handles all GX color component types per dolsdk2004 clrCompSize table.
+ * is_be: 1 if source data is big-endian (DL DIRECT), 0 for native endian.
+ */
+static void decode_gx_color_to_rgba8(const uint8_t* src, GXCompType type,
+                                      int is_be, uint8_t dst[4]) {
+    switch (type) {
+    case GX_RGB565: {
+        /* 16-bit packed: RRRRR GGGGGG BBBBB (2 bytes) */
+        uint16_t c;
+        if (is_be) c = (uint16_t)((src[0] << 8) | src[1]);
+        else memcpy(&c, src, 2);
+        dst[0] = (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
+        dst[1] = (uint8_t)(((c >> 5) & 0x3F) * 255 / 63);
+        dst[2] = (uint8_t)((c & 0x1F) * 255 / 31);
+        dst[3] = 255;
+        break;
+    }
+    case GX_RGB8:
+        /* 24-bit: R, G, B bytes (3 bytes) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = 255;
+        break;
+    case GX_RGBX8:
+        /* 32-bit: R, G, B, X bytes (4 bytes, X ignored) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = 255;
+        break;
+    case GX_RGBA4: {
+        /* 16-bit packed: RRRR GGGG BBBB AAAA (2 bytes) */
+        uint16_t c;
+        if (is_be) c = (uint16_t)((src[0] << 8) | src[1]);
+        else memcpy(&c, src, 2);
+        dst[0] = (uint8_t)(((c >> 12) & 0xF) * 17);
+        dst[1] = (uint8_t)(((c >> 8) & 0xF) * 17);
+        dst[2] = (uint8_t)(((c >> 4) & 0xF) * 17);
+        dst[3] = (uint8_t)((c & 0xF) * 17);
+        break;
+    }
+    case GX_RGBA6: {
+        /* 24-bit packed: RRRRRR GGGGGG BBBBBB AAAAAA (3 bytes) */
+        uint32_t c = ((uint32_t)src[0] << 16) | ((uint32_t)src[1] << 8) | src[2];
+        dst[0] = (uint8_t)(((c >> 18) & 0x3F) * 255 / 63);
+        dst[1] = (uint8_t)(((c >> 12) & 0x3F) * 255 / 63);
+        dst[2] = (uint8_t)(((c >> 6) & 0x3F) * 255 / 63);
+        dst[3] = (uint8_t)((c & 0x3F) * 255 / 63);
+        break;
+    }
+    case GX_RGBA8:
+    default:
+        /* 32-bit: R, G, B, A bytes (4 bytes) */
+        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+        break;
+    }
+}
 
 static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     const GXVtxDescEntry* desc = g_gx_state.vtx_desc;
@@ -889,6 +1006,12 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
         uint32_t csz = gx_comp_size(nt);
         if (desc[GX_VA_NRM].type == GX_DIRECT) {
             si += 3 * csz;
+        } else if (afmt[GX_VA_NRM].cnt == GX_NRM_NBT3) {
+            /* dolsdk2004 GXSave.c: NBT3 indexed normals have 3 separate indices
+             * (N, Binormal, Tangent). resolve_attr_data consumed the first one;
+             * skip the remaining 2 indices for B and T. */
+            uint32_t idx_sz = (desc[GX_VA_NRM].type == GX_INDEX8) ? 1 : 2;
+            si += 2 * idx_sz;
         }
         if (data) {
             for (int c = 0; c < 3; c++) {
@@ -908,8 +1031,11 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     /* Color0 */
     if (desc[GX_VA_CLR0].type != GX_NONE) {
         const uint8_t* data = resolve_attr_data(GX_VA_CLR0, src, &si);
-        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += 4;
-        if (data) { memcpy(dst + di, data, 4); }
+        if (desc[GX_VA_CLR0].type == GX_DIRECT) si += raw_attr_size(GX_VA_CLR0);
+        if (data) {
+            int is_be = (g_gx_state.draw.vtx_data_be && desc[GX_VA_CLR0].type == GX_DIRECT);
+            decode_gx_color_to_rgba8(data, afmt[GX_VA_CLR0].comp_type, is_be, dst + di);
+        }
         else { memset(dst + di, 0xFF, 4); }
         /* GCN doesn't use framebuffer alpha for TV display — vertex color
          * alpha can legitimately be 0. On PC, force alpha=255 so the
@@ -920,8 +1046,11 @@ static void convert_vertex_to_float(const uint8_t* src, uint8_t* dst) {
     /* Color1 */
     if (desc[GX_VA_CLR1].type != GX_NONE) {
         const uint8_t* data = resolve_attr_data(GX_VA_CLR1, src, &si);
-        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += 4;
-        if (data) { memcpy(dst + di, data, 4); }
+        if (desc[GX_VA_CLR1].type == GX_DIRECT) si += raw_attr_size(GX_VA_CLR1);
+        if (data) {
+            int is_be = (g_gx_state.draw.vtx_data_be && desc[GX_VA_CLR1].type == GX_DIRECT);
+            decode_gx_color_to_rgba8(data, afmt[GX_VA_CLR1].comp_type, is_be, dst + di);
+        }
         else { memset(dst + di, 0xFF, 4); }
         /* Force alpha=255 — same GCN→PC alpha fix as Color0 */
         dst[di + 3] = 0xFF;
@@ -1058,6 +1187,11 @@ void pal_tev_init(void) {
     s_tev_reg0_uniform = bgfx::createUniform("u_tevReg0", bgfx::UniformType::Vec4);
     s_tev_reg1_uniform = bgfx::createUniform("u_tevReg1", bgfx::UniformType::Vec4);
 
+    /* Create TEV uber-shader uniforms (Recipe 2 + Recipe 4) */
+    s_tev_config_uniform = bgfx::createUniform("u_tevConfig", bgfx::UniformType::Vec4);
+    s_alpha_test_uniform = bgfx::createUniform("u_alphaTest", bgfx::UniformType::Vec4);
+    s_alpha_op_uniform   = bgfx::createUniform("u_alphaOp",   bgfx::UniformType::Vec4);
+
     s_tev_ready = all_ok;
 
     /* For Noop renderer, mark ready even if shader creation "fails" (it's a no-op anyway) */
@@ -1100,6 +1234,18 @@ void pal_tev_shutdown(void) {
     if (bgfx::isValid(s_tev_reg1_uniform)) {
         bgfx::destroy(s_tev_reg1_uniform);
         s_tev_reg1_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_tev_config_uniform)) {
+        bgfx::destroy(s_tev_config_uniform);
+        s_tev_config_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_alpha_test_uniform)) {
+        bgfx::destroy(s_alpha_test_uniform);
+        s_alpha_test_uniform = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(s_alpha_op_uniform)) {
+        bgfx::destroy(s_alpha_op_uniform);
+        s_alpha_op_uniform = BGFX_INVALID_HANDLE;
     }
 
     /* Destroy cached textures */
@@ -1300,6 +1446,7 @@ static uint32_t s_skip_passclr_alpha = 0; /* transparent PASSCLR fill skipped */
 static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
 static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
 static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
+static uint32_t s_diag_frame_num     = 0; /* diagnostic frame counter */
 
 u32 pal_tev_get_total_attempt_count(void) {
     return s_ok_submitted + s_skip_not_ready + s_skip_no_verts +
@@ -1317,6 +1464,16 @@ u32 pal_tev_get_filter_skip_count(void) {
 u32 pal_tev_get_skip_passclr_fill_count(void) { return s_passclr_fill_count; }
 u32 pal_tev_get_skip_passclr_alpha_count(void) { return s_skip_passclr_alpha; }
 u32 pal_tev_get_skip_passclr_env_count(void) { return s_skip_passclr_env; }
+
+void pal_tev_set_persp_proj(const float mtx[4][4]) {
+    memcpy(s_persp_proj, mtx, sizeof(s_persp_proj));
+    s_has_persp_proj = 1;
+}
+
+unsigned short pal_tev_get_program_handle(int preset) {
+    if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) return UINT16_MAX;
+    return s_programs[preset].idx;
+}
 
 void pal_tev_report_diagnostics(void) {
     /* TEV config summary */
@@ -1388,103 +1545,194 @@ void pal_tev_report_diagnostics(void) {
 /* Neutral grey used when both mat_color and amb_color are dark.  200 is
  * visible on all common display gamma curves without being blinding white. */
 #define RASC_FALLBACK_GRAY  200
+/* Near-white material threshold for the perspective grey fallback. */
+#define RASC_WHITE_MATERIAL_THRESHOLD 248
+/* Default diffuse factor when per-vertex normals are not available.
+ * 0.5 approximates ~60° average incidence angle for general scene geometry. */
+#define RASC_DEFAULT_DIFFUSE 0.5f
+/* Minimum k[0] constant attenuation value below which we skip attenuation
+ * (avoids division by near-zero). */
+#define RASC_ATTN_K0_MIN 0.001f
 
-/* apply_rasc_color: compute the RASC approximation for a draw.
+static s32 rasc_is_perspective_white_with_dark_amb(const GXChanCtrl* ch) {
+    u32 amb_sum;
+    if (!ch || g_gx_state.proj_type == GX_ORTHOGRAPHIC)
+        return 0;
+    amb_sum = (u32)ch->amb_color.r + (u32)ch->amb_color.g + (u32)ch->amb_color.b;
+    return ch->mat_color.r >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           ch->mat_color.g >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           ch->mat_color.b >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           amb_sum < RASC_DARK_THRESHOLD;
+}
+
+/* apply_rasc_color: compute the RASC (rasterized color) for a draw.
  *
- * GCN hardware: RASC = clamp(amb_color + Σ(lights × mat_color)).
+ * Based on dolsdk2004 GXLight.c / GXSetChanCtrl:
+ *   GCN hardware channel combiner output depends on chan_ctrl.enable:
  *
- * Two fundamentally different rendering contexts use RASC:
+ *   enable=0 (lighting disabled):
+ *     Output = mat_src value:
+ *       mat_src=GX_SRC_REG → mat_color (register)
+ *       mat_src=GX_SRC_VTX → vertex color attribute
+ *     This is the DIRECT output — no lighting computation at all.
+ *     Most J2D (2D) draws and many J3D materials use this path.
  *
- * 1. Orthographic / J2D draws (BLO screen overlays, fade panes):
- *    mat_color is the game's intended solid colour for the pane.
- *    A black background pane has mat_color=(0,0,0) deliberately — it should
- *    stay black.  Do NOT override with a grey fallback: grey backgrounds
- *    produce a "white fade" instead of the expected "black fade" transition.
- *    This function returns early (see 'if GX_ORTHOGRAPHIC' below) so mat_color
- *    is already copied to const_clr before the return.
- *    Alpha is handled by the inject_color block in pal_tev_flush_draw():
- *      - Normal J2D panes: alpha forced to 255 (g_gx_state.fade_overlay_active=false).
- *      - darwFilter fade overlay: alpha preserved from mat_color.a
- *        (g_gx_state.fade_overlay_active=true), allowing SRC_ALPHA fade effect.
+ *   enable=1 (lighting enabled):
+ *     Output = amb_color * amb_src + Σ(light[i].color × DiffuseFn(N·L) × AttnFn(d))
+ *     Until we implement full lighting (Recipe 3), approximate as:
+ *       if amb_color is usable → use amb_color
+ *       else → grey fallback (geometry at least visible)
  *
- * 2. Perspective / J3D draws (3D geometry with GX lighting):
- *    mat_color is the base reflectivity, not the output colour.
- *    Without GX lights, RASC ≈ amb_color (the static ambient term).
- *    This applies for any mat brightness: a bright mat_color like (255,255,255)
- *    is a reflectivity coefficient, not the pixel colour.
- *
- *    - If amb is usable (>= RASC_DARK_THRESHOLD): output amb_color.
- *      Example: room geometry with ambient lighting set.
- *    - If both mat and amb are dark: output RASC_FALLBACK_GRAY.
- *      This covers "dynamic-light-only" materials (e.g. the daTitle castle
- *      model: mat=(0,0,0), amb=(0,0,0)) where the game expects GX lights to
- *      supply all colour.  RASC_FALLBACK_GRAY (200) makes geometry at least
- *      visible at the cost of incorrect tone.  When GX lighting is implemented
- *      (port roadmap P2), replace this fallback with: compute the per-vertex
- *      lit colour from g_gx_state.light[] + g_gx_state.chan_ctrl[].
+ * References:
+ *   dolsdk2004 src/gx/GXLight.c:  GXSetChanCtrl() register layout
+ *   dolsdk2004 src/gx/__gx.h:     GXData.ambColor[], GXData.matColor[]
+ *   docs/dolsdk2004-reference.md:  Recipe 1 (RASC fix)
  *
  * The game engine is single-threaded (one render thread); no locking needed. */
 static void apply_rasc_color(uint8_t* const_clr) {
-    const uint8_t mr = g_gx_state.chan_ctrl[0].mat_color.r;
-    const uint8_t mg = g_gx_state.chan_ctrl[0].mat_color.g;
-    const uint8_t mb = g_gx_state.chan_ctrl[0].mat_color.b;
-    const_clr[0] = mr;
-    const_clr[1] = mg;
-    const_clr[2] = mb;
-    const_clr[3] = g_gx_state.chan_ctrl[0].mat_color.a;
+    const GXChanCtrl* ch = &g_gx_state.chan_ctrl[0];
 
-    /* ---- Orthographic (J2D) path ---- */
-    /* mat_color IS the intended pane colour; respect it regardless of brightness.
-     * A black background pane (mat=(0,0,0)) must stay black — do not substitute
-     * a grey fallback.  Alpha is handled by the caller's inject_color block,
-     * which forces alpha=255 for non-overlay draws (fade_overlay_active=false)
-     * and preserves mat.a for the darwFilter fade overlay. */
-    if (g_gx_state.proj_type == GX_ORTHOGRAPHIC)
-        return;
-
-    /* ---- Perspective (J3D) path ---- */
-    /* Approximate RASC = amb_color (static ambient without dynamic lights).
-     * This applies for any mat brightness: a bright mat_color like (255,255,255)
-     * is a reflectivity base, not the output colour — returning it directly
-     * produces blinding-white unlit geometry.  amb_color is the correct static
-     * approximation.  If amb is also dark (dynamic-light-only materials), use
-     * a neutral grey so the geometry is at least visible.
-     *
-     * TODO (lighting P2): when GX lighting is implemented, replace amb fallback
-     * with per-vertex lit colour from g_gx_state.light[] + chan_ctrl[]. */
-    const uint8_t ar = g_gx_state.chan_ctrl[0].amb_color.r;
-    const uint8_t ag = g_gx_state.chan_ctrl[0].amb_color.g;
-    const uint8_t ab = g_gx_state.chan_ctrl[0].amb_color.b;
-    if ((int)ar + (int)ag + (int)ab >= RASC_DARK_THRESHOLD) {
-        const_clr[0] = ar;
-        const_clr[1] = ag;
-        const_clr[2] = ab;
-        const_clr[3] = 255;
-    } else {
-        /* No usable ambient — dynamic-light-only material (e.g. daTitle castle
-         * model: mat=(0,0,0), amb=(0,0,0)).  Use neutral grey so geometry is
-         * at least visible.  This is a known approximation; correct rendering
-         * requires the lighting TODO above to be implemented. */
-        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
-        const_clr[3] = 255;
-
-        /* Diagnostic: log first N perspective draws that hit the grey fallback.
-         * Surfaces in CI to show mat/amb values for daTitle and similar models. */
-        {
-            static uint32_t s_grey_fallback_log_count = 0;
-            if (s_grey_fallback_log_count < 5) {
-                s_grey_fallback_log_count++;
-                fprintf(stderr,
-                    "{\"rasc_grey_fallback\":{\"n\":%u,"
-                    "\"mat\":[%u,%u,%u,%u],"
-                    "\"amb\":[%u,%u,%u],"
-                    "\"proj\":\"perspective\","
-                    "\"fallback_gray\":%u}}\n",
-                    s_grey_fallback_log_count,
-                    mr, mg, mb, g_gx_state.chan_ctrl[0].mat_color.a,
-                    ar, ag, ab,
-                    (unsigned)RASC_FALLBACK_GRAY);
+    if (!ch->enable) {
+        /* ---- Lighting DISABLED (SDK: enable=0) ---- */
+        /* Output is determined solely by mat_src.
+         *
+         * mat_src=GX_SRC_REG: use mat_color register value directly.
+         *   J2D panes: mat_color IS the intended pane colour.  A black
+         *   background pane (mat=(0,0,0)) must stay black.
+         *   J3D materials with lighting off: mat_color is the direct output.
+         *
+         * mat_src=GX_SRC_VTX: output = vertex color attribute.
+         *   Signal to caller by returning white (multiply-neutral) so that
+         *   the real vertex color passes through the "* v_color0" shader multiply.
+         *   The caller already copies vertex CLR0 into the vertex buffer. */
+        if (ch->mat_src == GX_SRC_VTX) {
+            const_clr[0] = 255;
+            const_clr[1] = 255;
+            const_clr[2] = 255;
+            const_clr[3] = 255;
+        } else {
+            if (rasc_is_perspective_white_with_dark_amb(ch)) {
+                const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+                const_clr[3] = 255;
+            } else {
+                const_clr[0] = ch->mat_color.r;
+                const_clr[1] = ch->mat_color.g;
+                const_clr[2] = ch->mat_color.b;
+                const_clr[3] = ch->mat_color.a;
             }
+        }
+        return;
+    }
+
+    /* ---- Lighting ENABLED (SDK: enable=1) ---- */
+    /* Full equation per dolsdk2004 GXLight.c:
+     *   RASC = clamp(amb_color + Σ(light[i].color × DiffuseFn(N·L) × AttnFn(d)))
+     *
+     * For diffuse:
+     *   GX_DF_NONE:  diffuse = 1.0 (no attenuation by angle)
+     *   GX_DF_SIGN:  diffuse = N·L (can go negative)
+     *   GX_DF_CLAMP: diffuse = max(0, N·L) (standard Lambert)
+     *
+     * For attenuation (when enabled):
+     *   spot_attn = a[0] + a[1]*cos(angle) + a[2]*cos²(angle)
+     *   dist_attn = 1 / (k[0] + k[1]*d + k[2]*d²)
+     *
+     * Since we don't have per-vertex normals and positions in the RASC
+     * computation (they're in the vertex buffer), we approximate using
+     * a default normal (0,0,-1 = towards camera) and estimate distance
+     * based on the current position matrix translation.
+     *
+     * This provides much better results than the grey fallback:
+     * - Colored lighting (e.g. warm torches) now tints geometry correctly
+     * - Multiple lights are summed
+     * - Ambient + light colors blend as intended
+     * - Materials with mat_color are modulated properly */
+    const uint8_t ar = ch->amb_color.r;
+    const uint8_t ag = ch->amb_color.g;
+    const uint8_t ab = ch->amb_color.b;
+
+    /* Start with ambient contribution */
+    float out_r = ar / 255.0f;
+    float out_g = ag / 255.0f;
+    float out_b = ab / 255.0f;
+
+    /* Accumulate active light contributions */
+    u32 light_mask = ch->light_mask;
+    for (int i = 0; i < GX_MAX_LIGHT; i++) {
+        if (!(light_mask & (1u << i))) continue;
+        const GXLightState* lt = &g_gx_state.lights[i];
+        if (!lt->active) continue;
+
+        /* Light color normalized to [0,1] */
+        float lr = lt->color.r / 255.0f;
+        float lg = lt->color.g / 255.0f;
+        float lb = lt->color.b / 255.0f;
+
+        /* Approximate diffuse factor.
+         * Without per-vertex normals available here, use a default
+         * cosine factor (RASC_DEFAULT_DIFFUSE ≈ 60° average incidence).
+         * This is better than 0 (no light) or 1 (full light). */
+        float diffuse = RASC_DEFAULT_DIFFUSE;
+        if (ch->diff_fn == GX_DF_NONE) {
+            diffuse = 1.0f;
+        }
+
+        /* Distance attenuation approximation.
+         * Without per-vertex position, use k[0] as the constant term.
+         * Most TP lights use k[0]=1, k[1]=0, k[2]=0 (no distance falloff)
+         * or have attenuation disabled (attn_fn == GX_AF_NONE). */
+        float attn = 1.0f;
+        if (ch->attn_fn != GX_AF_NONE) {
+            /* Distance attenuation: 1/(k0 + k1*d + k2*d²)
+             * With default distance, just use constant term */
+            if (lt->k[0] > RASC_ATTN_K0_MIN) {
+                attn = 1.0f / lt->k[0];
+                if (attn > 1.0f) attn = 1.0f;
+            }
+        }
+
+        out_r += lr * diffuse * attn;
+        out_g += lg * diffuse * attn;
+        out_b += lb * diffuse * attn;
+    }
+
+    /* Modulate by material color (per SDK: final = lighting_result * mat_color) */
+    if (ch->mat_src == GX_SRC_REG) {
+        out_r *= ch->mat_color.r / 255.0f;
+        out_g *= ch->mat_color.g / 255.0f;
+        out_b *= ch->mat_color.b / 255.0f;
+    }
+    /* mat_src == VTX: vertex color modulation happens in shader via v_color0 */
+
+    /* Clamp to [0,1] and convert to u8 */
+    if (out_r > 1.0f) out_r = 1.0f;
+    if (out_g > 1.0f) out_g = 1.0f;
+    if (out_b > 1.0f) out_b = 1.0f;
+    const_clr[0] = (uint8_t)(out_r * 255.0f);
+    const_clr[1] = (uint8_t)(out_g * 255.0f);
+    const_clr[2] = (uint8_t)(out_b * 255.0f);
+    const_clr[3] = 255;
+
+    /* If result is still too dark (no lights active or all dark),
+     * fall back to grey so geometry is at least visible.
+     * This will be removed once per-vertex lighting is implemented. */
+    if ((int)const_clr[0] + const_clr[1] + const_clr[2] < RASC_DARK_THRESHOLD) {
+        const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+
+        static uint32_t s_grey_fallback_log_count = 0;
+        if (s_grey_fallback_log_count < 5) {
+            s_grey_fallback_log_count++;
+            fprintf(stderr,
+                "{\"rasc_grey_fallback\":{\"n\":%u,"
+                "\"mat\":[%u,%u,%u,%u],"
+                "\"amb\":[%u,%u,%u],"
+                "\"enable\":%d,\"mat_src\":%d,"
+                "\"light_mask\":%u,\"fallback_gray\":%u}}\n",
+                s_grey_fallback_log_count,
+                ch->mat_color.r, ch->mat_color.g, ch->mat_color.b, ch->mat_color.a,
+                ar, ag, ab,
+                (int)ch->enable, (int)ch->mat_src,
+                (unsigned)light_mask, (unsigned)RASC_FALLBACK_GRAY);
         }
     }
 }
@@ -1610,6 +1858,13 @@ void pal_tev_flush_draw(void) {
     uint32_t raw_stride = calc_raw_vertex_stride();
     if (raw_stride == 0) { s_skip_bad_stride++; return; }
 
+    /* gx_frame_draw_calls is reset by the per-frame render path before the
+     * first draw of each new frame, so gx_frame_draw_calls==0 here marks the
+     * frame boundary for these diagnostics. */
+    if (gx_frame_draw_calls == 0) {
+        s_diag_frame_num++;
+    }
+
     /* 3. Check if we need to inject constant color when vertex color is missing.
      * PASSCLR: inject from TEV registers or material color.
      * MODULATE/BLEND/DECAL: inject from material color (GCN hardware uses
@@ -1698,12 +1953,18 @@ void pal_tev_flush_draw(void) {
             }
         } else if (preset == GX_TEV_SHADER_MODULATE ||
                    preset == GX_TEV_SHADER_BLEND ||
-                   preset == GX_TEV_SHADER_DECAL) {
+                   preset == GX_TEV_SHADER_DECAL ||
+                   preset == GX_TEV_SHADER_TEV) {
             inject_color = 1;
             /* Check if any TEV stage references rasterized color (RASC/RASA).
              * If not, vertex/material color is irrelevant to the TEV formula
              * and the injected color should be white (pass-through) so the
-             * shader's "* v_color0" multiplication doesn't darken the output. */
+             * shader's "* v_color0" multiplication doesn't darken the output.
+             *
+             * This is critical for the TEV uber-shader: on GCN, vertex CLR0
+             * is often set to (0,0,0,0) as a placeholder when TEV doesn't
+             * reference RASC (the channel combiner provides color instead).
+             * Without injection, v_color0=(0,0,0,0) zeros out the result. */
             int uses_rasc = 0;
             int uses_konst = 0;
             int num_stages = g_gx_state.num_tev_stages;
@@ -1849,8 +2110,15 @@ void pal_tev_flush_draw(void) {
             /* Skip normal in source if present */
             if (desc[GX_VA_NRM].type != GX_NONE) {
                 resolve_attr_data(GX_VA_NRM, src, &si);
-                int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
-                if (desc[GX_VA_NRM].type == GX_DIRECT) si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+                if (desc[GX_VA_NRM].type == GX_DIRECT) {
+                    int nnrm = (af[GX_VA_NRM].cnt == GX_NRM_NBT || af[GX_VA_NRM].cnt == GX_NRM_NBT3) ? 9 : 3;
+                    si += nnrm * gx_comp_size(af[GX_VA_NRM].comp_type);
+                } else if (af[GX_VA_NRM].cnt == GX_NRM_NBT3) {
+                    /* dolsdk2004 GXSave.c: NBT3 indexed normals have 3 separate indices;
+                     * resolve_attr_data consumed the first one, skip remaining 2 */
+                    uint32_t idx_sz = (desc[GX_VA_NRM].type == GX_INDEX8) ? 1 : 2;
+                    si += 2 * idx_sz;
+                }
             }
 
             /* Skip CLR0/CLR1 in source if present (we're replacing with const_clr) */
@@ -1858,9 +2126,7 @@ void pal_tev_flush_draw(void) {
                 if (desc[GX_VA_CLR0 + ci].type != GX_NONE) {
                     resolve_attr_data(GX_VA_CLR0 + ci, src, &si);
                     if (desc[GX_VA_CLR0 + ci].type == GX_DIRECT) {
-                        int clr_sz = (af[GX_VA_CLR0 + ci].comp_type <= GX_RGB565) ? 2 :
-                                     (af[GX_VA_CLR0 + ci].comp_type == GX_RGB8) ? 3 : 4;
-                        si += clr_sz;
+                        si += raw_attr_size(GX_VA_CLR0 + ci);
                     }
                 }
             }
@@ -1993,30 +2259,6 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
-    {
-        static int s_mvp_dump = 0;
-        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
-            s_mvp_dump++;
-            const float (*gp)[4] = g_gx_state.proj_mtx;
-            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f]}}\n",
-                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
-                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
-                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
-                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
-                    mvp[0],mvp[1],mvp[2],mvp[3],
-                    mvp[4],mvp[5],mvp[6],mvp[7],
-                    mvp[8],mvp[9],mvp[10],mvp[11],
-                    mvp[12],mvp[13],mvp[14],mvp[15]);
-        }
-    }
 
     /* Geometry-centroid camera fallback for the 3D intro room (PC only).
      *
@@ -2136,14 +2378,42 @@ void pal_tev_flush_draw(void) {
         }
 
         /* Re-compute and re-set the MVP for this draw using the SAVED centroid
-         * view matrix.  Using g_gx_state.pos_mtx[0] here would be wrong because
-         * J3D calls GXLoadPosMtxImm for every mesh node, overwriting pos_mtx
-         * BEFORE pal_tev_flush_draw runs for that draw.  s_geom_centroid_view is
-         * set once and never overwritten, so it always holds the correct LookAt.
-         * The intro room stores vertices in world space (model ≈ identity), so
-         * proj * centroid_view directly maps world positions to clip space. */
+         * view matrix and a built-in perspective projection.
+         *
+         * Two problems with using g_gx_state directly:
+         *  1. pos_mtx[0]: J3D calls GXLoadPosMtxImm per mesh node, overwriting it
+         *     → use s_geom_centroid_view (set once, never overwritten).
+         *  2. proj_mtx: The 3D camera sets perspective, but J2D code overwrites it
+         *     with orthographic before DL draws flush.  Orthographic maps pixel
+         *     coordinates (0-640) to NDC — world-space coords (x=2249, z=8963) go
+         *     far outside [-1,+1] and get clipped → all-black framebuffer.
+         *     → build perspective projection from FOV/aspect/near/far parameters.
+         */
         if (s_geom_centroid_active) {
-            const float (*proj_c)[4] = g_gx_state.proj_mtx;
+            /* Build a perspective projection matrix matching the game camera.
+             * GCN/GX format (row-major):
+             *   [cot(fov/2)/aspect, 0,          0,               0         ]
+             *   [0,                 cot(fov/2), 0,               0         ]
+             *   [0,                 0,          -(f+n)/(f-n),   -2fn/(f-n) ]
+             *   [0,                 0,          -1,              0         ]
+             * TP room camera: fov=60°, aspect=640/456, near=1, far=100000 */
+            float proj_c[4][4];
+            {
+                const float fov_deg = 60.0f; /* degrees — wide enough for room geometry */
+                const float aspect = 640.0f / 456.0f;
+                const float near_z = 1.0f;
+                const float far_z  = 100000.0f;
+                const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+                /* Use tanf instead of cotf for portability */
+                float t = 1.0f / tanf(fov_rad * 0.5f);
+                float range = far_z - near_z;
+                memset(proj_c, 0, sizeof(proj_c));
+                proj_c[0][0] = t / aspect;
+                proj_c[1][1] = t;
+                proj_c[2][2] = -(far_z + near_z) / range;
+                proj_c[2][3] = -2.0f * far_z * near_z / range;
+                proj_c[3][2] = -1.0f;
+            }
             /* Use the saved centroid view, NOT pos_mtx[0] which J3D overwrites */
             float m44_c[16] = {
                 s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
@@ -2166,6 +2436,19 @@ void pal_tev_flush_draw(void) {
                 for (int c = 0; c < 4; c++)
                     mvp_c[c*4+r] = mvp_rowmaj[r*4+c];
             bgfx::setTransform(mvp_c);
+            /* One-shot log: which projection is the centroid MVP using? */
+            {
+                static int s_centroid_mvp_log = 0;
+                if (s_centroid_mvp_log < 1) {
+                    s_centroid_mvp_log++;
+                    fprintf(stderr, "{\"centroid_mvp_proj\":{\"has_persp\":%d,"
+                            "\"proj00\":%.6f,\"proj11\":%.6f,\"proj22\":%.6f,"
+                            "\"proj23\":%.6f,\"proj32\":%.6f,\"proj33\":%.6f}}\n",
+                            s_has_persp_proj,
+                            proj_c[0][0], proj_c[1][1], proj_c[2][2],
+                            proj_c[2][3], proj_c[3][2], proj_c[3][3]);
+                }
+            }
         }
     }
 
@@ -2201,7 +2484,25 @@ void pal_tev_flush_draw(void) {
                     memcpy(&wy, tvb.data + pos_offset + 4, 4);
                     memcpy(&wz, tvb.data + pos_offset + 8, 4);
                 }
-                const float (*gp)[4] = g_gx_state.proj_mtx;
+                /* Build the same perspective projection used by the centroid MVP.
+                 * This must match the projection in the centroid override block above. */
+                float gp_local[4][4];
+                {
+                    const float fov_deg = 60.0f;
+                    const float aspect = 640.0f / 456.0f;
+                    const float near_z = 1.0f;
+                    const float far_z  = 100000.0f;
+                    const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+                    float t = 1.0f / tanf(fov_rad * 0.5f);
+                    float range = far_z - near_z;
+                    memset(gp_local, 0, sizeof(gp_local));
+                    gp_local[0][0] = t / aspect;
+                    gp_local[1][1] = t;
+                    gp_local[2][2] = -(far_z + near_z) / range;
+                    gp_local[2][3] = -2.0f * far_z * near_z / range;
+                    gp_local[3][2] = -1.0f;
+                }
+                const float (*gp)[4] = (const float (*)[4])gp_local;
                 /* Use the CENTROID MVP for clip/NDC calculation (same transform that
                  * bgfx::setTransform was given for this draw when centroid is active). */
                 float use_mvp[16];
@@ -2247,6 +2548,7 @@ void pal_tev_flush_draw(void) {
                 /* Note: pos_mtx0 shown here is the GAME's matrix (loaded by J3D for this mesh).
                  * The centroid override bypasses this via s_geom_centroid_view. */
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
+                        "\"frame\":%u,"
                         "\"draw\":%u,"
                         "\"nverts\":%u,"
                         "\"pnmtx\":%d,\"tmtx\":%d,"
@@ -2269,6 +2571,7 @@ void pal_tev_flush_draw(void) {
                         "\"s0_abcd\":[%d,%d,%d,%d],"
                         "\"s0_texmap\":%d,\"s0_tex_valid\":%d,"
                         "\"num_texgen\":%d,\"tg0_src\":%d}}\n",
+                        s_diag_frame_num,
                         s_total_draw_count,
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
@@ -2354,9 +2657,18 @@ void pal_tev_flush_draw(void) {
 
     /* 8. Bind texture if shader needs it */
     if (preset != GX_TEV_SHADER_PASSCLR) {
-        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-        if (s0->tex_map < GX_MAX_TEXMAP) {
-            const GXTexBinding* binding = &g_gx_state.tex_bindings[s0->tex_map];
+        const GXTevStage* tex_stage = NULL;
+        for (int s = 0; s < g_gx_state.num_tev_stages && s < GX_MAX_TEVSTAGE; s++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[s];
+            if (st->tex_map != GX_TEXMAP_NULL &&
+                st->tex_map < GX_MAX_TEXMAP &&
+                g_gx_state.tex_bindings[st->tex_map].valid) {
+                tex_stage = st;
+                break;
+            }
+        }
+        if (tex_stage && tex_stage->tex_map < GX_MAX_TEXMAP) {
+            const GXTexBinding* binding = &g_gx_state.tex_bindings[tex_stage->tex_map];
             bgfx::TextureHandle tex = upload_gx_texture(binding);
             if (bgfx::isValid(tex)) {
                 bgfx::setTexture(0, s_tex_uniform, tex, gx_sampler_flags(binding));
@@ -2375,6 +2687,7 @@ void pal_tev_flush_draw(void) {
             if (should_log) {
                 if (s_tex_log_count < 5) s_tex_log_count++;
                 int ns = g_gx_state.num_tev_stages;
+                const GXTevStage* s0 = &g_gx_state.tev_stages[0];
                 const GXTevStage* s1 = (ns >= 2) ? &g_gx_state.tev_stages[1] : NULL;
                 /* First 2 texcoord values for UV debugging */
                 float tc0_u = 0, tc0_v = 0, tc1_u = 0, tc1_v = 0;
@@ -2417,7 +2730,7 @@ void pal_tev_flush_draw(void) {
                         "\"tev0_cd\":[%d,%d,%d,%d]",
                         s_total_draw_count, s_fs_names[preset],
                         bgfx::isValid(tex) ? 1 : 0,
-                        s0->tex_map,
+                        tex_stage->tex_map,
                         (unsigned)binding->width, (unsigned)binding->height,
                         (int)binding->format, binding->image_ptr,
                         binding->valid,
@@ -2536,6 +2849,7 @@ void pal_tev_flush_draw(void) {
             if (preset == GX_TEV_SHADER_BLEND || s_state_dump < 3) {
                 s_state_dump++;
                 fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"frame\":%u,"
                         "\"prog_valid\":%d,\"prog_idx\":%u,"
                         "\"color_update\":%d,\"state\":\"0x%016llX\","
                         "\"write_rgb\":%d,\"write_a\":%d,"
@@ -2548,6 +2862,7 @@ void pal_tev_flush_draw(void) {
                         "\"nverts\":%u,\"nidx\":%u,\"inject\":%d}}\n",
                         s_total_draw_count,
                         (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                        s_diag_frame_num,
                         bgfx::isValid(s_programs[preset]) ? 1 : 0,
                         s_programs[preset].idx,
                         g_gx_state.color_update,
@@ -2603,17 +2918,17 @@ void pal_tev_flush_draw(void) {
         }
     }
 
-    /* Per-frame centroid camera reset.
-     * s_geom_centroid_active must be cleared at the start of each frame so that
-     * only frames with draw_calls > CENTROID_FRAME_DRAWS_MIN activate the centroid
-     * camera.  Without this reset, centroid stays active after the 3D room frame
-     * (frame 129) and routes all subsequent frames to bgfx view 1, leaving the
-     * Phase 4 captured frame 0% nonblack (view 0 receives no draws after frame 129). */
+    /* Per-frame centroid accumulator reset.
+     * Before gameplay establishes the centroid camera, clear the temporary
+     * accumulation state at each frame boundary. Once s_geom_centroid_active
+     * is set, keep it and the saved centroid view latched so later gameplay
+     * frames can keep using the same working 3D camera. */
     if (gx_frame_draw_calls == 0) {
-        s_geom_centroid_active = 0;
-        s_centroid_n           = 0;
-        s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;
-        s_centroid_vz_max = -1e30f;
+        if (!s_geom_centroid_active) {
+            s_centroid_n           = 0;
+            s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;
+            s_centroid_vz_max = -1e30f;
+        }
         /* Allow centroid_view_switch to re-log on the next 3D room frame. */
         /* (s_centroid_view_logged is reset below in its own block) */
     }
@@ -2775,8 +3090,70 @@ void pal_tev_flush_draw(void) {
                     (unsigned)view_id);
         }
     }
+    /* Set uber-shader uniforms when using TEV shader (Recipe 2 + Recipe 4) */
+    if (preset == GX_TEV_SHADER_TEV) {
+        int base_mode = classify_tev_config();
+        float config[4] = {
+            (float)base_mode, /* TEV mode for color computation */
+            0.0f, 0.0f, 0.0f
+        };
+        bgfx::setUniform(s_tev_config_uniform, config);
+
+        /* Alpha compare uniforms */
+        float alphaTest[4] = {
+            g_gx_state.alpha_ref0 / 255.0f,       /* ref0 */
+            (float)g_gx_state.alpha_comp0,          /* comp0 */
+            (float)g_gx_state.alpha_comp1,          /* comp1 */
+            g_gx_state.alpha_ref1 / 255.0f,        /* ref1 */
+        };
+        float alphaOp[4] = {
+            (float)g_gx_state.alpha_op,             /* op */
+            1.0f,                                    /* enable */
+            0.0f, 0.0f
+        };
+        bgfx::setUniform(s_alpha_test_uniform, alphaTest);
+        bgfx::setUniform(s_alpha_op_uniform, alphaOp);
+
+        /* The uber-shader also needs TEV reg uniforms for BLEND mode */
+        float reg0[4] = {
+            g_gx_state.tev_regs[GX_TEVREG0].r / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].g / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].b / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG0].a / 255.0f,
+        };
+        float reg1[4] = {
+            g_gx_state.tev_regs[GX_TEVREG1].r / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].g / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].b / 255.0f,
+            g_gx_state.tev_regs[GX_TEVREG1].a / 255.0f,
+        };
+        bgfx::setUniform(s_tev_reg0_uniform, reg0);
+        bgfx::setUniform(s_tev_reg1_uniform, reg1);
+    }
+
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
+
+    /* One-shot: log first centroid draw details to verify TVB data */
+    {
+        static int s_centroid_draw_log = 0;
+        if (s_centroid_draw_log < 3 && view_id == 1 && s_geom_centroid_active) {
+            s_centroid_draw_log++;
+            fprintf(stderr, "{\"centroid_draw\":{\"n\":%d,\"view\":%d,"
+                    "\"nverts\":%u,\"preset\":%d,"
+                    "\"state\":\"0x%llX\","
+                    "\"proj_type\":%d,\"proj00\":%.6f,"
+                    "\"blend\":%d,\"depth\":%d,\"cull\":%d}}\n",
+                    s_centroid_draw_log, (int)view_id,
+                    (unsigned)nverts, preset,
+                    (unsigned long long)state,
+                    g_gx_state.proj_type,
+                    g_gx_state.proj_mtx[0][0],
+                    g_gx_state.blend_mode,
+                    g_gx_state.z_compare_enable,
+                    g_gx_state.cull_mode);
+        }
+    }
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;

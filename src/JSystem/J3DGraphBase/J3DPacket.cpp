@@ -13,6 +13,41 @@
 #if PLATFORM_PC
 #include <stdio.h>
 extern "C" void pal_gd_reset_dummy(void);
+
+static inline bool pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
+    /* Legitimate J3D packet chains are short (dozens or at most low hundreds of
+     * nodes in the affected room/title paths). Use 1024 as a generous fixed
+     * ceiling so a corrupted self-referential chain cannot loop forever in the
+     * PC guard path while still staying far above any expected real chain. */
+    enum { MAX_PACKET_CHAIN_SCAN = 1024 };
+    J3DPacket* it = head;
+    int depth = 0;
+    for (; it != NULL && depth < MAX_PACKET_CHAIN_SCAN; depth++) {
+        if (it == target)
+            return true;
+        J3DPacket* next = it->getNextPacket();
+        /* Treat a self-referential node as "already present" so the prepend
+         * helper stops instead of extending a chain that is already corrupt. */
+        if (next == it)
+            return true;
+        it = next;
+    }
+    return false;
+}
+
+static inline void pal_packet_prepend(J3DPacket** head, J3DPacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
+
+static inline void pal_shape_packet_prepend(J3DShapePacket** head, J3DShapePacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -123,8 +158,12 @@ void J3DPacket::addChildPacket(J3DPacket* pPacket) {
     if (mpFirstChild == NULL) {
         mpFirstChild = pPacket;
     } else {
+#if PLATFORM_PC
+        pal_packet_prepend(&mpFirstChild, pPacket);
+#else
         pPacket->setNextPacket(mpFirstChild);
         mpFirstChild = pPacket;
+#endif
     }
 }
 
@@ -219,8 +258,12 @@ void J3DMatPacket::addShapePacket(J3DShapePacket* pShape) {
     if (mpShapePacket == NULL) {
         mpShapePacket = pShape;
     } else {
+#if PLATFORM_PC
+        pal_shape_packet_prepend(&mpShapePacket, pShape);
+#else
         pShape->setNextPacket(mpShapePacket);
         mpShapePacket = pShape;
+#endif
     }
 }
 

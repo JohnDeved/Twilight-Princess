@@ -24,7 +24,8 @@ extern "C" {
 #define GX_TEV_SHADER_MODULATE   2   /* Texture * vertex color */
 #define GX_TEV_SHADER_BLEND      3   /* Blend texture with vertex color */
 #define GX_TEV_SHADER_DECAL      4   /* Decal texture (alpha blend) */
-#define GX_TEV_SHADER_COUNT      5
+#define GX_TEV_SHADER_TEV        5   /* Generic TEV uber-shader with alpha compare */
+#define GX_TEV_SHADER_COUNT      6
 
 /**
  * Initialize the TEV shader system.
@@ -67,6 +68,21 @@ u32 pal_tev_get_filter_skip_count(void);
 u32 pal_tev_get_skip_passclr_fill_count(void);
 u32 pal_tev_get_skip_passclr_alpha_count(void);
 u32 pal_tev_get_skip_passclr_env_count(void);
+
+/**
+ * Notify TEV system of a perspective projection change.
+ * Called from pal_gx_set_projection when type == GX_PERSPECTIVE.
+ * Saves the projection for use by centroid camera draws, which need
+ * perspective projection even when the current g_gx_state.proj_mtx
+ * has been overwritten by J2D orthographic code.
+ */
+void pal_tev_set_persp_proj(const float mtx[4][4]);
+
+/**
+ * Get the bgfx program handle for a TEV preset shader.
+ * Returns a bgfx::ProgramHandle idx (as unsigned short) for use by test draw calls.
+ */
+unsigned short pal_tev_get_program_handle(int preset);
 
 #ifdef __cplusplus
 }

@@ -132,6 +132,7 @@ typedef struct {
     f32           lod_bias;
     void*         tlut_ptr;   /* palette data for CI formats */
     u32           tlut_fmt;   /* GX_TL_IA8, GX_TL_RGB565, GX_TL_RGB5A3 */
+    u16           tlut_num_entries; /* number of entries in the TLUT */
     u8            valid;      /* 1 if this slot has been loaded */
 } GXTexBinding;
 
@@ -149,6 +150,22 @@ typedef struct {
     GXColor     amb_color;
     GXColor     mat_color;
 } GXChanCtrl;
+
+/* ================================================================ */
+/* Light object (internal layout from dolsdk2004 GXLight.c)         */
+/* ================================================================ */
+
+/* Matches __GXLightObjInt_struct from dolsdk2004 src/gx/GXLight.c.
+ * Used to capture light parameters for future lighting computation.
+ * NOTE: ldir[] is stored NEGATED per the SDK (GXInitLightDir negates). */
+typedef struct {
+    GXColor  color;       /* Light color (RGBA) */
+    f32      a[3];        /* Angle attenuation coefficients (spot) */
+    f32      k[3];        /* Distance attenuation coefficients */
+    f32      lpos[3];     /* World-space position */
+    f32      ldir[3];     /* Direction (STORED NEGATED by SDK) */
+    u8       active;      /* 1 if this light slot has been loaded */
+} GXLightState;
 
 /* ================================================================ */
 /* Vertex array pointer (for indexed drawing)                       */
@@ -211,6 +228,9 @@ typedef struct {
     /* Channel (lighting) state */
     GXChanCtrl chan_ctrl[4]; /* COLOR0, COLOR1, ALPHA0, ALPHA1 */
     u8         num_chans;
+
+    /* Light objects (captured from GXLoadLightObjImm) */
+    GXLightState lights[GX_MAX_LIGHT];
 
     /* Matrices */
     f32 proj_mtx[4][4];
@@ -349,6 +369,10 @@ void pal_gx_set_chan_ctrl(GXChannelID chan, GXBool enable, GXColorSrc amb_src, G
                           u32 light_mask, GXDiffuseFn diff_fn, GXAttnFn attn_fn);
 void pal_gx_set_chan_amb_color(GXChannelID chan, GXColor color);
 void pal_gx_set_chan_mat_color(GXChannelID chan, GXColor color);
+
+/* Light objects — capture light parameters from GXLoadLightObjImm.
+ * Based on dolsdk2004 GXLight.c __GXLightObjInt_struct layout. */
+void pal_gx_load_light_obj(const void* lt_obj, u32 light_id);
 
 /* Draw */
 void pal_gx_begin(GXPrimitive prim, GXVtxFmt fmt, u16 nverts);
