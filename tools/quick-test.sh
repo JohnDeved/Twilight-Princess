@@ -76,16 +76,16 @@ case "$PHASE" in
     4)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase4}"
         TIMEOUT_SECS="${TIMEOUT_SECS:-180}"
-        PHASE_DESC="gameplay intro frame capture (title scene, frame 128)"
+        PHASE_DESC="title screen 3D background scene capture (frame 129)"
         DISPLAY_NUM=":103"
-        # Gate on frame 30 (maroon Nintendo logo, reliable 4% nonblack).
-        # Frame 128 is captured for analysis: the title J3D model should render
-        # grey (~78% nonblack) once the entry() crash is fixed (Phase 5 task:
-        # j3dSys draw-buffer init order for early draw_iter actors).
-        # When frame_0128 shows nonblack, promote CAPTURE_FRAME/GATE to 0128.
-        CAPTURE_FRAME="0030"
-        GATE="frame_0030:1"
-        GATE_MSG="Gameplay gate FAILED: frame_0030 pct_nonblack < 1% — clearEfb tev_reg_dirty fix may have regressed (check D=C0 dirty-bit guard in gx_tev.cpp ~line 1579) or logo scene not reaching frame 30"
+        # Gate on frame 129 (3D BG room, ~79% nonblack grey after passclr-perspective fix).
+        # Frame 129 captures the 7335 J3D DL draws that render the title screen's
+        # 3D background room via the RASC grey fallback.  The delay at frame 129
+        # lets Mesa softpipe rasterise frame 128's 7335 draws before the capture.
+        # Frame 30 (maroon logo) kept as a fallback gate for Phase 2 regression.
+        CAPTURE_FRAME="0129"
+        GATE="frame_0129:1"
+        GATE_MSG="Phase 4 gate FAILED: frame_0129 pct_nonblack < 1% — 3D BG room not rendering (check passclr_skip_alpha filter proj_type guard in gx_tev.cpp, centroid camera, and J3D DL execution)"
         ;;
     *)
         echo "ERROR: Unknown phase: $PHASE (supported: 3, 4)" >&2
@@ -139,13 +139,17 @@ case "$PHASE" in
         unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
         ;;
     4)
-        export TP_TEST_FRAMES=401
-        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,128,150,180,200,250,300,350,400"
-        # Delay at frame 128 — the first frame where the J3D title logo renders
-        # grey (RASC fallback vtx_clr=[200,200,200,255]).  The delay lets Mesa
-        # softpipe rasterise the ~7335 DL draws before the BMP is captured.
+        export TP_TEST_FRAMES=145
+        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,129,130,135,140"
+        # Delay at frame 129: bgfx::frame(128) queued the 7335 J3D DL draws from
+        # the title scene's 3D BG room.  The delay lets Mesa softpipe finish
+        # rasterising those draws before the BMP is captured.
+        # Frame 129 (default TP_FRAME_DELAY_START) is correct — frame 128 would
+        # sleep before bgfx::frame(128) (wrong frame), as documented in gx_render.cpp.
+        # 60s is ample for softpipe to render 7335 draws (Phase 3 uses 350s for
+        # the same geometry; 60s is sufficient with the optimised batching).
         export TP_FRAME_DELAY_MS=60000
-        export TP_FRAME_DELAY_START=128
+        export TP_FRAME_DELAY_START=129
         export TP_SKIP_FADE=1
         export TP_ENABLE_PROC_TITLE=1
         ;;
@@ -183,27 +187,17 @@ if [[ "$PHASE" == "3" ]]; then
 elif [[ "$PHASE" == "4" ]]; then
     echo "Phase 4 RASC grey fallback (daTitle/dynamic-light-only draws):"
     grep '"rasc_grey_fallback"' "$LOG_FILE" 2>/dev/null || echo "(no grey fallback draws)"
-    echo "Phase 4 per-frame draw counts (frames 125-410):"
-    grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -290 || echo "(none found)"
-    echo "Phase 4 fade overlay (darwFilter) — shows alpha at frame 300:"
-    grep '"darwFilter"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no fade overlay calls)"
+    echo "Phase 4 per-frame draw counts (frames 125-145):"
+    grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -30 || echo "(none found)"
+    echo "Phase 4 J3D draw diagnostics (frames 127-135 — dl_draws + j3d_entries):"
+    grep '"j3d_draw_diag"' "$LOG_FILE" 2>/dev/null | grep '"frame":1[23][0-9]' | head -10 || echo "(j3d_draw_diag not found)"
     echo "Phase 4 PROC_TITLE enable status + loadWait diagnostics:"
-    grep 'TP_ENABLE_PROC_TITLE\|loadWait_sync\|loadWait_blo\|j3d_draw_diag' "$LOG_FILE" 2>/dev/null | head -10 || \
+    grep 'TP_ENABLE_PROC_TITLE\|loadWait_sync\|loadWait_blo' "$LOG_FILE" 2>/dev/null | head -5 || \
         echo "(check $LOG_FILE for draw counts)"
-    echo "Phase 4 frame-200 TEV color-pipeline dump (tev200 — const_clr before/after fallback):"
-    grep '"tev200"' "$LOG_FILE" 2>/dev/null || echo "(tev200 not reached — frame 200 not hit or no draws)"
-    echo "Phase 4 opening scene crash catch:"
-    grep 'demo/event crash at' "$LOG_FILE" 2>/dev/null || echo "(no crash catch logged)"
-    echo "Phase 4 daTitle actor diagnostics (Draw/dDlst) — first 20 calls:"
-    grep 'daTitle_draw\|dDlst_daTitle_draw' "$LOG_FILE" 2>/dev/null | head -20 || echo "(daTitle Draw never called)"
-    echo "Phase 4 daTitle CreateHeap resource load:"
-    grep 'daTitle_c::CreateHeap' "$LOG_FILE" 2>/dev/null | head -5 || echo "(CreateHeap not reached)"
-    echo "Phase 4 blo_swap result (Title2D.arc BLO endian conversion):"
-    grep '"blo_swap"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(blo_swap not triggered — Title2D.arc not loaded or BLO not found)"
-    echo "Phase 4 J3D model_probe (title logo shape/vtx/DL diagnostics):"
-    grep '"model_probe"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(model_probe not triggered — mDoExt_modelEntryDL not called)"
-    echo "Phase 4 J3D display-list calls (first 5 — shapedraw ptr/size):"
-    grep '"shapedraw"\|"dl_call"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no shapedraw/dl_call — DL execution not reached)"
+    echo "Phase 4 passclr_skip_alpha filter count (should be low after perspective fix):"
+    grep '"passclr_fill_count"\|"skip_passclr_alpha"' "$LOG_FILE" 2>/dev/null | tail -3 || echo "(no filter count)"
+    echo "Phase 4 daTitle Draw diagnostics (first 10):"
+    grep '"daTitle_draw"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(daTitle_draw not found)"
 fi
 
 # --- Coverage gate ---

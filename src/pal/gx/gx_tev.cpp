@@ -1572,12 +1572,17 @@ void pal_tev_flush_draw(void) {
      * transparent fills on GCN (vertex alpha = 0 → SRC_ALPHA makes them
      * invisible).  On PC we force vertex alpha to 255 which makes them
      * opaque black, overwriting J2D textured content.  Skip them — but only
-     * when the raster color comes from vertex colors (mat_src == GX_SRC_VTX).
+     * for orthographic (J2D) draws and only when the raster color comes from
+     * vertex colors (mat_src == GX_SRC_VTX).
      * When mat_src == GX_SRC_REG, the alpha is explicitly set by the game
-     * (e.g. darwFilter fade overlay) and the draw should proceed. */
+     * (e.g. darwFilter fade overlay) and the draw should proceed.
+     * Perspective 3D draws with [ZERO,ZERO,ZERO,RASC] are intentional
+     * rasterized-color passes (e.g. daTitle model) — apply_rasc_color will
+     * inject the grey fallback, producing visible output. */
     if (preset == GX_TEV_SHADER_PASSCLR &&
         g_gx_state.blend_mode == GX_BM_BLEND &&
-        g_gx_state.chan_ctrl[0].mat_src == GX_SRC_VTX)
+        g_gx_state.chan_ctrl[0].mat_src == GX_SRC_VTX &&
+        g_gx_state.proj_type == GX_ORTHOGRAPHIC)
     {
         const GXTevStage* s0 = &g_gx_state.tev_stages[0];
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
