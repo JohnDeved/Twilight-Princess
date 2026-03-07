@@ -20,6 +20,7 @@
 #include <signal.h>
 #include "pal/gx/gx_stub_tracker.h"
 #include "JSystem/J3DGraphBase/J3DDrawBuffer.h"
+extern sigjmp_buf* pal_crash_jmpbuf;
 #endif
 
 class daTit_HIO_c {
@@ -104,7 +105,6 @@ int daTitle_c::CreateHeap() {
      * by the actor-creation wrapper in f_pc_stdcreate_req.cpp) is safe: it
      * is always restored in the save/restore pattern below, regardless of
      * which return path is taken. */
-    extern sigjmp_buf* pal_crash_jmpbuf;
     sigjmp_buf local_jb;
     sigjmp_buf* prev_jb = pal_crash_jmpbuf;
     pal_crash_jmpbuf = &local_jb;
@@ -586,7 +586,6 @@ int daTitle_c::Draw() {
          * makeDisplayList() / TEV-block load does not bubble up to the
          * outer per-actor Draw() crash handler (which permanently suppresses
          * this profile).  Redirect pal_crash_jmpbuf for the duration. */
-        extern sigjmp_buf* pal_crash_jmpbuf;
         sigjmp_buf entry_jb;
         sigjmp_buf* outer_jb = pal_crash_jmpbuf;
         pal_crash_jmpbuf = &entry_jb;
