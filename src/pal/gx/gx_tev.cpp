@@ -1534,12 +1534,25 @@ void pal_tev_report_diagnostics(void) {
 /* Neutral grey used when both mat_color and amb_color are dark.  200 is
  * visible on all common display gamma curves without being blinding white. */
 #define RASC_FALLBACK_GRAY  200
+/* Near-white material threshold for the perspective grey fallback. */
+#define RASC_WHITE_MATERIAL_THRESHOLD 248
 /* Default diffuse factor when per-vertex normals are not available.
  * 0.5 approximates ~60° average incidence angle for general scene geometry. */
 #define RASC_DEFAULT_DIFFUSE 0.5f
 /* Minimum k[0] constant attenuation value below which we skip attenuation
  * (avoids division by near-zero). */
 #define RASC_ATTN_K0_MIN 0.001f
+
+static s32 rasc_is_perspective_white_with_dark_amb(const GXChanCtrl* ch) {
+    u32 amb_sum;
+    if (!ch || g_gx_state.proj_type == GX_ORTHOGRAPHIC)
+        return 0;
+    amb_sum = (u32)ch->amb_color.r + (u32)ch->amb_color.g + (u32)ch->amb_color.b;
+    return ch->mat_color.r >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           ch->mat_color.g >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           ch->mat_color.b >= RASC_WHITE_MATERIAL_THRESHOLD &&
+           amb_sum < RASC_DARK_THRESHOLD;
+}
 
 /* apply_rasc_color: compute the RASC (rasterized color) for a draw.
  *
@@ -1587,10 +1600,15 @@ static void apply_rasc_color(uint8_t* const_clr) {
             const_clr[2] = 255;
             const_clr[3] = 255;
         } else {
-            const_clr[0] = ch->mat_color.r;
-            const_clr[1] = ch->mat_color.g;
-            const_clr[2] = ch->mat_color.b;
-            const_clr[3] = ch->mat_color.a;
+            if (rasc_is_perspective_white_with_dark_amb(ch)) {
+                const_clr[0] = const_clr[1] = const_clr[2] = RASC_FALLBACK_GRAY;
+                const_clr[3] = 255;
+            } else {
+                const_clr[0] = ch->mat_color.r;
+                const_clr[1] = ch->mat_color.g;
+                const_clr[2] = ch->mat_color.b;
+                const_clr[3] = ch->mat_color.a;
+            }
         }
         return;
     }
