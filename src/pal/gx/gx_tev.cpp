@@ -472,9 +472,20 @@ static int classify_tev_config(void) {
 
     /* Texture-only single stage checks */
     if (num_stages <= 1) {
-        /* REPLACE: only texture in d slot, everything else is zero */
+        /* REPLACE: texture-only single-stage patterns.
+         *
+         * The common textbook form is [ZERO, ZERO, ZERO, TEXC] → out=TEXC,
+         * but TP also uses [TEXC, ZERO, ZERO, ZERO].  In GX's combiner,
+         * C=ZERO makes the lerp choose A, so this is also a texture replace.
+         * If this variant is not detected, it is handled by the generic TEV
+         * shader, which multiplies by v_color0 and renders the Nintendo logo
+         * quads as a white box. */
         if (s0->color_a == GX_CC_ZERO && s0->color_b == GX_CC_ZERO &&
             s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_TEXC) {
+            return GX_TEV_SHADER_REPLACE;
+        }
+        if (s0->color_a == GX_CC_TEXC && s0->color_b == GX_CC_ZERO &&
+            s0->color_c == GX_CC_ZERO && s0->color_d == GX_CC_ZERO) {
             return GX_TEV_SHADER_REPLACE;
         }
         /* DECAL: alpha-blended texture over vertex color */
@@ -492,16 +503,7 @@ static int classify_tev_config(void) {
  * Uses generic input classification instead of hardcoded preset patterns.
  */
 static int detect_tev_preset(void) {
-    int base = classify_tev_config();
-
-    /* If alpha compare is active (non-trivial test), use the uber-shader
-     * which has alpha discard support. GX_ALWAYS(7) with any op always passes,
-     * so only upgrade when a real test is configured. */
-    if (g_gx_state.alpha_comp0 != GX_ALWAYS || g_gx_state.alpha_comp1 != GX_ALWAYS) {
-        return GX_TEV_SHADER_TEV;
-    }
-
-    return base;
+    return classify_tev_config();
 }
 
 /**
