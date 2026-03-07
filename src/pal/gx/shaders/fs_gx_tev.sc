@@ -59,7 +59,7 @@ void main()
     } else if (mode < 3.5) {
         vec3 blended = mix(u_tevReg0.rgb, u_tevReg1.rgb, texColor.rgb);
         float a = mix(u_tevReg0.a, u_tevReg1.a, texColor.a);
-        result = vec4(blended, a) * v_color0;
+        result = vec4(blended, a);
     } else if (mode < 4.5) {
         vec3 decaled = mix(v_color0.rgb, texColor.rgb, texColor.a);
         result = vec4(decaled, v_color0.a);

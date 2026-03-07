@@ -342,28 +342,12 @@ void pal_render_begin_frame(void) {
     float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     bgfx::setViewTransform(0, identity, identity);
 
-    /* View 1: centroid camera 3D room draws.
-     * Pre-centroid background fills (draws 0-~1000) write depth=~0.950 using the
-     * original MVP, contaminating the depth buffer.  Post-centroid draws at
-     * NDC.z≈0.9996 then fail LEQUAL (0.9996 > 0.950 → rejected).  Giving the
-     * centroid pass its own depth-clear view fixes this: BGFX_CLEAR_DEPTH resets
-     * the depth to 1.0 before the first centroid draw, so all room geometry at
-     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  No color clear — view 0's
-     * framebuffer is preserved and the 3D room composites over it. */
-    bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH | BGFX_CLEAR_COLOR, 0x00ff00ff, 1.0f, 0);
-    bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
-    bgfx::setViewTransform(1, identity, identity);
-
-    /* View 2: fade overlay — renders last, after all 3D content.
-     * No clear (preserves composite framebuffer), same rect. */
-    bgfx::setViewRect(2, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(2, BGFX_CLEAR_NONE);
-    bgfx::setViewMode(2, bgfx::ViewMode::Sequential);
-    bgfx::setViewTransform(2, identity, identity);
-    bgfx::touch(2);
-
-    bgfx::touch(1);
+    /* Single-view rendering: all draws go to view 0.
+     * Multi-view compositing (views 1+2) was unreliable on Mesa softpipe —
+     * view 1 clears weren't visible in captures.  The depth-conflict between
+     * pre-centroid PASSCLR draws (depth≈0.950) and post-centroid room draws
+     * (depth≈0.9996) is solved by disabling depth test for centroid draws
+     * (see pal_tev_flush_draw). */
     bgfx::touch(0);
 
     /* Enable bgfx debug text overlay for frame diagnostics */
@@ -436,40 +420,38 @@ void pal_render_end_frame(void) {
      * calls for this frame complete, then fires captureFrame() with current
      * frame's pixels — no pipeline delay. */
 
-    /* ---- TEST: Submit a bright red quad to view 1 to verify the pipeline ---- */
+    /* --- Diagnostic: submit a known-good bright quad to verify bgfx pipeline ---
+     * This draws a small white quad in NDC space with identity transform.
+     * If the pipeline works, captured frames should have a visible white patch.
+     * Remove once 3D rendering is confirmed working. */
     {
-        static int s_test_view1 = 0;
-        if (s_test_view1 < 5 && s_frame_count > 10) {
-            s_test_view1++;
-            struct { float x, y, z; uint32_t abgr; } testv[4] = {
-                { -0.9f, -0.9f, 0.0f, 0xff0000ff },  /* red, ABGR format */
-                {  0.9f, -0.9f, 0.0f, 0xff0000ff },
-                {  0.9f,  0.9f, 0.0f, 0xff0000ff },
-                { -0.9f,  0.9f, 0.0f, 0xff0000ff },
-            };
-            bgfx::VertexLayout tl;
-            tl.begin()
-              .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-              .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
-              .end();
-            bgfx::TransientVertexBuffer ttv;
-            bgfx::TransientIndexBuffer tti;
-            if (bgfx::getAvailTransientVertexBuffer(4, tl) &&
-                bgfx::getAvailTransientIndexBuffer(6)) {
-                bgfx::allocTransientVertexBuffer(&ttv, 4, tl);
-                bgfx::allocTransientIndexBuffer(&tti, 6);
-                memcpy(ttv.data, testv, sizeof(testv));
-                uint16_t* ti = (uint16_t*)tti.data;
-                ti[0] = 0; ti[1] = 1; ti[2] = 2;
-                ti[3] = 0; ti[4] = 2; ti[5] = 3;
-                float iden[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-                bgfx::setTransform(iden);
-                bgfx::setVertexBuffer(0, &ttv);
-                bgfx::setIndexBuffer(&tti);
-                bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-                bgfx::submit(1, {pal_tev_get_program_handle(0)});  /* PASSCLR program */
-                fprintf(stderr, "{\"test_quad_view1\":{\"frame\":%u}}\n", s_frame_count);
-            }
+        struct { float x, y, z; uint32_t abgr; } dv[4] = {
+            { -0.3f, -0.3f, 0.0f, 0xffffffff },
+            {  0.3f, -0.3f, 0.0f, 0xffffffff },
+            {  0.3f,  0.3f, 0.0f, 0xffffffff },
+            { -0.3f,  0.3f, 0.0f, 0xffffffff },
+        };
+        bgfx::VertexLayout dl;
+        dl.begin()
+          .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+          .end();
+        bgfx::TransientVertexBuffer dtv;
+        bgfx::TransientIndexBuffer dti;
+        if (bgfx::getAvailTransientVertexBuffer(4, dl) >= 4 &&
+            bgfx::getAvailTransientIndexBuffer(6) >= 6) {
+            bgfx::allocTransientVertexBuffer(&dtv, 4, dl);
+            bgfx::allocTransientIndexBuffer(&dti, 6);
+            memcpy(dtv.data, dv, sizeof(dv));
+            uint16_t* di = (uint16_t*)dti.data;
+            di[0] = 0; di[1] = 1; di[2] = 2;
+            di[3] = 0; di[4] = 2; di[5] = 3;
+            float iden[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+            bgfx::setTransform(iden);
+            bgfx::setVertexBuffer(0, &dtv);
+            bgfx::setIndexBuffer(&dti);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            bgfx::submit(0, {pal_tev_get_program_handle(0)});
         }
     }
 
