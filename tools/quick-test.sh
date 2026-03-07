@@ -166,6 +166,9 @@ python3 tools/check_bmp_coverage.py "$OUTPUT_DIR"/frame_*.bmp 2>/dev/null || tru
 if [[ "$PHASE" == "3" ]]; then
     echo "Phase 3 RASC inject values:"
     grep '"rasc_inject"' "$LOG_FILE" 2>/dev/null || echo "(none found)"
+    echo "Phase 3 texture decode / TLUT diagnostics:"
+    grep -E '"tex_decode"|"gx_decode_texture_no_tlut"|"gx_load_tex_obj_no_tp"' "$LOG_FILE" 2>/dev/null | head -40 || \
+        echo "(no texture decode diagnostics)"
     echo "Phase 3 RASC grey fallback (daTitle/dynamic-light-only draws):"
     grep '"rasc_grey_fallback"' "$LOG_FILE" 2>/dev/null || echo "(no grey fallback draws)"
     echo "Phase 3 geometry-centroid camera fallback:"
