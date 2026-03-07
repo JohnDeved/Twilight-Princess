@@ -34,6 +34,9 @@ from pathlib import Path
 
 # ANSI escape code pattern for stripping terminal colors from log lines
 _ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+COLORFULNESS_THRESHOLD = 16
+VISIBLE_FRAME_PCT = 20
+GREYSCALE_FRAME_MAX_COLORFUL_PCT = 1.0
 
 
 def parse_log(logfile):
@@ -125,7 +128,7 @@ def analyze_bmp(path):
                     r_val = row[x * 3 + 2]
                     if r_val > 2 or g_val > 2 or b_val > 2:
                         nonblack += 1
-                    if max(r_val, g_val, b_val) - min(r_val, g_val, b_val) >= 16:
+                    if max(r_val, g_val, b_val) - min(r_val, g_val, b_val) >= COLORFULNESS_THRESHOLD:
                         colorful += 1
                     total_r += r_val
                     total_g += g_val
@@ -768,7 +771,8 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
             if analysis:
                 analysis["file"] = bmp.name
                 frame_analyses.append(analysis)
-                if analysis.get("pct_nonblack", 0) >= 20 and analysis.get("pct_colorful", 0.0) < 1.0:
+                if (analysis.get("pct_nonblack", 0) >= VISIBLE_FRAME_PCT and
+                        analysis.get("pct_colorful", 0.0) < GREYSCALE_FRAME_MAX_COLORFUL_PCT):
                     result["issues"].append(
                         f"Captured frame {bmp.name} is visible but almost entirely greyscale "
                         f"(pct_colorful={analysis.get('pct_colorful', 0.0):.2f})"
