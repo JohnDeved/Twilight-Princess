@@ -129,7 +129,7 @@ jobs:
           export TP_VERIFY=1
           export TP_VERIFY_DIR=verify_output
           export TP_TEST_FRAMES=200
-          export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,128,129,150,180,200"
+          export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,90,120,128,129,130,131,150,180,200"
           export TP_SKIP_FADE=1
           export TP_ENABLE_PROC_TITLE=1
           timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_render.log || true

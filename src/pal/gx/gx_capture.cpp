@@ -179,6 +179,7 @@ void pal_capture_frame(const void* data, uint32_t size) {
     if (size > 0 && size < required)
         return;
 
+    uint32_t nonblack_rgb = 0;
     for (uint32_t y = 0; y < copy_h; y++) {
         uint32_t src_y = s_cap_yflip ? (h - 1 - y) : y;
         const uint8_t* src_row = (const uint8_t*)data + src_y * pitch;
@@ -186,15 +187,65 @@ void pal_capture_frame(const void* data, uint32_t size) {
 
         for (uint32_t x = 0; x < copy_w; x++) {
             /* BGRA → RGBA */
-            dst_row[x * 4 + 0] = src_row[x * 4 + 2]; /* R */
-            dst_row[x * 4 + 1] = src_row[x * 4 + 1]; /* G */
-            dst_row[x * 4 + 2] = src_row[x * 4 + 0]; /* B */
-            dst_row[x * 4 + 3] = src_row[x * 4 + 3]; /* A */
+            uint8_t b = src_row[x * 4 + 0];
+            uint8_t g = src_row[x * 4 + 1];
+            uint8_t r = src_row[x * 4 + 2];
+            uint8_t a = src_row[x * 4 + 3];
+            dst_row[x * 4 + 0] = r;
+            dst_row[x * 4 + 1] = g;
+            dst_row[x * 4 + 2] = b;
+            dst_row[x * 4 + 3] = a;
+            if (r > 0 || g > 0 || b > 0)
+                nonblack_rgb++;
         }
     }
 
     s_has_data = 1;
     s_frame_number++;
+
+    /* Log capture diagnostics for every 10th frame and key frames.
+     * This tracks whether bgfx is sending non-black pixel data. */
+    if (s_frame_number <= 5 || s_frame_number % 10 == 0 ||
+        (s_frame_number >= 10 && s_frame_number <= 20) ||
+        (s_frame_number >= 128 && s_frame_number <= 135)) {
+        /* Find the Y range of nonblack pixels for spatial debugging */
+        uint32_t first_nb_y = copy_h, last_nb_y = 0;
+        if (nonblack_rgb > 0) {
+            for (uint32_t y = 0; y < copy_h; y++) {
+                const uint8_t* row = s_fb + y * FB_W * 4;
+                for (uint32_t x = 0; x < copy_w; x++) {
+                    if (row[x*4+0] > 0 || row[x*4+1] > 0 || row[x*4+2] > 0) {
+                        if (y < first_nb_y) first_nb_y = y;
+                        if (y > last_nb_y) last_nb_y = y;
+                        break; /* found nonblack in this row */
+                    }
+                }
+            }
+        }
+        /* Sample a few pixels from different positions for debugging */
+        uint8_t p0[4] = {0}, pm[4] = {0}, pe[4] = {0};
+        if (s_fb) {
+            /* Row 0, col 0 */
+            memcpy(p0, s_fb, 4);
+            /* Row 240, col 320 (center) */
+            memcpy(pm, s_fb + (240 * FB_W + 320) * 4, 4);
+            /* Row 460, col 320 (near bottom, in the 456-480 gap) */
+            if (copy_h > 460)
+                memcpy(pe, s_fb + (460 * FB_W + 320) * 4, 4);
+        }
+        fprintf(stderr, "{\"capture_diag\":{\"frame\":%u,\"size\":%u,"
+                "\"nonblack_rgb\":%u,\"total_px\":%u,\"pct\":%.1f,"
+                "\"nb_y_range\":[%u,%u],"
+                "\"px_0_0\":[%u,%u,%u,%u],"
+                "\"px_center\":[%u,%u,%u,%u],"
+                "\"px_bottom\":[%u,%u,%u,%u]}}\n",
+                s_frame_number, size, nonblack_rgb, copy_w * copy_h,
+                copy_w * copy_h > 0 ? 100.0f * nonblack_rgb / (copy_w * copy_h) : 0.0f,
+                first_nb_y, last_nb_y,
+                p0[0], p0[1], p0[2], p0[3],
+                pm[0], pm[1], pm[2], pm[3],
+                pe[0], pe[1], pe[2], pe[3]);
+    }
 
     /* Write every frame to raw video file for MP4 generation */
     if (s_raw_video) {

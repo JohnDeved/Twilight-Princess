@@ -455,6 +455,28 @@ void pal_gx_set_tex_coord_gen(GXTexCoordID dst, GXTexGenType func, GXTexGenSrc s
 void pal_gx_set_projection(const f32 mtx[4][4], GXProjectionType type) {
     memcpy(g_gx_state.proj_mtx, mtx, sizeof(g_gx_state.proj_mtx));
     g_gx_state.proj_type = type;
+
+    /* Snapshot perspective projections for centroid camera.
+     * The 3D camera sets perspective before room rendering, but J2D code
+     * overwrites it with orthographic before DL draws flush.  The TEV
+     * system uses the saved perspective for centroid camera draws. */
+    if (type == GX_PERSPECTIVE) {
+        pal_tev_set_persp_proj(mtx);
+    }
+
+    /* Log projection changes for debugging — perspective vs ortho. */
+    {
+        static int s_proj_log = 0;
+        if (type == GX_PERSPECTIVE && s_proj_log < 100) {
+            fprintf(stderr, "{\"proj_set\":{\"n\":%d,\"type\":%d,"
+                    "\"m00\":%.6f,\"m11\":%.6f,\"m22\":%.6f,\"m23\":%.6f,"
+                    "\"m03\":%.6f,\"m13\":%.6f,\"m33\":%.6f}}\n",
+                    s_proj_log, (int)type,
+                    mtx[0][0], mtx[1][1], mtx[2][2], mtx[2][3],
+                    mtx[0][3], mtx[1][3], mtx[3][3]);
+            s_proj_log++;
+        }
+    }
 }
 
 void pal_gx_load_pos_mtx_imm(const f32 mtx[3][4], u32 id) {

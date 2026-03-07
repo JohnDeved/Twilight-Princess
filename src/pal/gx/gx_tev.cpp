@@ -145,6 +145,14 @@ static int s_tev_ready = 0;
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
 
+/* Saved perspective projection for centroid camera draws.
+ * The game sets perspective projection (GX_PERSPECTIVE) before 3D room
+ * rendering but J2D code overwrites it with orthographic before the DL
+ * draws actually flush.  We snapshot the last perspective projection so
+ * the centroid camera MVP uses the correct frustum. */
+static float s_persp_proj[4][4];
+static int   s_has_persp_proj = 0;
+
 /* Centroid accumulation state — file-scope so the per-frame reset block
  * (at gx_frame_draw_calls == 0 boundary) can clear them each frame. */
 static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
@@ -1444,6 +1452,16 @@ u32 pal_tev_get_skip_passclr_fill_count(void) { return s_passclr_fill_count; }
 u32 pal_tev_get_skip_passclr_alpha_count(void) { return s_skip_passclr_alpha; }
 u32 pal_tev_get_skip_passclr_env_count(void) { return s_skip_passclr_env; }
 
+void pal_tev_set_persp_proj(const float mtx[4][4]) {
+    memcpy(s_persp_proj, mtx, sizeof(s_persp_proj));
+    s_has_persp_proj = 1;
+}
+
+unsigned short pal_tev_get_program_handle(int preset) {
+    if (preset < 0 || preset >= GX_TEV_SHADER_COUNT) return UINT16_MAX;
+    return s_programs[preset].idx;
+}
+
 void pal_tev_report_diagnostics(void) {
     /* TEV config summary */
     fprintf(stdout, "{\"tev_config_summary\":{\"unique_configs\":%d,\"configs\":[",
@@ -2346,14 +2364,42 @@ void pal_tev_flush_draw(void) {
         }
 
         /* Re-compute and re-set the MVP for this draw using the SAVED centroid
-         * view matrix.  Using g_gx_state.pos_mtx[0] here would be wrong because
-         * J3D calls GXLoadPosMtxImm for every mesh node, overwriting pos_mtx
-         * BEFORE pal_tev_flush_draw runs for that draw.  s_geom_centroid_view is
-         * set once and never overwritten, so it always holds the correct LookAt.
-         * The intro room stores vertices in world space (model ≈ identity), so
-         * proj * centroid_view directly maps world positions to clip space. */
+         * view matrix and a built-in perspective projection.
+         *
+         * Two problems with using g_gx_state directly:
+         *  1. pos_mtx[0]: J3D calls GXLoadPosMtxImm per mesh node, overwriting it
+         *     → use s_geom_centroid_view (set once, never overwritten).
+         *  2. proj_mtx: The 3D camera sets perspective, but J2D code overwrites it
+         *     with orthographic before DL draws flush.  Orthographic maps pixel
+         *     coordinates (0-640) to NDC — world-space coords (x=2249, z=8963) go
+         *     far outside [-1,+1] and get clipped → all-black framebuffer.
+         *     → build perspective projection from FOV/aspect/near/far parameters.
+         */
         if (s_geom_centroid_active) {
-            const float (*proj_c)[4] = g_gx_state.proj_mtx;
+            /* Build a perspective projection matrix matching the game camera.
+             * GCN/GX format (row-major):
+             *   [cot(fov/2)/aspect, 0,          0,               0         ]
+             *   [0,                 cot(fov/2), 0,               0         ]
+             *   [0,                 0,          -(f+n)/(f-n),   -2fn/(f-n) ]
+             *   [0,                 0,          -1,              0         ]
+             * TP room camera: fov=60°, aspect=640/456, near=1, far=100000 */
+            float proj_c[4][4];
+            {
+                const float fov_deg = 60.0f; /* degrees — wide enough for room geometry */
+                const float aspect = 640.0f / 456.0f;
+                const float near_z = 1.0f;
+                const float far_z  = 100000.0f;
+                const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+                /* Use tanf instead of cotf for portability */
+                float t = 1.0f / tanf(fov_rad * 0.5f);
+                float range = far_z - near_z;
+                memset(proj_c, 0, sizeof(proj_c));
+                proj_c[0][0] = t / aspect;
+                proj_c[1][1] = t;
+                proj_c[2][2] = -(far_z + near_z) / range;
+                proj_c[2][3] = -2.0f * far_z * near_z / range;
+                proj_c[3][2] = -1.0f;
+            }
             /* Use the saved centroid view, NOT pos_mtx[0] which J3D overwrites */
             float m44_c[16] = {
                 s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
@@ -2376,6 +2422,19 @@ void pal_tev_flush_draw(void) {
                 for (int c = 0; c < 4; c++)
                     mvp_c[c*4+r] = mvp_rowmaj[r*4+c];
             bgfx::setTransform(mvp_c);
+            /* One-shot log: which projection is the centroid MVP using? */
+            {
+                static int s_centroid_mvp_log = 0;
+                if (s_centroid_mvp_log < 1) {
+                    s_centroid_mvp_log++;
+                    fprintf(stderr, "{\"centroid_mvp_proj\":{\"has_persp\":%d,"
+                            "\"proj00\":%.6f,\"proj11\":%.6f,\"proj22\":%.6f,"
+                            "\"proj23\":%.6f,\"proj32\":%.6f,\"proj33\":%.6f}}\n",
+                            s_has_persp_proj,
+                            proj_c[0][0], proj_c[1][1], proj_c[2][2],
+                            proj_c[2][3], proj_c[3][2], proj_c[3][3]);
+                }
+            }
         }
     }
 
@@ -2411,7 +2470,25 @@ void pal_tev_flush_draw(void) {
                     memcpy(&wy, tvb.data + pos_offset + 4, 4);
                     memcpy(&wz, tvb.data + pos_offset + 8, 4);
                 }
-                const float (*gp)[4] = g_gx_state.proj_mtx;
+                /* Build the same perspective projection used by the centroid MVP.
+                 * This must match the projection in the centroid override block above. */
+                float gp_local[4][4];
+                {
+                    const float fov_deg = 60.0f;
+                    const float aspect = 640.0f / 456.0f;
+                    const float near_z = 1.0f;
+                    const float far_z  = 100000.0f;
+                    const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+                    float t = 1.0f / tanf(fov_rad * 0.5f);
+                    float range = far_z - near_z;
+                    memset(gp_local, 0, sizeof(gp_local));
+                    gp_local[0][0] = t / aspect;
+                    gp_local[1][1] = t;
+                    gp_local[2][2] = -(far_z + near_z) / range;
+                    gp_local[2][3] = -2.0f * far_z * near_z / range;
+                    gp_local[3][2] = -1.0f;
+                }
+                const float (*gp)[4] = (const float (*)[4])gp_local;
                 /* Use the CENTROID MVP for clip/NDC calculation (same transform that
                  * bgfx::setTransform was given for this draw when centroid is active). */
                 float use_mvp[16];
@@ -3028,6 +3105,27 @@ void pal_tev_flush_draw(void) {
 
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
+
+    /* One-shot: log first centroid draw details to verify TVB data */
+    {
+        static int s_centroid_draw_log = 0;
+        if (s_centroid_draw_log < 3 && view_id == 1 && s_geom_centroid_active) {
+            s_centroid_draw_log++;
+            fprintf(stderr, "{\"centroid_draw\":{\"n\":%d,\"view\":%d,"
+                    "\"nverts\":%u,\"preset\":%d,"
+                    "\"state\":\"0x%llX\","
+                    "\"proj_type\":%d,\"proj00\":%.6f,"
+                    "\"blend\":%d,\"depth\":%d,\"cull\":%d}}\n",
+                    s_centroid_draw_log, (int)view_id,
+                    (unsigned)nverts, preset,
+                    (unsigned long long)state,
+                    g_gx_state.proj_type,
+                    g_gx_state.proj_mtx[0][0],
+                    g_gx_state.blend_mode,
+                    g_gx_state.z_compare_enable,
+                    g_gx_state.cull_mode);
+        }
+    }
 
     /* Track valid draw call for per-frame milestone validation */
     gx_frame_draw_calls++;
