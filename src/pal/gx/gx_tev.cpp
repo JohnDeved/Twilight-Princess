@@ -1436,6 +1436,7 @@ static uint32_t s_skip_passclr_alpha = 0; /* transparent PASSCLR fill skipped */
 static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
 static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
 static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
+static uint32_t s_diag_frame_num     = 0; /* diagnostic frame counter */
 
 u32 pal_tev_get_total_attempt_count(void) {
     return s_ok_submitted + s_skip_not_ready + s_skip_no_verts +
@@ -1846,6 +1847,13 @@ void pal_tev_flush_draw(void) {
     /* Raw stride matches the actual GX vertex data byte layout */
     uint32_t raw_stride = calc_raw_vertex_stride();
     if (raw_stride == 0) { s_skip_bad_stride++; return; }
+
+    /* gx_frame_draw_calls is reset by the per-frame render path before the
+     * first draw of each new frame, so gx_frame_draw_calls==0 here marks the
+     * frame boundary for these diagnostics. */
+    if (gx_frame_draw_calls == 0) {
+        s_diag_frame_num++;
+    }
 
     /* 3. Check if we need to inject constant color when vertex color is missing.
      * PASSCLR: inject from TEV registers or material color.
@@ -2530,6 +2538,7 @@ void pal_tev_flush_draw(void) {
                 /* Note: pos_mtx0 shown here is the GAME's matrix (loaded by J3D for this mesh).
                  * The centroid override bypasses this via s_geom_centroid_view. */
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
+                        "\"frame\":%u,"
                         "\"draw\":%u,"
                         "\"nverts\":%u,"
                         "\"pnmtx\":%d,\"tmtx\":%d,"
@@ -2552,6 +2561,7 @@ void pal_tev_flush_draw(void) {
                         "\"s0_abcd\":[%d,%d,%d,%d],"
                         "\"s0_texmap\":%d,\"s0_tex_valid\":%d,"
                         "\"num_texgen\":%d,\"tg0_src\":%d}}\n",
+                        s_diag_frame_num,
                         s_total_draw_count,
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
@@ -2819,6 +2829,7 @@ void pal_tev_flush_draw(void) {
             if (preset == GX_TEV_SHADER_BLEND || s_state_dump < 3) {
                 s_state_dump++;
                 fprintf(stderr, "{\"state_dump\":{\"draw_id\":%u,\"preset\":\"%s\","
+                        "\"frame\":%u,"
                         "\"prog_valid\":%d,\"prog_idx\":%u,"
                         "\"color_update\":%d,\"state\":\"0x%016llX\","
                         "\"write_rgb\":%d,\"write_a\":%d,"
@@ -2831,6 +2842,7 @@ void pal_tev_flush_draw(void) {
                         "\"nverts\":%u,\"nidx\":%u,\"inject\":%d}}\n",
                         s_total_draw_count,
                         (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                        s_diag_frame_num,
                         bgfx::isValid(s_programs[preset]) ? 1 : 0,
                         s_programs[preset].idx,
                         g_gx_state.color_update,

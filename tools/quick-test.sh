@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # tools/quick-test.sh — Shared render phase runner for Phase 3 and Phase 4.
 #
-# Encapsulates Phase 3 (3D room, frame 129) and Phase 4 (gameplay intro,
+# Encapsulates Phase 3 (3D room, frames 129-130) and Phase 4 (gameplay intro,
 # frame 200) capture logic so CI (port-test.yml) and self-test (self-test.sh)
 # both invoke the same code path without drift.
 #
 # Usage:
-#   tools/quick-test.sh --phase 3 [options]    # 3D room capture, frame 129
+#   tools/quick-test.sh --phase 3 [options]    # 3D room capture, frames 129-130
 #   tools/quick-test.sh --phase 4 [options]    # Gameplay intro capture, frame 200
 #
 # Options:
@@ -62,12 +62,15 @@ case "$PHASE" in
     3)
         OUTPUT_DIR="${OUTPUT_DIR:-quick-test-output-phase3}"
         TIMEOUT_SECS="${TIMEOUT_SECS:-180}"
-        PHASE_DESC="3D room frame capture (frame 129)"
+        PHASE_DESC="3D room frame capture (frames 129-130)"
         DISPLAY_NUM=":102"
         CAPTURE_FRAME="0129"
         GATE="frame_0129:1"
         GATE_MSG="3D room gate FAILED: frame_0129 pct_nonblack < 1% — check centroid camera (centroid_view_switch) and view 1 depth-clear in gx_render.cpp"
-        # Disable interval BMP captures so verify_output_3d contains only frame_0129.bmp
+        # Disable interval BMP captures so verify_output_3d contains only the
+        # targeted intro-room frames. We intentionally capture both frame_0129
+        # and frame_0130 because current CI runs have been landing the visible
+        # intro geometry one frame later than the stacked base branch.
         # (captured by pal_verify_capture_frame).  Without this, gx_capture.cpp saves
         # frames 1/30/60/90/120 periodically — dark near-black frames that pollute the
         # PR comment 3D Scene section before the key 75%-nonblack frame_0129.
@@ -129,8 +132,8 @@ unset TP_SKIP_DL_DRAWS  2>/dev/null || true
 
 case "$PHASE" in
     3)
-        export TP_TEST_FRAMES=130
-        export TP_VERIFY_CAPTURE_FRAMES="129"
+        export TP_TEST_FRAMES=131
+        export TP_VERIFY_CAPTURE_FRAMES="129,130"
         # Use TP_SYNC_RENDER=1: bgfx runs single-threaded, renderFrame() blocks
         # until Mesa softpipe finishes. No TP_FRAME_DELAY_MS needed — the frame
         # is fully rasterized before pal_verify_frame() reads the capture buffer.
