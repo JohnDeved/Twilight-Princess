@@ -14,24 +14,35 @@
 #include <stdio.h>
 extern "C" void pal_gd_reset_dummy(void);
 
-static inline int pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
-    enum { MAX_PACKET_CHAIN_SCAN = 0x10000 };
+static inline bool pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
+    /* Legitimate J3D packet chains are short (dozens or at most low hundreds of
+     * nodes in the affected room/title paths). Use 1024 as a generous fixed
+     * ceiling so a corrupted self-referential chain cannot loop forever in the
+     * PC guard path while still staying far above any expected real chain. */
+    enum { MAX_PACKET_CHAIN_SCAN = 1024 };
     J3DPacket* it = head;
     int depth = 0;
     for (; it != NULL && depth < MAX_PACKET_CHAIN_SCAN; depth++) {
-        if ((uintptr_t)it < 0x1000)
-            return 1;
         if (it == target)
-            return 1;
+            return true;
         J3DPacket* next = it->getNextPacket();
+        /* Treat a self-referential node as "already present" so the prepend
+         * helper stops instead of extending a chain that is already corrupt. */
         if (next == it)
-            return 1;
+            return true;
         it = next;
     }
-    return 0;
+    return false;
 }
 
 static inline void pal_packet_prepend(J3DPacket** head, J3DPacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
+
+static inline void pal_shape_packet_prepend(J3DShapePacket** head, J3DShapePacket* packet) {
     if (pal_packet_chain_contains(*head, packet))
         return;
     packet->setNextPacket(*head);
@@ -248,7 +259,7 @@ void J3DMatPacket::addShapePacket(J3DShapePacket* pShape) {
         mpShapePacket = pShape;
     } else {
 #if PLATFORM_PC
-        pal_packet_prepend((J3DPacket**)&mpShapePacket, pShape);
+        pal_shape_packet_prepend(&mpShapePacket, pShape);
 #else
         pShape->setNextPacket(mpShapePacket);
         mpShapePacket = pShape;

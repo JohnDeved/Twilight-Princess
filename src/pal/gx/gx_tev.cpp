@@ -138,10 +138,13 @@ static int s_tev_ready = 0;
  * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw).
  *
  * Once gameplay establishes the centroid view, keep it latched for later
- * low-draw-count room frames too. The initial gameplay room frame is the
- * only one that exceeds CENTROID_FRAME_DRAWS_MIN; clearing the flag every
- * frame makes later gameplay frames fall back to the stale default camera
- * and render black again. */
+ * lower-draw-count room frames too. In the current headless gameplay path,
+ * the first room-establishing frame is the one that typically exceeds
+ * CENTROID_FRAME_DRAWS_MIN; clearing the flag every frame makes the later
+ * gameplay frames fall back to the stale default camera and render black
+ * again. This stays latched for the current gameplay session and is expected
+ * to be refreshed naturally when a later high-draw gameplay frame recomputes
+ * the centroid view or when the process restarts between test runs. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
 
