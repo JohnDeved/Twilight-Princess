@@ -416,6 +416,7 @@ static int classify_tev_config(void) {
     u32 all_tex = 0, all_ras = 0, all_konst = 0, all_prev = 0;
     int num_stages = g_gx_state.num_tev_stages;
     if (num_stages == 0) num_stages = 1;
+    int first_tex_stage = -1;
 
     /* Accumulate input classes across all active stages */
     for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
@@ -430,12 +431,18 @@ static int classify_tev_config(void) {
         all_ras   |= (classes & 0x2);
         all_konst |= (classes & 0x4);
         all_prev  |= (classes & 0x8);
+
+        if (first_tex_stage < 0 &&
+            st->tex_map != GX_TEXMAP_NULL &&
+            st->tex_map < GX_MAX_TEXMAP &&
+            g_gx_state.tex_bindings[st->tex_map].valid) {
+            first_tex_stage = s;
+        }
     }
 
     /* Check if texture is actually available */
     const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-    int has_texture = (s0->tex_map != GX_TEXMAP_NULL && s0->tex_map < GX_MAX_TEXMAP &&
-                       g_gx_state.tex_bindings[s0->tex_map].valid);
+    int has_texture = (first_tex_stage >= 0);
 
     /* If TEV doesn't reference texture at all, or no texture bound */
     if (!all_tex || !has_texture) {
@@ -2650,9 +2657,18 @@ void pal_tev_flush_draw(void) {
 
     /* 8. Bind texture if shader needs it */
     if (preset != GX_TEV_SHADER_PASSCLR) {
-        const GXTevStage* s0 = &g_gx_state.tev_stages[0];
-        if (s0->tex_map < GX_MAX_TEXMAP) {
-            const GXTexBinding* binding = &g_gx_state.tex_bindings[s0->tex_map];
+        const GXTevStage* tex_stage = NULL;
+        for (int s = 0; s < g_gx_state.num_tev_stages && s < GX_MAX_TEVSTAGE; s++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[s];
+            if (st->tex_map != GX_TEXMAP_NULL &&
+                st->tex_map < GX_MAX_TEXMAP &&
+                g_gx_state.tex_bindings[st->tex_map].valid) {
+                tex_stage = st;
+                break;
+            }
+        }
+        if (tex_stage && tex_stage->tex_map < GX_MAX_TEXMAP) {
+            const GXTexBinding* binding = &g_gx_state.tex_bindings[tex_stage->tex_map];
             bgfx::TextureHandle tex = upload_gx_texture(binding);
             if (bgfx::isValid(tex)) {
                 bgfx::setTexture(0, s_tex_uniform, tex, gx_sampler_flags(binding));
@@ -2671,6 +2687,7 @@ void pal_tev_flush_draw(void) {
             if (should_log) {
                 if (s_tex_log_count < 5) s_tex_log_count++;
                 int ns = g_gx_state.num_tev_stages;
+                const GXTevStage* s0 = &g_gx_state.tev_stages[0];
                 const GXTevStage* s1 = (ns >= 2) ? &g_gx_state.tev_stages[1] : NULL;
                 /* First 2 texcoord values for UV debugging */
                 float tc0_u = 0, tc0_v = 0, tc1_u = 0, tc1_v = 0;
@@ -2713,7 +2730,7 @@ void pal_tev_flush_draw(void) {
                         "\"tev0_cd\":[%d,%d,%d,%d]",
                         s_total_draw_count, s_fs_names[preset],
                         bgfx::isValid(tex) ? 1 : 0,
-                        s0->tex_map,
+                        tex_stage->tex_map,
                         (unsigned)binding->width, (unsigned)binding->height,
                         (int)binding->format, binding->image_ptr,
                         binding->valid,
