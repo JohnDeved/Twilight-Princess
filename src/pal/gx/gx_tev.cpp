@@ -2221,30 +2221,6 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
-    {
-        static int s_mvp_dump = 0;
-        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
-            s_mvp_dump++;
-            const float (*gp)[4] = g_gx_state.proj_mtx;
-            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f]}}\n",
-                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
-                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
-                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
-                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
-                    mvp[0],mvp[1],mvp[2],mvp[3],
-                    mvp[4],mvp[5],mvp[6],mvp[7],
-                    mvp[8],mvp[9],mvp[10],mvp[11],
-                    mvp[12],mvp[13],mvp[14],mvp[15]);
-        }
-    }
 
     /* Geometry-centroid camera fallback for the 3D intro room (PC only).
      *
@@ -3080,7 +3056,7 @@ void pal_tev_flush_draw(void) {
         };
         float alphaOp[4] = {
             (float)g_gx_state.alpha_op,             /* op */
-            1.0f,                                    /* enable */
+            (g_gx_state.alpha_comp0 != 7 || g_gx_state.alpha_comp1 != 7) ? 1.0f : 0.0f,  /* enable only when needed */
             0.0f, 0.0f
         };
         bgfx::setUniform(s_alpha_test_uniform, alphaTest);
