@@ -333,17 +333,6 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
 /* ================================================================ */
 
 /**
- * Check if a TEV stage references rasterized color (RASC or RASA) in any
- * of its four color input slots (A, B, C, D).
- */
-static int stage_uses_rasc(const GXTevStage* st) {
-    return (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
-            st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
-            st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
-            st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA);
-}
-
-/**
  * Classify what inputs a TEV color argument references.
  * Returns a bitmask: bit 0=texture, bit 1=rasterized, bit 2=constant/register, bit 3=prev
  */
@@ -1868,50 +1857,7 @@ void pal_tev_flush_draw(void) {
             passclr_uses_rasc = 1;
     }
 
-    /* Check if any TEV stage references RASC/RASA (pre-compute for all presets).
-     * Used by the inject_color gate below. */
-    int any_stage_uses_rasc = 0;
-    {
-        int num_stages = g_gx_state.num_tev_stages;
-        if (num_stages == 0) num_stages = 1;
-        for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
-            const GXTevStage* st = &g_gx_state.tev_stages[s];
-            if (stage_uses_rasc(st))
-                any_stage_uses_rasc = 1;
-        }
-    }
-
-    /* Shader presets MODULATE, BLEND, DECAL, and TEV multiply their output
-     * by v_color0 in the fragment shader.  On GCN, vertex CLR0 data is
-     * irrelevant when the TEV formula doesn't reference RASC — the channel
-     * combiner provides the colour via a separate circuit.  Games often
-     * submit CLR0=(0,0,0,0) as a placeholder when RASC is unused.
-     *
-     * On PC, v_color0 comes from the vertex buffer's CLR0 data.  If the game
-     * submitted CLR0=black and the shader multiplies by it, the result is
-     * black.  To prevent this:
-     *   - When NO CLR0 attribute → always inject (obvious case)
-     *   - When CLR0 IS present but TEV does NOT use RASC → inject white
-     *     (because the shader's "× v_color0" is a no-op in the GCN pipeline)
-     *   - When CLR0 IS present and TEV DOES use RASC → inject RASC color
-     *     (material/ambient/lit colour replaces the placeholder black) */
-    /* On GCN, RASC is the OUTPUT of the channel combiner, not the raw
-     * vertex CLR0 data.  The channel combiner transforms CLR0 through
-     * ambient/material/lighting calculations.  On PC, v_color0 comes from
-     * the vertex buffer directly (= CLR0), which is the WRONG value when
-     * the TEV formula references RASC.
-     *
-     * Override conditions:
-     *   - No CLR0 attribute → must inject (no vertex color at all)
-     *   - Any RASC usage → must inject channel combiner result
-     *   - Non-RASC shader presets → inject white (shader multiply is a no-op) */
-    int needs_color_override = (desc[GX_VA_CLR0].type == GX_NONE)
-                            || any_stage_uses_rasc
-                            || passclr_uses_rasc
-                            || (preset != GX_TEV_SHADER_PASSCLR
-                                && preset != GX_TEV_SHADER_REPLACE);
-
-    if (needs_color_override) {
+    if (desc[GX_VA_CLR0].type == GX_NONE || passclr_uses_rasc) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
             inject_color = 1;
             /* Determine the constant color from TEV state.
@@ -1987,7 +1933,10 @@ void pal_tev_flush_draw(void) {
             if (num_stages == 0) num_stages = 1;
             for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
                 const GXTevStage* st = &g_gx_state.tev_stages[s];
-                if (stage_uses_rasc(st))
+                if (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
+                    st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
+                    st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
+                    st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA)
                     uses_rasc = 1;
                 if (st->color_a == GX_CC_KONST || st->color_b == GX_CC_KONST ||
                     st->color_c == GX_CC_KONST || st->color_d == GX_CC_KONST)
@@ -2272,6 +2221,30 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
+    {
+        static int s_mvp_dump = 0;
+        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
+            s_mvp_dump++;
+            const float (*gp)[4] = g_gx_state.proj_mtx;
+            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f,"
+                    "%.6f,%.6f,%.6f,%.6f]}}\n",
+                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
+                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
+                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
+                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
+                    mvp[0],mvp[1],mvp[2],mvp[3],
+                    mvp[4],mvp[5],mvp[6],mvp[7],
+                    mvp[8],mvp[9],mvp[10],mvp[11],
+                    mvp[12],mvp[13],mvp[14],mvp[15]);
+        }
+    }
 
     /* Geometry-centroid camera fallback for the 3D intro room (PC only).
      *
@@ -2836,18 +2809,6 @@ void pal_tev_flush_draw(void) {
         state |= BGFX_STATE_ALPHA_REF(g_gx_state.alpha_ref1);
     }
 
-    /* Centroid camera draws: disable depth test and depth write.
-     * Pre-centroid PASSCLR fills write depth≈0.950 to the framebuffer.  Centroid
-     * room draws at NDC.z≈0.9996 would fail LEQUAL (0.9996 > 0.950).  Rather
-     * than a separate depth-cleared view (unreliable on Mesa softpipe), we
-     * simply skip depth testing for centroid draws.  Room geometry layering is
-     * acceptable without depth because the centroid camera only sees the outer
-     * shell of the room. */
-    if (s_geom_centroid_active) {
-        state &= ~BGFX_STATE_DEPTH_TEST_MASK;
-        state &= ~(uint64_t)BGFX_STATE_WRITE_Z;
-    }
-
     bgfx::setState(state);
     if ((state & BGFX_STATE_DEPTH_TEST_MASK) != 0)
         gx_frame_submit_with_depth_state++;
@@ -3014,8 +2975,9 @@ void pal_tev_flush_draw(void) {
          * 200 — if still dark, look for blend_mode!=0 or z_func rejection. */
         if (s_diag_frame == 200) {
             const GXTevStage* s0t = &g_gx_state.tev_stages[0];
-            /* Compute view_id inline — now always 0 (single-view) */
-            int tev200_view = 0;
+            /* Compute view_id inline (same logic as the submit block below) */
+            int tev200_view = g_gx_state.fade_overlay_active ? 2
+                              : (s_geom_centroid_active ? 1 : 0);
             fprintf(stderr, "{\"tev200\":{\"frame\":%u,\"draw_id\":%u,\"dc\":%u,"
                     "\"preset\":\"%s\","
                     "\"d_src\":%d,"
@@ -3065,13 +3027,28 @@ void pal_tev_flush_draw(void) {
     }
 
     /* 10. Submit draw call.
-     * All draws go to view 0 (single-view rendering).
-     * The depth-conflict (pre-centroid PASSCLR writes depth≈0.950, so centroid
-     * draws at NDC.z≈0.9996 fail LEQUAL) is solved by disabling depth test
-     * for centroid draws — see the state override below. */
-    bgfx::ViewId view_id = 0;
-    /* One-shot log when centroid camera activates.
-     * Logs draw count to show how many pre-centroid draws occurred. */
+     * View layout (rendered in ascending ID order):
+     *   0 — pre-centroid background + normal draws (depth cleared to 1.0 at frame start)
+     *   1 — centroid camera 3D room draws (depth cleared to 1.0, separate from view 0)
+     *   2 — fade overlay (no depth clear, composites on top of all 3D content)
+     *
+     * Using a separate view for centroid draws solves the depth-conflict bug:
+     * pre-centroid background fills write depth≈0.950 to view 0's depth buffer,
+     * so post-centroid room draws (NDC.z≈0.9996) would fail LEQUAL.  View 1's
+     * BGFX_CLEAR_DEPTH gives a fresh depth=1.0 for all centroid room draws. */
+    bgfx::ViewId view_id;
+    if (g_gx_state.fade_overlay_active) {
+        view_id = 2;  /* fade overlay — always last */
+    } else if (s_geom_centroid_active) {
+        view_id = 1;  /* centroid camera 3D room — depth-cleared view */
+    } else {
+        view_id = 0;  /* normal draws */
+    }
+    /* One-shot log when the first centroid draw is submitted to view 1.
+     * Confirms the depth-clear view switch fired and how many draws have
+     * been submitted so far (pre-centroid draws that contaminated depth).
+     * s_centroid_view_logged is reset per-frame (via gx_frame_draw_calls == 0)
+     * so it re-fires on each 3D room frame. */
     {
         static int s_centroid_view_logged = 0;
         if (gx_frame_draw_calls == 0) {
@@ -3103,10 +3080,7 @@ void pal_tev_flush_draw(void) {
         };
         float alphaOp[4] = {
             (float)g_gx_state.alpha_op,             /* op */
-            /* Enable alpha test only when at least one compare is NOT GX_ALWAYS.
-             * GX_ALWAYS (7) always passes, so if both are ALWAYS the test is
-             * a no-op — skip it to avoid float precision issues at the boundary. */
-            (g_gx_state.alpha_comp0 != GX_ALWAYS || g_gx_state.alpha_comp1 != GX_ALWAYS) ? 1.0f : 0.0f,
+            1.0f,                                    /* enable */
             0.0f, 0.0f
         };
         bgfx::setUniform(s_alpha_test_uniform, alphaTest);
@@ -3135,7 +3109,7 @@ void pal_tev_flush_draw(void) {
     /* One-shot: log first centroid draw details to verify TVB data */
     {
         static int s_centroid_draw_log = 0;
-        if (s_centroid_draw_log < 3 && s_geom_centroid_active) {
+        if (s_centroid_draw_log < 3 && view_id == 1 && s_geom_centroid_active) {
             s_centroid_draw_log++;
             fprintf(stderr, "{\"centroid_draw\":{\"n\":%d,\"view\":%d,"
                     "\"nverts\":%u,\"preset\":%d,"
