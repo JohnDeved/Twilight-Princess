@@ -1887,11 +1887,35 @@ void pal_tev_flush_draw(void) {
      *     (because the shader's "× v_color0" is a no-op in the GCN pipeline)
      *   - When CLR0 IS present and TEV DOES use RASC → inject RASC color
      *     (material/ambient/lit colour replaces the placeholder black) */
+    /* On GCN, RASC is the OUTPUT of the channel combiner, not the raw
+     * vertex CLR0 data.  The channel combiner transforms CLR0 through
+     * ambient/material/lighting calculations.  On PC, v_color0 comes from
+     * the vertex buffer directly (= CLR0), which is the WRONG value when
+     * the TEV formula references RASC.
+     *
+     * Override conditions:
+     *   - No CLR0 attribute → must inject (no vertex color at all)
+     *   - Any RASC usage → must inject channel combiner result
+     *   - Non-RASC shader presets → inject white (shader multiply is a no-op) */
     int needs_color_override = (desc[GX_VA_CLR0].type == GX_NONE)
+                            || any_stage_uses_rasc
                             || passclr_uses_rasc
                             || (preset != GX_TEV_SHADER_PASSCLR
-                                && preset != GX_TEV_SHADER_REPLACE
-                                && !any_stage_uses_rasc);
+                                && preset != GX_TEV_SHADER_REPLACE);
+
+    /* Diagnostic: log first few override decisions */
+    {
+        static int s_override_log = 0;
+        if (s_override_log < 10) {
+            s_override_log++;
+            fprintf(stderr, "{\"color_override\":{\"draw\":%u,\"preset\":%d,"
+                    "\"clr0_type\":%d,\"passclr_rasc\":%d,\"any_rasc\":%d,"
+                    "\"needs\":%d}}\n",
+                    s_total_draw_count, preset,
+                    (int)desc[GX_VA_CLR0].type, passclr_uses_rasc,
+                    any_stage_uses_rasc, needs_color_override);
+        }
+    }
 
     if (needs_color_override) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
@@ -2259,26 +2283,46 @@ void pal_tev_flush_draw(void) {
     bgfx::setTransform(mvp);
     {
         static int s_mvp_dump = 0;
-        if (s_mvp_dump < 2 && s_total_draw_count > 250) {
+        if (s_mvp_dump < 8) {
+            /* Dump all vertex NDC positions for this draw */
+            const GXVtxAttrFmtEntry* af_d = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+            int npos_d = (af_d[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+            int byte_off = 0;
+            if (desc[GX_VA_PNMTXIDX].type != GX_NONE) byte_off += 1;
+            for (int i = 0; i < 8; i++)
+                if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) byte_off += 1;
+
+            fprintf(stderr, "{\"draw_ndc\":{\"draw\":%u,\"preset\":%d,"
+                    "\"inject\":%d,\"const_clr\":[%d,%d,%d,%d],"
+                    "\"nverts\":%u,\"stride\":%u,\"pos_type\":%d,\"verts\":[",
+                    s_total_draw_count, preset,
+                    inject_color,
+                    (int)const_clr[0], (int)const_clr[1],
+                    (int)const_clr[2], (int)const_clr[3],
+                    (unsigned)nverts, bgfx_stride,
+                    (int)desc[GX_VA_POS].type);
+
+            int dump_n = (nverts < 6) ? nverts : 6;
+            for (int vi = 0; vi < dump_n; vi++) {
+                float pos[4] = {0,0,0,1};
+                const uint8_t* vdata = tvb.data + vi * bgfx_stride + byte_off;
+                for (int c = 0; c < npos_d && c < 3; c++)
+                    memcpy(&pos[c], vdata + c * 4, 4);
+                /* clip = mvp * pos (col-major) */
+                float clip[4];
+                for (int r = 0; r < 4; r++) {
+                    clip[r] = 0;
+                    for (int c = 0; c < 4; c++)
+                        clip[r] += mvp[c*4+r] * pos[c];
+                }
+                float w = (clip[3] != 0) ? clip[3] : 1;
+                if (vi > 0) fprintf(stderr, ",");
+                fprintf(stderr, "{\"pos\":[%.1f,%.1f,%.1f],\"ndc\":[%.3f,%.3f,%.3f]}",
+                        pos[0], pos[1], pos[2],
+                        clip[0]/w, clip[1]/w, clip[2]/w);
+            }
+            fprintf(stderr, "]}}\n");
             s_mvp_dump++;
-            const float (*gp)[4] = g_gx_state.proj_mtx;
-            fprintf(stderr, "{\"mvp_dump\":{\"proj\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f],\"mvp_cm\":["
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f,"
-                    "%.6f,%.6f,%.6f,%.6f]}}\n",
-                    gp[0][0],gp[0][1],gp[0][2],gp[0][3],
-                    gp[1][0],gp[1][1],gp[1][2],gp[1][3],
-                    gp[2][0],gp[2][1],gp[2][2],gp[2][3],
-                    gp[3][0],gp[3][1],gp[3][2],gp[3][3],
-                    mvp[0],mvp[1],mvp[2],mvp[3],
-                    mvp[4],mvp[5],mvp[6],mvp[7],
-                    mvp[8],mvp[9],mvp[10],mvp[11],
-                    mvp[12],mvp[13],mvp[14],mvp[15]);
         }
     }
 
@@ -3112,7 +3156,10 @@ void pal_tev_flush_draw(void) {
         };
         float alphaOp[4] = {
             (float)g_gx_state.alpha_op,             /* op */
-            1.0f,                                    /* enable */
+            /* Enable alpha test only when at least one compare is NOT GX_ALWAYS.
+             * GX_ALWAYS (7) always passes, so if both are ALWAYS the test is
+             * a no-op — skip it to avoid float precision issues at the boundary. */
+            (g_gx_state.alpha_comp0 != 7 || g_gx_state.alpha_comp1 != 7) ? 1.0f : 0.0f,
             0.0f, 0.0f
         };
         bgfx::setUniform(s_alpha_test_uniform, alphaTest);
@@ -3137,6 +3184,21 @@ void pal_tev_flush_draw(void) {
 
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
+
+    /* Debug: log submits for first few TEV draws */
+    {
+        static int s_submit_log = 0;
+        if (s_submit_log < 5 && preset == GX_TEV_SHADER_TEV) {
+            s_submit_log++;
+            fprintf(stderr, "{\"submit_ok\":{\"draw\":%u,\"preset\":%d,"
+                    "\"view\":%u,\"prog_idx\":%u,\"prog_valid\":%d,"
+                    "\"state\":\"0x%016llX\",\"nverts\":%u,\"nidx\":%u}}\n",
+                    s_total_draw_count, preset,
+                    view_id, s_programs[preset].idx,
+                    bgfx::isValid(s_programs[preset]) ? 1 : 0,
+                    (unsigned long long)state, (unsigned)nverts, (unsigned)num_indices);
+        }
+    }
 
     /* One-shot: log first centroid draw details to verify TVB data */
     {
