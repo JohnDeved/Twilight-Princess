@@ -137,11 +137,11 @@ static int s_tev_ready = 0;
  * Set once by the centroid calculation block; never overwritten by J3D's
  * GXLoadPosMtxImm calls (which overwrite g_gx_state.pos_mtx each draw).
  *
- * Per-frame reset: s_geom_centroid_active is cleared at the start of each
- * frame (when gx_frame_draw_calls == 0) so that only the 3D room frame
- * (draw_calls > CENTROID_FRAME_DRAWS_MIN) activates the centroid camera.
- * Without this reset, s_geom_centroid_active stays set after frame 129 and
- * routes all Phase 4 frames 130-200 to bgfx view 1, leaving view 0 black. */
+ * Once gameplay establishes the centroid view, keep it latched for later
+ * low-draw-count room frames too. The initial gameplay room frame is the
+ * only one that exceeds CENTROID_FRAME_DRAWS_MIN; clearing the flag every
+ * frame makes later gameplay frames fall back to the stale default camera
+ * and render black again. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
 
@@ -2898,17 +2898,17 @@ void pal_tev_flush_draw(void) {
         }
     }
 
-    /* Per-frame centroid camera reset.
-     * s_geom_centroid_active must be cleared at the start of each frame so that
-     * only frames with draw_calls > CENTROID_FRAME_DRAWS_MIN activate the centroid
-     * camera.  Without this reset, centroid stays active after the 3D room frame
-     * (frame 129) and routes all subsequent frames to bgfx view 1, leaving the
-     * Phase 4 captured frame 0% nonblack (view 0 receives no draws after frame 129). */
+    /* Per-frame centroid accumulator reset.
+     * Before gameplay establishes the centroid camera, clear the temporary
+     * accumulation state at each frame boundary. Once s_geom_centroid_active
+     * is set, keep it and the saved centroid view latched so later gameplay
+     * frames can keep using the same working 3D camera. */
     if (gx_frame_draw_calls == 0) {
-        s_geom_centroid_active = 0;
-        s_centroid_n           = 0;
-        s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;
-        s_centroid_vz_max = -1e30f;
+        if (!s_geom_centroid_active) {
+            s_centroid_n           = 0;
+            s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;
+            s_centroid_vz_max = -1e30f;
+        }
         /* Allow centroid_view_switch to re-log on the next 3D room frame. */
         /* (s_centroid_view_logged is reset below in its own block) */
     }

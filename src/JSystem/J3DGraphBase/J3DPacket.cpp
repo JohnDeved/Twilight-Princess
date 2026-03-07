@@ -13,6 +13,30 @@
 #if PLATFORM_PC
 #include <stdio.h>
 extern "C" void pal_gd_reset_dummy(void);
+
+static inline int pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
+    enum { MAX_PACKET_CHAIN_SCAN = 0x10000 };
+    J3DPacket* it = head;
+    int depth = 0;
+    for (; it != NULL && depth < MAX_PACKET_CHAIN_SCAN; depth++) {
+        if ((uintptr_t)it < 0x1000)
+            return 1;
+        if (it == target)
+            return 1;
+        J3DPacket* next = it->getNextPacket();
+        if (next == it)
+            return 1;
+        it = next;
+    }
+    return 0;
+}
+
+static inline void pal_packet_prepend(J3DPacket** head, J3DPacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -123,8 +147,12 @@ void J3DPacket::addChildPacket(J3DPacket* pPacket) {
     if (mpFirstChild == NULL) {
         mpFirstChild = pPacket;
     } else {
+#if PLATFORM_PC
+        pal_packet_prepend(&mpFirstChild, pPacket);
+#else
         pPacket->setNextPacket(mpFirstChild);
         mpFirstChild = pPacket;
+#endif
     }
 }
 
@@ -219,8 +247,12 @@ void J3DMatPacket::addShapePacket(J3DShapePacket* pShape) {
     if (mpShapePacket == NULL) {
         mpShapePacket = pShape;
     } else {
+#if PLATFORM_PC
+        pal_packet_prepend((J3DPacket**)&mpShapePacket, pShape);
+#else
         pShape->setNextPacket(mpShapePacket);
         mpShapePacket = pShape;
+#endif
     }
 }
 

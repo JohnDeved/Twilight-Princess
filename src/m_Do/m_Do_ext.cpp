@@ -442,6 +442,7 @@ void mDoExt_modelUpdate(J3DModel* i_model) {
 #if PLATFORM_PC
     if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: model_data"); return; }
     if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdate: material"); return; }
+    bool force_default_j3d = pal_needs_safe_viewcalc(model_data, i_model);
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -454,6 +455,16 @@ void mDoExt_modelUpdate(J3DModel* i_model) {
         i_model->lock();
     }
 
+#if PLATFORM_PC
+    if (force_default_j3d) {
+        u32 saved_calc_flags = i_model->mFlags & kJ3DModelCalcModeFlags;
+        i_model->offFlag(J3DMdlFlag_Unk1);
+        i_model->onFlag(J3DMdlFlag_UseDefaultJ3D);
+        i_model->viewCalc();
+        pal_restore_j3d_calc_mode_flags(i_model, saved_calc_flags);
+        return;
+    }
+#endif
     i_model->viewCalc();
 }
 
@@ -467,6 +478,7 @@ void mDoExt_modelUpdateDL(J3DModel* i_model) {
 #if PLATFORM_PC
     if (model_data == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: model_data"); return; }
     if (model_data->getMaterialNodePointer(0) == NULL) { pal_error(PAL_ERR_NULL_PTR, "mDoExt_modelUpdateDL: material"); return; }
+    bool force_default_j3d = pal_needs_safe_viewcalc(model_data, i_model);
 #endif
 
     if (model_data->getMaterialNodePointer(0)->getSharedDisplayListObj() != NULL &&
@@ -480,6 +492,16 @@ void mDoExt_modelUpdateDL(J3DModel* i_model) {
         i_model->lock();
     }
 
+#if PLATFORM_PC
+    if (force_default_j3d) {
+        u32 saved_calc_flags = i_model->mFlags & kJ3DModelCalcModeFlags;
+        i_model->offFlag(J3DMdlFlag_Unk1);
+        i_model->onFlag(J3DMdlFlag_UseDefaultJ3D);
+        i_model->viewCalc();
+        pal_restore_j3d_calc_mode_flags(i_model, saved_calc_flags);
+        return;
+    }
+#endif
     i_model->viewCalc();
 }
 
