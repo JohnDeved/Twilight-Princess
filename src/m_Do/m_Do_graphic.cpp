@@ -15,6 +15,7 @@
 #include "JSystem/JUtility/JUTProcBar.h"
 #include "JSystem/JUtility/JUTTexture.h"
 #include "SSystem/SComponent/c_math.h"
+#include "SSystem/SComponent/c_counter.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_menu_collect.h"
@@ -425,10 +426,22 @@ void darwFilter(GXColor matColor) {
     fprintf(stderr, "{\"darwFilter\":{\"r\":%d,\"g\":%d,\"b\":%d,\"a\":%d}}\n",
             (int)matColor.r, (int)matColor.g,
             (int)matColor.b, (int)matColor.a);
-    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3/4 CI
-     * to bypass a fully-black fade transition that would cover the 3D geometry.
-     * Any non-empty value enables the skip (consistent with other TP_ env vars). */
+    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3 CI
+     * to bypass a fully-black fade transition that would cover the captured
+     * 3D geometry. Any non-empty value enables the skip.
+     *
+     * TP_SKIP_FADE_AFTER=<frame>: preserve the early Nintendo-logo fade
+     * transitions, then skip later fade overlays once the test reaches the
+     * gameplay intro scene. */
     if (getenv("TP_SKIP_FADE")) {
+        return;
+    }
+    static int s_skip_fade_after = -2;
+    if (s_skip_fade_after == -2) {
+        const char* after = getenv("TP_SKIP_FADE_AFTER");
+        s_skip_fade_after = (after && *after) ? atoi(after) : -1;
+    }
+    if (s_skip_fade_after >= 0 && g_Counter.mCounter0 >= (u32)s_skip_fade_after) {
         return;
     }
     g_gx_state.fade_overlay_active = 1;

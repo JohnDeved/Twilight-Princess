@@ -141,10 +141,10 @@ case "$PHASE" in
         ;;
     4)
         export TP_TEST_FRAMES=401
-        export TP_VERIFY_CAPTURE_FRAMES="1,30,60,90,120,128,150,180,200,250,300,350,400"
+        export TP_VERIFY_CAPTURE_FRAMES="1,10,20,30,40,60,90,120,128,129,130,150,180,200,250,300,350,400"
         # Use TP_SYNC_RENDER=1: single-threaded bgfx, no frame delay needed.
         export TP_SYNC_RENDER=1
-        export TP_SKIP_FADE=1
+        export TP_SKIP_FADE_AFTER=128
         export TP_ENABLE_PROC_TITLE=1
         ;;
 esac
