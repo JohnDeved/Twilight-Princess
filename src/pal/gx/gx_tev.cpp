@@ -3056,7 +3056,7 @@ void pal_tev_flush_draw(void) {
         };
         float alphaOp[4] = {
             (float)g_gx_state.alpha_op,             /* op */
-            (g_gx_state.alpha_comp0 != 7 || g_gx_state.alpha_comp1 != 7) ? 1.0f : 0.0f,  /* enable only when needed */
+            1.0f,                                    /* enable */
             0.0f, 0.0f
         };
         bgfx::setUniform(s_alpha_test_uniform, alphaTest);

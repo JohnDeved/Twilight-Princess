@@ -348,10 +348,10 @@ void pal_render_begin_frame(void) {
      * NDC.z≈0.9996 then fail LEQUAL (0.9996 > 0.950 → rejected).  Giving the
      * centroid pass its own depth-clear view fixes this: BGFX_CLEAR_DEPTH resets
      * the depth to 1.0 before the first centroid draw, so all room geometry at
-     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  No color clear — view 0's
-     * framebuffer is preserved and the 3D room composites over it. */
+     * NDC.z≈0.9996 passes LEQUAL (0.9996 ≤ 1.0 ✓).  Green color clear provides
+     * a visible diagnostic background for the 3D pass. */
     bgfx::setViewRect(1, vp_x, vp_y, vp_w, vp_h);
-    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH, 0x00000000, 1.0f, 0);
+    bgfx::setViewClear(1, BGFX_CLEAR_DEPTH | BGFX_CLEAR_COLOR, 0x00ff00ff, 1.0f, 0);
     bgfx::setViewMode(1, bgfx::ViewMode::Sequential);
     bgfx::setViewTransform(1, identity, identity);
 
