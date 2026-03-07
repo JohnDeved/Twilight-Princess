@@ -333,6 +333,17 @@ static bgfx::TextureHandle upload_gx_texture(const GXTexBinding* binding) {
 /* ================================================================ */
 
 /**
+ * Check if a TEV stage references rasterized color (RASC or RASA) in any
+ * of its four color input slots (A, B, C, D).
+ */
+static int stage_uses_rasc(const GXTevStage* st) {
+    return (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
+            st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
+            st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
+            st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA);
+}
+
+/**
  * Classify what inputs a TEV color argument references.
  * Returns a bitmask: bit 0=texture, bit 1=rasterized, bit 2=constant/register, bit 3=prev
  */
@@ -1865,10 +1876,7 @@ void pal_tev_flush_draw(void) {
         if (num_stages == 0) num_stages = 1;
         for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
             const GXTevStage* st = &g_gx_state.tev_stages[s];
-            if (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
-                st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
-                st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
-                st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA)
+            if (stage_uses_rasc(st))
                 any_stage_uses_rasc = 1;
         }
     }
@@ -1979,10 +1987,7 @@ void pal_tev_flush_draw(void) {
             if (num_stages == 0) num_stages = 1;
             for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
                 const GXTevStage* st = &g_gx_state.tev_stages[s];
-                if (st->color_a == GX_CC_RASC || st->color_b == GX_CC_RASC ||
-                    st->color_c == GX_CC_RASC || st->color_d == GX_CC_RASC ||
-                    st->color_a == GX_CC_RASA || st->color_b == GX_CC_RASA ||
-                    st->color_c == GX_CC_RASA || st->color_d == GX_CC_RASA)
+                if (stage_uses_rasc(st))
                     uses_rasc = 1;
                 if (st->color_a == GX_CC_KONST || st->color_b == GX_CC_KONST ||
                     st->color_c == GX_CC_KONST || st->color_d == GX_CC_KONST)
@@ -3101,7 +3106,7 @@ void pal_tev_flush_draw(void) {
             /* Enable alpha test only when at least one compare is NOT GX_ALWAYS.
              * GX_ALWAYS (7) always passes, so if both are ALWAYS the test is
              * a no-op — skip it to avoid float precision issues at the boundary. */
-            (g_gx_state.alpha_comp0 != 7 || g_gx_state.alpha_comp1 != 7) ? 1.0f : 0.0f,
+            (g_gx_state.alpha_comp0 != GX_ALWAYS || g_gx_state.alpha_comp1 != GX_ALWAYS) ? 1.0f : 0.0f,
             0.0f, 0.0f
         };
         bgfx::setUniform(s_alpha_test_uniform, alphaTest);
