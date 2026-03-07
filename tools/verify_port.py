@@ -110,6 +110,7 @@ def analyze_bmp(path):
 
             total_pixels = width * abs(height)
             nonblack = 0
+            colorful = 0
             total_r = 0
             total_g = 0
             total_b = 0
@@ -124,6 +125,8 @@ def analyze_bmp(path):
                     r_val = row[x * 3 + 2]
                     if r_val > 2 or g_val > 2 or b_val > 2:
                         nonblack += 1
+                    if max(r_val, g_val, b_val) - min(r_val, g_val, b_val) >= 16:
+                        colorful += 1
                     total_r += r_val
                     total_g += g_val
                     total_b += b_val
@@ -135,6 +138,8 @@ def analyze_bmp(path):
                 "total_pixels": total_pixels,
                 "nonblack_pixels": nonblack,
                 "pct_nonblack": (nonblack * 100) // total_pixels if total_pixels > 0 else 0,
+                "colorful_pixels": colorful,
+                "pct_colorful": round((colorful * 100.0) / total_pixels, 2) if total_pixels > 0 else 0.0,
                 "avg_color": [
                     total_r // total_pixels if total_pixels > 0 else 0,
                     total_g // total_pixels if total_pixels > 0 else 0,
@@ -428,6 +433,7 @@ TEV_SHADER_NAMES = {
     2: "MODULATE",   # texture * vertex color
     3: "BLEND",      # lerp(texture, vertex color, alpha)
     4: "DECAL",      # texture with alpha blend
+    5: "TEV",        # generic multi-stage TEV shader
 }
 
 # GX primitive type names — mapped to sequential bit positions 0-6.
@@ -762,6 +768,11 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
             if analysis:
                 analysis["file"] = bmp.name
                 frame_analyses.append(analysis)
+                if analysis.get("pct_nonblack", 0) >= 20 and analysis.get("pct_colorful", 0.0) < 1.0:
+                    result["issues"].append(
+                        f"Captured frame {bmp.name} is visible but almost entirely greyscale "
+                        f"(pct_colorful={analysis.get('pct_colorful', 0.0):.2f})"
+                    )
         result["details"]["captured_frames"] = frame_analyses
 
     # --- Layer 6: Render pipeline stage health ---

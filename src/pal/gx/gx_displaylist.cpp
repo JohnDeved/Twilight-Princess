@@ -842,17 +842,19 @@ static void dl_handle_bp_reg(u32 value) {
             }
         } else if (reg_idx < GX_MAX_TEVREG) {
             /* TEV color register (GXSetTevColor / GXSetTevColorS10) */
+            GXColor color = g_gx_state.tev_regs[reg_idx];
             if (!is_bg) {
                 u16 a_val = (u16)(data & 0x7FF);
                 u16 r_val = (u16)((data >> 12) & 0x7FF);
-                g_gx_state.tev_regs[reg_idx].r = (u8)(r_val & 0xFF);
-                g_gx_state.tev_regs[reg_idx].a = (u8)(a_val & 0xFF);
+                color.r = (u8)(r_val & 0xFF);
+                color.a = (u8)(a_val & 0xFF);
             } else {
                 u16 b_val = (u16)(data & 0x7FF);
                 u16 g_val = (u16)((data >> 12) & 0x7FF);
-                g_gx_state.tev_regs[reg_idx].g = (u8)(g_val & 0xFF);
-                g_gx_state.tev_regs[reg_idx].b = (u8)(b_val & 0xFF);
+                color.g = (u8)(g_val & 0xFF);
+                color.b = (u8)(b_val & 0xFF);
             }
+            pal_gx_set_tev_color((GXTevRegID)reg_idx, color);
         }
         return;
     }
