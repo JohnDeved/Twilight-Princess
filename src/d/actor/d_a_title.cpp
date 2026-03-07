@@ -83,26 +83,33 @@ daTit_HIO_c::daTit_HIO_c() {
     field_0x1a = 15;
 }
 
-#if PLATFORM_PC
-static sigjmp_buf s_title_jmpbuf;
-static void title_crash_handler(int sig) {
-    siglongjmp(s_title_jmpbuf, sig);
-}
-#endif
-
 int daTitle_c::CreateHeap() {
 #if PLATFORM_PC
-    /* Wrap J3D resource init with crash protection — big-endian data
-     * may cause SIGSEGV during animation name table access. */
-    struct sigaction sa, old_segv, old_abrt;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = title_crash_handler;
-    sa.sa_flags = 0;
-    sigaction(SIGSEGV, &sa, &old_segv);
-    sigaction(SIGABRT, &sa, &old_abrt);
-    if (sigsetjmp(s_title_jmpbuf, 1) != 0) {
-        sigaction(SIGSEGV, &old_segv, NULL);
-        sigaction(SIGABRT, &old_abrt, NULL);
+    /* Redirect the global pal_crash_jmpbuf to a local buffer so any
+     * SIGSEGV/SIGABRT during J3D init is caught cleanly here without
+     * installing a per-call sigaction.  This avoids two bugs that the
+     * old title_crash_handler approach had:
+     *
+     *   (A) Early return paths (mpModel==NULL, BCK/BPK/BRK/BTK==NULL) did
+     *       not restore the sigaction, leaving title_crash_handler installed
+     *       with a stale s_title_jmpbuf after the function returned.  Any
+     *       subsequent crash in Draw() would siglongjmp to the dead stack
+     *       frame → UB → core dump.
+     *
+     *   (B) mDoExt_J3DModel__create installs its own mdl_sigsegv_handler,
+     *       which bypasses title_crash_handler and also leaves pal_crash_jmpbuf
+     *       pointing at a dead dl_jb if the crash fires inside entryIn().
+     *
+     * Using pal_crash_jmpbuf (+ pal_crash_signal_handler already installed
+     * by the actor-creation wrapper in f_pc_stdcreate_req.cpp) is safe: it
+     * is always restored in the save/restore pattern below, regardless of
+     * which return path is taken. */
+    extern sigjmp_buf* pal_crash_jmpbuf;
+    sigjmp_buf local_jb;
+    sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &local_jb;
+    if (sigsetjmp(local_jb, 1) != 0) {
+        pal_crash_jmpbuf = prev_jb;
         fprintf(stderr, "[PAL] daTitle_c::CreateHeap: caught crash in J3D init, skipping\n");
         mpModel = NULL;
         return 1;
@@ -112,6 +119,7 @@ int daTitle_c::CreateHeap() {
 #if PLATFORM_PC
     fprintf(stderr, "[PAL] daTitle_c::CreateHeap: getObjectRes('%s', 10) = %p\n", l_arcName, modelData);
     if (modelData == NULL) {
+        pal_crash_jmpbuf = prev_jb;
         fprintf(stderr, "[PAL] daTitle_c::CreateHeap: modelData is NULL, skipping 3D model\n");
         mpModel = NULL;
         return 1;
@@ -123,40 +131,42 @@ int daTitle_c::CreateHeap() {
 #endif
 
     if (mpModel == NULL) {
+#if PLATFORM_PC
+        pal_crash_jmpbuf = prev_jb;
+#endif
         return 0;
     }
 
     void* res = dComIfG_getObjectRes(l_arcName, 7);
 #if PLATFORM_PC
     fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BCK res(7) = %p\n", res);
-    if (res == NULL) return 1;
+    if (res == NULL) { pal_crash_jmpbuf = prev_jb; return 1; }
 #endif
     mBck.init((J3DAnmTransform*)res, 1, 0, 2.0f, 0, -1, false);
 
     res = dComIfG_getObjectRes(l_arcName, 13);
 #if PLATFORM_PC
     fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BPK res(13) = %p\n", res);
-    if (res == NULL) return 1;
+    if (res == NULL) { pal_crash_jmpbuf = prev_jb; return 1; }
 #endif
     mBpk.init(modelData, (J3DAnmColor*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 16);
 #if PLATFORM_PC
     fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BRK res(16) = %p\n", res);
-    if (res == NULL) return 1;
+    if (res == NULL) { pal_crash_jmpbuf = prev_jb; return 1; }
 #endif
     mBrk.init(modelData, (J3DAnmTevRegKey*)res, 1, 0, 2.0f, 0, -1);
 
     res = dComIfG_getObjectRes(l_arcName, 19);
 #if PLATFORM_PC
     fprintf(stderr, "[PAL] daTitle_c::CreateHeap: BTK res(19) = %p\n", res);
-    if (res == NULL) return 1;
+    if (res == NULL) { pal_crash_jmpbuf = prev_jb; return 1; }
 #endif
     mBtk.init(modelData, (J3DAnmTextureSRTKey*)res, 1, 0, 2.0f, 0, -1);
 
 #if PLATFORM_PC
-    sigaction(SIGSEGV, &old_segv, NULL);
-    sigaction(SIGABRT, &old_abrt, NULL);
+    pal_crash_jmpbuf = prev_jb;
 #endif
     return 1;
 }
