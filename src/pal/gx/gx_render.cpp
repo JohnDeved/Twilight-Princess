@@ -420,41 +420,6 @@ void pal_render_end_frame(void) {
      * calls for this frame complete, then fires captureFrame() with current
      * frame's pixels — no pipeline delay. */
 
-    /* --- Diagnostic: submit a known-good bright quad to verify bgfx pipeline ---
-     * This draws a small white quad in NDC space with identity transform.
-     * If the pipeline works, captured frames should have a visible white patch.
-     * Remove once 3D rendering is confirmed working. */
-    {
-        struct { float x, y, z; uint32_t abgr; } dv[4] = {
-            { -0.3f, -0.3f, 0.0f, 0xffffffff },
-            {  0.3f, -0.3f, 0.0f, 0xffffffff },
-            {  0.3f,  0.3f, 0.0f, 0xffffffff },
-            { -0.3f,  0.3f, 0.0f, 0xffffffff },
-        };
-        bgfx::VertexLayout dl;
-        dl.begin()
-          .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-          .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
-          .end();
-        bgfx::TransientVertexBuffer dtv;
-        bgfx::TransientIndexBuffer dti;
-        if (bgfx::getAvailTransientVertexBuffer(4, dl) >= 4 &&
-            bgfx::getAvailTransientIndexBuffer(6) >= 6) {
-            bgfx::allocTransientVertexBuffer(&dtv, 4, dl);
-            bgfx::allocTransientIndexBuffer(&dti, 6);
-            memcpy(dtv.data, dv, sizeof(dv));
-            uint16_t* di = (uint16_t*)dti.data;
-            di[0] = 0; di[1] = 1; di[2] = 2;
-            di[3] = 0; di[4] = 2; di[5] = 3;
-            float iden[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-            bgfx::setTransform(iden);
-            bgfx::setVertexBuffer(0, &dtv);
-            bgfx::setIndexBuffer(&dti);
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-            bgfx::submit(0, {pal_tev_get_program_handle(0)});
-        }
-    }
-
     bgfx::frame();
 
     /* TP_SYNC_RENDER=1: process the submitted frame synchronously.

@@ -1903,20 +1903,6 @@ void pal_tev_flush_draw(void) {
                             || (preset != GX_TEV_SHADER_PASSCLR
                                 && preset != GX_TEV_SHADER_REPLACE);
 
-    /* Diagnostic: log first few override decisions */
-    {
-        static int s_override_log = 0;
-        if (s_override_log < 10) {
-            s_override_log++;
-            fprintf(stderr, "{\"color_override\":{\"draw\":%u,\"preset\":%d,"
-                    "\"clr0_type\":%d,\"passclr_rasc\":%d,\"any_rasc\":%d,"
-                    "\"needs\":%d}}\n",
-                    s_total_draw_count, preset,
-                    (int)desc[GX_VA_CLR0].type, passclr_uses_rasc,
-                    any_stage_uses_rasc, needs_color_override);
-        }
-    }
-
     if (needs_color_override) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
             inject_color = 1;
@@ -2281,50 +2267,6 @@ void pal_tev_flush_draw(void) {
         }
     }
     bgfx::setTransform(mvp);
-    {
-        static int s_mvp_dump = 0;
-        if (s_mvp_dump < 8) {
-            /* Dump all vertex NDC positions for this draw */
-            const GXVtxAttrFmtEntry* af_d = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
-            int npos_d = (af_d[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
-            int byte_off = 0;
-            if (desc[GX_VA_PNMTXIDX].type != GX_NONE) byte_off += 1;
-            for (int i = 0; i < 8; i++)
-                if (desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) byte_off += 1;
-
-            fprintf(stderr, "{\"draw_ndc\":{\"draw\":%u,\"preset\":%d,"
-                    "\"inject\":%d,\"const_clr\":[%d,%d,%d,%d],"
-                    "\"nverts\":%u,\"stride\":%u,\"pos_type\":%d,\"verts\":[",
-                    s_total_draw_count, preset,
-                    inject_color,
-                    (int)const_clr[0], (int)const_clr[1],
-                    (int)const_clr[2], (int)const_clr[3],
-                    (unsigned)nverts, bgfx_stride,
-                    (int)desc[GX_VA_POS].type);
-
-            int dump_n = (nverts < 6) ? nverts : 6;
-            for (int vi = 0; vi < dump_n; vi++) {
-                float pos[4] = {0,0,0,1};
-                const uint8_t* vdata = tvb.data + vi * bgfx_stride + byte_off;
-                for (int c = 0; c < npos_d && c < 3; c++)
-                    memcpy(&pos[c], vdata + c * 4, 4);
-                /* clip = mvp * pos (col-major) */
-                float clip[4];
-                for (int r = 0; r < 4; r++) {
-                    clip[r] = 0;
-                    for (int c = 0; c < 4; c++)
-                        clip[r] += mvp[c*4+r] * pos[c];
-                }
-                float w = (clip[3] != 0) ? clip[3] : 1;
-                if (vi > 0) fprintf(stderr, ",");
-                fprintf(stderr, "{\"pos\":[%.1f,%.1f,%.1f],\"ndc\":[%.3f,%.3f,%.3f]}",
-                        pos[0], pos[1], pos[2],
-                        clip[0]/w, clip[1]/w, clip[2]/w);
-            }
-            fprintf(stderr, "]}}\n");
-            s_mvp_dump++;
-        }
-    }
 
     /* Geometry-centroid camera fallback for the 3D intro room (PC only).
      *
@@ -3184,21 +3126,6 @@ void pal_tev_flush_draw(void) {
 
     bgfx::submit(view_id, s_programs[preset]);
     s_ok_submitted++;
-
-    /* Debug: log submits for first few TEV draws */
-    {
-        static int s_submit_log = 0;
-        if (s_submit_log < 5 && preset == GX_TEV_SHADER_TEV) {
-            s_submit_log++;
-            fprintf(stderr, "{\"submit_ok\":{\"draw\":%u,\"preset\":%d,"
-                    "\"view\":%u,\"prog_idx\":%u,\"prog_valid\":%d,"
-                    "\"state\":\"0x%016llX\",\"nverts\":%u,\"nidx\":%u}}\n",
-                    s_total_draw_count, preset,
-                    view_id, s_programs[preset].idx,
-                    bgfx::isValid(s_programs[preset]) ? 1 : 0,
-                    (unsigned long long)state, (unsigned)nverts, (unsigned)num_indices);
-        }
-    }
 
     /* One-shot: log first centroid draw details to verify TVB data */
     {
