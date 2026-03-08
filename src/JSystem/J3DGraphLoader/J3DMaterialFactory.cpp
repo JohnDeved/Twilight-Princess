@@ -11,11 +11,78 @@
 /* Bounds-checked accessor: returns pointer to material init data,
  * or NULL if the material ID index is out of range. */
 static J3DMaterialInitData* getMtlInitDataSafe(J3DMaterialInitData* base, u16* ids,
-                                                 u16 matNum, int idx) {
+                                                  u16 matNum, int idx) {
     if ((u32)idx >= matNum) return NULL;
     u16 id = ids[idx];
     if (id >= matNum) return NULL;
     return &base[id];
+}
+
+static u16 getTableCount(const J3DModelBlock& block, u32 start, u32 next, u32 elem_size) {
+    if (start == 0 || elem_size == 0 || start >= block.mBlockSize) {
+        return 0;
+    }
+
+    u32 end = block.mBlockSize;
+    if (next > start && next <= block.mBlockSize) {
+        end = next;
+    }
+    if (end <= start) {
+        return 0;
+    }
+    return (u16)((end - start) / elem_size);
+}
+
+struct MaterialFactoryBounds {
+    const J3DMaterialFactory* factory;
+    u16 texNoCount;
+    u16 tevOrderInfoCount;
+    u16 tevStageInfoCount;
+};
+
+static MaterialFactoryBounds s_factoryBounds[16];
+static u32 s_factoryBoundsCount = 0;
+
+static void setFactoryBounds(const J3DMaterialFactory* factory, u16 texNoCount,
+                             u16 tevOrderInfoCount, u16 tevStageInfoCount) {
+    for (u32 i = 0; i < s_factoryBoundsCount; i++) {
+        if (s_factoryBounds[i].factory == factory) {
+            s_factoryBounds[i].texNoCount = texNoCount;
+            s_factoryBounds[i].tevOrderInfoCount = tevOrderInfoCount;
+            s_factoryBounds[i].tevStageInfoCount = tevStageInfoCount;
+            return;
+        }
+    }
+
+    if (s_factoryBoundsCount < 16) {
+        s_factoryBounds[s_factoryBoundsCount].factory = factory;
+        s_factoryBounds[s_factoryBoundsCount].texNoCount = texNoCount;
+        s_factoryBounds[s_factoryBoundsCount].tevOrderInfoCount = tevOrderInfoCount;
+        s_factoryBounds[s_factoryBoundsCount].tevStageInfoCount = tevStageInfoCount;
+        s_factoryBoundsCount++;
+    }
+}
+
+static const MaterialFactoryBounds* getFactoryBounds(const J3DMaterialFactory* factory) {
+    for (u32 i = 0; i < s_factoryBoundsCount; i++) {
+        if (s_factoryBounds[i].factory == factory) {
+            return &s_factoryBounds[i];
+        }
+    }
+    return NULL;
+}
+
+static void logMaterialLookupFallback(const char* kind, int material_idx, int entry_idx,
+                                      u16 table_idx, u16 table_count) {
+    static int s_lookup_fallback_log_count = 0;
+    if (s_lookup_fallback_log_count >= 20) {
+        return;
+    }
+    s_lookup_fallback_log_count++;
+    fprintf(stderr,
+            "{\"j3d_mat_lookup_fallback\":{\"kind\":\"%s\",\"material_idx\":%d,"
+            "\"entry_idx\":%d,\"table_idx\":%u,\"table_count\":%u}}\n",
+            kind, material_idx, entry_idx, (unsigned)table_idx, (unsigned)table_count);
 }
 #endif
 
@@ -58,6 +125,14 @@ J3DMaterialFactory::J3DMaterialFactory(J3DMaterialBlock const& i_block) {
     mpPatchingInfo = NULL;
     mpCurrentMtxInfo = NULL;
     mpMaterialMode = NULL;
+#if PLATFORM_PC
+    setFactoryBounds(this,
+                     getTableCount(i_block, i_block.mpTexNo, i_block.mpTevOrderInfo, sizeof(u16)),
+                     getTableCount(i_block, i_block.mpTevOrderInfo, i_block.mpTevColor,
+                                   sizeof(J3DTevOrderInfo)),
+                     getTableCount(i_block, i_block.mpTevStageInfo, i_block.mpTevSwapModeInfo,
+                                   sizeof(J3DTevStageInfo)));
+#endif
 }
 
 J3DMaterialFactory::J3DMaterialFactory(J3DMaterialDLBlock const& i_block) {
@@ -702,9 +777,19 @@ u16 J3DMaterialFactory::newTexNo(int i_idx, int i_no) const {
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mTexNoIdx[i_no] != 0xffff) {
 #if PLATFORM_PC
-        if (mtl_init_data->mTexNoIdx[i_no] < 256 && mpTexNo != NULL)
+        const MaterialFactoryBounds* bounds = getFactoryBounds(this);
+        if (mpTexNo != NULL && bounds != NULL && mtl_init_data->mTexNoIdx[i_no] < bounds->texNoCount) {
+            return mpTexNo[mtl_init_data->mTexNoIdx[i_no]];
+        }
+        if (bounds != NULL) {
+            logMaterialLookupFallback("texno", i_idx, i_no, mtl_init_data->mTexNoIdx[i_no],
+                                      bounds->texNoCount);
+        }
+#else
+        if (mpTexNo != NULL) {
+            return mpTexNo[mtl_init_data->mTexNoIdx[i_no]];
+        }
 #endif
-        return mpTexNo[mtl_init_data->mTexNoIdx[i_no]];
     }
     return 0xffff;
 }
@@ -716,9 +801,20 @@ J3DTevOrder J3DMaterialFactory::newTevOrder(int i_idx, int i_no) const {
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mTevOrderIdx[i_no] != 0xffff) {
 #if PLATFORM_PC
-        if (mtl_init_data->mTevOrderIdx[i_no] < 256 && mpTevOrderInfo != NULL)
+        const MaterialFactoryBounds* bounds = getFactoryBounds(this);
+        if (mpTevOrderInfo != NULL && bounds != NULL &&
+            mtl_init_data->mTevOrderIdx[i_no] < bounds->tevOrderInfoCount) {
+            return J3DTevOrder(mpTevOrderInfo[mtl_init_data->mTevOrderIdx[i_no]]);
+        }
+        if (bounds != NULL) {
+            logMaterialLookupFallback("tev_order", i_idx, i_no, mtl_init_data->mTevOrderIdx[i_no],
+                                      bounds->tevOrderInfoCount);
+        }
+#else
+        if (mpTevOrderInfo != NULL) {
+            return J3DTevOrder(mpTevOrderInfo[mtl_init_data->mTevOrderIdx[i_no]]);
+        }
 #endif
-        return J3DTevOrder(mpTevOrderInfo[mtl_init_data->mTevOrderIdx[i_no]]);
     }
     return J3DTevOrder();
 }
@@ -773,9 +869,20 @@ J3DTevStage J3DMaterialFactory::newTevStage(int i_idx, int i_no) const {
     J3DMaterialInitData* mtl_init_data = &mpMaterialInitData[mpMaterialID[i_idx]];
     if (mtl_init_data->mTevStageIdx[i_no] != 0xffff) {
 #if PLATFORM_PC
-        if (mtl_init_data->mTevStageIdx[i_no] < 256 && mpTevStageInfo != NULL)
+        const MaterialFactoryBounds* bounds = getFactoryBounds(this);
+        if (mpTevStageInfo != NULL && bounds != NULL &&
+            mtl_init_data->mTevStageIdx[i_no] < bounds->tevStageInfoCount) {
+            return J3DTevStage(mpTevStageInfo[mtl_init_data->mTevStageIdx[i_no]]);
+        }
+        if (bounds != NULL) {
+            logMaterialLookupFallback("tev_stage", i_idx, i_no, mtl_init_data->mTevStageIdx[i_no],
+                                      bounds->tevStageInfoCount);
+        }
+#else
+        if (mpTevStageInfo != NULL) {
+            return J3DTevStage(mpTevStageInfo[mtl_init_data->mTevStageIdx[i_no]]);
+        }
 #endif
-        return J3DTevStage(mpTevStageInfo[mtl_init_data->mTevStageIdx[i_no]]);
     }
     return J3DTevStage();
 }
