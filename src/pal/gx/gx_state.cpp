@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "SSystem/SComponent/c_counter.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_tev.h"
@@ -26,16 +27,66 @@ GXStateMachine g_gx_state;
 /* Static vertex data buffer */
 static u8 s_vtx_buf[GX_VTX_BUF_SIZE];
 
-static inline int pal_should_log_room_material_diag(void) {
+static inline int pal_is_known_tev_mismatch_material(void) {
     switch (pal_diag_current_mat_index) {
     case 0:
-    case 3:
     case 15:
     case 20:
         return 1;
     default:
         return 0;
     }
+}
+
+static inline int pal_is_room_frame_material_diag(void) {
+    return pal_diag_current_material_mode == 1 && pal_diag_current_model_ptr != NULL &&
+           g_Counter.mCounter0 >= 128 && g_Counter.mCounter0 <= 130;
+}
+
+static inline int pal_should_log_room_material_diag(void) {
+    if (pal_diag_current_material_ptr == NULL) {
+        return 0;
+    }
+
+    return pal_is_known_tev_mismatch_material() || pal_is_room_frame_material_diag();
+}
+
+static int pal_diag_mark_material_stage_seen(const void* material, u8 stage,
+                                             const void** materials, u8* stages,
+                                             int* count, int max_count) {
+    int i;
+    for (i = 0; i < *count; i++) {
+        if (materials[i] == material && stages[i] == stage) {
+            return 0;
+        }
+    }
+
+    if (*count >= max_count) {
+        return 0;
+    }
+
+    materials[*count] = material;
+    stages[*count] = stage;
+    (*count)++;
+    return 1;
+}
+
+static int pal_diag_mark_material_seen(const void* material, const void** materials,
+                                       int* count, int max_count) {
+    int i;
+    for (i = 0; i < *count; i++) {
+        if (materials[i] == material) {
+            return 0;
+        }
+    }
+
+    if (*count >= max_count) {
+        return 0;
+    }
+
+    materials[*count] = material;
+    (*count)++;
+    return 1;
 }
 
 /* ================================================================ */
@@ -251,18 +302,24 @@ void pal_gx_set_tev_order(GXTevStageID stage, GXTexCoordID coord, GXTexMapID map
         g_gx_state.tev_stages[stage].tex_map = map;
         g_gx_state.tev_stages[stage].color_chan = color;
         if (pal_diag_current_material_ptr != NULL && pal_should_log_room_material_diag()) {
+            static const void* s_tev_order_diag_materials[96];
+            static u8 s_tev_order_diag_stages[96];
             static int s_tev_order_diag_count = 0;
-            if (s_tev_order_diag_count < 64 && stage < 2) {
-                s_tev_order_diag_count++;
+            if (stage < 2 &&
+                pal_diag_mark_material_stage_seen(pal_diag_current_material_ptr, (u8)stage,
+                                                  s_tev_order_diag_materials,
+                                                  s_tev_order_diag_stages,
+                                                  &s_tev_order_diag_count, 96)) {
                 int tex_valid = ((unsigned)map < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[map].valid : 0;
                 const GXTexBinding* bind =
                     ((unsigned)map < GX_MAX_TEXMAP) ? &g_gx_state.tex_bindings[map] : NULL;
                 fprintf(stderr,
-                        "{\"gx_tev_order_diag\":{\"mat_idx\":%d,\"mat_mode\":%u,"
+                        "{\"gx_tev_order_diag\":{\"frame\":%u,\"mat_idx\":%d,\"mat_mode\":%u,"
                         "\"material\":\"%p\",\"model\":\"%p\","
                         "\"stage\":%u,\"coord\":%d,\"map\":%d,\"color\":%d,"
                         "\"tex_valid\":%d,\"img_ptr\":\"%p\",\"w\":%u,\"h\":%u,\"fmt\":%d}}\n",
-                        pal_diag_current_mat_index, (unsigned)pal_diag_current_material_mode,
+                        g_Counter.mCounter0, pal_diag_current_mat_index,
+                        (unsigned)pal_diag_current_material_mode,
                         pal_diag_current_material_ptr, pal_diag_current_model_ptr,
                         (unsigned)stage, (int)coord, (int)map, (int)color,
                         tex_valid, bind ? bind->image_ptr : NULL,
@@ -429,14 +486,17 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
 
         bind->valid = 1;
         if (pal_diag_current_material_ptr != NULL && pal_should_log_room_material_diag()) {
+            static const void* s_tex_load_diag_materials[64];
             static int s_tex_load_diag_count = 0;
-            if (s_tex_load_diag_count < 32) {
-                s_tex_load_diag_count++;
+            if (pal_diag_mark_material_seen(pal_diag_current_material_ptr,
+                                            s_tex_load_diag_materials,
+                                            &s_tex_load_diag_count, 64)) {
                 fprintf(stderr,
-                        "{\"gx_tex_load_diag\":{\"mat_idx\":%d,\"mat_mode\":%u,"
+                        "{\"gx_tex_load_diag\":{\"frame\":%u,\"mat_idx\":%d,\"mat_mode\":%u,"
                         "\"material\":\"%p\",\"model\":\"%p\","
                         "\"id\":%d,\"valid\":%d,\"img_ptr\":\"%p\",\"w\":%u,\"h\":%u,\"fmt\":%d}}\n",
-                        pal_diag_current_mat_index, (unsigned)pal_diag_current_material_mode,
+                        g_Counter.mCounter0, pal_diag_current_mat_index,
+                        (unsigned)pal_diag_current_material_mode,
                         pal_diag_current_material_ptr, pal_diag_current_model_ptr,
                         (int)id, bind->valid, bind->image_ptr, (unsigned)bind->width,
                         (unsigned)bind->height, (int)bind->format);
