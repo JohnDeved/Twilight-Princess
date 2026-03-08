@@ -2,6 +2,7 @@
 #define FUNCTIONVALUE_H
 
 #include <cmath>
+#include <stdint.h>
 #include "JSystem/JGadget/std-vector.h"
 #include "JSystem/JGadget/define.h"
 #include "JSystem/JGadget/search.h"
@@ -173,14 +174,14 @@ private:
 class TFunctionValue_composite : public TFunctionValue, public TFunctionValueAttribute_refer {
 public:
     struct TData {
-        TData(void* data) : u32data((u32)data) {}
+        TData(void* data) : rawData(data) {}
         TData(const void* data) : rawData(data) {}
         TData(u32 data) : u32data(data) {}
         TData(f32 data) : f32data(data) {}
 
         inline void operator=(const TData& rhs) { f32data = rhs.f32data; }
-        u32 get_unsignedInteger() const { return u32data; }
-        u32 get_outside() const { return u32data; }
+        u32 get_unsignedInteger() const { return (u32)(uintptr_t)rawData; }
+        u32 get_outside() const { return (u32)(uintptr_t)rawData; }
         f64 get_value() const { return f32data; }
 
         union {

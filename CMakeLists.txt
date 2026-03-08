@@ -225,6 +225,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wno-format
         -fpermissive
         -fno-exceptions
+    )
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(tp-pc PRIVATE
         -fno-reorder-blocks-and-partition
     )
     # GCC auto-vectorizes matrix ops with movaps/movdqa (aligned SSE stores).
