@@ -1978,7 +1978,14 @@ void pal_tev_flush_draw(void) {
             passclr_uses_rasc = 1;
     }
 
-    if (desc[GX_VA_CLR0].type == GX_NONE || passclr_uses_rasc) {
+    /* Do not let raw CLR0 presence suppress the MODULATE/BLEND/DECAL/TEV
+     * fallback path. Gameplay room draws often carry CLR0=(0,0,0,0)
+     * placeholders while TEV actually expects RASC/the channel combiner. */
+    if (desc[GX_VA_CLR0].type == GX_NONE || passclr_uses_rasc ||
+        preset == GX_TEV_SHADER_MODULATE ||
+        preset == GX_TEV_SHADER_BLEND ||
+        preset == GX_TEV_SHADER_DECAL ||
+        preset == GX_TEV_SHADER_TEV) {
         if (preset == GX_TEV_SHADER_PASSCLR) {
             inject_color = 1;
             /* Determine the constant color from TEV state.
@@ -2063,7 +2070,11 @@ void pal_tev_flush_draw(void) {
                     st->color_c == GX_CC_KONST || st->color_d == GX_CC_KONST)
                     uses_konst = 1;
             }
-            if (uses_konst && !uses_rasc) {
+            if (uses_rasc && !g_gx_state.chan_ctrl[0].enable &&
+                g_gx_state.chan_ctrl[0].mat_src == GX_SRC_VTX &&
+                desc[GX_VA_CLR0].type != GX_NONE) {
+                inject_color = 0;
+            } else if (uses_konst && !uses_rasc) {
                 resolve_konst_color(&g_gx_state.tev_stages[0], const_clr);
             } else if (uses_rasc) {
                 apply_rasc_color(const_clr);
