@@ -37,6 +37,7 @@ static u16 getTableCount(const J3DModelBlock& block, u32 start, u32 next, u32 el
 #define J3D_LOOKUP_FALLBACK_LOG_MAX     20
 #define J3D_LOOKUP_BOUNDS_MISSING_MAX   20
 #define J3D_FACTORY_BOUNDS_OVERFLOW_MAX 4
+#define J3D_FACTORY_TEV_STAGE_LOG_MAX   128
 
 struct MaterialFactoryBounds {
     const J3DMaterialFactory* factory;
@@ -88,6 +89,55 @@ static const MaterialFactoryBounds* getFactoryBounds(const J3DMaterialFactory* f
         }
     }
     return NULL;
+}
+
+static void logFactoryTevStage(const J3DMaterialFactory* factory, const J3DMaterial* material,
+                               u8 material_mode, u16 material_idx, u8 stage_no, u16 tev_stage_idx,
+                               u16 tex_no, const J3DTevOrder& tev_order,
+                               const J3DTevStage& tev_stage,
+                               const J3DTevStageInfo* tev_stage_info) {
+    static u32 s_factory_tev_stage_log_count = 0;
+
+    if (material_mode != 1 || s_factory_tev_stage_log_count >= J3D_FACTORY_TEV_STAGE_LOG_MAX) {
+        return;
+    }
+
+    s_factory_tev_stage_log_count++;
+    fprintf(stderr,
+            "{\"j3d_factory_tev_stage\":{\"factory\":\"%p\",\"material\":\"%p\","
+            "\"mat_idx\":%u,\"mat_mode\":%u,\"stage\":%u,"
+            "\"tev_idx\":%u,\"tex_no\":%u,\"tev_map\":%u,\"tev_coord\":%u,\"tev_color\":%u,"
+            "\"has_src\":%u,"
+            "\"src_raw\":[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u],"
+            "\"stage_raw\":[%u,%u,%u,%u,%u,%u,%u,%u]}}\n",
+            factory, material, (unsigned)material_idx, (unsigned)material_mode,
+            (unsigned)stage_no, (unsigned)tev_stage_idx, (unsigned)tex_no,
+            (unsigned)tev_order.mTexMap, (unsigned)tev_order.mTexCoord,
+            (unsigned)tev_order.mColorChan, tev_stage_info != NULL ? 1U : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x0 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevColorOp : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevColorAB : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevColorCD : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x4 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevAlphaOp : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevAlphaAB : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->mTevSwapModeInfo : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x8 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x9 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xa : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xb : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xc : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xd : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xe : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0xf : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x10 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x11 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x12 : 0U,
+            tev_stage_info != NULL ? (unsigned)tev_stage_info->field_0x13 : 0U,
+            (unsigned)tev_stage.field_0x0, (unsigned)tev_stage.mTevColorOp,
+            (unsigned)tev_stage.mTevColorAB, (unsigned)tev_stage.mTevColorCD,
+            (unsigned)tev_stage.field_0x4, (unsigned)tev_stage.mTevAlphaOp,
+            (unsigned)tev_stage.mTevAlphaAB, (unsigned)tev_stage.mTevSwapModeInfo);
 }
 
 static void logMaterialLookupFallback(const char* kind, int material_idx, int entry_idx,
@@ -370,6 +420,26 @@ J3DMaterial* J3DMaterialFactory::createNormalMaterial(J3DMaterial* i_material, i
             }
 #endif
         }
+#if PLATFORM_PC
+        {
+            const MaterialFactoryBounds* bounds = getFactoryBounds(this);
+            const J3DTevOrder* tev_order = i_material->mTevBlock->getTevOrder(i);
+            const J3DTevStage* tev_stage = i_material->mTevBlock->getTevStage(i);
+            const J3DTevStageInfo* tev_stage_info = NULL;
+            u16 tev_stage_idx = material_init_data->mTevStageIdx[i];
+
+            if (bounds != NULL && mpTevStageInfo != NULL && tev_stage_idx != 0xffff &&
+                tev_stage_idx < bounds->tevStageInfoCount) {
+                tev_stage_info = &mpTevStageInfo[tev_stage_idx];
+            }
+
+            if (tev_order != NULL && tev_stage != NULL) {
+                logFactoryTevStage(this, i_material, i_material->mMaterialMode, (u16)i_idx,
+                                   i, tev_stage_idx, i_material->mTevBlock->getTexNo(i),
+                                   *tev_order, *tev_stage, tev_stage_info);
+            }
+        }
+#endif
     }
     for (u8 i = 0; i < 4; i++) {
         i_material->mTevBlock->setTevKColor(i, newTevKColor(i_idx, i));
