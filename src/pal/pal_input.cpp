@@ -264,8 +264,26 @@ int pal_input_read_pad(int port, void* pad_status) {
     return PAD_ERR_NONE;
 }
 
+void pal_input_control_motor(s32 port, u32 command) {
+    if (port != 0 || !s_gamepad) {
+        return;
+    }
+
+    switch (command) {
+    case PAD_MOTOR_RUMBLE:
+        SDL_RumbleGamepad(s_gamepad, 0xFFFF, 0xFFFF, 100);
+        break;
+    case PAD_MOTOR_STOP:
+    case PAD_MOTOR_STOP_HARD:
+    default:
+        SDL_RumbleGamepad(s_gamepad, 0, 0, 0);
+        break;
+    }
+}
+
 void pal_input_shutdown(void) {
     if (s_gamepad) {
+        SDL_RumbleGamepad(s_gamepad, 0, 0, 0);
         SDL_CloseGamepad(s_gamepad);
         s_gamepad = NULL;
     }
