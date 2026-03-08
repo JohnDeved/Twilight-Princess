@@ -13,6 +13,7 @@
 #if PLATFORM_PC
 #define J3D_TEV_TEX_MISMATCH_LOG_MAX 40
 #define J3D_TEV_ORDER_LOAD_LOG_MAX 96
+#define J3D_TEV_STAGE_LOAD_LOG_MAX 96
 
 static inline int shouldLogRoomFrameTevDiag() {
     return pal_diag_current_material_mode == 1 && pal_diag_current_model_ptr != NULL &&
@@ -82,6 +83,38 @@ static void logTevOrderLoad(const char* block_name, u32 stage, u16 texNo, const 
             pal_diag_current_model_ptr, (unsigned)stage, (unsigned)texNo,
             (unsigned)tevOrder.mTexMap, (unsigned)tevOrder.mTexCoord,
             (unsigned)tevOrder.mColorChan);
+}
+
+static void logTevStageLoad(const char* block_name, u32 stage, const J3DTevStage& tevStage) {
+    static const void* s_materials[J3D_TEV_STAGE_LOAD_LOG_MAX];
+    static u8 s_stages[J3D_TEV_STAGE_LOAD_LOG_MAX];
+    static int s_count = 0;
+
+    if (!shouldLogTevDiag()) {
+        return;
+    }
+
+    if (!markTevOrderMaterialStageSeen(pal_diag_current_material_ptr, (u8)stage, s_materials,
+                                       s_stages, &s_count, J3D_TEV_STAGE_LOAD_LOG_MAX)) {
+        return;
+    }
+
+    fprintf(stderr,
+            "{\"j3d_tev_stage_load\":{\"block\":\"%s\",\"frame\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"stage\":%u,\"raw\":[%u,%u,%u,%u,%u,%u,%u,%u]}}\n",
+            block_name, g_Counter.mCounter0, pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode, pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr, (unsigned)stage,
+            (unsigned)tevStage.field_0x0,
+            (unsigned)tevStage.mTevColorOp,
+            (unsigned)tevStage.mTevColorAB,
+            (unsigned)tevStage.mTevColorCD,
+            (unsigned)tevStage.field_0x4,
+            (unsigned)tevStage.mTevAlphaOp,
+            (unsigned)tevStage.mTevAlphaAB,
+            (unsigned)tevStage.mTevSwapModeInfo);
 }
 
 static void logTevTextureMismatch(const char* block_name, u32 tevStageNum, const u16* texNo,
@@ -734,6 +767,7 @@ void J3DTevBlock1::load() {
         J3DSys::sTexCoordScaleTable[mTevOrder[0].getTevOrderInfo().mTexMap & 7]
     );
 
+    logTevStageLoad("J3DTevBlock1", 0, mTevStage[0]);
     mTevStage[0].load(0);
     mIndTevStage[0].load(0);
 }
@@ -785,6 +819,7 @@ void J3DTevBlock2::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock2", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -861,6 +896,7 @@ void J3DTevBlock4::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock4", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -937,6 +973,7 @@ void J3DTevBlock16::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock16", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -1323,6 +1360,7 @@ void J3DTevBlockPatched::diffTexNo() {
 void J3DTevBlockPatched::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockOpa", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1366,6 +1404,7 @@ void J3DTevBlock1::diffTexNo() {
 void J3DTevBlock1::diffTevReg() {}
 
 void J3DTevBlock1::diffTevStage() {
+    logTevStageLoad("J3DPEBlockTexEdge", 0, mTevStage[0]);
     mTevStage[0].load(0);
 }
 
@@ -1400,6 +1439,7 @@ void J3DTevBlock2::diffTevReg() {
 void J3DTevBlock2::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockXlu", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1442,6 +1482,7 @@ void J3DTevBlock4::diffTevReg() {
 void J3DTevBlock4::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockFull", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1486,6 +1527,7 @@ void J3DTevBlock16::diffTevReg() {
 void J3DTevBlock16::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockFogOff", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
