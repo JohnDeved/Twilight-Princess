@@ -7,6 +7,7 @@
 #include "JSystem/JMath/random.h"
 #include "JSystem/JSupport/JSupport.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#include <stdint.h>
 
 
 JASSeqParser::CmdInfo JASSeqParser::sCmdInfo[96] = {
@@ -814,7 +815,7 @@ s32 JASSeqParser::cmdDump(JASTrack* param_0, u32* param_1) {
 
 s32 JASSeqParser::cmdPrintf(JASTrack* param_0, u32* param_1) {
     u8 stack_c[4];
-    u32 stack_10[4];
+    uintptr_t stack_10[4];
     char buffer[128];
 
     JASSeqCtrl* seqCtrl = param_0->getSeqCtrl();
@@ -868,7 +869,7 @@ s32 JASSeqParser::cmdPrintf(JASTrack* param_0, u32* param_1) {
         stack_10[i] = (u8)seqCtrl->readByte();
         switch (stack_c[i]) {
         case 2:
-            stack_10[i] = (u32)seqCtrl->getAddr(stack_10[i]);
+            stack_10[i] = (uintptr_t)seqCtrl->getAddr(stack_10[i]);
             break;
         case 3:
         case 4:

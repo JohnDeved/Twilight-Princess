@@ -5,6 +5,7 @@
 #include "JSystem/JAudio2/JAISoundChild.h"
 #include "JSystem/JAudio2/JAIStreamDataMgr.h"
 #include "JSystem/JAudio2/JAIAudience.h"
+#include <stdint.h>
 
 static void JAIStream_JASAramStreamCallback_(u32 type, JASAramStream* aramStream, void* userData) {
     JAIStream* stream = (JAIStream*)userData;
@@ -58,7 +59,8 @@ bool JAIStream::prepare_prepareStream_() {
 
         streamAramAddr_ = streamAramMgr->newStreamAram(&local_28);
         if (streamAramAddr_ != NULL) {
-            inner_.aramStream_.init((u32)streamAramAddr_, local_28, &JAIStream_JASAramStreamCallback_, this);
+            inner_.aramStream_.init((u32)(uintptr_t)streamAramAddr_, local_28,
+                                    &JAIStream_JASAramStreamCallback_, this);
             field_0x290 = 1;
             prepareCount_ = 0;
         } else {

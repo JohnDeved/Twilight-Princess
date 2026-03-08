@@ -9,6 +9,7 @@
 #include "JSystem/JKernel/JKRFileCache.h"
 #include "JSystem/JUtility/JUTConsole.h"
 #include <cstdio>
+#include <stdint.h>
 #include "m_Do/m_Do_dvd_thread.h"
 #include "m_Do/m_Do_ext.h"
 
@@ -327,14 +328,14 @@ BOOL DynamicModuleControl::do_link() {
     }
     if (mModule != NULL) {
         ASSERT(mModule->info.sectionInfoOffset < 0x80000000);
-        ASSERT((u32)mModule + mModule->fixSize < 0x82000000);
+        ASSERT((uintptr_t)mModule + mModule->fixSize < 0x82000000);
         OSGetTime();
         OSGetTime();
         if (mModule->info.version >= 3) {
-            u32 fixSizePtr;
+            uintptr_t fixSizePtr;
             u32 fixSize = mModule->fixSize;
             u32 fixSize2 = (fixSize + 0x1f) & ~0x1f;
-            fixSizePtr = (u32)mModule + fixSize2;
+            fixSizePtr = (uintptr_t)mModule + fixSize2;
             s32 size = JKRGetMemBlockSize(NULL, mModule);
             if (size < 0) {
                 void* bss = JKRAlloc(mModule->bssSize, 0x20);
@@ -467,9 +468,9 @@ extern "C" void ModuleUnresolved() {
     OSReport_Error("Address:      Back Chain    LR Save\n");
     u32 i = 0;
     u32* stackPtr = (u32*)OSGetStackPointer();
-    while ((stackPtr != NULL) && ((u32)stackPtr != 0xFFFFFFFF) && (i++ < 0x10)) {
+    while ((stackPtr != NULL) && ((uintptr_t)stackPtr != 0xFFFFFFFFu) && (i++ < 0x10)) {
         OSReport_Error("0x%08x:   0x%08x    0x%08x\n", stackPtr, *stackPtr, *(stackPtr + 1));
-        stackPtr = (u32*)*stackPtr;
+        stackPtr = (u32*)(uintptr_t)(*stackPtr);
     }
     OSReport_Error("\n");
 }

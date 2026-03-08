@@ -4,6 +4,7 @@
 #include "JSystem/JAudio2/JAISoundHandles.h"
 #include "JSystem/JAudio2/JAIStreamDataMgr.h"
 #include "JSystem/JAudio2/JAISoundInfo.h"
+#include <stdint.h>
 
 JAIStreamMgr::JAIStreamMgr(bool setInstance) : JASGlobalInstance<JAIStreamMgr>(setInstance) {
     streamDataMgr_ = NULL;
@@ -59,7 +60,7 @@ void JAIStreamMgr::freeDeadStream_() {
             mStreamList.remove(i);
             void* aramAddr = stream->JAIStreamMgr_getAramAddr_();
             if (aramAddr != NULL) {
-                bool result = mStreamAramMgr->deleteStreamAram((u32)aramAddr);
+                bool result = mStreamAramMgr->deleteStreamAram((u32)(uintptr_t)aramAddr);
                 JUT_ASSERT(105, result);
             }
             

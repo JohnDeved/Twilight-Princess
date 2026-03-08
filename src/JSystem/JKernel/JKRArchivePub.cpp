@@ -9,7 +9,7 @@
 #include "JSystem/JKernel/JKRMemArchive.h"
 #include "JSystem/JUtility/JUTAssert.h"
 
-JKRArchive* JKRArchive::check_mount_already(s32 entryNum, JKRHeap* heap) {
+JKRArchive* JKRArchive::check_mount_already(intptr_t entryNum, JKRHeap* heap) {
     if (heap == NULL) {
         heap = JKRGetCurrentHeap();
     }
@@ -38,7 +38,7 @@ JKRArchive* JKRArchive::mount(const char* path, EMountMode mountMode, JKRHeap* h
 
 JKRArchive* JKRArchive::mount(void* ptr, JKRHeap* heap,
                               EMountDirection mountDirection) {
-    JKRArchive* archive = check_mount_already((s32)ptr, heap);
+    JKRArchive* archive = check_mount_already((intptr_t)ptr, heap);
     if (archive) {
         return archive;
     }

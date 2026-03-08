@@ -10,6 +10,7 @@
 #include "JSystem/JKernel/JKRAram.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "JSystem/JSupport/JSupport.h"
+#include <stdint.h>
 
 JASTaskThread* JASAramStream::sLoadThread;
 
@@ -583,7 +584,8 @@ void JASAramStream::updateChannel(u32 i_callbackType, JASChannel* i_channel,
 s32 JASAramStream::channelProc() {
     OSMessage msg;
     while (OSReceiveMessage(&field_0x020, &msg, OS_MESSAGE_NOBLOCK)) {
-        switch ((u32)msg) {
+        uintptr_t msgValue = (uintptr_t)msg;
+        switch (msgValue) {
         case 4:
             field_0x0ac = true;
             break;
@@ -598,12 +600,13 @@ s32 JASAramStream::channelProc() {
     }
 
     while (OSReceiveMessage(&field_0x000, &msg, OS_MESSAGE_NOBLOCK)) {
-        switch ((u32)msg & 0xff) {
+        uintptr_t msgValue = (uintptr_t)msg;
+        switch (msgValue & 0xff) {
         case 0:
             channelStart();
             break;
         case 1:
-            channelStop(JSUHiHalf((u32)msg));
+            channelStop(JSUHiHalf((u32)msgValue));
             break;
         case 2:
             field_0x0ae |= 1;

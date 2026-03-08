@@ -2,6 +2,7 @@
 #define Z2AUDIOCS_SPKTABLE_H
 
 #include "JSystem/JUtility/JUTAssert.h"
+#include <stdint.h>
 #include <revolution/types.h>
 #include <revolution/wpad.h>
 
@@ -34,7 +35,7 @@ public:
     // private:
     /* 0x00 */ bool mIsInitialized;
     /* 0x04 */ s32 mNumOfSound;
-    /* 0x08 */ u32 mEntryOffset;
+    /* 0x08 */ uintptr_t mEntryOffset;
     /* 0x0C */ s32* mDataOffsets;
 };
 

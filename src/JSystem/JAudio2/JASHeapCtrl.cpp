@@ -6,6 +6,7 @@
 #include "JSystem/JKernel/JKRExpHeap.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#include <stdint.h>
 #include <dolphin/ar.h>
 
 JASHeap::JASHeap(JASDisposer* disposer) : mTree(this) {
@@ -19,9 +20,11 @@ JASHeap::JASHeap(JASDisposer* disposer) : mTree(this) {
 void JASHeap::initRootHeap(void* param_0, u32 param_1) {
     JUT_ASSERT(97, ! isAllocated());
     JASMutexLock lock(&mMutex);
-    mBase = (u8*)OSRoundUp32B(param_0);
+    uintptr_t base = (uintptr_t)param_0;
+    uintptr_t alignedBase = (base + 0x1f) & ~(uintptr_t)0x1f;
+    mBase = (u8*)alignedBase;
     field_0x40 = NULL;
-    mSize = param_1 - (u32(mBase) - u32(param_0));
+    mSize = param_1 - (u32)(alignedBase - base);
 }
 
 bool JASHeap::alloc(JASHeap* mother, u32 param_1) {
@@ -51,7 +54,7 @@ bool JASHeap::alloc(JASHeap* mother, u32 param_1) {
         if (r29 >= mother->mBase + local_2c) {
             break;
         }
-        u32 local_3c = u32(it->mBase) - u32(r29);
+        u32 local_3c = (u32)((uintptr_t)it->mBase - (uintptr_t)r29);
         if (local_3c >= param_1 && local_3c < r27) {
             local_30 = *it;
             local_34 = r29;

@@ -3,6 +3,7 @@
 
 #include "JSystem/JKernel/JKRCompression.h"
 #include "JSystem/JKernel/JKRThread.h"
+#include <stdint.h>
 
 class JKRAMCommand;
 
@@ -12,7 +13,7 @@ class JKRAMCommand;
  */
 class JKRDecompCommand {
 public:
-    typedef void (*AsyncCallback)(u32);
+    typedef void (*AsyncCallback)(uintptr_t);
 
     JKRDecompCommand();
     ~JKRDecompCommand();

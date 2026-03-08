@@ -4,6 +4,7 @@
 #include "JSystem/JKernel/JKRCompression.h"
 #include "JSystem/JKernel/JKRFileLoader.h"
 #include "global.h"
+#include <stdint.h>
 
 class JKRHeap;
 
@@ -128,7 +129,7 @@ public:
 
 protected:
     JKRArchive();
-    JKRArchive(s32, EMountMode);
+    JKRArchive(intptr_t, EMountMode);
 
 public:
     bool getDirEntry(SDirEntry*, u32) const;
@@ -181,7 +182,7 @@ public:
     /* 0x38 */ JKRHeap* mHeap;
     /* 0x3C */ u8 mMountMode;
     /* 0x3D */ u8 field_0x3d[3];
-    /* 0x40 */ s32 mEntryNum;
+    /* 0x40 */ intptr_t mEntryNum;
     /* 0x44 */ SArcDataInfo* mArcInfoBlock;
     /* 0x48 */ SDIDirEntry* mNodes;
     /* 0x4C */ SDIFileEntry* mFiles;
@@ -194,7 +195,7 @@ protected:
     /* 0x60 */ EMountDirection mMountDirection;
 
 public:
-    static JKRArchive* check_mount_already(s32, JKRHeap*);
+    static JKRArchive* check_mount_already(intptr_t, JKRHeap*);
     static JKRArchive* mount(const char*, EMountMode, JKRHeap*, EMountDirection);
     static JKRArchive* mount(void*, JKRHeap*, EMountDirection);
     static JKRArchive* mount(s32, EMountMode, JKRHeap*, EMountDirection);
