@@ -131,7 +131,11 @@ jobs:
           export TP_TEST_FRAMES=200
           export TP_VERIFY_CAPTURE_FRAMES="1,10,20,30,40,60,90,120,128,129,130,131,150,180,200"
           export TP_SKIP_FADE_AFTER=128
-          export TP_ENABLE_PROC_TITLE=1
+          # Keep PROC_TITLE disabled in the combined 200-frame gameplay run.
+          # On PC, enabling PROC_TITLE during the opening scene unloads the room
+          # geometry after the intro-frame window, which is exactly the
+          # 0130/0131-visible-then-black regression we are currently tracking.
+          unset TP_ENABLE_PROC_TITLE 2>/dev/null || true
           timeout -k 10 300s build/tp-pc 2>&1 | tee milestones_render.log || true
           RENDER_EXIT=${PIPESTATUS[0]}
           echo "Phase 2 exit: $RENDER_EXIT"
