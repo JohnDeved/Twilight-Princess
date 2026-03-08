@@ -301,9 +301,6 @@ void J3DMatPacket::draw() {
 #endif
     mpMaterial->load();
 #if PLATFORM_PC
-    /* On PC, display lists are empty because GD functions are stubs.
-     * Directly load the material's TEV/color/texgen state here instead
-     * of replaying the empty DL. This sets the GX state for rendering. */
     {
         static int s_mat_block_diag = 0;
         if (s_mat_block_diag < 10) {
@@ -326,15 +323,8 @@ void J3DMatPacket::draw() {
             s_mat_block_diag++;
         }
     }
-    pal_gd_reset_dummy();
-    if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
-    if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();
-    if (mpMaterial->getPEBlock() != NULL)  mpMaterial->getPEBlock()->load();
-    if (mpMaterial->getTexGenBlock() != NULL) mpMaterial->getTexGenBlock()->load();
-    if (mpMaterial->getColorBlock() != NULL) mpMaterial->getColorBlock()->load();
-#else
-    callDL();
 #endif
+    callDL();
 
     J3DShapePacket* packet = getShapePacket();
 #if PLATFORM_PC
@@ -366,11 +356,10 @@ void J3DMatPacket::draw() {
             packet = (J3DShapePacket*)packet->getNextPacket();
             continue;
         }
-#else
+#endif
         if (packet->getDisplayListObj() != NULL) {
             packet->getDisplayListObj()->callDL();
         }
-#endif
 
         packet->drawFast();
         packet = (J3DShapePacket*)packet->getNextPacket();
