@@ -33,8 +33,10 @@ static u16 getTableCount(const J3DModelBlock& block, u32 start, u32 next, u32 el
     return (u16)((end - start) / elem_size);
 }
 
-#define J3D_FACTORY_BOUNDS_MAX      16
-#define J3D_LOOKUP_FALLBACK_LOG_MAX 20
+#define J3D_FACTORY_BOUNDS_MAX          256
+#define J3D_LOOKUP_FALLBACK_LOG_MAX     20
+#define J3D_LOOKUP_BOUNDS_MISSING_MAX   20
+#define J3D_FACTORY_BOUNDS_OVERFLOW_MAX 4
 
 struct MaterialFactoryBounds {
     const J3DMaterialFactory* factory;
@@ -65,6 +67,17 @@ static void setFactoryBounds(const J3DMaterialFactory* factory, u16 texNoCount,
         s_factoryBounds[s_factoryBoundsCount].tevOrderInfoCount = tevOrderInfoCount;
         s_factoryBounds[s_factoryBoundsCount].tevStageInfoCount = tevStageInfoCount;
         s_factoryBoundsCount++;
+    } else {
+        static u32 s_factory_bounds_overflow_count = 0;
+        if (s_factory_bounds_overflow_count < J3D_FACTORY_BOUNDS_OVERFLOW_MAX) {
+            s_factory_bounds_overflow_count++;
+            fprintf(stderr,
+                    "{\"j3d_factory_bounds_overflow\":{\"factory\":\"%p\","
+                    "\"factory_bounds\":%u,\"factory_bounds_max\":%u,"
+                    "\"texno_count\":%u,\"tev_order_count\":%u,\"tev_stage_count\":%u}}\n",
+                    factory, (unsigned)s_factoryBoundsCount, (unsigned)J3D_FACTORY_BOUNDS_MAX,
+                    (unsigned)texNoCount, (unsigned)tevOrderInfoCount, (unsigned)tevStageInfoCount);
+        }
     }
 }
 
@@ -88,6 +101,20 @@ static void logMaterialLookupFallback(const char* kind, int material_idx, int en
             "{\"j3d_mat_lookup_fallback\":{\"kind\":\"%s\",\"material_idx\":%d,"
             "\"entry_idx\":%d,\"table_idx\":%u,\"table_count\":%u}}\n",
             kind, material_idx, entry_idx, (unsigned)table_idx, (unsigned)table_count);
+}
+
+static void logMaterialLookupBoundsMissing(const char* kind, const J3DMaterialFactory* factory,
+                                           int material_idx, int entry_idx) {
+    static int s_bounds_missing_log_count = 0;
+    if (s_bounds_missing_log_count >= J3D_LOOKUP_BOUNDS_MISSING_MAX) {
+        return;
+    }
+    s_bounds_missing_log_count++;
+    fprintf(stderr,
+            "{\"j3d_mat_lookup_bounds_missing\":{\"kind\":\"%s\",\"factory\":\"%p\","
+            "\"material_idx\":%d,\"entry_idx\":%d,\"factory_bounds\":%u,\"factory_bounds_max\":%u}}\n",
+            kind, factory, material_idx, entry_idx, (unsigned)s_factoryBoundsCount,
+            (unsigned)J3D_FACTORY_BOUNDS_MAX);
 }
 #endif
 
@@ -786,6 +813,9 @@ u16 J3DMaterialFactory::newTexNo(int i_idx, int i_no) const {
         if (mpTexNo != NULL && bounds != NULL && mtl_init_data->mTexNoIdx[i_no] < bounds->texNoCount) {
             return mpTexNo[mtl_init_data->mTexNoIdx[i_no]];
         }
+        if (mpTexNo != NULL && bounds == NULL) {
+            logMaterialLookupBoundsMissing("texno", this, i_idx, i_no);
+        }
         if (bounds != NULL) {
             logMaterialLookupFallback("texno", i_idx, i_no, mtl_init_data->mTexNoIdx[i_no],
                                       bounds->texNoCount);
@@ -810,6 +840,9 @@ J3DTevOrder J3DMaterialFactory::newTevOrder(int i_idx, int i_no) const {
         if (mpTevOrderInfo != NULL && bounds != NULL &&
             mtl_init_data->mTevOrderIdx[i_no] < bounds->tevOrderInfoCount) {
             return J3DTevOrder(mpTevOrderInfo[mtl_init_data->mTevOrderIdx[i_no]]);
+        }
+        if (mpTevOrderInfo != NULL && bounds == NULL) {
+            logMaterialLookupBoundsMissing("tev_order", this, i_idx, i_no);
         }
         if (bounds != NULL) {
             logMaterialLookupFallback("tev_order", i_idx, i_no, mtl_init_data->mTevOrderIdx[i_no],
@@ -878,6 +911,9 @@ J3DTevStage J3DMaterialFactory::newTevStage(int i_idx, int i_no) const {
         if (mpTevStageInfo != NULL && bounds != NULL &&
             mtl_init_data->mTevStageIdx[i_no] < bounds->tevStageInfoCount) {
             return J3DTevStage(mpTevStageInfo[mtl_init_data->mTevStageIdx[i_no]]);
+        }
+        if (mpTevStageInfo != NULL && bounds == NULL) {
+            logMaterialLookupBoundsMissing("tev_stage", this, i_idx, i_no);
         }
         if (bounds != NULL) {
             logMaterialLookupFallback("tev_stage", i_idx, i_no, mtl_init_data->mTevStageIdx[i_no],
