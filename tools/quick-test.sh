@@ -181,7 +181,7 @@ if [[ "$PHASE" == "3" ]]; then
     echo "Phase 3 fade overlay (darwFilter) — shows alpha at frame 129 transition:"
     grep '"darwFilter"' "$LOG_FILE" 2>/dev/null | head -10 || echo "(no fade overlay calls)"
     echo "Phase 3 3D geometry diagnostics (MVP + frustum check):"
-    grep '"rasc_geom_dump"' "$LOG_FILE" 2>/dev/null | head -5 || echo "(none found)"
+grep '"rasc_geom_dump"' "$LOG_FILE" 2>/dev/null | head -12 || echo "(none found)"
     echo "Phase 3 per-frame draw counts (frames 125-210):"
     grep '"frame_dc"' "$LOG_FILE" 2>/dev/null | head -90 || echo "(none found)"
 elif [[ "$PHASE" == "4" ]]; then

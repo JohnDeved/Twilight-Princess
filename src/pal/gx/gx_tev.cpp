@@ -2452,7 +2452,7 @@ void pal_tev_flush_draw(void) {
         }
     }
 
-    /* 3D room RASC geometry dump: fires for the first 5 PASSCLR+RASC draws
+    /* 3D room RASC geometry dump: fires for the first 12 PASSCLR+RASC draws
      * AFTER the centroid camera fires (s_geom_centroid_active=1).  Sampling
      * post-centroid draws shows the corrected pos_mtx and NDC values so CI
      * can confirm in_frustum=1.  Pre-centroid draws (first ~50) are omitted
@@ -2462,7 +2462,7 @@ void pal_tev_flush_draw(void) {
         /* Changed from "s_total_draw_count > 500" to "s_geom_centroid_active":
          * the dump now fires AFTER the centroid camera is established so the
          * logged pos_mtx0 / NDC values reflect the corrected transform. */
-        if (s_rasc_geom_n < 5 && s_geom_centroid_active) {
+        if (s_rasc_geom_n < 12 && s_geom_centroid_active) {
             s_rasc_geom_n++;
             float wx = 0, wy = 0, wz = 0;
             if (nverts >= 1) {
