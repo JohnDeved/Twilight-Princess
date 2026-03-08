@@ -15,6 +15,7 @@
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_stub_tracker.h"
 #include "pal/gx/gx_tev.h"
+#include "pal/gx/gx_diag_context.h"
 
 /* ================================================================ */
 /* Global state machine instance                                    */
@@ -24,6 +25,18 @@ GXStateMachine g_gx_state;
 
 /* Static vertex data buffer */
 static u8 s_vtx_buf[GX_VTX_BUF_SIZE];
+
+static inline int pal_should_log_room_material_diag(void) {
+    switch (pal_diag_current_mat_index) {
+    case 0:
+    case 3:
+    case 15:
+    case 20:
+        return 1;
+    default:
+        return 0;
+    }
+}
 
 /* ================================================================ */
 /* Texture pointer table                                            */
@@ -237,6 +250,27 @@ void pal_gx_set_tev_order(GXTevStageID stage, GXTexCoordID coord, GXTexMapID map
         g_gx_state.tev_stages[stage].tex_coord = coord;
         g_gx_state.tev_stages[stage].tex_map = map;
         g_gx_state.tev_stages[stage].color_chan = color;
+        if (pal_diag_current_material_ptr != NULL && pal_should_log_room_material_diag()) {
+            static int s_tev_order_diag_count = 0;
+            if (s_tev_order_diag_count < 64 && stage < 2) {
+                s_tev_order_diag_count++;
+                int tex_valid = ((unsigned)map < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[map].valid : 0;
+                const GXTexBinding* bind =
+                    ((unsigned)map < GX_MAX_TEXMAP) ? &g_gx_state.tex_bindings[map] : NULL;
+                fprintf(stderr,
+                        "{\"gx_tev_order_diag\":{\"mat_idx\":%d,\"mat_mode\":%u,"
+                        "\"material\":\"%p\",\"model\":\"%p\","
+                        "\"stage\":%u,\"coord\":%d,\"map\":%d,\"color\":%d,"
+                        "\"tex_valid\":%d,\"img_ptr\":\"%p\",\"w\":%u,\"h\":%u,\"fmt\":%d}}\n",
+                        pal_diag_current_mat_index, (unsigned)pal_diag_current_material_mode,
+                        pal_diag_current_material_ptr, pal_diag_current_model_ptr,
+                        (unsigned)stage, (int)coord, (int)map, (int)color,
+                        tex_valid, bind ? bind->image_ptr : NULL,
+                        bind ? (unsigned)bind->width : 0u,
+                        bind ? (unsigned)bind->height : 0u,
+                        bind ? (int)bind->format : -1);
+            }
+        }
     }
 }
 
@@ -394,6 +428,20 @@ void pal_gx_load_tex_obj(GXTexObj* obj, GXTexMapID id) {
         }
 
         bind->valid = 1;
+        if (pal_diag_current_material_ptr != NULL && pal_should_log_room_material_diag()) {
+            static int s_tex_load_diag_count = 0;
+            if (s_tex_load_diag_count < 32) {
+                s_tex_load_diag_count++;
+                fprintf(stderr,
+                        "{\"gx_tex_load_diag\":{\"mat_idx\":%d,\"mat_mode\":%u,"
+                        "\"material\":\"%p\",\"model\":\"%p\","
+                        "\"id\":%d,\"valid\":%d,\"img_ptr\":\"%p\",\"w\":%u,\"h\":%u,\"fmt\":%d}}\n",
+                        pal_diag_current_mat_index, (unsigned)pal_diag_current_material_mode,
+                        pal_diag_current_material_ptr, pal_diag_current_model_ptr,
+                        (int)id, bind->valid, bind->image_ptr, (unsigned)bind->width,
+                        (unsigned)bind->height, (int)bind->format);
+            }
+        }
     } else {
         /* Log when GXLoadTexObj is called without PC-initialized texobj */
         static int s_no_tp_count = 0;
