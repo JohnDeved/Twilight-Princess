@@ -1448,6 +1448,26 @@ static uint32_t s_skip_passclr_env   = 0; /* TP_SKIP_PASSCLR env skipped */
 static uint32_t s_skip_tvb_alloc     = 0; /* transient vertex buffer alloc failed */
 static uint32_t s_ok_submitted       = 0; /* successful bgfx::submit calls */
 static uint32_t s_diag_frame_num     = 0; /* diagnostic frame counter */
+static const void* s_room_passclr_diag_materials[32];
+static uint32_t s_room_passclr_diag_frames[32];
+static int s_room_passclr_diag_count = 0;
+
+static int room_passclr_diag_mark_seen(const void* material, uint32_t frame) {
+    int i;
+    for (i = 0; i < s_room_passclr_diag_count; i++) {
+        if (s_room_passclr_diag_materials[i] == material &&
+            s_room_passclr_diag_frames[i] == frame) {
+            return 0;
+        }
+    }
+    if (s_room_passclr_diag_count >= 32) {
+        return 0;
+    }
+    s_room_passclr_diag_materials[s_room_passclr_diag_count] = material;
+    s_room_passclr_diag_frames[s_room_passclr_diag_count] = frame;
+    s_room_passclr_diag_count++;
+    return 1;
+}
 
 u32 pal_tev_get_total_attempt_count(void) {
     return s_ok_submitted + s_skip_not_ready + s_skip_no_verts +
@@ -1795,6 +1815,68 @@ void pal_tev_flush_draw(void) {
 
     preset = fixup_preset_for_vertex(preset);
     if (!bgfx::isValid(s_programs[preset])) { s_skip_invalid_prog++; return; }
+
+    if (preset == GX_TEV_SHADER_PASSCLR &&
+        pal_diag_current_material_ptr != NULL &&
+        pal_diag_current_material_mode == 1 &&
+        s_diag_frame_num >= 128 && s_diag_frame_num <= 130 &&
+        g_gx_state.num_tev_stages > 1 &&
+        room_passclr_diag_mark_seen(pal_diag_current_material_ptr, s_diag_frame_num))
+    {
+        int any_stage_tex = 0;
+        int any_stage_tex_color = 0;
+        int num_stages = g_gx_state.num_tev_stages;
+        if (num_stages == 0) num_stages = 1;
+        for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[s];
+            int map = (int)st->tex_map;
+            int valid = (map >= 0 && map < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[map].valid : 0;
+            if (valid) {
+                any_stage_tex = 1;
+            }
+            if ((tev_arg_class(st->color_a) & 0x1) ||
+                (tev_arg_class(st->color_b) & 0x1) ||
+                (tev_arg_class(st->color_c) & 0x1) ||
+                (tev_arg_class(st->color_d) & 0x1)) {
+                any_stage_tex_color = 1;
+            }
+        }
+
+        fprintf(stderr, "{\"room_passclr_diag\":{\"frame\":%u,\"draw_id\":%u,"
+                "\"mat_idx\":%d,\"mat_mode\":%u,"
+                "\"material\":\"%p\",\"model\":\"%p\","
+                "\"num_tev\":%d,\"num_texgen\":%d,"
+                "\"color_update\":%d,\"blend_mode\":%d,\"blend_src\":%d,\"blend_dst\":%d,"
+                "\"z_en\":%d,\"cull\":%d,"
+                "\"any_stage_tex\":%d,\"any_stage_tex_color\":%d,\"stages\":[",
+                s_diag_frame_num, s_total_draw_count,
+                pal_diag_current_mat_index, (unsigned)pal_diag_current_material_mode,
+                pal_diag_current_material_ptr, pal_diag_current_model_ptr,
+                num_stages, (int)g_gx_state.num_tex_gens,
+                (int)g_gx_state.color_update,
+                (int)g_gx_state.blend_mode, (int)g_gx_state.blend_src, (int)g_gx_state.blend_dst,
+                (int)g_gx_state.z_compare_enable, (int)g_gx_state.cull_mode,
+                any_stage_tex, any_stage_tex_color);
+        for (int s = 0; s < num_stages && s < GX_MAX_TEVSTAGE; s++) {
+            const GXTevStage* st = &g_gx_state.tev_stages[s];
+            int map = (int)st->tex_map;
+            int valid = (map >= 0 && map < GX_MAX_TEXMAP) ? g_gx_state.tex_bindings[map].valid : 0;
+            if (s != 0) {
+                fprintf(stderr, ",");
+            }
+            fprintf(stderr,
+                    "{\"stage\":%d,\"map\":%d,\"valid\":%d,"
+                    "\"coord\":%d,\"chan\":%d,"
+                    "\"cd\":[%d,%d,%d,%d],\"ad\":[%d,%d,%d,%d],"
+                    "\"color_out\":%d,\"alpha_out\":%d}",
+                    s, map, valid,
+                    (int)st->tex_coord, (int)st->color_chan,
+                    (int)st->color_a, (int)st->color_b, (int)st->color_c, (int)st->color_d,
+                    (int)st->alpha_a, (int)st->alpha_b, (int)st->alpha_c, (int)st->alpha_d,
+                    (int)st->color_out, (int)st->alpha_out);
+        }
+        fprintf(stderr, "]}}\n");
+    }
 
     /* J2D constant-color fill tracking.
      *
