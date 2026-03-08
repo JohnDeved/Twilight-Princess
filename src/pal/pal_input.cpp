@@ -64,6 +64,9 @@ static struct {
 
 static SDL_Gamepad* s_gamepad = NULL;
 
+#define PAL_PAD_RUMBLE_INTENSITY 0xFFFF
+#define PAL_PAD_RUMBLE_DURATION_MS 100
+
 /* ================================================================ */
 /* Keyboard scancode → button mapping                               */
 /* ================================================================ */
@@ -271,7 +274,8 @@ void pal_input_control_motor(s32 port, u32 command) {
 
     switch (command) {
     case PAD_MOTOR_RUMBLE:
-        SDL_RumbleGamepad(s_gamepad, 0xFFFF, 0xFFFF, 100);
+        SDL_RumbleGamepad(s_gamepad, PAL_PAD_RUMBLE_INTENSITY,
+                          PAL_PAD_RUMBLE_INTENSITY, PAL_PAD_RUMBLE_DURATION_MS);
         break;
     case PAD_MOTOR_STOP:
     case PAD_MOTOR_STOP_HARD:
