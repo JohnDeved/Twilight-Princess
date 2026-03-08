@@ -4,6 +4,7 @@
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
 #include "JSystem/J3DGraphBase/J3DTransform.h"
+#include "SSystem/SComponent/c_counter.h"
 #include "pal/gx/gx_diag_context.h"
 #include "global.h"
 #include <cstdio>
@@ -11,6 +12,77 @@
 
 #if PLATFORM_PC
 #define J3D_TEV_TEX_MISMATCH_LOG_MAX 40
+#define J3D_TEV_ORDER_LOAD_LOG_MAX 96
+
+static inline int shouldLogRoomFrameTevDiag() {
+    return pal_diag_current_material_mode == 1 && pal_diag_current_model_ptr != NULL &&
+           g_Counter.mCounter0 >= 128 && g_Counter.mCounter0 <= 130;
+}
+
+static inline int shouldLogKnownMismatchTevDiag() {
+    switch (pal_diag_current_mat_index) {
+    case 0:
+    case 15:
+    case 20:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static inline int shouldLogTevDiag() {
+    if (pal_diag_current_material_ptr == NULL) {
+        return 0;
+    }
+
+    return shouldLogKnownMismatchTevDiag() || shouldLogRoomFrameTevDiag();
+}
+
+static int markTevOrderMaterialStageSeen(const void* material, u8 stage,
+                                         const void** materials, u8* stages,
+                                         int* count, int max_count) {
+    int i;
+    for (i = 0; i < *count; i++) {
+        if (materials[i] == material && stages[i] == stage) {
+            return 0;
+        }
+    }
+
+    if (*count >= max_count) {
+        return 0;
+    }
+
+    materials[*count] = material;
+    stages[*count] = stage;
+    (*count)++;
+    return 1;
+}
+
+static void logTevOrderLoad(const char* block_name, u32 stage, u16 texNo, const J3DTevOrder& tevOrder) {
+    static const void* s_materials[J3D_TEV_ORDER_LOAD_LOG_MAX];
+    static u8 s_stages[J3D_TEV_ORDER_LOAD_LOG_MAX];
+    static int s_count = 0;
+
+    if (!shouldLogTevDiag()) {
+        return;
+    }
+
+    if (!markTevOrderMaterialStageSeen(pal_diag_current_material_ptr, (u8)stage, s_materials,
+                                       s_stages, &s_count, J3D_TEV_ORDER_LOAD_LOG_MAX)) {
+        return;
+    }
+
+    fprintf(stderr,
+            "{\"j3d_tev_order_load\":{\"block\":\"%s\",\"frame\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"stage\":%u,\"tex_no\":%u,\"tev_map\":%u,\"tev_coord\":%u,\"tev_color\":%u}}\n",
+            block_name, g_Counter.mCounter0, pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode, pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr, (unsigned)stage, (unsigned)texNo,
+            (unsigned)tevOrder.mTexMap, (unsigned)tevOrder.mTexCoord,
+            (unsigned)tevOrder.mColorChan);
+}
 
 static void logTevTextureMismatch(const char* block_name, u32 tevStageNum, const u16* texNo,
                                   u32 texNoCount, const J3DTevOrder* tevOrder,
@@ -640,6 +712,7 @@ void J3DTevBlock1::load() {
 #if PLATFORM_PC
     logTevTextureMismatch("J3DTevBlock1", 1, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
                           ARRAY_SIZEU(mTevOrder));
+    logTevOrderLoad("J3DTevBlock1", 0, mTexNo[0], mTevOrder[0]);
 #endif
 
     if (mTexNo[0] != 0xffff) {
@@ -672,6 +745,9 @@ void J3DTevBlock2::load() {
 #if PLATFORM_PC
     logTevTextureMismatch("J3DTevBlock2", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
                           ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock2", i, mTexNo[i], mTevOrder[i]);
+    }
 #endif
 
     for (u32 i = 0; i < 2; i++) {
@@ -743,6 +819,9 @@ void J3DTevBlock4::load() {
 #if PLATFORM_PC
     logTevTextureMismatch("J3DTevBlock4", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
                           ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock4", i, mTexNo[i], mTevOrder[i]);
+    }
 #endif
 
     for (u32 i = 0; i < 4; i++) {
@@ -816,6 +895,9 @@ void J3DTevBlock16::load() {
 #if PLATFORM_PC
     logTevTextureMismatch("J3DTevBlock16", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
                           ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock16", i, mTexNo[i], mTevOrder[i]);
+    }
 #endif
 
     for (u32 i = 0; i < 8; i++) {
