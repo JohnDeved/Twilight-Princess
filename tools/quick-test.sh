@@ -24,6 +24,43 @@
 
 set -euo pipefail
 
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+
+run_with_timeout() {
+    local timeout_secs="$1"
+    shift
+
+    if [[ -n "$TIMEOUT_BIN" ]]; then
+        "$TIMEOUT_BIN" -k 10 "${timeout_secs}s" "$@"
+        return $?
+    fi
+
+    python3 - "$timeout_secs" "$@" <<'PY'
+import signal
+import subprocess
+import sys
+import time
+
+timeout_s = float(sys.argv[1])
+cmd = sys.argv[2:]
+proc = subprocess.Popen(cmd)
+start = time.time()
+
+while True:
+    rc = proc.poll()
+    if rc is not None:
+        sys.exit(rc)
+    if time.time() - start >= timeout_s:
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        sys.exit(124)
+    time.sleep(0.1)
+PY
+}
+
 PHASE=""
 BINARY="${BINARY:-build/tp-pc}"
 OUTPUT_DIR=""
@@ -103,9 +140,11 @@ echo "  Binary:     $BINARY"
 echo "  Output dir: $OUTPUT_DIR"
 echo "  Timeout:    ${TIMEOUT_SECS}s"
 
-# --- Start Xvfb (only if caller has not already set DISPLAY) ---
+# --- Start Xvfb (only if caller has not already set DISPLAY and Linux needs it) ---
 XVFB_PID=""
-if [[ -z "${DISPLAY:-}" ]]; then
+if [[ -n "${DISPLAY:-}" ]]; then
+    :
+elif [[ "$(uname -s)" == "Linux" ]] && command -v Xvfb >/dev/null 2>&1 && command -v xdpyinfo >/dev/null 2>&1; then
     Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 >/dev/null 2>&1 &
     XVFB_PID=$!
     export DISPLAY="$DISPLAY_NUM"
@@ -113,6 +152,8 @@ if [[ -z "${DISPLAY:-}" ]]; then
         xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
         sleep 1
     done
+else
+    echo "Skipping Xvfb setup on $(uname -s); using native headless window path"
 fi
 
 _cleanup_xvfb() {
@@ -153,7 +194,7 @@ case "$PHASE" in
 esac
 
 # --- Run the game ---
-timeout -k 10 "${TIMEOUT_SECS}s" "$BINARY" 2>&1 | tee "$LOG_FILE" || true
+run_with_timeout "$TIMEOUT_SECS" "$BINARY" 2>&1 | tee "$LOG_FILE" || true
 RUN_EXIT=${PIPESTATUS[0]}
 echo "Phase $PHASE exit: $RUN_EXIT"
 
