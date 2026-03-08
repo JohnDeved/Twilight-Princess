@@ -33,6 +33,9 @@ static u16 getTableCount(const J3DModelBlock& block, u32 start, u32 next, u32 el
     return (u16)((end - start) / elem_size);
 }
 
+#define J3D_FACTORY_BOUNDS_MAX      16
+#define J3D_LOOKUP_FALLBACK_LOG_MAX 20
+
 struct MaterialFactoryBounds {
     const J3DMaterialFactory* factory;
     u16 texNoCount;
@@ -40,7 +43,9 @@ struct MaterialFactoryBounds {
     u16 tevStageInfoCount;
 };
 
-static MaterialFactoryBounds s_factoryBounds[16];
+/* PC port note: factory creation currently runs on the single-threaded
+ * bootstrap path, so this tiny side table does not need locking. */
+static MaterialFactoryBounds s_factoryBounds[J3D_FACTORY_BOUNDS_MAX];
 static u32 s_factoryBoundsCount = 0;
 
 static void setFactoryBounds(const J3DMaterialFactory* factory, u16 texNoCount,
@@ -54,7 +59,7 @@ static void setFactoryBounds(const J3DMaterialFactory* factory, u16 texNoCount,
         }
     }
 
-    if (s_factoryBoundsCount < 16) {
+    if (s_factoryBoundsCount < J3D_FACTORY_BOUNDS_MAX) {
         s_factoryBounds[s_factoryBoundsCount].factory = factory;
         s_factoryBounds[s_factoryBoundsCount].texNoCount = texNoCount;
         s_factoryBounds[s_factoryBoundsCount].tevOrderInfoCount = tevOrderInfoCount;
@@ -75,7 +80,7 @@ static const MaterialFactoryBounds* getFactoryBounds(const J3DMaterialFactory* f
 static void logMaterialLookupFallback(const char* kind, int material_idx, int entry_idx,
                                       u16 table_idx, u16 table_count) {
     static int s_lookup_fallback_log_count = 0;
-    if (s_lookup_fallback_log_count >= 20) {
+    if (s_lookup_fallback_log_count >= J3D_LOOKUP_FALLBACK_LOG_MAX) {
         return;
     }
     s_lookup_fallback_log_count++;
