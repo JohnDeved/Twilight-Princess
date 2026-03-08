@@ -4,6 +4,7 @@
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
 #include "JSystem/J3DGraphBase/J3DTransform.h"
+#include "pal/gx/gx_diag_context.h"
 #include "global.h"
 #include <cstdio>
 #include <cstring>
@@ -43,12 +44,19 @@ static void logTevTextureMismatch(const char* block_name, u32 tevStageNum, const
 
     fprintf(stderr,
             "{\"j3d_tev_tex_mismatch\":{\"block\":\"%s\",\"tev_stage_num\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
             "\"loaded_tex_count\":%d,\"enabled_order_count\":%d,"
             "\"tex_no\":[%u,%u,%u,%u,%u,%u,%u,%u],"
             "\"tev_map\":[%u,%u,%u,%u],"
             "\"tev_coord\":[%u,%u,%u,%u],"
             "\"tev_color\":[%u,%u,%u,%u]}}\n",
-            block_name, (unsigned)tevStageNum, loadedTexCount, enabledOrderCount,
+            block_name, (unsigned)tevStageNum,
+            pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode,
+            pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr,
+            loadedTexCount, enabledOrderCount,
             (unsigned)texNo[0], (unsigned)texNo[1], (unsigned)texNo[2], (unsigned)texNo[3],
             (unsigned)texNo[4], (unsigned)texNo[5], (unsigned)texNo[6], (unsigned)texNo[7],
             (unsigned)tevOrder[0].mTexMap,

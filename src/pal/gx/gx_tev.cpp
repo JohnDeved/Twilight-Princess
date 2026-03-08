@@ -29,6 +29,7 @@
 
 extern "C" {
 #include "pal/gx/gx_state.h"
+#include "pal/gx/gx_diag_context.h"
 #include "pal/gx/gx_tev.h"
 #include "pal/gx/gx_texture.h"
 #include "pal/gx/gx_stub_tracker.h"
@@ -2550,6 +2551,8 @@ void pal_tev_flush_draw(void) {
                 fprintf(stderr, "{\"rasc_geom_dump\":{"
                         "\"frame\":%u,"
                         "\"draw\":%u,"
+                        "\"mat_idx\":%d,\"mat_mode\":%u,"
+                        "\"material\":\"%p\",\"model\":\"%p\","
                         "\"nverts\":%u,"
                         "\"pnmtx\":%d,\"tmtx\":%d,"
                         "\"cur_mtx\":%u,"
@@ -2573,6 +2576,10 @@ void pal_tev_flush_draw(void) {
                         "\"num_texgen\":%d,\"tg0_src\":%d}}\n",
                         s_diag_frame_num,
                         s_total_draw_count,
+                        pal_diag_current_mat_index,
+                        (unsigned)pal_diag_current_material_mode,
+                        pal_diag_current_material_ptr,
+                        pal_diag_current_model_ptr,
                         (unsigned)nverts,
                         has_pnmtx, tex_mtx_cnt,
                         diag_mtx_idx,
@@ -2963,6 +2970,8 @@ void pal_tev_flush_draw(void) {
             const GXTevStage* ts = &g_gx_state.tev_stages[0];
             fprintf(stderr, "{\"frame_draw_diag\":{\"frame\":%u,\"frame_dc\":%u,"
                     "\"draw_id\":%u,\"preset\":\"%s\","
+                    "\"mat_idx\":%d,\"mat_mode\":%u,"
+                    "\"material\":\"%p\",\"model\":\"%p\","
                     "\"blend_mode\":%d,\"z_en\":%d,"
                     "\"tevR0\":[%d,%d,%d,%d],"
                     "\"tevR1\":[%d,%d,%d,%d],"
@@ -2973,6 +2982,10 @@ void pal_tev_flush_draw(void) {
                     s_diag_frame, (unsigned)gx_frame_draw_calls,
                     s_total_draw_count,
                     (preset >= 0 && preset < GX_TEV_SHADER_COUNT) ? s_fs_names[preset] : "?",
+                    pal_diag_current_mat_index,
+                    (unsigned)pal_diag_current_material_mode,
+                    pal_diag_current_material_ptr,
+                    pal_diag_current_model_ptr,
                     g_gx_state.blend_mode, g_gx_state.z_compare_enable,
                     g_gx_state.tev_regs[0].r, g_gx_state.tev_regs[0].g,
                     g_gx_state.tev_regs[0].b, g_gx_state.tev_regs[0].a,

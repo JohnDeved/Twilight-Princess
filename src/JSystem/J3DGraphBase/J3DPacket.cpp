@@ -12,7 +12,13 @@
 
 #if PLATFORM_PC
 #include <stdio.h>
+#include "pal/gx/gx_diag_context.h"
 extern "C" void pal_gd_reset_dummy(void);
+
+s32 pal_diag_current_mat_index = -1;
+u32 pal_diag_current_material_mode = 0;
+const void* pal_diag_current_material_ptr = NULL;
+const void* pal_diag_current_model_ptr = NULL;
 
 static inline bool pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
     /* Legitimate J3D packet chains are short (dozens or at most low hundreds of
@@ -283,6 +289,11 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 void J3DMatPacket::draw() {
 #if PLATFORM_PC
     if (mpMaterial == NULL) return;
+    pal_diag_current_mat_index = (s32)mpMaterial->getIndex();
+    pal_diag_current_material_mode = mpMaterial->getMaterialMode();
+    pal_diag_current_material_ptr = mpMaterial;
+    pal_diag_current_model_ptr =
+        (getShapePacket() != NULL) ? getShapePacket()->getModel() : NULL;
     /* Ensure __GDCurrentDL is valid BEFORE any material/block code runs.
      * endDL() may have set it to NULL on a previous frame; mpMaterial->load()
      * and block load() methods dereference __GDCurrentDL via GD helpers. */
@@ -365,6 +376,10 @@ void J3DMatPacket::draw() {
         packet = (J3DShapePacket*)packet->getNextPacket();
     }
 
+    pal_diag_current_mat_index = -1;
+    pal_diag_current_material_mode = 0;
+    pal_diag_current_material_ptr = NULL;
+    pal_diag_current_model_ptr = NULL;
     J3DShape::resetVcdVatCache();
 }
 
