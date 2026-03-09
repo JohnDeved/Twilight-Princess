@@ -133,9 +133,17 @@ static int s_tev_ready = 0;
  * and NOT during title-screen frames (~50-500 draws each). */
 #define CENTROID_SAMPLES          50
 #define CENTROID_FRAME_DRAWS_MIN 1000
+/* The later PROC_TITLE path only submits ~74 draws per frame, so a short
+ * sample window is enough to lock onto the title geometry without waiting
+ * an entire extra frame. */
 #define TITLE_CENTROID_SAMPLES    12
 #define TITLE_FRAME_DRAWS_MAX     256
+/* The later title fallback should not arm during the heavy intro-room burst
+ * around frames 128-129; wait until the cumulative draw count is well past
+ * that 3D scene before sampling the low-draw title workload. */
 #define TITLE_CENTROID_TOTAL_DRAWS_MIN 10000
+#define TITLE_EYE_Y_OFFSET        250.0f
+#define TITLE_EYE_Z_MARGIN        5000.0f
 
 /* Saved centroid LookAt matrix (3×4, row-major) and completion flag.
  * Set once by the centroid calculation block; never overwritten by J3D's
@@ -152,6 +160,10 @@ static int s_tev_ready = 0;
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
 static int   s_centroid_reset_for_proc_title = -1;
+/* Later PROC_TITLE frames reuse the same small title workload, so once the
+ * title fallback locks onto that geometry keep it latched for the rest of the
+ * current run. It is intentionally refreshed only by process restart between
+ * validation runs, not recomputed every frame after frame ~132. */
 static float s_title_centroid_view[3][4];
 static int   s_title_centroid_active = 0;
 
@@ -181,8 +193,14 @@ static int centroid_reset_for_proc_title_enabled(void) {
     return s_centroid_reset_for_proc_title;
 }
 
+/* Build a row-major 3x4 fallback view matrix around a geometry centroid.
+ * ey_off raises the eye above the centroid and ez places it in front of the
+ * geometry along +Z so off-screen title or gameplay content can be framed. */
 static void build_fallback_view(float out[3][4], float cx, float cy, float cz, float ey_off,
                                 float ez) {
+    /* Keep the fallback camera centered on the geometry in X and only push it
+     * back/up in Y/Z. That matches the existing gameplay centroid fallback and
+     * is sufficient for the intro/title validation scenes we are targeting. */
     float ex = cx;
     float ey = cy + ey_off;
     float lx = ex - cx;
@@ -220,8 +238,7 @@ static void build_fallback_view(float out[3][4], float cx, float cy, float cz, f
     out[2][3] = -(ex * lx + ey * ly + ez * lz);
 }
 
-static void set_fallback_transform(const float view[3][4]) {
-    float proj_c[4][4];
+static void build_fallback_projection(float proj_c[4][4]) {
     const float fov_deg = 60.0f;
     const float aspect = 640.0f / 456.0f;
     const float near_z = 1.0f;
@@ -230,12 +247,19 @@ static void set_fallback_transform(const float view[3][4]) {
     float t = 1.0f / tanf(fov_rad * 0.5f);
     float range = far_z - near_z;
 
-    memset(proj_c, 0, sizeof(proj_c));
+    memset(proj_c, 0, sizeof(float) * 16);
     proj_c[0][0] = t / aspect;
     proj_c[1][1] = t;
     proj_c[2][2] = -(far_z + near_z) / range;
     proj_c[2][3] = -2.0f * far_z * near_z / range;
     proj_c[3][2] = -1.0f;
+}
+
+/* Apply the standard PC fallback perspective projection (60° FOV, 640/456
+ * aspect, near=1, far=100000) with the supplied fallback view matrix. */
+static void set_fallback_transform(const float view[3][4]) {
+    float proj_c[4][4];
+    build_fallback_projection(proj_c);
 
     float m44[16] = {
         view[0][0], view[0][1], view[0][2], view[0][3],
@@ -2588,19 +2612,7 @@ void pal_tev_flush_draw(void) {
                 static int s_centroid_mvp_log = 0;
                 if (s_centroid_mvp_log < 1) {
                     float proj_c[4][4];
-                    const float fov_deg = 60.0f;
-                    const float aspect = 640.0f / 456.0f;
-                    const float near_z = 1.0f;
-                    const float far_z  = 100000.0f;
-                    const float fov_rad = fov_deg * 3.14159265f / 180.0f;
-                    float t = 1.0f / tanf(fov_rad * 0.5f);
-                    float range = far_z - near_z;
-                    memset(proj_c, 0, sizeof(proj_c));
-                    proj_c[0][0] = t / aspect;
-                    proj_c[1][1] = t;
-                    proj_c[2][2] = -(far_z + near_z) / range;
-                    proj_c[2][3] = -2.0f * far_z * near_z / range;
-                    proj_c[3][2] = -1.0f;
+                    build_fallback_projection(proj_c);
                     s_centroid_mvp_log++;
                     fprintf(stderr, "{\"centroid_mvp_proj\":{\"has_persp\":%d,"
                             "\"proj00\":%.6f,\"proj11\":%.6f,\"proj22\":%.6f,"
@@ -2641,9 +2653,9 @@ void pal_tev_flush_draw(void) {
                 }
                 uint32_t poff_t = (uint32_t)(has_pnmtx_t + tex_cnt_t);
                 if (poff_t + 12u <= (uint32_t)bgfx_stride) {
-                    memcpy(&title_vx, tvb.data + poff_t, 4);
-                    memcpy(&title_vy, tvb.data + poff_t + 4, 4);
-                    memcpy(&title_vz, tvb.data + poff_t + 8, 4);
+                    memcpy(&title_vx, tvb.data + poff_t, sizeof(float));
+                    memcpy(&title_vy, tvb.data + poff_t + sizeof(float), sizeof(float));
+                    memcpy(&title_vz, tvb.data + poff_t + sizeof(float) * 2, sizeof(float));
                     title_pos_ok = 1;
                 }
             }
@@ -2662,8 +2674,8 @@ void pal_tev_flush_draw(void) {
                 float cx = s_title_centroid_sum[0] / (float)TITLE_CENTROID_SAMPLES;
                 float cy = s_title_centroid_sum[1] / (float)TITLE_CENTROID_SAMPLES;
                 float cz = s_title_centroid_sum[2] / (float)TITLE_CENTROID_SAMPLES;
-                build_fallback_view(s_title_centroid_view, cx, cy, cz, 250.0f,
-                                    s_title_centroid_vz_max + 5000.0f);
+                build_fallback_view(s_title_centroid_view, cx, cy, cz, TITLE_EYE_Y_OFFSET,
+                                    s_title_centroid_vz_max + TITLE_EYE_Z_MARGIN);
                 s_title_centroid_active = 1;
                 fprintf(stderr,
                         "{\"title_centroid_cam\":{\"centroid\":[%.1f,%.1f,%.1f],"
@@ -3160,6 +3172,11 @@ void pal_tev_flush_draw(void) {
         if (centroid_reset_for_proc_title_enabled()) {
             s_geom_centroid_active = 0;
             s_has_persp_proj = 0;
+            /* Rebuild the title fallback only until it locks once. Later
+             * PROC_TITLE frames keep reusing the same title geometry/camera
+             * relationship, so holding the latched title centroid for the rest
+             * of the run is intentional and avoids returning to all-black
+             * later frames after the frame-132 crash window. */
             if (!s_title_centroid_active) {
                 s_title_centroid_n = 0;
                 s_title_centroid_sum[0] = s_title_centroid_sum[1] = s_title_centroid_sum[2] = 0.0f;
