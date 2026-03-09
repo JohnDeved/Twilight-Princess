@@ -140,7 +140,9 @@ static int s_tev_ready = 0;
 #define TITLE_FRAME_DRAWS_MAX     256
 /* The later title fallback should not arm during the early splash/logo work,
  * but it must be ready by the first low-draw PROC_TITLE frame that follows
- * the heavy intro-room burst around frames 128-129. */
+ * the heavy intro-room burst around frames 128-129. A 2500 cumulative-draw
+ * gate stays above the earlier splash path while still arming before that
+ * first later title frame on the current PC intro/title validation run. */
 #define TITLE_CENTROID_TOTAL_DRAWS_MIN 2500
 #define TITLE_EYE_Y_OFFSET        250.0f
 #define TITLE_EYE_Z_MARGIN        5000.0f

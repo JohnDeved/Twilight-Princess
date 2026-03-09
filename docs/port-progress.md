@@ -10,7 +10,7 @@
 | **Highest CI Milestone** | `17` (FRAMES_1800 confirmed in CI run cbf3b4e8) |
 | **Current Step** | Step 5+ — rendering accuracy: clearEfb depth-write fix applied |
 | **Last Updated** | 2026-03-09 |
-| **Active CI** | Latest local validation (pending new CI): lowering the PROC_TITLE title-centroid total-draw gate now reproducibly keeps later title frames in the better visibility regime — repeated local Phase 4 reruns hold `frame_0150/0180/0200` at ~**66% non-black** while `frame_0129/0130` improve to ~**60%/71%** — but `frame_0128` is still fully black and the remaining early PROC_TITLE blocker is still localized to the item-list / early-title path. |
+| **Active CI** | Latest local validation (pending new CI): lowering the PROC_TITLE title-centroid total-draws gate now reproducibly keeps later title frames in the better visibility regime — repeated local Phase 4 reruns hold `frame_0150/0180/0200` at ~**66% non-black** while `frame_0129/0130` improve to ~**60%/71%** — but `frame_0128` is still fully black and the remaining early PROC_TITLE blocker is still localized to the item-list / early-title path. |
 | **render-review CI fix** | Multiline GITHUB_OUTPUT truncation bug resolved + NUL-safe pipeline (98c5aa8). Both clang-format and cppcheck jobs use workspace files + `has_files` gate + `grep -z` + `read -d ''` end-to-end. Smoke test confirmed (db3d711). |
 | **Peak dl_draws** | 7,587 per frame (frames 128-129, confirmed by CI artifact) |
 | **Z/Blend gap** | `play_state` confirmed from CI: depth_bits=100%, blend_bits=100%, write_rgb=100% |
