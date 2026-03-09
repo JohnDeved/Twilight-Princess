@@ -138,10 +138,10 @@ static int s_tev_ready = 0;
  * an entire extra frame. */
 #define TITLE_CENTROID_SAMPLES    12
 #define TITLE_FRAME_DRAWS_MAX     256
-/* The later title fallback should not arm during the heavy intro-room burst
- * around frames 128-129; wait until the cumulative draw count is well past
- * that 3D scene before sampling the low-draw title workload. */
-#define TITLE_CENTROID_TOTAL_DRAWS_MIN 10000
+/* The later title fallback should not arm during the early splash/logo work,
+ * but it must be ready by the first low-draw PROC_TITLE frame that follows
+ * the heavy intro-room burst around frames 128-129. */
+#define TITLE_CENTROID_TOTAL_DRAWS_MIN 2500
 #define TITLE_EYE_Y_OFFSET        250.0f
 #define TITLE_EYE_Z_MARGIN        5000.0f
 
