@@ -540,6 +540,24 @@ int daTitle_c::Draw() {
     }
 #endif
 
+#if PLATFORM_PC
+    struct sigaction sa, old_segv, old_abrt;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = title_crash_handler;
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGABRT, &sa, &old_abrt);
+    if (sigsetjmp(s_title_jmpbuf, 1) != 0) {
+        sigaction(SIGSEGV, &old_segv, NULL);
+        sigaction(SIGABRT, &old_abrt, NULL);
+        fprintf(stderr, "[PAL] daTitle Draw: model submit crash skipped for this frame\n");
+        if (field_0x5f8) {
+            dComIfGd_set2DOpaTop(&mTitle);
+        }
+        return 1;
+    }
+#endif
+
 #if !PLATFORM_PC
     /* GCN: register in deferred display-list pass (setListItem3D/setList).
      * mDoExt_modelUpdateDL updates the locked display-list matrices; the
@@ -555,6 +573,11 @@ int daTitle_c::Draw() {
     dComIfGd_setListItem3D();
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
+#endif
+
+#if PLATFORM_PC
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGABRT, &old_abrt, NULL);
 #endif
 
     if (field_0x5f8) {
