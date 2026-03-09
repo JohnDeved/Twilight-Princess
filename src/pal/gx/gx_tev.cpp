@@ -148,7 +148,7 @@ static int s_tev_ready = 0;
  * the centroid view or when the process restarts between test runs. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
-static int   s_centroid_latch_across_frames = -1;
+static int   s_centroid_reset_for_proc_title = -1;
 
 /* Saved perspective projection for centroid camera draws.
  * The game sets perspective projection (GX_PERSPECTIVE) before 3D room
@@ -164,12 +164,13 @@ static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
 static int   s_centroid_n      = 0;
 static float s_centroid_vz_max = -1e30f;
 
-static int centroid_latch_across_frames_enabled(void) {
-    if (s_centroid_latch_across_frames < 0) {
+static int centroid_reset_for_proc_title_enabled(void) {
+    if (s_centroid_reset_for_proc_title < 0) {
         const char* ev = getenv("TP_ENABLE_PROC_TITLE");
-        s_centroid_latch_across_frames = (ev && ev[0] == '1') ? 0 : 1;
+        s_centroid_reset_for_proc_title =
+            (ev != NULL && ev[0] != '\0' && ev[0] == '1') ? 1 : 0;
     }
-    return s_centroid_latch_across_frames;
+    return s_centroid_reset_for_proc_title;
 }
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
@@ -3034,7 +3035,7 @@ void pal_tev_flush_draw(void) {
      * heavy 3D room into lower-draw title content, and carrying the centroid
      * view into those later frames leaves the cutscene black. */
     if (gx_frame_draw_calls == 0) {
-        if (!centroid_latch_across_frames_enabled()) {
+        if (centroid_reset_for_proc_title_enabled()) {
             s_geom_centroid_active = 0;
             s_has_persp_proj = 0;
         }

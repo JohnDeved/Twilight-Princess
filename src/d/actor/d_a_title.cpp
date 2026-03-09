@@ -548,10 +548,10 @@ int daTitle_c::Draw() {
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
 #else
-    /* PC: use the regular deferred model path now that the title model's
-     * static single-matrix viewCalc path is hardened elsewhere. This keeps
-     * the title draw aligned with the normal J3D submission flow instead of
-     * manually calling entry()/viewCalc() here. */
+    /* PC: use the regular deferred model path. mDoExt_modelUpdateDL() already
+     * takes the hardened static single-matrix viewCalc path from m_Do_ext.cpp
+     * for the title model, so keep the title draw aligned with the normal J3D
+     * submission flow instead of manually calling entry()/viewCalc() here. */
     dComIfGd_setListItem3D();
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
