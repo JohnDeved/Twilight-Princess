@@ -133,6 +133,9 @@ static int s_tev_ready = 0;
  * and NOT during title-screen frames (~50-500 draws each). */
 #define CENTROID_SAMPLES          50
 #define CENTROID_FRAME_DRAWS_MIN 1000
+#define TITLE_CENTROID_SAMPLES    12
+#define TITLE_FRAME_DRAWS_MAX     256
+#define TITLE_CENTROID_TOTAL_DRAWS_MIN 10000
 
 /* Saved centroid LookAt matrix (3×4, row-major) and completion flag.
  * Set once by the centroid calculation block; never overwritten by J3D's
@@ -149,6 +152,8 @@ static int s_tev_ready = 0;
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
 static int   s_centroid_reset_for_proc_title = -1;
+static float s_title_centroid_view[3][4];
+static int   s_title_centroid_active = 0;
 
 /* Saved perspective projection for centroid camera draws.
  * The game sets perspective projection (GX_PERSPECTIVE) before 3D room
@@ -163,6 +168,9 @@ static int   s_has_persp_proj = 0;
 static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
 static int   s_centroid_n      = 0;
 static float s_centroid_vz_max = -1e30f;
+static float s_title_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
+static int   s_title_centroid_n      = 0;
+static float s_title_centroid_vz_max = -1e30f;
 
 static int centroid_reset_for_proc_title_enabled(void) {
     if (s_centroid_reset_for_proc_title < 0) {
@@ -171,6 +179,85 @@ static int centroid_reset_for_proc_title_enabled(void) {
             (ev != NULL && ev[0] != '\0' && ev[0] == '1') ? 1 : 0;
     }
     return s_centroid_reset_for_proc_title;
+}
+
+static void build_fallback_view(float out[3][4], float cx, float cy, float cz, float ey_off,
+                                float ez) {
+    float ex = cx;
+    float ey = cy + ey_off;
+    float lx = ex - cx;
+    float ly = ey - cy;
+    float lz = ez - cz;
+    float ln = sqrtf(lx * lx + ly * ly + lz * lz);
+    if (ln > 0.0f) {
+        lx /= ln;
+        ly /= ln;
+        lz /= ln;
+    }
+
+    float rx = lz, ry = 0.0f, rz = -lx;
+    float rn = sqrtf(rx * rx + rz * rz);
+    if (rn > 0.0f) {
+        rx /= rn;
+        rz /= rn;
+    }
+
+    float ux = ly * rz - lz * ry;
+    float uy = lz * rx - lx * rz;
+    float uz = lx * ry - ly * rx;
+
+    out[0][0] = rx;
+    out[0][1] = ry;
+    out[0][2] = rz;
+    out[0][3] = -(ex * rx + ey * ry + ez * rz);
+    out[1][0] = ux;
+    out[1][1] = uy;
+    out[1][2] = uz;
+    out[1][3] = -(ex * ux + ey * uy + ez * uz);
+    out[2][0] = lx;
+    out[2][1] = ly;
+    out[2][2] = lz;
+    out[2][3] = -(ex * lx + ey * ly + ez * lz);
+}
+
+static void set_fallback_transform(const float view[3][4]) {
+    float proj_c[4][4];
+    const float fov_deg = 60.0f;
+    const float aspect = 640.0f / 456.0f;
+    const float near_z = 1.0f;
+    const float far_z = 100000.0f;
+    const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+    float t = 1.0f / tanf(fov_rad * 0.5f);
+    float range = far_z - near_z;
+
+    memset(proj_c, 0, sizeof(proj_c));
+    proj_c[0][0] = t / aspect;
+    proj_c[1][1] = t;
+    proj_c[2][2] = -(far_z + near_z) / range;
+    proj_c[2][3] = -2.0f * far_z * near_z / range;
+    proj_c[3][2] = -1.0f;
+
+    float m44[16] = {
+        view[0][0], view[0][1], view[0][2], view[0][3],
+        view[1][0], view[1][1], view[1][2], view[1][3],
+        view[2][0], view[2][1], view[2][2], view[2][3],
+        0.0f,       0.0f,       0.0f,       1.0f,
+    };
+    float mvp_rowmaj[16], mvp_c[16];
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) {
+            mvp_rowmaj[r * 4 + c] = 0.0f;
+            for (int k = 0; k < 4; k++) {
+                mvp_rowmaj[r * 4 + c] += proj_c[r][k] * m44[k * 4 + c];
+            }
+        }
+    }
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) {
+            mvp_c[c * 4 + r] = mvp_rowmaj[r * 4 + c];
+        }
+    }
+    bgfx::setTransform(mvp_c);
 }
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
@@ -2495,56 +2582,25 @@ void pal_tev_flush_draw(void) {
          *     → build perspective projection from FOV/aspect/near/far parameters.
          */
         if (s_geom_centroid_active) {
-            /* Build a perspective projection matrix matching the game camera.
-             * GCN/GX format (row-major):
-             *   [cot(fov/2)/aspect, 0,          0,               0         ]
-             *   [0,                 cot(fov/2), 0,               0         ]
-             *   [0,                 0,          -(f+n)/(f-n),   -2fn/(f-n) ]
-             *   [0,                 0,          -1,              0         ]
-             * TP room camera: fov=60°, aspect=640/456, near=1, far=100000 */
-            float proj_c[4][4];
-            {
-                const float fov_deg = 60.0f; /* degrees — wide enough for room geometry */
-                const float aspect = 640.0f / 456.0f;
-                const float near_z = 1.0f;
-                const float far_z  = 100000.0f;
-                const float fov_rad = fov_deg * 3.14159265f / 180.0f;
-                /* Use tanf instead of cotf for portability */
-                float t = 1.0f / tanf(fov_rad * 0.5f);
-                float range = far_z - near_z;
-                memset(proj_c, 0, sizeof(proj_c));
-                proj_c[0][0] = t / aspect;
-                proj_c[1][1] = t;
-                proj_c[2][2] = -(far_z + near_z) / range;
-                proj_c[2][3] = -2.0f * far_z * near_z / range;
-                proj_c[3][2] = -1.0f;
-            }
-            /* Use the saved centroid view, NOT pos_mtx[0] which J3D overwrites */
-            float m44_c[16] = {
-                s_geom_centroid_view[0][0], s_geom_centroid_view[0][1],
-                s_geom_centroid_view[0][2], s_geom_centroid_view[0][3],
-                s_geom_centroid_view[1][0], s_geom_centroid_view[1][1],
-                s_geom_centroid_view[1][2], s_geom_centroid_view[1][3],
-                s_geom_centroid_view[2][0], s_geom_centroid_view[2][1],
-                s_geom_centroid_view[2][2], s_geom_centroid_view[2][3],
-                0.0f,                       0.0f,
-                0.0f,                       1.0f
-            };
-            float mvp_rowmaj[16], mvp_c[16];
-            for (int r = 0; r < 4; r++)
-                for (int c = 0; c < 4; c++) {
-                    mvp_rowmaj[r*4+c] = 0.0f;
-                    for (int k = 0; k < 4; k++)
-                        mvp_rowmaj[r*4+c] += proj_c[r][k] * m44_c[k*4+c];
-                }
-            for (int r = 0; r < 4; r++)
-                for (int c = 0; c < 4; c++)
-                    mvp_c[c*4+r] = mvp_rowmaj[r*4+c];
-            bgfx::setTransform(mvp_c);
+            set_fallback_transform(s_geom_centroid_view);
             /* One-shot log: which projection is the centroid MVP using? */
             {
                 static int s_centroid_mvp_log = 0;
                 if (s_centroid_mvp_log < 1) {
+                    float proj_c[4][4];
+                    const float fov_deg = 60.0f;
+                    const float aspect = 640.0f / 456.0f;
+                    const float near_z = 1.0f;
+                    const float far_z  = 100000.0f;
+                    const float fov_rad = fov_deg * 3.14159265f / 180.0f;
+                    float t = 1.0f / tanf(fov_rad * 0.5f);
+                    float range = far_z - near_z;
+                    memset(proj_c, 0, sizeof(proj_c));
+                    proj_c[0][0] = t / aspect;
+                    proj_c[1][1] = t;
+                    proj_c[2][2] = -(far_z + near_z) / range;
+                    proj_c[2][3] = -2.0f * far_z * near_z / range;
+                    proj_c[3][2] = -1.0f;
                     s_centroid_mvp_log++;
                     fprintf(stderr, "{\"centroid_mvp_proj\":{\"has_persp\":%d,"
                             "\"proj00\":%.6f,\"proj11\":%.6f,\"proj22\":%.6f,"
@@ -2553,6 +2609,72 @@ void pal_tev_flush_draw(void) {
                             proj_c[0][0], proj_c[1][1], proj_c[2][2],
                             proj_c[2][3], proj_c[3][2], proj_c[3][3]);
                 }
+            }
+        }
+    }
+
+    /* Title-scene centroid fallback for PROC_TITLE validation.
+     *
+     * After the opening-scene crash window the later title frames still submit
+     * a small, stable J3D workload (~74 draws / 4 DL calls) but the normal PC
+     * camera path often leaves them off-screen. In that narrow PROC_TITLE-only
+     * path, accumulate a small centroid from the later low-draw title geometry
+     * and keep the resulting fallback view latched across later frames. */
+    if (centroid_reset_for_proc_title_enabled() &&
+        !s_geom_centroid_active &&
+        s_total_draw_count > TITLE_CENTROID_TOTAL_DRAWS_MIN &&
+        g_gx_state.draw_calls > 0 &&
+        g_gx_state.draw_calls <= TITLE_FRAME_DRAWS_MAX &&
+        (preset == GX_TEV_SHADER_MODULATE || preset == GX_TEV_SHADER_BLEND)) {
+        float title_vx = 0.0f, title_vy = 0.0f, title_vz = 0.0f;
+        int title_pos_ok = 0;
+        if (nverts >= 1) {
+            const GXVtxAttrFmtEntry* af_t = g_gx_state.vtx_attr_fmt[ds->vtx_fmt];
+            int npos_t = (af_t[GX_VA_POS].cnt == GX_POS_XY) ? 2 : 3;
+            if (npos_t == 3) {
+                int has_pnmtx_t = (g_gx_state.vtx_desc[GX_VA_PNMTXIDX].type != GX_NONE) ? 1 : 0;
+                int tex_cnt_t = 0;
+                for (int i = 0; i < 8; i++) {
+                    if (g_gx_state.vtx_desc[GX_VA_TEX0MTXIDX + i].type != GX_NONE) {
+                        tex_cnt_t++;
+                    }
+                }
+                uint32_t poff_t = (uint32_t)(has_pnmtx_t + tex_cnt_t);
+                if (poff_t + 12u <= (uint32_t)bgfx_stride) {
+                    memcpy(&title_vx, tvb.data + poff_t, 4);
+                    memcpy(&title_vy, tvb.data + poff_t + 4, 4);
+                    memcpy(&title_vz, tvb.data + poff_t + 8, 4);
+                    title_pos_ok = 1;
+                }
+            }
+        }
+        if (title_pos_ok) {
+            if (!s_title_centroid_active && s_title_centroid_n < TITLE_CENTROID_SAMPLES) {
+                s_title_centroid_sum[0] += title_vx;
+                s_title_centroid_sum[1] += title_vy;
+                s_title_centroid_sum[2] += title_vz;
+                if (title_vz > s_title_centroid_vz_max) {
+                    s_title_centroid_vz_max = title_vz;
+                }
+                s_title_centroid_n++;
+            }
+            if (!s_title_centroid_active && s_title_centroid_n == TITLE_CENTROID_SAMPLES) {
+                float cx = s_title_centroid_sum[0] / (float)TITLE_CENTROID_SAMPLES;
+                float cy = s_title_centroid_sum[1] / (float)TITLE_CENTROID_SAMPLES;
+                float cz = s_title_centroid_sum[2] / (float)TITLE_CENTROID_SAMPLES;
+                build_fallback_view(s_title_centroid_view, cx, cy, cz, 250.0f,
+                                    s_title_centroid_vz_max + 5000.0f);
+                s_title_centroid_active = 1;
+                fprintf(stderr,
+                        "{\"title_centroid_cam\":{\"centroid\":[%.1f,%.1f,%.1f],"
+                        "\"vz_max\":%.1f,"
+                        "\"vm_row0\":[%.4f,%.4f,%.4f,%.1f]}}\n",
+                        cx, cy, cz, s_title_centroid_vz_max,
+                        s_title_centroid_view[0][0], s_title_centroid_view[0][1],
+                        s_title_centroid_view[0][2], s_title_centroid_view[0][3]);
+            }
+            if (s_title_centroid_active) {
+                set_fallback_transform(s_title_centroid_view);
             }
         }
     }
@@ -3038,6 +3160,11 @@ void pal_tev_flush_draw(void) {
         if (centroid_reset_for_proc_title_enabled()) {
             s_geom_centroid_active = 0;
             s_has_persp_proj = 0;
+            if (!s_title_centroid_active) {
+                s_title_centroid_n = 0;
+                s_title_centroid_sum[0] = s_title_centroid_sum[1] = s_title_centroid_sum[2] = 0.0f;
+                s_title_centroid_vz_max = -1e30f;
+            }
         }
         if (!s_geom_centroid_active) {
             s_centroid_n           = 0;
