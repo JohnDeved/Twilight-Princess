@@ -1753,11 +1753,11 @@ int mDoGph_Painter() {
 
         /* --- 2D overlays (logo, menus, HUD) --- */
         /* Keep 2D overlays and item/3D list isolated from each other on PC.
-         * The intro/title path can finish loading the BLO/J2D screen after an
-         * early drawItem3D crash, so suppressing the whole combined block would
-         * permanently hide later title frames that would otherwise render. */
+         * Previously, a crash in either path permanently suppressed both. The
+         * intro/title path can finish loading the BLO/J2D screen after an
+         * early drawItem3D crash, so keep the later 2D title/UI work alive. */
         {
-            static int s_2d_suppressed = 0;
+            static bool s_2d_suppressed = false;
             if (!s_2d_suppressed) {
                 pal_crash_handler_init();
                 sigjmp_buf jb;
@@ -1772,7 +1772,7 @@ int mDoGph_Painter() {
                     dComIfGd_draw2DXlu();
                     dComIfGd_draw2DOpaTop();
                 } else {
-                    s_2d_suppressed = 1;
+                    s_2d_suppressed = true;
                     fprintf(stderr, "[PAL] 2D draw crash — permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
@@ -1781,7 +1781,7 @@ int mDoGph_Painter() {
 
         /* --- Item/3D model draw list (with proper camera setup) --- */
         {
-            static int s_item3d_suppressed = 0;
+            static bool s_item3d_suppressed = false;
             if (!s_item3d_suppressed) {
                 pal_crash_handler_init();
                 sigjmp_buf jb;
@@ -1791,7 +1791,7 @@ int mDoGph_Painter() {
                 if (sigsetjmp(jb, 1) == 0) {
                     drawItem3D();
                 } else {
-                    s_item3d_suppressed = 1;
+                    s_item3d_suppressed = true;
                     fprintf(stderr, "[PAL] item/3D draw crash — permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
