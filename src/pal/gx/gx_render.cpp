@@ -246,13 +246,14 @@ int pal_render_init(void) {
     if (s_sync_render && !s_using_noop) {
         /* Test if renderFrame works with a warmup frame */
         bgfx::frame(); /* submit empty frame */
-        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old, sa_bus_old;
         memset(&sa_new, 0, sizeof(sa_new));
         sa_new.sa_handler = pal_render_crash_handler;
         sigemptyset(&sa_new.sa_mask);
         sa_new.sa_flags = SA_NODEFER;
         sigaction(SIGSEGV, &sa_new, &sa_segv_old);
         sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        sigaction(SIGBUS, &sa_new, &sa_bus_old);
         if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
             bgfx::renderFrame(); /* warm-up render */
             fprintf(stderr, "{\"render\":\"sync_render_warmup_ok\"}\n");
@@ -269,6 +270,7 @@ int pal_render_init(void) {
         }
         sigaction(SIGSEGV, &sa_segv_old, NULL);
         sigaction(SIGABRT, &sa_abrt_old, NULL);
+        sigaction(SIGBUS, &sa_bus_old, NULL);
     }
 
     /* s_fb_capture_enabled was already set before bgfx::init above */
@@ -446,13 +448,14 @@ void pal_render_end_frame(void) {
      * softpipe crash skips rendering for that frame instead of killing the
      * entire test process. */
     if (s_sync_render) {
-        struct sigaction sa_new, sa_segv_old, sa_abrt_old;
+        struct sigaction sa_new, sa_segv_old, sa_abrt_old, sa_bus_old;
         memset(&sa_new, 0, sizeof(sa_new));
         sa_new.sa_handler = pal_render_crash_handler;
         sigemptyset(&sa_new.sa_mask);
         sa_new.sa_flags = SA_NODEFER;
         sigaction(SIGSEGV, &sa_new, &sa_segv_old);
         sigaction(SIGABRT, &sa_new, &sa_abrt_old);
+        sigaction(SIGBUS, &sa_new, &sa_bus_old);
         if (sigsetjmp(s_render_jmpbuf, 1) == 0) {
             bgfx::renderFrame();
         } else {
@@ -463,6 +466,7 @@ void pal_render_end_frame(void) {
         }
         sigaction(SIGSEGV, &sa_segv_old, NULL);
         sigaction(SIGABRT, &sa_abrt_old, NULL);
+        sigaction(SIGBUS, &sa_bus_old, NULL);
         /* Log sync completion for every frame in the 3D-geometry window
          * (frame 128+) and every 10 frames otherwise — limits log volume
          * while preserving visibility around the heavy-render transition. */
