@@ -1752,7 +1752,7 @@ int mDoGph_Painter() {
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        /* Keep 2D overlays and item/3D list isolated from each other on PC.
+        /* Keep 2D overlays and item/3D list isolated in the PC renderer path.
          * Previously, a crash in either path permanently suppressed both. The
          * intro/title path can finish loading the BLO/J2D screen after an
          * early drawItem3D crash, so keep the later 2D title/UI work alive. */
@@ -1773,7 +1773,7 @@ int mDoGph_Painter() {
                     dComIfGd_draw2DOpaTop();
                 } else {
                     s_2d_suppressed = true;
-                    fprintf(stderr, "[PAL] 2D draw crash — permanently skipped\n");
+                    fprintf(stderr, "[PAL] 2D draw crash - permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
             }
@@ -1792,7 +1792,7 @@ int mDoGph_Painter() {
                     drawItem3D();
                 } else {
                     s_item3d_suppressed = true;
-                    fprintf(stderr, "[PAL] item/3D draw crash — permanently skipped\n");
+                    fprintf(stderr, "[PAL] item/3D draw crash - permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
             }
