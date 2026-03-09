@@ -19,6 +19,9 @@
 #include <setjmp.h>
 #include <signal.h>
 #include "pal/gx/gx_stub_tracker.h"
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 #endif
 
 class daTit_HIO_c {
@@ -541,20 +544,24 @@ int daTitle_c::Draw() {
 #endif
 
 #if PLATFORM_PC
-    struct sigaction sa, old_segv, old_abrt;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = title_crash_handler;
-    sa.sa_flags = 0;
-    sigaction(SIGSEGV, &sa, &old_segv);
-    sigaction(SIGABRT, &sa, &old_abrt);
-    if (sigsetjmp(s_title_jmpbuf, 1) != 0) {
-        sigaction(SIGSEGV, &old_segv, NULL);
-        sigaction(SIGABRT, &old_abrt, NULL);
-        fprintf(stderr, "[PAL] daTitle Draw: model submit crash skipped for this frame\n");
-        if (field_0x5f8) {
-            dComIfGd_set2DOpaTop(&mTitle);
+    static bool crash_handler_ready = false;
+    bool skip_model_submit = false;
+    if (!crash_handler_ready) {
+        pal_crash_handler_init();
+        crash_handler_ready = true;
+    }
+    sigjmp_buf crash_jump_buffer;
+    sigjmp_buf* prev_target = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &crash_jump_buffer;
+    pal_crash_occurred = 0;
+    if (sigsetjmp(crash_jump_buffer, 1) != 0) {
+        static bool has_logged_submit_crash = false;
+        pal_crash_jmpbuf = prev_target;
+        if (!has_logged_submit_crash) {
+            has_logged_submit_crash = true;
+            fprintf(stderr, "[PAL] daTitle Draw: model submit crash skipped for this frame\n");
         }
-        return 1;
+        skip_model_submit = true;
     }
 #endif
 
@@ -566,18 +573,19 @@ int daTitle_c::Draw() {
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
 #else
-    /* PC: use the regular deferred model path. mDoExt_modelUpdateDL() already
-     * takes the hardened static single-matrix viewCalc path from m_Do_ext.cpp
-     * for the title model, so keep the title draw aligned with the normal J3D
-     * submission flow instead of manually calling entry()/viewCalc() here. */
-    dComIfGd_setListItem3D();
-    mDoExt_modelUpdateDL(mpModel);
-    dComIfGd_setList();
+    if (!skip_model_submit) {
+        /* PC: use the regular deferred model path. mDoExt_modelUpdateDL() already
+         * takes the hardened static single-matrix viewCalc path from m_Do_ext.cpp
+         * for the title model, so keep the title draw aligned with the normal J3D
+         * submission flow instead of manually calling entry()/viewCalc() here. */
+        dComIfGd_setListItem3D();
+        mDoExt_modelUpdateDL(mpModel);
+        dComIfGd_setList();
+    }
 #endif
 
 #if PLATFORM_PC
-    sigaction(SIGSEGV, &old_segv, NULL);
-    sigaction(SIGABRT, &old_abrt, NULL);
+    pal_crash_jmpbuf = prev_target;
 #endif
 
     if (field_0x5f8) {
