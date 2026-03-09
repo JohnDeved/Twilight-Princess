@@ -587,8 +587,38 @@ static void dl_handle_bp_reg(u32 value) {
     /* BP register format: bits [31:24] = register address, [23:0] = data.
      * Parse TEV stage configuration from display list BP commands.
      * This enables J3D material rendering which sets TEV state via display lists. */
+    static u32 s_bp_reg_shadow[256];
+    static u8 s_bp_reg_shadow_valid[256];
+    static u32 s_bp_next_mask = 0x00FFFFFF;
+
     u8 addr = (u8)(value >> 24);
     u32 data = value & 0x00FFFFFF;
+
+    /* BP mask register (0xFE).
+     *
+     * J3D partial BP writes use this immediately before the real register write
+     * (for example J3DGDSetBlendMode emits 0xFE00FFE3 / 0xFE00FFE7 before the
+     * 0x41 CMODE0 write so color/alpha-update bits are preserved).  The PC DL
+     * parser only needs the "apply mask to the next BP write" behavior here. */
+    if (addr == 0xFE) {
+        s_bp_next_mask = data;
+        return;
+    }
+
+    if (s_bp_next_mask != 0x00FFFFFF) {
+        u32 prev = s_bp_reg_shadow_valid[addr] ? s_bp_reg_shadow[addr] : 0;
+
+        if (!s_bp_reg_shadow_valid[addr] && addr == 0x41) {
+            prev |= ((u32)(g_gx_state.color_update ? 1 : 0) << 3);
+            prev |= ((u32)(g_gx_state.alpha_update ? 1 : 0) << 4);
+        }
+
+        data = (prev & ~s_bp_next_mask) | (data & s_bp_next_mask);
+        s_bp_next_mask = 0x00FFFFFF;
+    }
+
+    s_bp_reg_shadow[addr] = data;
+    s_bp_reg_shadow_valid[addr] = 1;
 
     /* TEV color combiner: registers 0xC0, 0xC2, 0xC4, ... (even = color) */
     if (addr >= 0xC0 && addr <= 0xDF && (addr & 1) == 0) {

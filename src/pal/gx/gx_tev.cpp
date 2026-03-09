@@ -2373,7 +2373,8 @@ void pal_tev_flush_draw(void) {
      * The override fires at most once per process lifetime (static flag).
      * First ~CENTROID_SAMPLES draws still render with the wrong matrix (black),
      * but the remaining ~7400 room draws get the corrected view → pct_nonblack > 0. */
-    if (passclr_uses_rasc && g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
+    if ((passclr_uses_rasc || preset == GX_TEV_SHADER_MODULATE) &&
+        g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
         /* s_centroid_sum, s_centroid_n, s_centroid_vz_max are file-scope statics
          * reset at the start of each frame in the gx_frame_draw_calls == 0 block. */
 
@@ -2764,7 +2765,6 @@ void pal_tev_flush_draw(void) {
                 st->tex_map < GX_MAX_TEXMAP &&
                 g_gx_state.tex_bindings[st->tex_map].valid) {
                 tex_stage = st;
-                break;
             }
         }
         if (tex_stage && tex_stage->tex_map < GX_MAX_TEXMAP) {
