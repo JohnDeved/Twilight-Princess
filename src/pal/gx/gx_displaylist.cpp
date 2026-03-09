@@ -584,6 +584,12 @@ static void dl_handle_xf_reg(u16 addr, const u32* values, u16 count) {
  * BP registers control TEV, textures, alpha test, z-mode, etc.
  */
 static void dl_handle_bp_reg(u32 value) {
+    enum {
+        BP_REG_CMODE0 = 0x41,
+        CMODE0_COLOR_UPDATE_BIT = 3,
+        CMODE0_ALPHA_UPDATE_BIT = 4,
+    };
+
     /* BP register format: bits [31:24] = register address, [23:0] = data.
      * Parse TEV stage configuration from display list BP commands.
      * This enables J3D material rendering which sets TEV state via display lists. */
@@ -608,9 +614,13 @@ static void dl_handle_bp_reg(u32 value) {
     if (s_bp_next_mask != 0x00FFFFFF) {
         u32 prev = s_bp_reg_shadow_valid[addr] ? s_bp_reg_shadow[addr] : 0;
 
-        if (!s_bp_reg_shadow_valid[addr] && addr == 0x41) {
-            prev |= ((u32)(g_gx_state.color_update ? 1 : 0) << 3);
-            prev |= ((u32)(g_gx_state.alpha_update ? 1 : 0) << 4);
+        if (!s_bp_reg_shadow_valid[addr] && addr == BP_REG_CMODE0) {
+            /* J3DGDSetBlendMode() uses the BP mask register to update CMODE0
+             * without touching the existing color/alpha-update bits. Seed the
+             * first masked CMODE0 merge from the live GX state so those bits
+             * survive the partial write on PC just like they do on hardware. */
+            prev |= ((u32)(g_gx_state.color_update ? 1 : 0) << CMODE0_COLOR_UPDATE_BIT);
+            prev |= ((u32)(g_gx_state.alpha_update ? 1 : 0) << CMODE0_ALPHA_UPDATE_BIT);
         }
 
         data = (prev & ~s_bp_next_mask) | (data & s_bp_next_mask);
