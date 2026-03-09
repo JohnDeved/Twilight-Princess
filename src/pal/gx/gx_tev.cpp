@@ -148,6 +148,7 @@ static int s_tev_ready = 0;
  * the centroid view or when the process restarts between test runs. */
 static float s_geom_centroid_view[3][4];
 static int   s_geom_centroid_active = 0;
+static int   s_centroid_latch_across_frames = -1;
 
 /* Saved perspective projection for centroid camera draws.
  * The game sets perspective projection (GX_PERSPECTIVE) before 3D room
@@ -162,6 +163,14 @@ static int   s_has_persp_proj = 0;
 static float s_centroid_sum[3] = {0.0f, 0.0f, 0.0f};
 static int   s_centroid_n      = 0;
 static float s_centroid_vz_max = -1e30f;
+
+static int centroid_latch_across_frames_enabled(void) {
+    if (s_centroid_latch_across_frames < 0) {
+        const char* ev = getenv("TP_ENABLE_PROC_TITLE");
+        s_centroid_latch_across_frames = (ev && ev[0] == '1') ? 0 : 1;
+    }
+    return s_centroid_latch_across_frames;
+}
 
 /* Texture cache: decoded RGBA8 textures cached as bgfx handles */
 #define TEV_TEX_CACHE_SIZE 256
@@ -3019,11 +3028,16 @@ void pal_tev_flush_draw(void) {
     }
 
     /* Per-frame centroid accumulator reset.
-     * Before gameplay establishes the centroid camera, clear the temporary
-     * accumulation state at each frame boundary. Once s_geom_centroid_active
-     * is set, keep it and the saved centroid view latched so later gameplay
-     * frames can keep using the same working 3D camera. */
+     * Keep the centroid camera latched across frames for the gameplay-persistence
+     * path, but restore the older per-frame reset behavior when PROC_TITLE is
+     * enabled for the intro/title sequence. That path transitions out of the
+     * heavy 3D room into lower-draw title content, and carrying the centroid
+     * view into those later frames leaves the cutscene black. */
     if (gx_frame_draw_calls == 0) {
+        if (!centroid_latch_across_frames_enabled()) {
+            s_geom_centroid_active = 0;
+            s_has_persp_proj = 0;
+        }
         if (!s_geom_centroid_active) {
             s_centroid_n           = 0;
             s_centroid_sum[0] = s_centroid_sum[1] = s_centroid_sum[2] = 0.0f;

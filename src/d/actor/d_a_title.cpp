@@ -548,31 +548,13 @@ int daTitle_c::Draw() {
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
 #else
-    /* PC: call unlock/entry/lock directly, bypassing mDoExt_modelDiff
-     * (which calls calcMaterial with uninitialised animation matrices).
-     *
-     * ROOT CAUSE (to be fixed): entry() crashes inside J3DJoint::entryIn()
-     * for the title model — possibly because j3dSys.getDrawBuffer(0) is NULL
-     * when the title actor runs (the draw buffer is initialised later in the
-     * render pass, after the early actors in draw_iter have already run).
-     * Tracked for Phase 5: investigate j3dSys draw-buffer init order vs
-     * the title actor draw_iter index, and fix entry() before enabling Phase 4
-     * visual confirmation.
-     *
-     * For viewCalc: force mode 2 (J3DMdlFlag_UseDefaultJ3D) so viewCalc()
-     * takes J3DCalcViewBaseMtx instead of calcAnmMtx() → J3DJointTree::calc()
-     * which dereferences basicMtxCalc=NULL (not set because BCK entry() skipped). */
-    mpModel->unlock();
-    mpModel->entry();
-    mpModel->lock();
-    {
-        u32 saved_flags = mpModel->mFlags & (J3DMdlFlag_Unk1 | J3DMdlFlag_UseDefaultJ3D);
-        mpModel->offFlag(J3DMdlFlag_Unk1);
-        mpModel->onFlag(J3DMdlFlag_UseDefaultJ3D);  /* force mode 2 */
-        mpModel->viewCalc();
-        mpModel->offFlag(J3DMdlFlag_UseDefaultJ3D);
-        mpModel->onFlag(saved_flags);
-    }
+    /* PC: use the regular deferred model path now that the title model's
+     * static single-matrix viewCalc path is hardened elsewhere. This keeps
+     * the title draw aligned with the normal J3D submission flow instead of
+     * manually calling entry()/viewCalc() here. */
+    dComIfGd_setListItem3D();
+    mDoExt_modelUpdateDL(mpModel);
+    dComIfGd_setList();
 #endif
 
     if (field_0x5f8) {
