@@ -1757,8 +1757,8 @@ int mDoGph_Painter() {
          * intro/title path can finish loading the BLO/J2D screen after an
          * early drawItem3D crash, so keep the later 2D title/UI work alive. */
         {
-            static bool s_2d_suppressed = false;
-            if (!s_2d_suppressed) {
+            static bool s_2d_crash_suppressed = false;
+            if (!s_2d_crash_suppressed) {
                 pal_crash_handler_init();
                 sigjmp_buf jb;
                 sigjmp_buf* prev_target = pal_crash_jmpbuf;
@@ -1772,7 +1772,7 @@ int mDoGph_Painter() {
                     dComIfGd_draw2DXlu();
                     dComIfGd_draw2DOpaTop();
                 } else {
-                    s_2d_suppressed = true;
+                    s_2d_crash_suppressed = true;
                     fprintf(stderr, "[PAL] 2D draw crash - permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
@@ -1781,8 +1781,8 @@ int mDoGph_Painter() {
 
         /* --- Item/3D model draw list (with proper camera setup) --- */
         {
-            static bool s_item3d_suppressed = false;
-            if (!s_item3d_suppressed) {
+            static bool s_item3d_crash_suppressed = false;
+            if (!s_item3d_crash_suppressed) {
                 pal_crash_handler_init();
                 sigjmp_buf jb;
                 sigjmp_buf* prev_target = pal_crash_jmpbuf;
@@ -1791,7 +1791,7 @@ int mDoGph_Painter() {
                 if (sigsetjmp(jb, 1) == 0) {
                     drawItem3D();
                 } else {
-                    s_item3d_suppressed = true;
+                    s_item3d_crash_suppressed = true;
                     fprintf(stderr, "[PAL] item/3D draw crash - permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
