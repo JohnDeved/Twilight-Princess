@@ -34,6 +34,10 @@ from pathlib import Path
 
 # ANSI escape code pattern for stripping terminal colors from log lines
 _ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+COLORFULNESS_THRESHOLD = 16
+COLOR_BUCKET_CAP = 256
+VISIBLE_FRAME_PCT = 20
+GREYSCALE_FRAME_MAX_COLORFUL_PCT = 1.0
 
 
 def parse_log(logfile):
@@ -110,6 +114,10 @@ def analyze_bmp(path):
 
             total_pixels = width * abs(height)
             nonblack = 0
+            colorful = 0
+            colorful_nonblack = 0
+            unique_colors = 0
+            color_buckets = bytearray(4096)
             total_r = 0
             total_g = 0
             total_b = 0
@@ -122,19 +130,38 @@ def analyze_bmp(path):
                     b_val = row[x * 3]
                     g_val = row[x * 3 + 1]
                     r_val = row[x * 3 + 2]
+                    is_colorful = max(r_val, g_val, b_val) - min(r_val, g_val, b_val) >= COLORFULNESS_THRESHOLD
+                    if is_colorful:
+                        colorful += 1
                     if r_val > 2 or g_val > 2 or b_val > 2:
                         nonblack += 1
+                        if is_colorful:
+                            colorful_nonblack += 1
+                        # Pack 4-bit R, G, B into a 12-bit bucket: RRRR GGGG BBBB.
+                        bucket = ((r_val >> 4) << 8) | ((g_val >> 4) << 4) | (b_val >> 4)
+                        if not color_buckets[bucket]:
+                            color_buckets[bucket] = 1
+                            unique_colors += 1
                     total_r += r_val
                     total_g += g_val
                     total_b += b_val
                 f.read(row_padding)  # skip padding
 
+            pct_colorful_nonblack = round((colorful_nonblack * 100.0) / nonblack, 2) if nonblack > 0 else 0.0
+            normalized_unique = min(unique_colors, COLOR_BUCKET_CAP) * 100.0 / COLOR_BUCKET_CAP
+            color_complexity = round((normalized_unique * 0.5) + (pct_colorful_nonblack * 0.5), 2)
             return {
                 "width": width,
                 "height": abs(height),
                 "total_pixels": total_pixels,
                 "nonblack_pixels": nonblack,
                 "pct_nonblack": (nonblack * 100) // total_pixels if total_pixels > 0 else 0,
+                "unique_colors": unique_colors,
+                "colorful_pixels": colorful,
+                "colorful_nonblack_pixels": colorful_nonblack,
+                "pct_colorful": round((colorful * 100.0) / total_pixels, 2) if total_pixels > 0 else 0.0,
+                "pct_colorful_nonblack": pct_colorful_nonblack,
+                "color_complexity": color_complexity,
                 "avg_color": [
                     total_r // total_pixels if total_pixels > 0 else 0,
                     total_g // total_pixels if total_pixels > 0 else 0,
@@ -428,6 +455,7 @@ TEV_SHADER_NAMES = {
     2: "MODULATE",   # texture * vertex color
     3: "BLEND",      # lerp(texture, vertex color, alpha)
     4: "DECAL",      # texture with alpha blend
+    5: "TEV",        # generic multi-stage TEV shader
 }
 
 # GX primitive type names — mapped to sequential bit positions 0-6.
@@ -762,6 +790,15 @@ def check_rendering(data, verify_dir, golden_dir=None, baseline_path=None):
             if analysis:
                 analysis["file"] = bmp.name
                 frame_analyses.append(analysis)
+                if (analysis.get("pct_nonblack", 0) >= VISIBLE_FRAME_PCT and
+                        analysis.get("pct_colorful", 0.0) < GREYSCALE_FRAME_MAX_COLORFUL_PCT):
+                    result["issues"].append(
+                        f"Captured frame {bmp.name} is visible but almost entirely greyscale "
+                        f"(pct_colorful={analysis.get('pct_colorful', 0.0):.2f}, "
+                        f"pct_colorful_nonblack={analysis.get('pct_colorful_nonblack', 0.0):.2f}, "
+                        f"unique_colors={analysis.get('unique_colors', 0)}, "
+                        f"color_complexity={analysis.get('color_complexity', 0.0):.2f})"
+                    )
         result["details"]["captured_frames"] = frame_analyses
 
     # --- Layer 6: Render pipeline stage health ---
@@ -957,6 +994,9 @@ def main():
                 print(f"  Captured frames: {len(val)}")
                 for fr in val:
                     print(f"    {fr['file']}: {fr['pct_nonblack']}% non-black, "
+                          f"complexity={fr.get('color_complexity', 0.0):.2f}, "
+                          f"unique_colors={fr.get('unique_colors', 0)}, "
+                          f"colorful_nonblack={fr.get('pct_colorful_nonblack', 0.0):.2f}%, "
                           f"avg color ({fr['avg_color'][0]},{fr['avg_color'][1]},{fr['avg_color'][2]})")
             elif key == "golden_comparisons":
                 print(f"  Golden image comparisons: {len(val)}")

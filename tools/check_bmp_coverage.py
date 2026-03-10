@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""check_bmp_coverage.py - Report pixel coverage (pct_nonblack) for BMP files.
+"""check_bmp_coverage.py - Report BMP visibility and color complexity metrics.
 
 Usage:
     python3 tools/check_bmp_coverage.py verify_output_3d/frame_*.bmp
     python3 tools/check_bmp_coverage.py verify_output/frame_0120.bmp --require frame_0120:80
 
 Emits one JSON line per file to stdout:
-    {"bmp": "...", "pct_nonblack": N, "nonblack_pixels": M, "total_pixels": T, "avg_rgb": [R, G, B]}
+    {
+        "bmp": "...",
+        "pct_nonblack": N,
+        "nonblack_pixels": M,
+        "total_pixels": T,
+        "avg_rgb": [R, G, B],
+        "unique_colors": N,
+        "pct_colorful": N.NN,
+        "pct_colorful_nonblack": N.NN,
+        "color_complexity": N.NN
+    }
 
 Options:
     --require PATTERN:MIN_PCT
@@ -28,6 +38,8 @@ from pathlib import Path
 
 
 NONBLACK_THRESHOLD = 4  # pixel channel value > 4 counts as nonblack
+COLORFULNESS_THRESHOLD = 16
+COLOR_BUCKET_CAP = 256
 
 
 def analyze_bmp(path: str) -> dict:
@@ -49,19 +61,37 @@ def analyze_bmp(path: str) -> dict:
         return {"error": "empty pixel data", "file": path}
 
     nonblack = 0
+    colorful = 0
+    colorful_nonblack = 0
+    unique_colors = 0
+    color_buckets = bytearray(4096)
     r_sum = g_sum = b_sum = 0
     for i in range(total):
         off = i * stride
         b = pixel_data[off]
         g = pixel_data[off + 1]
         r = pixel_data[off + 2]
+        is_colorful = max(r, g, b) - min(r, g, b) >= COLORFULNESS_THRESHOLD
+        if is_colorful:
+            colorful += 1
         if r > NONBLACK_THRESHOLD or g > NONBLACK_THRESHOLD or b > NONBLACK_THRESHOLD:
             nonblack += 1
+            if is_colorful:
+                colorful_nonblack += 1
+            # Pack 4-bit R, G, B into a 12-bit bucket: RRRR GGGG BBBB.
+            bucket = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+            if not color_buckets[bucket]:
+                color_buckets[bucket] = 1
+                unique_colors += 1
         r_sum += r
         g_sum += g
         b_sum += b
 
     pct = nonblack * 100 // total
+    pct_colorful = round((colorful * 100.0) / total, 2)
+    pct_colorful_nonblack = round((colorful_nonblack * 100.0) / nonblack, 2) if nonblack > 0 else 0.0
+    normalized_unique = min(unique_colors, COLOR_BUCKET_CAP) * 100.0 / COLOR_BUCKET_CAP
+    color_complexity = round((normalized_unique * 0.5) + (pct_colorful_nonblack * 0.5), 2)
     avg_r = r_sum // total
     avg_g = g_sum // total
     avg_b = b_sum // total
@@ -72,6 +102,12 @@ def analyze_bmp(path: str) -> dict:
         "nonblack_pixels": nonblack,
         "total_pixels": total,
         "avg_rgb": [avg_r, avg_g, avg_b],
+        "unique_colors": unique_colors,
+        "colorful_pixels": colorful,
+        "colorful_nonblack_pixels": colorful_nonblack,
+        "pct_colorful": pct_colorful,
+        "pct_colorful_nonblack": pct_colorful_nonblack,
+        "color_complexity": color_complexity,
     }
 
 
@@ -149,16 +185,25 @@ def main():
         for r in matched:
             pct = r.get("pct_nonblack", 0)
             avg = r.get("avg_rgb", [0, 0, 0])
+            complexity = r.get("color_complexity", 0.0)
+            unique = r.get("unique_colors", 0)
+            colorful = r.get("pct_colorful_nonblack", 0.0)
             file_name = r.get("bmp", pattern)
             if pct < min_pct:
                 msg = (f"RASC gate FAIL: {file_name} pct_nonblack={pct}% "
-                       f"< required {min_pct}% (avg_rgb={avg})")
+                       f"< required {min_pct}% (avg_rgb={avg}, "
+                       f"color_complexity={complexity:.2f}, unique_colors={unique}, "
+                       f"pct_colorful_nonblack={colorful:.2f})")
                 print(f'{{"rasc_gate":"fail","file":{json.dumps(file_name)},'
-                      f'"pct_nonblack":{pct},"min_pct":{min_pct},"avg_rgb":{avg}}}')
+                      f'"pct_nonblack":{pct},"min_pct":{min_pct},"avg_rgb":{avg},'
+                      f'"color_complexity":{complexity},"unique_colors":{unique},'
+                      f'"pct_colorful_nonblack":{colorful}}}')
                 failures.append(msg)
             else:
                 print(f'{{"rasc_gate":"pass","file":{json.dumps(file_name)},'
-                      f'"pct_nonblack":{pct},"min_pct":{min_pct},"avg_rgb":{avg}}}')
+                      f'"pct_nonblack":{pct},"min_pct":{min_pct},"avg_rgb":{avg},'
+                      f'"color_complexity":{complexity},"unique_colors":{unique},'
+                      f'"pct_colorful_nonblack":{colorful}}}')
 
     if failures:
         for f in failures:

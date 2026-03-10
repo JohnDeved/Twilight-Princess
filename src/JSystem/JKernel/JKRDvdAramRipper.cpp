@@ -54,7 +54,7 @@ JKRAramBlock* JKRDvdAramRipper::loadToAram(JKRDvdFile* dvdFile, u32 address,
 
 JKRADCommand* JKRDvdAramRipper::loadToAram_Async(JKRDvdFile* dvdFile, u32 address,
                                                  JKRExpandSwitch expandSwitch,
-                                                 void (*callback)(u32), u32 param_4, u32 param_5,
+                                                 void (*callback)(uintptr_t), u32 param_4, u32 param_5,
                                                  u32* param_6) {
     JKRADCommand* command = new (JKRGetSystemHeap(), -4) JKRADCommand();
     command->mDvdFile = dvdFile;
@@ -182,7 +182,7 @@ JKRADCommand* JKRDvdAramRipper::callCommand_Async(JKRADCommand* command) {
         if (!command->mCallback) {
             (*((JSUList<JKRADCommand>*)&sDvdAramAsyncList)).append(&command->mLink);
         } else {
-            command->mCallback((u32)command);
+            command->mCallback((uintptr_t)command);
         }
     }
 

@@ -28,6 +28,91 @@
 #include "d/d_debug_camera.h"
 #endif
 
+#if PLATFORM_PC
+#include <setjmp.h>
+#include <signal.h>
+
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
+
+enum {
+    CAMERA_EXEC_PHASE_NONE = 0,
+    CAMERA_EXEC_PHASE_VIEW_SETUP_PRE,
+    CAMERA_EXEC_PHASE_WINDOW_LOOKUP,
+    CAMERA_EXEC_PHASE_VIEWPORT_LOOKUP,
+    CAMERA_EXEC_PHASE_SET_WINDOW,
+    CAMERA_EXEC_PHASE_GET_PLAYER,
+    CAMERA_EXEC_PHASE_RESET_VIEW,
+    CAMERA_EXEC_PHASE_ATTN_OFF,
+    CAMERA_EXEC_PHASE_RUN,
+    CAMERA_EXEC_PHASE_NOTRUN,
+    CAMERA_EXEC_PHASE_CALC_TRIM,
+    CAMERA_EXEC_PHASE_STORE,
+    CAMERA_EXEC_PHASE_DEMO_QUERY,
+    CAMERA_EXEC_PHASE_DEMO_POS,
+    CAMERA_EXEC_PHASE_DEMO_TARGET,
+    CAMERA_EXEC_PHASE_DEMO_FOVY,
+    CAMERA_EXEC_PHASE_ARROW_LOOKUP,
+    CAMERA_EXEC_PHASE_ARROW_APPLY,
+    CAMERA_EXEC_PHASE_VIEW_SETUP_FINAL,
+};
+
+static int s_camera_exec_phase = CAMERA_EXEC_PHASE_NONE;
+static const char* s_camera_exec_detail = "none";
+
+static const char* const s_camera_exec_phase_names[] = {
+    "none",
+    "view_setup_pre",
+    "window_lookup",
+    "viewport_lookup",
+    "set_window",
+    "get_player",
+    "reset_view",
+    "attention_off",
+    "run",
+    "notrun",
+    "calc_trim",
+    "store",
+    "demo_query",
+    "demo_pos",
+    "demo_target",
+    "demo_fovy",
+    "arrow_lookup",
+    "arrow_apply",
+    "view_setup_final",
+};
+
+static inline void set_camera_exec_phase(int phase) {
+    s_camera_exec_phase = phase;
+    s_camera_exec_detail = "none";
+}
+
+static inline void set_camera_exec_detail(const char* detail) {
+    s_camera_exec_detail = detail != NULL ? detail : "none";
+}
+
+extern "C" int pal_diag_camera_exec_phase(void) {
+    return s_camera_exec_phase;
+}
+
+extern "C" const char* pal_diag_camera_exec_phase_name(void) {
+    int phase = s_camera_exec_phase;
+    if (phase < 0 ||
+        phase >= (int)(sizeof(s_camera_exec_phase_names) / sizeof(s_camera_exec_phase_names[0]))) {
+        return "invalid";
+    }
+    return s_camera_exec_phase_names[phase];
+}
+
+extern "C" const char* pal_diag_camera_exec_detail_name(void) {
+    return s_camera_exec_detail != NULL ? s_camera_exec_detail : "none";
+}
+#else
+static inline void set_camera_exec_phase(int) {}
+static inline void set_camera_exec_detail(const char*) {}
+#endif
+
 namespace {
 
 static f32 limitf(f32 value, f32 min, f32 max) {
@@ -1017,9 +1102,22 @@ void dCamera_c::debugDrawInit() {
 }
 
 bool dCamera_c::Run() {
+    set_camera_exec_detail("run_link_midna");
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
+#if PLATFORM_PC
+    if (link == NULL && mpPlayerActor != NULL && is_player(mpPlayerActor)) {
+        link = (daAlink_c*)mpPlayerActor;
+    }
+    if (link == NULL) {
+        mMidnaRidingAndVisible = false;
+        return false;
+    }
+    mpPlayerActor = (fopAc_ac_c*)link;
+    mMidnaRidingAndVisible = link->checkMidnaRide() && !(midna != NULL && midna->checkNoDraw());
+#else
     mMidnaRidingAndVisible = link->checkMidnaRide() && !midna->checkNoDraw();
+#endif
     bool sp10 = false;
     bool sp0F = false;
     clrComStat(0x804);
@@ -1037,10 +1135,19 @@ bool dCamera_c::Run() {
     if (stay_no != mRoomCtx.mRoomNo) {
         onRoomChange(stay_no);
     }
+    set_camera_exec_detail("run_ground_info");
     checkGroundInfo();
+    set_camera_exec_detail("run_map_tool");
     setMapToolData();
 
-    if (link->checkRollJump() || link->checkGoronRideWait()) {
+    set_camera_exec_detail("run_player_flags");
+#if PLATFORM_PC
+    if (link->mProcID == daAlink_c::PROC_ROLL_JUMP ||
+        link->mProcID == daAlink_c::PROC_GORON_RIDE_WAIT)
+#else
+    if (link->checkRollJump() || link->checkGoronRideWait())
+#endif
+    {
         setFlag(0x10000);
         setFlag(0x100000);
     } else {
@@ -1057,11 +1164,14 @@ bool dCamera_c::Run() {
         }
     }
 
+    set_camera_exec_detail("run_monitor");
     updateMonitor();
+    set_camera_exec_detail("run_att");
     Att();
     clrComStat(0xf400);
 
     if (!dComIfGp_evmng_cameraPlay() && !chkFlag(0x20000000)) {
+        set_camera_exec_detail("run_pad");
         updatePad();
         mCamSetup.mCStick.Shift(mPadID);
     }
@@ -1075,12 +1185,14 @@ bool dCamera_c::Run() {
             mPadInfo.mCStick.mLastValue = 0.0f;
     }
 
+    set_camera_exec_detail("run_force_lock");
     if (!checkForceLockTarget()) {
         mLockOnActorID = -1;
     } else {
         mForceLockTimer++;
     }
 
+    set_camera_exec_detail("run_type");
     mNextType = nextType(mCurType);
     if (mNextType != mCurType && onTypeChange(mCurType, mNextType)) {
         if (mCamSetup.CheckFlag(0x8000)) {
@@ -1095,6 +1207,7 @@ bool dCamera_c::Run() {
         setComStat(0x40000);
     }
 
+    set_camera_exec_detail("run_mode");
     mNextMode = nextMode(mCurMode);
     if ((iVar8 != mIsWolf || mNextMode != mCurMode)
         && mCamTypeData[mCurType].field_0x18[mIsWolf][mNextMode] >= 0
@@ -1113,6 +1226,7 @@ bool dCamera_c::Run() {
     }
 
     int style = mCamTypeData[mCurType].field_0x18[mIsWolf][mCurMode];
+    set_camera_exec_detail("run_style");
     if (style >= 0 && mCamStyle != style && onStyleChange(mCamStyle, style)) {
         u32 id = mCamParam.Id(style);
         if (mCamSetup.CheckFlag(0x8000)) {
@@ -1135,6 +1249,7 @@ bool dCamera_c::Run() {
         setComStat(0x80);
     }
 
+    set_camera_exec_detail("run_tilt");
     if (mCamParam.CheckFlag(0x4000) && !check_owner_action(mPadID, 0x4000000)
         && !link->checkMagneBootsOn() && !isPlayerFlying(link))
     {
@@ -1150,6 +1265,7 @@ bool dCamera_c::Run() {
             clrFlag(0x200000);
         }
     } else {
+        set_camera_exec_detail("run_engine");
         sp0F = (this->*engine_tbl[mCamParam.Algorythmn(mCamStyle)])(mCamStyle);
         field_0x170++;
         field_0x160++;
@@ -1161,6 +1277,7 @@ bool dCamera_c::Run() {
     if (!sp0F) {
         mEngineHoldState = 0;
     }
+    set_camera_exec_detail("run_post");
     defaultTriming();
     if (!chkFlag(0x400)) {
         mViewCache.mBank -= mViewCache.mBank * 0.05f;
@@ -1200,6 +1317,7 @@ bool dCamera_c::Run() {
 
     mFovy = mViewCache.mFovy;
     mBank = mViewCache.mBank;
+    set_camera_exec_detail("run_bump");
     bumpCheck(mBumpCheckFlags);
 
     cSAngle angle = mPadInfo.mMainStick.mAngle - mFakeAngleSys.field_0x4;
@@ -1250,6 +1368,7 @@ bool dCamera_c::Run() {
     }
     mBankOverride = cSAngle::_0;
 
+    set_camera_exec_detail("run_water_audio");
     f32 water_height = getWaterSurfaceHeight(&mEye);
     if (water_height > mEye.y) {
         dKy_camera_water_in_status_set(1);
@@ -1297,6 +1416,7 @@ bool dCamera_c::Run() {
         }
     }
 
+    set_camera_exec_detail("run_event_recovery");
     runEventRecoveryTrans();
 
 #if DEBUG
@@ -1342,20 +1462,36 @@ bool dCamera_c::Run() {
 #endif
 
     clrFlag(0x1000);
+    set_camera_exec_detail("run_cleanup");
     mTagCamTool.Clr();
     field_0x89c.Clr();
     return sp0F;
 }
 
 bool dCamera_c::NotRun() {
+    set_camera_exec_detail("notrun_link_midna");
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
+#if PLATFORM_PC
+    if (link == NULL && mpPlayerActor != NULL && is_player(mpPlayerActor)) {
+        link = (daAlink_c*)mpPlayerActor;
+    }
+    if (link != NULL) {
+        mpPlayerActor = (fopAc_ac_c*)link;
+    }
+    mMidnaRidingAndVisible = (link != NULL) &&
+                             link->checkMidnaRide() &&
+                             !(midna != NULL && midna->checkNoDraw());
+#else
     mMidnaRidingAndVisible = link->checkMidnaRide() && !midna->checkNoDraw();
+#endif
     clrComStat(0x804);
     clrFlag(0x10168C21);
+    set_camera_exec_detail("notrun_ground_info");
     checkGroundInfo();
     clrComStat(0x80);
 
+    set_camera_exec_detail("notrun_event_camera");
     if (dComIfGp_evmng_cameraPlay() || chkFlag(0x20000000)) {
         if (mCurType != specialType[CAM_TYPE_EVENT]) {
             pushInfo(&mSavedView, 1);
@@ -1375,6 +1511,7 @@ bool dCamera_c::NotRun() {
     setComStat(0x14);
     clrFlag(0x80080);
     mFocusLine.Off();
+    set_camera_exec_detail("notrun_post");
     shakeCamera();
     blureCamera();
     field_0x21 = 0;
@@ -1405,6 +1542,7 @@ bool dCamera_c::NotRun() {
     }
     mBankOverride = cSAngle::_0;
 
+    set_camera_exec_detail("notrun_water_audio");
     f32 water_height = getWaterSurfaceHeight(&mEye);
     if (water_height > mEye.y) {
         dKy_camera_water_in_status_set(1);
@@ -1416,6 +1554,7 @@ bool dCamera_c::NotRun() {
 
     mFrameCounter++;
     mTicks++;
+    set_camera_exec_detail("notrun_cleanup");
     mTagCamTool.Clr();
     field_0x89c.Clr();
     return true;
@@ -3347,13 +3486,32 @@ f32 dCamera_c::getWaterSurfaceHeight(cXyz* param_0) {
 }
 
 void dCamera_c::checkGroundInfo() {
+#if PLATFORM_PC
+    set_camera_exec_detail("ground_sync_player");
+    daAlink_c* player = daAlink_getAlinkActorClass();
+    if (player != NULL) {
+        mpPlayerActor = (fopAc_ac_c*)player;
+    }
+    if (player == NULL) {
+        static int s_ground_info_missing_player_logs = 0;
+        s_ground_info_missing_player_logs++;
+        if (s_ground_info_missing_player_logs <= 5 ||
+            (s_ground_info_missing_player_logs % 50 == 0 && s_ground_info_missing_player_logs < 500)) {
+            fprintf(stderr, "[PAL] checkGroundInfo: player missing, preserving previous BG state\n");
+        }
+        return;
+    }
+#else
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
-    cXyz gnd_chk_pos = positionOf(mpPlayerActor);
+#endif
+    set_camera_exec_detail("ground_player_pos");
+    cXyz gnd_chk_pos = positionOf(player);
     if (check_owner_action(mPadID, 0x8000000)) {
-        gnd_chk_pos = eyePos(mpPlayerActor);
-        gnd_chk_pos.y = positionOf(mpPlayerActor).y;
+        gnd_chk_pos = eyePos(player);
+        gnd_chk_pos.y = positionOf(player).y;
     }
 
+    set_camera_exec_detail("ground_roof_chk");
     cXyz roof_chk_pos = gnd_chk_pos;
     int var_r24 = 0;
     gnd_chk_pos.y += 20.0f;
@@ -3365,12 +3523,14 @@ void dCamera_c::checkGroundInfo() {
         roof_chk_pos.y = roof_y;
     }
 
+    set_camera_exec_detail("ground_cross_obj");
     dBgS_CamGndChk gnd_chk;
     gnd_chk.ClrCam();
     gnd_chk.SetObj();
     gnd_chk.SetPos(&gnd_chk_pos);
     f32 ground_y = dComIfG_Bgsp().GroundCross(&gnd_chk);
 
+    set_camera_exec_detail("ground_cross_cam");
     mBG.field_0x5c.field_0x4.SetCam();
     mBG.field_0x5c.field_0x4.ClrObj();
     mBG.field_0x5c.field_0x4.SetPos(&gnd_chk_pos);
@@ -3381,35 +3541,120 @@ void dCamera_c::checkGroundInfo() {
     }
     mBG.field_0x5c.field_0x0 = mBG.field_0x5c.field_0x58 != -1.0e9f;
 
+    set_camera_exec_detail("ground_cross_roof");
+#if PLATFORM_PC
+    dBgS_CamGndChk roof_gnd_chk;
+    bool prev_roof_hit = mBG.field_0x0.field_0x0;
+    dBgS_CamGndChk prev_roof_chk = mBG.field_0x0.field_0x4;
+    f32 prev_roof_y = mBG.field_0x0.field_0x58;
+    roof_gnd_chk.OffNormalGrp();
+    roof_gnd_chk.OnWaterGrp();
+    roof_gnd_chk.SetCam();
+    roof_gnd_chk.ClrObj();
+    roof_gnd_chk.SetPos(&roof_chk_pos);
+    pal_crash_handler_init();
+    sigjmp_buf roof_jb;
+    sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &roof_jb;
+    pal_crash_occurred = 0;
+    if (sigsetjmp(roof_jb, 1) == 0) {
+        mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&roof_gnd_chk);
+        pal_crash_jmpbuf = prev_jb;
+        if (mBG.field_0x0.field_0x58 != -1.0e9f) {
+            mBG.field_0x0.field_0x4 = roof_gnd_chk;
+        }
+    } else {
+        static int s_roof_cross_crash_logs = 0;
+        pal_crash_jmpbuf = prev_jb;
+        mBG.field_0x0.field_0x0 = prev_roof_hit;
+        mBG.field_0x0.field_0x4 = prev_roof_chk;
+        mBG.field_0x0.field_0x58 = prev_roof_y;
+        s_roof_cross_crash_logs++;
+        if (s_roof_cross_crash_logs <= 5 ||
+            (s_roof_cross_crash_logs % 50 == 0 && s_roof_cross_crash_logs < 500)) {
+            fprintf(stderr,
+                    "[PAL] checkGroundInfo: roof GroundCross crashed, preserving previous roof state\n");
+        }
+        return;
+    }
+#else
     mBG.field_0x0.field_0x4.SetPos(&roof_chk_pos);
     mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&mBG.field_0x0.field_0x4);
+#endif
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
 
-    if (check_owner_action(mPadID, 0x100000)
-        && mBG.field_0x0.field_0x58 < attentionPos(mpPlayerActor).y + 40.0f)
+    set_camera_exec_detail("ground_player_flags");
+    u8 bg_lock = mBG.field_0xc0.field_0x44;
+    set_camera_exec_detail("ground_flag_attn");
+    if (check_owner_action(mPadID, 0x100000) &&
+        mBG.field_0x0.field_0x58 < attentionPos(player).y + 40.0f)
     {
         setComStat(0x800);
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkRide() || player->checkRoofSwitchHang() || player->checkWolfRope()) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (check_owner_action1(mPadID, 0x2110000)) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkSpinnerRide()) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkMagneBootsOn()) {
-        Vec* bootsTopVec = player->getMagneBootsTopVec();
-        if (!cBgW_CheckBWall(bootsTopVec->y)) {
-            mBG.field_0xc0.field_0x44 = 1;
-        }
-    } else if (footHeightOf(mpPlayerActor) - mBG.field_0x5c.field_0x58 > mCamSetup.mBGChk.FloorMargin()) {
-        mBG.field_0xc0.field_0x44 = 0;
+        bg_lock = 1;
     } else {
-        mBG.field_0xc0.field_0x44 = 1;
+        set_camera_exec_detail("ground_flag_ride");
+        bool riding = player->mRideStatus == daAlink_c::RIDETYPE_HORSE ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_BOAR ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_CANOE ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_BOARD ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_SPINNER;
+        if (riding) {
+            bg_lock = 1;
+        } else {
+            set_camera_exec_detail("ground_flag_roof");
+            if (player->mProcID == daAlink_c::PROC_ROOF_SWITCH_HANG) {
+                bg_lock = 1;
+            } else {
+                set_camera_exec_detail("ground_flag_wolf_rope_mode");
+                if (player->checkModeFlg(0x20000)) {
+                    set_camera_exec_detail("ground_flag_wolf_rope_actor");
+                    fopAc_ac_c* wolf_rope_actor = player->field_0x280c.getActor();
+                    if (wolf_rope_actor != NULL) {
+                        set_camera_exec_detail("ground_flag_wolf_rope_name");
+                        if (fopAcM_GetName(wolf_rope_actor) == PROC_Obj_Crope) {
+                            bg_lock = 1;
+                        }
+                    }
+                }
+                if (bg_lock != 1) {
+                    set_camera_exec_detail("ground_flag_owner1");
+                    if (check_owner_action1(mPadID, 0x2110000)) {
+                        bg_lock = 1;
+                    } else {
+                        set_camera_exec_detail("ground_flag_spinner");
+                        if (player->mRideStatus == daAlink_c::RIDETYPE_SPINNER) {
+                            bg_lock = 1;
+                        } else {
+                            set_camera_exec_detail("ground_flag_magne");
+                            if (player->checkMagneBootsOn()) {
+                                set_camera_exec_detail("ground_flag_magne_top");
+                                Vec* bootsTopVec = player->getMagneBootsTopVec();
+                                if (bootsTopVec != NULL) {
+                                    if (!cBgW_CheckBWall(bootsTopVec->y)) {
+                                        bg_lock = 1;
+                                    }
+                                }
+                            } else {
+                                set_camera_exec_detail("ground_flag_floor");
+                                if (footHeightOf(player) - mBG.field_0x5c.field_0x58 >
+                                    mCamSetup.mBGChk.FloorMargin()) {
+                                    bg_lock = 0;
+                                } else {
+                                    bg_lock = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+    mBG.field_0xc0.field_0x44 = bg_lock;
 
     mBG.field_0xc0.field_0x1 = 0;
     mBG.field_0xc0.field_0x20 = NULL;
 
+    set_camera_exec_detail("ground_move_bg");
     if (dComIfG_Bgsp().ChkMoveBG(mBG.field_0x5c.field_0x4)) {
         mBG.field_0xc0.field_0x20 = dComIfG_Bgsp().GetActorPointer(mBG.field_0x5c.field_0x4);
         if (mBG.field_0xc0.field_0x20 != NULL) {
@@ -3437,6 +3682,7 @@ void dCamera_c::checkGroundInfo() {
         mBG.field_0xc0.field_0x0 = 0;
     }
 
+    set_camera_exec_detail("ground_room_cam");
     if (mBG.field_0x5c.field_0x0) {
         mBG.field_0xc0.field_0x34 = dComIfG_Bgsp().GetCamMoveBG(mBG.field_0x5c.field_0x4);
     } else {
@@ -3456,6 +3702,7 @@ void dCamera_c::checkGroundInfo() {
     } else {
         mBG.field_0xc0.field_0x40 = 0xff;
     }
+    set_camera_exec_detail("ground_done");
 }
 
 bool dCamera_c::chaseCamera(s32 param_0) {
@@ -10944,6 +11191,7 @@ static int camera_execute(camera_process_class* i_this) {
      * fully-initialized CamParam data. Skip the body update and just refresh
      * the view matrices from current lookat state. */
     {
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEW_SETUP_PRE);
         /* Always set view matrix FIRST — if subsequent code crashes (caught by
          * the Execute-level sigsetjmp), the view matrix and clipper are already
          * valid for this frame. Without this, a crash anywhere below skips
@@ -10952,33 +11200,70 @@ static int camera_execute(camera_process_class* i_this) {
         view_setup(camera);
 
         int camera_id = get_camera_id(camera);
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_WINDOW_LOOKUP);
         dDlst_window_c* window = get_window(camera_id);
         if (!window) return 1;  /* window not ready */
 
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEWPORT_LOOKUP);
         view_port_class* viewport = window->getViewPort();
         if (!viewport) return 1;  /* viewport not ready */
         f32 aspect = mDoGph_gInf_c::getAspect();
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_SET_WINDOW);
         camera->mCamera.SetWindow(viewport->width, viewport->height);
         fopCamM_SetAspect(camera, aspect);
 
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_GET_PLAYER);
         fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(camera);
         if (player != NULL) {
+            camera->mCamera.mpPlayerActor = player;
             /* Player exists — safe to run full camera logic */
             if (dDemo_c::getCamera() != NULL) {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_RESET_VIEW);
                 camera->mCamera.ResetView();
             }
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_ATTN_OFF);
             dComIfGp_offCameraAttentionStatus(0, 0x40);
             if (camera->mCamera.Active()) {
-                camera->mCamera.Run();
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_RUN);
+                bool run_ok = false;
+                pal_crash_handler_init();
+                sigjmp_buf run_jb;
+                sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+                pal_crash_jmpbuf = &run_jb;
+                pal_crash_occurred = 0;
+                if (sigsetjmp(run_jb, 1) == 0) {
+                    run_ok = camera->mCamera.Run();
+                    pal_crash_jmpbuf = prev_jb;
+                } else {
+                    static int s_run_crash_log_count = 0;
+                    pal_crash_jmpbuf = prev_jb;
+                    s_run_crash_log_count++;
+                    if (s_run_crash_log_count <= 5 ||
+                        (s_run_crash_log_count % 50 == 0 && s_run_crash_log_count < 500)) {
+                        fprintf(stderr,
+                                "[PAL] camera_execute: Run crash at phase=%d:%s detail=%s, falling back to NotRun\n",
+                                pal_diag_camera_exec_phase(),
+                                pal_diag_camera_exec_phase_name(),
+                                pal_diag_camera_exec_detail_name());
+                    }
+                }
+                if (!run_ok) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
+                    camera->mCamera.NotRun();
+                }
             } else {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
                 camera->mCamera.NotRun();
             }
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_CALC_TRIM);
             camera->mCamera.CalcTrimSize();
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_STORE);
             store(camera);
         } else {
             /* No player — try demo camera first (bypassing cameraPlay() guard),
              * then fall back to the stage arrow spawn position if available. */
             bool camera_updated = false;
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_QUERY);
             dDemo_camera_c* demo = dDemo_c::getCamera();
             static int s_cam_diag_n = 0;
             if (s_cam_diag_n < 5) {
@@ -11011,20 +11296,24 @@ static int camera_execute(camera_process_class* i_this) {
             /* Primary: use demo camera position if JStage has set ENABLE flags */
             if (demo != NULL) {
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_POS);
                     cXyz eye = demo->getTrans();
                     fopCamM_SetEye(camera, eye.x, eye.y, eye.z);
                     camera_updated = true;
                 }
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_TARGET);
                     cXyz center = demo->getTarget();
                     fopCamM_SetCenter(camera, center.x, center.y, center.z);
                 }
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_FOVY);
                     fopCamM_SetFovy(camera, demo->getFovy());
                 }
             }
             /* Fallback: use stage arrow spawn data as camera eye if still at default */
             if (!camera_updated) {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_ARROW_LOOKUP);
                 int stay_no = dComIfGp_roomControl_getStayNo();
                 stage_arrow_class* arrow = dComIfGp_getRoomArrow(stay_no);
                 static bool s_arrow_diag_logged = false;
@@ -11047,6 +11336,7 @@ static int camera_execute(camera_process_class* i_this) {
                     s_arrow_diag_logged = true;
                 }
                 if (arrow != NULL && arrow->num > 0) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_ARROW_APPLY);
                     stage_arrow_data_class* entry = &arrow->m_entries[0];
                     f32 ex = entry->posX, ey = entry->posY, ez = entry->posZ;
                     /* Compute look-at center from spawn angle (angleY = yaw) */
@@ -11068,7 +11358,9 @@ static int camera_execute(camera_process_class* i_this) {
         }
 
         /* Final view_setup with any updated camera state from above */
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEW_SETUP_FINAL);
         view_setup(camera);
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_NONE);
         return 1;
     }
 #else

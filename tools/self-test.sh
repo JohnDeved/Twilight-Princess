@@ -23,6 +23,43 @@
 
 set -euo pipefail
 
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+
+run_with_timeout() {
+    local timeout_secs="$1"
+    shift
+
+    if [ -n "$TIMEOUT_BIN" ]; then
+        "$TIMEOUT_BIN" "${timeout_secs}s" "$@"
+        return $?
+    fi
+
+    python3 - "$timeout_secs" "$@" <<'PY'
+import signal
+import subprocess
+import sys
+import time
+
+timeout_s = float(sys.argv[1])
+cmd = sys.argv[2:]
+proc = subprocess.Popen(cmd)
+start = time.time()
+
+while True:
+    rc = proc.poll()
+    if rc is not None:
+        sys.exit(rc)
+    if time.time() - start >= timeout_s:
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        sys.exit(124)
+    time.sleep(0.1)
+PY
+}
+
 # --- Defaults ---
 SKIP_BUILD=0
 FRAMES=2000
@@ -137,26 +174,31 @@ export TP_VERIFY=1
 export TP_VERIFY_DIR="$TMP_DIR/verify"
 export TP_VERIFY_CAPTURE_FRAMES="1,10,30,60,120,300,600,1200,1800"
 
-# Start Xvfb for software OpenGL rendering (no GPU needed)
+# Start Xvfb for software OpenGL rendering when available/needed.
 XVFB_PID=""
-if ! xdpyinfo -display :99 >/dev/null 2>&1; then
-    Xvfb :99 -screen 0 640x480x24 &
-    XVFB_PID=$!
-    # Wait for Xvfb to be ready
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        xdpyinfo -display :99 >/dev/null 2>&1 && break
-        sleep 1
-    done
+if [ -n "${DISPLAY:-}" ]; then
+    :
+elif [ "$(uname -s)" = "Linux" ] && command -v Xvfb >/dev/null 2>&1 && command -v xdpyinfo >/dev/null 2>&1; then
+    if ! xdpyinfo -display :99 >/dev/null 2>&1; then
+        Xvfb :99 -screen 0 640x480x24 &
+        XVFB_PID=$!
+        # Wait for Xvfb to be ready
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            xdpyinfo -display :99 >/dev/null 2>&1 && break
+            sleep 1
+        done
+    fi
     export DISPLAY=:99
 else
-    export DISPLAY=:99
+    echo "  ℹ️  Skipping Xvfb setup on $(uname -s); using native headless window path"
 fi
 
 # Use softpipe (not llvmpipe) to avoid LLVM JIT crashes in CI
 export GALLIUM_DRIVER="${GALLIUM_DRIVER:-softpipe}"
 export LIBGL_ALWAYS_SOFTWARE=1
+export TP_SYNC_RENDER=1
 
-timeout 120s build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
+run_with_timeout 120 build/tp-pc 2>&1 | tee "$TMP_DIR/milestones.log" || true
 if [ -n "$XVFB_PID" ]; then
     kill "$XVFB_PID" 2>/dev/null || true
 fi

@@ -15,6 +15,7 @@
 #include "JSystem/JUtility/JUTProcBar.h"
 #include "JSystem/JUtility/JUTTexture.h"
 #include "SSystem/SComponent/c_math.h"
+#include "SSystem/SComponent/c_counter.h"
 #include "d/actor/d_a_player.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_menu_collect.h"
@@ -425,10 +426,22 @@ void darwFilter(GXColor matColor) {
     fprintf(stderr, "{\"darwFilter\":{\"r\":%d,\"g\":%d,\"b\":%d,\"a\":%d}}\n",
             (int)matColor.r, (int)matColor.g,
             (int)matColor.b, (int)matColor.a);
-    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3/4 CI
-     * to bypass a fully-black fade transition that would cover the 3D geometry.
-     * Any non-empty value enables the skip (consistent with other TP_ env vars). */
+    /* TP_SKIP_FADE=1: skip the fade overlay draw entirely.  Used in Phase 3 CI
+     * to bypass a fully-black fade transition that would cover the captured
+     * 3D geometry. Any non-empty value enables the skip.
+     *
+     * TP_SKIP_FADE_AFTER=<frame>: preserve the early Nintendo-logo fade
+     * transitions, then skip later fade overlays once the test reaches the
+     * gameplay intro scene. */
     if (getenv("TP_SKIP_FADE")) {
+        return;
+    }
+    static int s_skip_fade_after = -2;
+    if (s_skip_fade_after == -2) {
+        const char* after = getenv("TP_SKIP_FADE_AFTER");
+        s_skip_fade_after = (after && *after) ? atoi(after) : -1;
+    }
+    if (s_skip_fade_after >= 0 && g_Counter.mCounter0 >= (u32)s_skip_fade_after) {
         return;
     }
     g_gx_state.fade_overlay_active = 1;
@@ -1535,20 +1548,41 @@ static void captureScreenPerspDrawInfo(JPADrawInfo& info) {
 }
 #endif
 
+enum {
+    ITEM3D_PHASE_IDLE = 0,
+    ITEM3D_PHASE_SETUP = 1,
+    ITEM3D_PHASE_LIGHT,
+    ITEM3D_PHASE_VIEW,
+    ITEM3D_PHASE_CLIP_DISABLE,
+    ITEM3D_PHASE_DRAW_LIST,
+    ITEM3D_PHASE_CLIP_ENABLE,
+    ITEM3D_PHASE_REINIT,
+};
+
+static int s_item3d_phase = ITEM3D_PHASE_IDLE;
+
 static void drawItem3D() {
     Mtx item_mtx;
+    s_item3d_phase = ITEM3D_PHASE_SETUP;
     dMenu_Collect3D_c::setupItem3D(item_mtx);
 
     #if DEBUG
     captureScreenSetPort();
     #endif
 
+    s_item3d_phase = ITEM3D_PHASE_LIGHT;
     setLight();
+    s_item3d_phase = ITEM3D_PHASE_VIEW;
     j3dSys.setViewMtx(item_mtx);
+    s_item3d_phase = ITEM3D_PHASE_CLIP_DISABLE;
     GXSetClipMode(GX_CLIP_DISABLE);
+    s_item3d_phase = ITEM3D_PHASE_DRAW_LIST;
     dComIfGd_drawListItem3d();
+    s_item3d_phase = ITEM3D_PHASE_CLIP_ENABLE;
     GXSetClipMode(GX_CLIP_ENABLE);
+    s_item3d_phase = ITEM3D_PHASE_REINIT;
     j3dSys.reinitGX();
+    s_item3d_phase = ITEM3D_PHASE_IDLE;
 }
 
 int mDoGph_Painter() {
@@ -1739,11 +1773,13 @@ int mDoGph_Painter() {
         }
 
         /* --- 2D overlays (logo, menus, HUD) --- */
-        /* Wrap 2D/item draws with global crash handler.
-         * Permanently skip after first crash — zero overhead on subsequent frames. */
+        /* Keep 2D overlays and item/3D list isolated in the PC renderer path.
+         * Previously, a crash in either path permanently suppressed both. The
+         * intro/title path can finish loading the BLO/J2D screen after an
+         * early drawItem3D crash, so keep the later 2D title/UI work alive. */
         {
-            static int s_2d_suppressed = 0;
-            if (!s_2d_suppressed) {
+            static bool s_2d_enabled = true;
+            if (s_2d_enabled) {
                 pal_crash_handler_init();
                 sigjmp_buf jb;
                 sigjmp_buf* prev_target = pal_crash_jmpbuf;
@@ -1756,15 +1792,46 @@ int mDoGph_Painter() {
                     dComIfGd_draw2DOpa();
                     dComIfGd_draw2DXlu();
                     dComIfGd_draw2DOpaTop();
-
-                    /* --- Item/3D model draw list (with proper camera setup) --- */
-                    drawItem3D();
                 } else {
-                    s_2d_suppressed = 1;
-                    fprintf(stderr, "[PAL] 2D/item draw crash — permanently skipped\n");
+                    s_2d_enabled = false;
+                    fprintf(stderr, "[PAL] 2D draw crash: permanently skipped\n");
                 }
                 pal_crash_jmpbuf = prev_target;
             }
+        }
+
+        /* --- Item/3D model draw list (with proper camera setup) --- */
+        {
+            pal_crash_handler_init();
+            J3DDrawBuffer::palDiagCrashMarkerReset();
+            sigjmp_buf jb;
+            sigjmp_buf* prev_target = pal_crash_jmpbuf;
+            pal_crash_jmpbuf = &jb;
+            pal_crash_occurred = 0;
+            if (sigsetjmp(jb, 1) == 0) {
+                drawItem3D();
+            } else {
+                static bool s_item3d_crash_logged = false;
+                /* drawItem3D() may leave clip/GX state half-updated before the
+                 * crash; restore the normal render state so later passes keep
+                 * running, then retry the item path on the next frame. */
+                GXSetClipMode(GX_CLIP_ENABLE);
+                j3dSys.reinitGX();
+                if (!s_item3d_crash_logged) {
+                    s_item3d_crash_logged = true;
+                    fprintf(stderr,
+                        "[PAL] item/3D draw crash: skipped for this frame "
+                        "(item_phase=%d draw_phase=%d slot=%d pkt=%d packet=%p vptr=%p)\n",
+                            s_item3d_phase,
+                            J3DDrawBuffer::palDiagCrashPhase(),
+                            J3DDrawBuffer::palDiagCrashSlot(),
+                            J3DDrawBuffer::palDiagCrashPacketIndex(),
+                            J3DDrawBuffer::palDiagCrashPacketPtr(),
+                            J3DDrawBuffer::palDiagCrashPacketVptr());
+                }
+                s_item3d_phase = ITEM3D_PHASE_IDLE;
+            }
+            pal_crash_jmpbuf = prev_target;
         }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */

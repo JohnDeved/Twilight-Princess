@@ -3,6 +3,7 @@
 
 #include "JSystem/JAudio2/JAISoundHandles.h"
 #include "JSystem/JAudio2/JASHeapCtrl.h"
+#include <stdint.h>
 
 class Z2SoundHandlePool : public JAISoundHandle, public JSULink<Z2SoundHandlePool>, public JASPoolAllocObject<Z2SoundHandlePool> {
 public:
@@ -22,7 +23,7 @@ public:
     bool isActive() const;
 
     Z2SoundHandlePool* getHandleSoundID(JAISoundID soundID);
-    Z2SoundHandlePool* getHandleUserData(u32 userData);
+    Z2SoundHandlePool* getHandleUserData(uintptr_t userData);
 
     void stopAllSounds(u32 fadeTime);
 

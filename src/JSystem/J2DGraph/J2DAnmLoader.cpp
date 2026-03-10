@@ -6,6 +6,7 @@
 
 #include "JSystem/J2DGraph/J2DAnmLoader.h"
 #include "JSystem/JSupport/JSupport.h"
+#include <stdint.h>
 
 J2DAnmBase* J2DAnmLoaderDataBase::load(void const* p_data) {
     const J3DAnmDataHeader* hdr = (const J3DAnmDataHeader*)p_data;
@@ -122,7 +123,7 @@ void* J2DAnmKeyLoader_v15::load(void const* p_data) {
             OS_REPORT("Unknown data block\n");
             break;
         }
-        dataPtr = (J3DAnmDataBlockHeader*)((s32)dataPtr + dataPtr->mNextOffset);
+        dataPtr = (J3DAnmDataBlockHeader*)((uintptr_t)dataPtr + dataPtr->mNextOffset);
     }
 
     return mpResource;
@@ -165,7 +166,7 @@ void J2DAnmKeyLoader_v15::setResource(J2DAnmBase* p_anm, void const* p_data) {
             OS_REPORT("Unknown data block\n");
             break;
         }
-        dataPtr = (J3DAnmDataBlockHeader*)((s32)dataPtr + dataPtr->mNextOffset);
+        dataPtr = (J3DAnmDataBlockHeader*)((uintptr_t)dataPtr + dataPtr->mNextOffset);
     }
 }
 
@@ -334,7 +335,7 @@ void* J2DAnmFullLoader_v15::load(void const* p_data) {
             OS_REPORT("Unknown data block\n");
             break;
         }
-        dataPtr = (J3DAnmDataBlockHeader*)((s32)dataPtr + dataPtr->mNextOffset);
+        dataPtr = (J3DAnmDataBlockHeader*)((uintptr_t)dataPtr + dataPtr->mNextOffset);
     }
     return mpResource;
 }
@@ -372,7 +373,7 @@ void J2DAnmFullLoader_v15::setResource(J2DAnmBase* p_anm, void const* p_data) {
             OS_REPORT("Unknown data block\n");
             break;
         }
-        dataPtr = (J3DAnmDataBlockHeader*)((s32)dataPtr + dataPtr->mNextOffset);
+        dataPtr = (J3DAnmDataBlockHeader*)((uintptr_t)dataPtr + dataPtr->mNextOffset);
     }
 }
 

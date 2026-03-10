@@ -30,17 +30,30 @@ extern "C" {
  * @param format    GX texture format (GXTexFmt)
  * @param tlut      Color lookup table for CI formats (NULL for non-CI)
  * @param tlut_fmt  TLUT format (GX_TL_IA8, GX_TL_RGB565, GX_TL_RGB5A3)
+ * @param tlut_num_entries  Number of entries in TLUT (for bounds checking)
  * @return          Number of bytes written, or 0 on error
  */
 u32 pal_gx_decode_texture(const void* src, void* dst,
                           u16 width, u16 height,
                           GXTexFmt format,
-                          const void* tlut, u32 tlut_fmt);
+                          const void* tlut, u32 tlut_fmt,
+                          u32 tlut_num_entries);
 
 /**
  * Get the size in bytes of a GX-format texture.
  */
 u32 pal_gx_tex_size(u16 width, u16 height, GXTexFmt format);
+
+/**
+ * Get the total size of a mipmap chain (base + all mip levels up to max_lod).
+ * Reference: dolsdk2004 GXTexture.c mip addressing.
+ */
+u32 pal_gx_tex_mipmap_chain_size(u16 width, u16 height, GXTexFmt format, u8 max_lod);
+
+/**
+ * Get the byte offset of a specific mip level within a mipmap chain.
+ */
+u32 pal_gx_tex_mip_offset(u16 width, u16 height, GXTexFmt format, u8 lod);
 
 #ifdef __cplusplus
 }

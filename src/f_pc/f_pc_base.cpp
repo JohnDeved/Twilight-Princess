@@ -8,6 +8,7 @@
 #include "SSystem/SComponent/c_phase.h"
 #include "SSystem/SStandard/s_basic.h"
 #include "d/d_stage.h"
+#include "d/d_procname.h"
 #include "f_pc/f_pc_layer.h"
 #include "f_pc/f_pc_method.h"
 #include "f_pc/f_pc_pause.h"
@@ -119,6 +120,13 @@ static int pal_profile_is_suppressed(s16 profname) {
 extern "C" int pal_is_profile_suppressed(int profname) {
     return pal_profile_is_suppressed((s16)profname);
 }
+extern "C" int pal_diag_camera_exec_phase(void);
+extern "C" const char* pal_diag_camera_exec_phase_name(void);
+extern "C" const char* pal_diag_camera_exec_detail_name(void);
+
+static int pal_should_retry_execute_crash(s16 profname) {
+    return profname == PROC_CAMERA || profname == PROC_CAMERA2;
+}
 #endif
 #include "Z2AudioLib/Z2AudioMgr.h"
 #if PLATFORM_PC || PLATFORM_NX_HB
@@ -161,12 +169,28 @@ int fpcBs_Execute(base_process_class* i_proc) {
     pal_crash_handler_init();
     sigjmp_buf jb;
     sigjmp_buf* prev_target = pal_crash_jmpbuf;
+    layer_class* save_layer = fpcLy_CurrentLayer();
     pal_crash_jmpbuf = &jb;
     pal_crash_occurred = 0;
 
     if (sigsetjmp(jb, 1) != 0) {
         pal_crash_jmpbuf = prev_target;
-        int cc = pal_profile_crash_increment(i_proc->profname);
+        fpcLy_SetCurrentLayer(save_layer);
+        if (pal_should_retry_execute_crash(i_proc->profname)) {
+            static int s_retry_exec_log_count = 0;
+            s_retry_exec_log_count++;
+            if (s_retry_exec_log_count <= 5 ||
+                (s_retry_exec_log_count % 50 == 0 && s_retry_exec_log_count < 500)) {
+                fprintf(stderr,
+                        "[PAL] SIGSEGV caught in Execute (prof=%d id=%u phase=%d:%s detail=%s) — skipping this frame, will retry\n",
+                        i_proc->profname, i_proc->id,
+                        pal_diag_camera_exec_phase(),
+                        pal_diag_camera_exec_phase_name(),
+                        pal_diag_camera_exec_detail_name());
+            }
+            return 0;
+        }
+        pal_profile_crash_increment(i_proc->profname);
         fprintf(stderr, "[PAL] SIGSEGV caught in Execute (prof=%d id=%u) — permanently suppressed\n",
                 i_proc->profname, i_proc->id);
         pal_mark_exec_crashed(i_proc->id);
@@ -174,7 +198,6 @@ int fpcBs_Execute(base_process_class* i_proc) {
     }
 
     {
-        layer_class* save_layer = fpcLy_CurrentLayer();
         fpcLy_SetCurrentLayer(i_proc->layer_tag.layer);
         result = fpcMtd_Execute(i_proc->methods, i_proc);
         fpcLy_SetCurrentLayer(save_layer);

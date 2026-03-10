@@ -36,6 +36,12 @@ void pal_input_handle_event(const void* sdl_event);
 int pal_input_read_pad(int port, void* pad_status);
 
 /**
+ * Control controller rumble for the given PAD port using the host gamepad.
+ * Unsupported ports or missing gamepads are ignored safely.
+ */
+void pal_input_control_motor(s32 port, u32 command);
+
+/**
  * Shut down SDL3 input subsystem.
  */
 void pal_input_shutdown(void);

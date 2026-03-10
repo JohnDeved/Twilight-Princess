@@ -185,8 +185,12 @@ int J3DDrawBuffer::entryMatSort(J3DMatPacket* pMatPacket) {
     pMatPacket->getShapePacket()->drawClear();
 
     if (pMatPacket->isChanged()) {
+#if PLATFORM_PC
+        pal_drawbuffer_prepend((J3DPacket**)&mpBuffer[0], pMatPacket);
+#else
         pMatPacket->setNextPacket(mpBuffer[0]);
         mpBuffer[0] = pMatPacket;
+#endif
         return 1;
     }
 
@@ -216,8 +220,12 @@ int J3DDrawBuffer::entryMatSort(J3DMatPacket* pMatPacket) {
         }
     }
 
+#if PLATFORM_PC
+    pal_drawbuffer_prepend((J3DPacket**)&mpBuffer[slot], pMatPacket);
+#else
     pMatPacket->setNextPacket(mpBuffer[slot]);
     mpBuffer[slot] = pMatPacket;
+#endif
     return 1;
 }
 
@@ -248,8 +256,12 @@ int J3DDrawBuffer::entryMatAnmSort(J3DMatPacket* pMatPacket) {
         }
     }
 
+#if PLATFORM_PC
+    pal_drawbuffer_prepend((J3DPacket**)&mpBuffer[slot], pMatPacket);
+#else
     pMatPacket->setNextPacket(mpBuffer[slot]);
     mpBuffer[slot] = pMatPacket;
+#endif
     return 1;
 }
 
@@ -278,8 +290,12 @@ int J3DDrawBuffer::entryZSort(J3DMatPacket* pMatPacket) {
     }
 
     index = (mEntryTableSize - 1) - index;
+#if PLATFORM_PC
+    pal_drawbuffer_prepend((J3DPacket**)&mpBuffer[index], pMatPacket);
+#else
     pMatPacket->setNextPacket(mpBuffer[index]);
     mpBuffer[index] = pMatPacket;
+#endif
     return 1;
 }
 

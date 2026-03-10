@@ -880,7 +880,7 @@ int PADReset(u32 mask) { (void)mask; return 0; }
 void PADClamp(PADStatus* status) { (void)status; }
 void PADClampCircle(PADStatus* status) { (void)status; }
 void PADSetSamplingRate(u32 msec) { (void)msec; }
-void PADControlMotor(s32 chan, u32 command) { (void)chan; (void)command; }
+void PADControlMotor(s32 chan, u32 command) { pal_input_control_motor(chan, command); }
 void PADSetSpec(u32 spec) { (void)spec; }
 int PADGetType(s32 chan, u32* type) { (void)chan; if (type) *type = 0; return 0; }
 BOOL PADRecalibrate(u32 mask) { (void)mask; return TRUE; }

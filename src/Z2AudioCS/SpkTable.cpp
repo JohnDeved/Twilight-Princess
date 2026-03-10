@@ -1,5 +1,7 @@
 #include "Z2AudioCS/SpkTable.h"
 
+#include <stdint.h>
+
 SpkTable::SpkTable(void) {
     mIsInitialized = false;
     mNumOfSound = 0;
@@ -18,6 +20,7 @@ void SpkTable::setResource(void* res) {
     mIsInitialized = false;
 
     s32* cursor = (s32*)res;
+    uintptr_t base = (uintptr_t)res;
 
     s32 resourceCount = *cursor++;
     s32 entryOff = *cursor++;
@@ -27,18 +30,25 @@ void SpkTable::setResource(void* res) {
 
     mNumOfSound = resourceCount;
 
-    s32 entryOffset = (s32)res + entryOff;
+    uintptr_t entryOffset = base + entryOff;
     mEntryOffset = entryOffset;
-    s32* dataOffsets = (s32*)((s32)res + dataOffsetsStartOff);
+    s32* dataOffsets = (s32*)(base + dataOffsetsStartOff);
+#if !PLATFORM_PC
     if (!isDataOffsetsInitialized) {
         for (s32 i = 0; i < mNumOfSound; i++) {
-            dataOffsets[i] += (s32)res;
+            dataOffsets[i] += (s32)base;
         }
     }
+#endif
 
     s32* dataOffsetsCopy = dataOffsets;
     mDataOffsets = dataOffsetsCopy;
+#if !PLATFORM_PC
     *pIsDataOffsetsInitialized = TRUE;
+#else
+    (void)pIsDataOffsetsInitialized;
+    (void)isDataOffsetsInitialized;
+#endif
 
     mIsInitialized = true;
 }

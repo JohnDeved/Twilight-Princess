@@ -9,7 +9,81 @@
 #include "JSystem/J3DGraphBase/J3DMatBlock.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
 #include "JSystem/J3DGraphBase/J3DTransform.h"
+#include "SSystem/SComponent/c_counter.h"
+#include "pal/gx/gx_diag_context.h"
 #include "global.h"
+
+#if PLATFORM_PC
+#define J3D_TEX_LOAD_LOG_MAX 96
+
+static inline int shouldLogTevLoadDiag() {
+    if (pal_diag_current_material_ptr == NULL) {
+        return 0;
+    }
+
+    if (pal_diag_current_material_mode == 1 && pal_diag_current_model_ptr != NULL &&
+        g_Counter.mCounter0 >= 128 && g_Counter.mCounter0 <= 130) {
+        return 1;
+    }
+
+    switch (pal_diag_current_mat_index) {
+    case 0:
+    case 15:
+    case 20:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int markTexLoadSeen(const void* material, u8 texMap,
+                           const void** materials, u8* texMaps,
+                           int* count, int max_count) {
+    int i;
+    for (i = 0; i < *count; i++) {
+        if (materials[i] == material && texMaps[i] == texMap) {
+            return 0;
+        }
+    }
+
+    if (*count >= max_count) {
+        return 0;
+    }
+
+    materials[*count] = material;
+    texMaps[*count] = texMap;
+    (*count)++;
+    return 1;
+}
+
+static void logLoadTexNoDiag(u32 texMap, u16 texNo, const ResTIMG* resTIMG) {
+    static const void* s_materials[J3D_TEX_LOAD_LOG_MAX];
+    static u8 s_tex_maps[J3D_TEX_LOAD_LOG_MAX];
+    static int s_count = 0;
+
+    if (!shouldLogTevLoadDiag()) {
+        return;
+    }
+
+    if (!markTexLoadSeen(pal_diag_current_material_ptr, (u8)texMap, s_materials,
+                         s_tex_maps, &s_count, J3D_TEX_LOAD_LOG_MAX)) {
+        return;
+    }
+
+    fprintf(stderr,
+            "{\"j3d_load_tex_no\":{\"frame\":%u,\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"tex_map\":%u,\"tex_no\":%u,\"res_timg\":\"%p\","
+            "\"w\":%u,\"h\":%u,\"fmt\":%u,\"image_offset\":%u}}\n",
+            g_Counter.mCounter0, pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode, pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr, (unsigned)texMap, (unsigned)texNo, resTIMG,
+            resTIMG ? (unsigned)resTIMG->width : 0u,
+            resTIMG ? (unsigned)resTIMG->height : 0u,
+            resTIMG ? (unsigned)(resTIMG->format & 0x0f) : 0u,
+            resTIMG ? (unsigned)resTIMG->imageOffset : 0u);
+}
+#endif
 
 static void J3DGDLoadTexMtxImm(f32 (*)[4], u32, GXTexMtxType);
 static void J3DGDLoadPostTexMtxImm(f32 (*)[4], u32);
@@ -282,6 +356,9 @@ u16 getTexNoReg(void* pDL) {
 
 void loadTexNo(u32 param_0, const u16& texNo) {
     ResTIMG* resTIMG = j3dSys.getTexture()->getResTIMG(texNo);
+#if PLATFORM_PC
+    logLoadTexNoDiag(param_0, texNo, resTIMG);
+#endif
     J3D_ASSERT_NULLPTR(462, resTIMG != NULL);
 
     J3DSys::sTexCoordScaleTable[param_0].field_0x00 = (u16)resTIMG->width;

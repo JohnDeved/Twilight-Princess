@@ -112,8 +112,11 @@ struct J3DTevStage {
     void setTexSel(u8 tex_sel) { mTevSwapModeInfo = (mTevSwapModeInfo & ~0xc) | (tex_sel << 2); }
 
     void load(u32 param_1) const {
-        J3DGDWriteBPCmd(*(u32*)&field_0x0);
-        J3DGDWriteBPCmd(*(u32*)&field_0x4);
+        (void)param_1;
+        J3DGDWriteBPCmd(((u32)field_0x0 << 24) | ((u32)mTevColorOp << 16) |
+                        ((u32)mTevColorAB << 8) | (u32)mTevColorCD);
+        J3DGDWriteBPCmd(((u32)field_0x4 << 24) | ((u32)mTevAlphaOp << 16) |
+                        ((u32)mTevAlphaAB << 8) | (u32)mTevSwapModeInfo);
     }
 
     J3DTevStage& operator=(const J3DTevStage& other) {

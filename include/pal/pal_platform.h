@@ -27,10 +27,12 @@ using std::printf;
 using std::sscanf;
 using std::abs;
 
-/* GCC C++ doesn't provide std::fabsf -- alias to fabsf from C */
+/* GCC libstdc++ doesn't provide std::fabsf, but libc++ already does. */
+#if defined(__GNUC__) && !defined(__clang__)
 namespace std {
     static inline float fabsf(float x) { return ::fabsf(x); }
 }
+#endif
 
 /* Bring C99 math functions into global namespace */
 using std::isnan;

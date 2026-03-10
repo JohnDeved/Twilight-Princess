@@ -12,7 +12,48 @@
 
 #if PLATFORM_PC
 #include <stdio.h>
+#include "pal/gx/gx_diag_context.h"
 extern "C" void pal_gd_reset_dummy(void);
+
+s32 pal_diag_current_mat_index = -1;
+u32 pal_diag_current_material_mode = 0;
+const void* pal_diag_current_material_ptr = NULL;
+const void* pal_diag_current_model_ptr = NULL;
+
+static inline bool pal_packet_chain_contains(J3DPacket* head, J3DPacket* target) {
+    /* Legitimate J3D packet chains are short (dozens or at most low hundreds of
+     * nodes in the affected room/title paths). Use 1024 as a generous fixed
+     * ceiling so a corrupted self-referential chain cannot loop forever in the
+     * PC guard path while still staying far above any expected real chain. */
+    enum { MAX_PACKET_CHAIN_SCAN = 1024 };
+    J3DPacket* it = head;
+    int depth = 0;
+    for (; it != NULL && depth < MAX_PACKET_CHAIN_SCAN; depth++) {
+        if (it == target)
+            return true;
+        J3DPacket* next = it->getNextPacket();
+        /* Treat a self-referential node as "already present" so the prepend
+         * helper stops instead of extending a chain that is already corrupt. */
+        if (next == it)
+            return true;
+        it = next;
+    }
+    return false;
+}
+
+static inline void pal_packet_prepend(J3DPacket** head, J3DPacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
+
+static inline void pal_shape_packet_prepend(J3DShapePacket** head, J3DShapePacket* packet) {
+    if (pal_packet_chain_contains(*head, packet))
+        return;
+    packet->setNextPacket(*head);
+    *head = packet;
+}
 #endif
 
 J3DError J3DDisplayListObj::newDisplayList(u32 maxSize) {
@@ -123,8 +164,12 @@ void J3DPacket::addChildPacket(J3DPacket* pPacket) {
     if (mpFirstChild == NULL) {
         mpFirstChild = pPacket;
     } else {
+#if PLATFORM_PC
+        pal_packet_prepend(&mpFirstChild, pPacket);
+#else
         pPacket->setNextPacket(mpFirstChild);
         mpFirstChild = pPacket;
+#endif
     }
 }
 
@@ -219,8 +264,12 @@ void J3DMatPacket::addShapePacket(J3DShapePacket* pShape) {
     if (mpShapePacket == NULL) {
         mpShapePacket = pShape;
     } else {
+#if PLATFORM_PC
+        pal_shape_packet_prepend(&mpShapePacket, pShape);
+#else
         pShape->setNextPacket(mpShapePacket);
         mpShapePacket = pShape;
+#endif
     }
 }
 
@@ -240,6 +289,11 @@ bool J3DMatPacket::isSame(J3DMatPacket* pOther) const {
 void J3DMatPacket::draw() {
 #if PLATFORM_PC
     if (mpMaterial == NULL) return;
+    pal_diag_current_mat_index = (s32)mpMaterial->getIndex();
+    pal_diag_current_material_mode = mpMaterial->getMaterialMode();
+    pal_diag_current_material_ptr = mpMaterial;
+    pal_diag_current_model_ptr =
+        (getShapePacket() != NULL) ? getShapePacket()->getModel() : NULL;
     /* Ensure __GDCurrentDL is valid BEFORE any material/block code runs.
      * endDL() may have set it to NULL on a previous frame; mpMaterial->load()
      * and block load() methods dereference __GDCurrentDL via GD helpers. */
@@ -247,9 +301,6 @@ void J3DMatPacket::draw() {
 #endif
     mpMaterial->load();
 #if PLATFORM_PC
-    /* On PC, display lists are empty because GD functions are stubs.
-     * Directly load the material's TEV/color/texgen state here instead
-     * of replaying the empty DL. This sets the GX state for rendering. */
     {
         static int s_mat_block_diag = 0;
         if (s_mat_block_diag < 10) {
@@ -272,15 +323,8 @@ void J3DMatPacket::draw() {
             s_mat_block_diag++;
         }
     }
-    pal_gd_reset_dummy();
-    if (mpMaterial->getTevBlock() != NULL) mpMaterial->getTevBlock()->load();
-    if (mpMaterial->getIndBlock() != NULL) mpMaterial->getIndBlock()->load();
-    if (mpMaterial->getPEBlock() != NULL)  mpMaterial->getPEBlock()->load();
-    if (mpMaterial->getTexGenBlock() != NULL) mpMaterial->getTexGenBlock()->load();
-    if (mpMaterial->getColorBlock() != NULL) mpMaterial->getColorBlock()->load();
-#else
-    callDL();
 #endif
+    callDL();
 
     J3DShapePacket* packet = getShapePacket();
 #if PLATFORM_PC
@@ -312,16 +356,19 @@ void J3DMatPacket::draw() {
             packet = (J3DShapePacket*)packet->getNextPacket();
             continue;
         }
-#else
+#endif
         if (packet->getDisplayListObj() != NULL) {
             packet->getDisplayListObj()->callDL();
         }
-#endif
 
         packet->drawFast();
         packet = (J3DShapePacket*)packet->getNextPacket();
     }
 
+    pal_diag_current_mat_index = -1;
+    pal_diag_current_material_mode = 0;
+    pal_diag_current_material_ptr = NULL;
+    pal_diag_current_model_ptr = NULL;
     J3DShape::resetVcdVatCache();
 }
 

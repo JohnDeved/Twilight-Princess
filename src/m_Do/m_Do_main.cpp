@@ -768,6 +768,7 @@ void main01(void) {
                                   (now_ts.tv_nsec - s_prev_ts.tv_nsec) / 1000000;
                 if (frame <= 5 || frame % 10 == 0 || (frame >= 120 && frame <= 200) || elapsed_ms > 100) {
                     fprintf(stderr, "{\"frame_time\":{\"frame\":%u,\"ms\":%ld}}\n", frame, elapsed_ms);
+                    fflush(stderr);
                 }
                 /* Per-frame timeout: if a single frame took > 60s, the softpipe
                  * renderer is stuck on complex geometry.  Exit cleanly instead

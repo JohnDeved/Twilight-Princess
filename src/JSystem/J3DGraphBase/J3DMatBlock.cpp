@@ -4,8 +4,180 @@
 #include "JSystem/J3DGraphBase/J3DPacket.h"
 #include "JSystem/J3DGraphBase/J3DSys.h"
 #include "JSystem/J3DGraphBase/J3DTransform.h"
+#include "SSystem/SComponent/c_counter.h"
+#include "pal/gx/gx_diag_context.h"
 #include "global.h"
+#include <cstdio>
 #include <cstring>
+
+#if PLATFORM_PC
+#define J3D_TEV_TEX_MISMATCH_LOG_MAX 40
+#define J3D_TEV_ORDER_LOAD_LOG_MAX 96
+#define J3D_TEV_STAGE_LOAD_LOG_MAX 96
+
+static inline int shouldLogRoomFrameTevDiag() {
+    return pal_diag_current_material_mode == 1 && pal_diag_current_model_ptr != NULL &&
+           g_Counter.mCounter0 >= 128 && g_Counter.mCounter0 <= 130;
+}
+
+static inline int shouldLogKnownMismatchTevDiag() {
+    switch (pal_diag_current_mat_index) {
+    case 0:
+    case 15:
+    case 20:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static inline int shouldLogTevDiag() {
+    if (pal_diag_current_material_ptr == NULL) {
+        return 0;
+    }
+
+    return shouldLogKnownMismatchTevDiag() || shouldLogRoomFrameTevDiag();
+}
+
+static int markTevOrderMaterialStageSeen(const void* material, u8 stage,
+                                         const void** materials, u8* stages,
+                                         int* count, int max_count) {
+    int i;
+    for (i = 0; i < *count; i++) {
+        if (materials[i] == material && stages[i] == stage) {
+            return 0;
+        }
+    }
+
+    if (*count >= max_count) {
+        return 0;
+    }
+
+    materials[*count] = material;
+    stages[*count] = stage;
+    (*count)++;
+    return 1;
+}
+
+static void logTevOrderLoad(const char* block_name, u32 stage, u16 texNo, const J3DTevOrder& tevOrder) {
+    static const void* s_materials[J3D_TEV_ORDER_LOAD_LOG_MAX];
+    static u8 s_stages[J3D_TEV_ORDER_LOAD_LOG_MAX];
+    static int s_count = 0;
+
+    if (!shouldLogTevDiag()) {
+        return;
+    }
+
+    if (!markTevOrderMaterialStageSeen(pal_diag_current_material_ptr, (u8)stage, s_materials,
+                                       s_stages, &s_count, J3D_TEV_ORDER_LOAD_LOG_MAX)) {
+        return;
+    }
+
+    fprintf(stderr,
+            "{\"j3d_tev_order_load\":{\"block\":\"%s\",\"frame\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"stage\":%u,\"tex_no\":%u,\"tev_map\":%u,\"tev_coord\":%u,\"tev_color\":%u}}\n",
+            block_name, g_Counter.mCounter0, pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode, pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr, (unsigned)stage, (unsigned)texNo,
+            (unsigned)tevOrder.mTexMap, (unsigned)tevOrder.mTexCoord,
+            (unsigned)tevOrder.mColorChan);
+}
+
+static void logTevStageLoad(const char* block_name, u32 stage, const J3DTevStage& tevStage) {
+    static const void* s_materials[J3D_TEV_STAGE_LOAD_LOG_MAX];
+    static u8 s_stages[J3D_TEV_STAGE_LOAD_LOG_MAX];
+    static int s_count = 0;
+
+    if (!shouldLogTevDiag()) {
+        return;
+    }
+
+    if (!markTevOrderMaterialStageSeen(pal_diag_current_material_ptr, (u8)stage, s_materials,
+                                       s_stages, &s_count, J3D_TEV_STAGE_LOAD_LOG_MAX)) {
+        return;
+    }
+
+    fprintf(stderr,
+            "{\"j3d_tev_stage_load\":{\"block\":\"%s\",\"frame\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"stage\":%u,\"raw\":[%u,%u,%u,%u,%u,%u,%u,%u]}}\n",
+            block_name, g_Counter.mCounter0, pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode, pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr, (unsigned)stage,
+            (unsigned)tevStage.field_0x0,
+            (unsigned)tevStage.mTevColorOp,
+            (unsigned)tevStage.mTevColorAB,
+            (unsigned)tevStage.mTevColorCD,
+            (unsigned)tevStage.field_0x4,
+            (unsigned)tevStage.mTevAlphaOp,
+            (unsigned)tevStage.mTevAlphaAB,
+            (unsigned)tevStage.mTevSwapModeInfo);
+}
+
+static void logTevTextureMismatch(const char* block_name, u32 tevStageNum, const u16* texNo,
+                                  u32 texNoCount, const J3DTevOrder* tevOrder,
+                                  u32 tevOrderCount) {
+    int loadedTexCount = 0;
+    int enabledOrderCount = 0;
+
+    for (u32 i = 0; i < texNoCount; i++) {
+        if (texNo[i] != 0xffff) {
+            loadedTexCount++;
+        }
+    }
+
+    u32 orderLimit = tevStageNum < tevOrderCount ? tevStageNum : tevOrderCount;
+    for (u32 i = 0; i < orderLimit; i++) {
+        GXTexMapID map = (GXTexMapID)tevOrder[i].mTexMap;
+        if (map != GX_TEXMAP_NULL && !(map & GX_TEX_DISABLE)) {
+            enabledOrderCount++;
+        }
+    }
+
+    if (loadedTexCount == enabledOrderCount) {
+        return;
+    }
+
+    static u32 s_tev_tex_mismatch_log_count = 0;
+    if (s_tev_tex_mismatch_log_count >= J3D_TEV_TEX_MISMATCH_LOG_MAX) {
+        return;
+    }
+    s_tev_tex_mismatch_log_count++;
+
+    fprintf(stderr,
+            "{\"j3d_tev_tex_mismatch\":{\"block\":\"%s\",\"tev_stage_num\":%u,"
+            "\"mat_idx\":%d,\"mat_mode\":%u,"
+            "\"material\":\"%p\",\"model\":\"%p\","
+            "\"loaded_tex_count\":%d,\"enabled_order_count\":%d,"
+            "\"tex_no\":[%u,%u,%u,%u,%u,%u,%u,%u],"
+            "\"tev_map\":[%u,%u,%u,%u],"
+            "\"tev_coord\":[%u,%u,%u,%u],"
+            "\"tev_color\":[%u,%u,%u,%u]}}\n",
+            block_name, (unsigned)tevStageNum,
+            pal_diag_current_mat_index,
+            (unsigned)pal_diag_current_material_mode,
+            pal_diag_current_material_ptr,
+            pal_diag_current_model_ptr,
+            loadedTexCount, enabledOrderCount,
+            (unsigned)texNo[0], (unsigned)texNo[1], (unsigned)texNo[2], (unsigned)texNo[3],
+            (unsigned)texNo[4], (unsigned)texNo[5], (unsigned)texNo[6], (unsigned)texNo[7],
+            (unsigned)tevOrder[0].mTexMap,
+            (unsigned)tevOrder[1].mTexMap,
+            (unsigned)tevOrder[2].mTexMap,
+            (unsigned)tevOrder[3].mTexMap,
+            (unsigned)tevOrder[0].mTexCoord,
+            (unsigned)tevOrder[1].mTexCoord,
+            (unsigned)tevOrder[2].mTexCoord,
+            (unsigned)tevOrder[3].mTexCoord,
+            (unsigned)tevOrder[0].mColorChan,
+            (unsigned)tevOrder[1].mColorChan,
+            (unsigned)tevOrder[2].mColorChan,
+            (unsigned)tevOrder[3].mColorChan);
+}
+#endif
 
 inline void loadMatColors(const J3DGXColor* color) {
     J3DGDWriteXFCmdHdr(0x100C, 2);
@@ -570,6 +742,12 @@ void J3DTevBlock1::load() {
     mTexNoOffset = GDGetCurrOffset();
     GDOverflowCheck(0x69);
 
+#if PLATFORM_PC
+    logTevTextureMismatch("J3DTevBlock1", 1, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
+                          ARRAY_SIZEU(mTevOrder));
+    logTevOrderLoad("J3DTevBlock1", 0, mTexNo[0], mTevOrder[0]);
+#endif
+
     if (mTexNo[0] != 0xffff) {
         loadTexNo(0, mTexNo[0]);
     }
@@ -589,6 +767,7 @@ void J3DTevBlock1::load() {
         J3DSys::sTexCoordScaleTable[mTevOrder[0].getTevOrderInfo().mTexMap & 7]
     );
 
+    logTevStageLoad("J3DTevBlock1", 0, mTevStage[0]);
     mTevStage[0].load(0);
     mIndTevStage[0].load(0);
 }
@@ -596,6 +775,14 @@ void J3DTevBlock1::load() {
 void J3DTevBlock2::load() {
     u32 tevStageNum = mTevStageNum;
     mTexNoOffset = GDGetCurrOffset();
+
+#if PLATFORM_PC
+    logTevTextureMismatch("J3DTevBlock2", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
+                          ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock2", i, mTexNo[i], mTevOrder[i]);
+    }
+#endif
 
     for (u32 i = 0; i < 2; i++) {
         if (mTexNo[i] != 0xffff) {
@@ -632,6 +819,7 @@ void J3DTevBlock2::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock2", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -662,6 +850,14 @@ void J3DTevBlock2::load() {
 void J3DTevBlock4::load() {
     u32 tevStageNum = mTevStageNum;
     mTexNoOffset = GDGetCurrOffset();
+
+#if PLATFORM_PC
+    logTevTextureMismatch("J3DTevBlock4", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
+                          ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock4", i, mTexNo[i], mTevOrder[i]);
+    }
+#endif
 
     for (u32 i = 0; i < 4; i++) {
         if (mTexNo[i] != 0xffff) {
@@ -700,6 +896,7 @@ void J3DTevBlock4::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock4", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -730,6 +927,14 @@ void J3DTevBlock4::load() {
 void J3DTevBlock16::load() {
     u32 tevStageNum = mTevStageNum;
     mTexNoOffset = GDGetCurrOffset();
+
+#if PLATFORM_PC
+    logTevTextureMismatch("J3DTevBlock16", tevStageNum, mTexNo, ARRAY_SIZEU(mTexNo), mTevOrder,
+                          ARRAY_SIZEU(mTevOrder));
+    for (u32 i = 0; i < tevStageNum; i++) {
+        logTevOrderLoad("J3DTevBlock16", i, mTexNo[i], mTevOrder[i]);
+    }
+#endif
 
     for (u32 i = 0; i < 8; i++) {
         if (mTexNo[i] != 0xffff) {
@@ -768,6 +973,7 @@ void J3DTevBlock16::load() {
         loadTevKColor(i, mTevKColor[i]);
     }
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DTevBlock16", i, mTevStage[i]);
         mTevStage[i].load(i);
         mIndTevStage[i].load(i);
     }
@@ -1154,6 +1360,7 @@ void J3DTevBlockPatched::diffTexNo() {
 void J3DTevBlockPatched::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockOpa", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1197,6 +1404,7 @@ void J3DTevBlock1::diffTexNo() {
 void J3DTevBlock1::diffTevReg() {}
 
 void J3DTevBlock1::diffTevStage() {
+    logTevStageLoad("J3DPEBlockTexEdge", 0, mTevStage[0]);
     mTevStage[0].load(0);
 }
 
@@ -1231,6 +1439,7 @@ void J3DTevBlock2::diffTevReg() {
 void J3DTevBlock2::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockXlu", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1273,6 +1482,7 @@ void J3DTevBlock4::diffTevReg() {
 void J3DTevBlock4::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockFull", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }
@@ -1317,6 +1527,7 @@ void J3DTevBlock16::diffTevReg() {
 void J3DTevBlock16::diffTevStage() {
     u32 tevStageNum = mTevStageNum;
     for (u32 i = 0; i < tevStageNum; i++) {
+        logTevStageLoad("J3DPEBlockFogOff", i, mTevStage[i]);
         mTevStage[i].load(i);
     }
 }

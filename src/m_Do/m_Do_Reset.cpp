@@ -130,7 +130,7 @@ void mDoRst_resetCallBack(int port, void*) {
     block.userData = (void*)-1;
     while (DVDCheckDiskAsync(&block, checkDiskCallback));
     do {
-        check = (int)block.userData;
+        check = (int)(intptr_t)block.userData;
     } while (check == -1);
 #endif
     if (check == 0) {

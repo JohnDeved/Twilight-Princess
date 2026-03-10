@@ -61,7 +61,6 @@ fapGm_HIO_c::fapGm_HIO_c() {
 #endif
 }
 
-#if DEBUG
 u8 fapGm_HIO_c::mCaptureMagnification = 1;
 u8 fapGm_HIO_c::mCaptureScreenDivH = 1;
 u8 fapGm_HIO_c::mCaptureScreenDivV = 1;
@@ -78,7 +77,6 @@ u8 fapGm_HIO_c::mCaptureScreenNumH;
 u8 fapGm_HIO_c::mCaptureScreenNumV;
 
 u8 fapGm_HIO_c::mParticle254Fix;
-#endif
 
 #if DEBUG
 void fapGm_HIO_c::genMessage(JORMContext* mctx) {

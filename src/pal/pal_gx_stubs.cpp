@@ -9,6 +9,7 @@
 #if PLATFORM_PC || PLATFORM_NX_HB
 
 #include <cstring>
+#include <cmath>
 
 #include "dolphin/types.h"
 #include "revolution/gx/GXEnum.h"
@@ -35,6 +36,10 @@
 #include "pal/gx/gx_render.h"
 #include "pal/gx/gx_state.h"
 #include "pal/gx/gx_displaylist.h"
+
+/* GX constants from dolsdk2004 */
+#define GX_PI 3.1415927f
+#define GX_SPECULAR_FAR_DIST (-1e18f)
 
 extern "C" {
 
@@ -290,8 +295,36 @@ void GXGetVtxAttrFmtv(GXVtxFmt fmt, GXVtxAttrFmtList* vat) { (void)fmt; (void)va
 /* ================================================================ */
 
 u32 GXGetTexBufferSize(u16 width, u16 height, u32 format, u8 mipmap, u8 max_lod) {
-    (void)format; (void)mipmap; (void)max_lod;
-    return (u32)width * height * 4;
+    /* Compute bits-per-pixel based on GX texture format.
+     * From dolsdk2004 GXTexture.c / GXGetTexBufferSize. */
+    u32 bpp;
+    switch (format) {
+    case GX_TF_I4:
+    case GX_TF_C4:
+    case GX_TF_CMPR:   bpp = 4; break;
+    case GX_TF_I8:
+    case GX_TF_IA4:
+    case GX_TF_C8:     bpp = 8; break;
+    case GX_TF_IA8:
+    case GX_TF_RGB565:
+    case GX_TF_RGB5A3:
+    case GX_TF_C14X2:  bpp = 16; break;
+    case GX_TF_RGBA8:  bpp = 32; break;
+    default:           bpp = 32; break;
+    }
+    /* Base mip level size (rounded up to block boundaries for 4bpp formats) */
+    u32 w = (width  < 1) ? 1 : width;
+    u32 h = (height < 1) ? 1 : height;
+    u32 size = (w * h * bpp) / 8;
+    if (mipmap && max_lod > 0) {
+        /* Accumulate mipmap chain sizes */
+        for (u8 lod = 1; lod <= max_lod; lod++) {
+            w = (w > 1) ? w / 2 : 1;
+            h = (h > 1) ? h / 2 : 1;
+            size += (w * h * bpp) / 8;
+        }
+    }
+    return size;
 }
 void GXInitTexObj(GXTexObj* obj, void* image_ptr, u16 width, u16 height,
                   GXTexFmt format, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, u8 mipmap) {
@@ -451,28 +484,50 @@ void GXGetTexObjAll(const GXTexObj* obj, void** image_ptr, u16* width, u16* heig
 /* ================================================================ */
 
 void GXSetTevOp(GXTevStageID id, GXTevMode mode) {
-    /* GXSetTevOp is a convenience that configures color+alpha inputs+ops based on mode */
+    /* dolsdk2004 GXTev.c: GXSetTevOp uses SEPARATE tables for stage 0
+     * (TEVCOpTableST0/TEVAOpTableST0) and stage 1+ (TEVCOpTableST1/TEVAOpTableST1).
+     * Stage 0 references RASC/RASA (rasterized color from lighting channel).
+     * Stage 1+ references CPREV/APREV (output of previous TEV stage). */
+    int is_st0 = (id == GX_TEVSTAGE0);
     switch (mode) {
         case GX_MODULATE:
-            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_TEXC, GX_CC_RASC, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            /* ST0: (ZERO, TEXC, RASC, ZERO) → tex*rasc
+             * ST1: (ZERO, TEXC, CPREV, ZERO) → tex*cprev */
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_TEXC,
+                                     is_st0 ? GX_CC_RASC : GX_CC_CPREV, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV, GX_CA_ZERO);
             break;
         case GX_DECAL:
-            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_TEXC, GX_CC_TEXA, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            /* ST0: (RASC, TEXC, TEXA, ZERO)
+             * ST1: (CPREV, TEXC, TEXA, ZERO) */
+            pal_gx_set_tev_color_in(id, is_st0 ? GX_CC_RASC : GX_CC_CPREV,
+                                     GX_CC_TEXC, GX_CC_TEXA, GX_CC_ZERO);
+            /* Alpha: ST0→RASA, ST1→APREV */
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV);
             break;
         case GX_BLEND:
-            pal_gx_set_tev_color_in(id, GX_CC_RASC, GX_CC_ONE, GX_CC_TEXC, GX_CC_ZERO);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+            /* ST0: (RASC, ONE, TEXC, ZERO)
+             * ST1: (CPREV, ONE, TEXC, ZERO) */
+            pal_gx_set_tev_color_in(id, is_st0 ? GX_CC_RASC : GX_CC_CPREV,
+                                     GX_CC_ONE, GX_CC_TEXC, GX_CC_ZERO);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_TEXA,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV, GX_CA_ZERO);
             break;
         case GX_REPLACE:
+            /* REPLACE is the same for both ST0 and ST1 */
             pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_TEXC);
             pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA);
             break;
         case GX_PASSCLR:
         default:
-            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
-            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+            /* ST0: (ZERO, ZERO, ZERO, RASC)
+             * ST1: (ZERO, ZERO, ZERO, CPREV) */
+            pal_gx_set_tev_color_in(id, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO,
+                                     is_st0 ? GX_CC_RASC : GX_CC_CPREV);
+            pal_gx_set_tev_alpha_in(id, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO,
+                                     is_st0 ? GX_CA_RASA : GX_CA_APREV);
             break;
     }
     pal_gx_set_tev_color_op(id, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
@@ -545,7 +600,7 @@ void GXInitFogAdjTable(GXFogAdjTable* table, u16 width, const f32 projmtx[4][4])
 void GXSetFogRangeAdj(GXBool enable, u16 center, const GXFogAdjTable* table) {
     (void)enable; (void)center; (void)table;
 }
-void GXSetFogColor(GXColor color) { (void)color; }
+void GXSetFogColor(GXColor color) { g_gx_state.fog_color = color; }
 void GXSetBlendMode(GXBlendMode type, GXBlendFactor src_factor, GXBlendFactor dst_factor, GXLogicOp op) {
     pal_gx_set_blend_mode(type, src_factor, dst_factor, op);
 }
@@ -565,25 +620,115 @@ void GXSetFieldMode(GXBool field_mode, GXBool half_aspect_ratio) { (void)field_m
 /* GX Lighting                                                      */
 /* ================================================================ */
 
+/* GX Light Init functions — write directly to GXLightObj memory.
+ * Layout from dolsdk2004 GXLight.c __GXLightObjInt_struct:
+ *   +0x00: reserved[3] (12 bytes)
+ *   +0x0C: Color (4 bytes, packed R<<24|G<<16|B<<8|A)
+ *   +0x10: a[3] (12 bytes, angle attenuation)
+ *   +0x1C: k[3] (12 bytes, distance attenuation)
+ *   +0x28: lpos[3] (12 bytes, position)
+ *   +0x34: ldir[3] (12 bytes, direction — NEGATED by GXInitLightDir) */
+
 void GXInitLightAttn(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2, f32 k0, f32 k1, f32 k2) {
-    (void)lt_obj; (void)a0; (void)a1; (void)a2; (void)k0; (void)k1; (void)k2;
+    if (!lt_obj) return;
+    f32* a = (f32*)((u8*)lt_obj + 0x10);
+    f32* k = (f32*)((u8*)lt_obj + 0x1C);
+    a[0] = a0; a[1] = a1; a[2] = a2;
+    k[0] = k0; k[1] = k1; k[2] = k2;
 }
-void GXInitLightAttnA(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2) { (void)lt_obj; (void)a0; (void)a1; (void)a2; }
-void GXInitLightAttnK(GXLightObj* lt_obj, f32 k0, f32 k1, f32 k2) { (void)lt_obj; (void)k0; (void)k1; (void)k2; }
+void GXInitLightAttnA(GXLightObj* lt_obj, f32 a0, f32 a1, f32 a2) {
+    if (!lt_obj) return;
+    f32* a = (f32*)((u8*)lt_obj + 0x10);
+    a[0] = a0; a[1] = a1; a[2] = a2;
+}
+void GXInitLightAttnK(GXLightObj* lt_obj, f32 k0, f32 k1, f32 k2) {
+    if (!lt_obj) return;
+    f32* k = (f32*)((u8*)lt_obj + 0x1C);
+    k[0] = k0; k[1] = k1; k[2] = k2;
+}
 void GXInitLightSpot(GXLightObj* lt_obj, f32 cutoff, GXSpotFn spot_func) {
-    (void)lt_obj; (void)cutoff; (void)spot_func;
+    /* Compute spot attenuation coefficients per dolsdk2004 GXLight.c */
+    f32 a0 = 1.0f, a1 = 0.0f, a2 = 0.0f;
+    if (cutoff > 0.0f && cutoff <= 90.0f) {
+        f32 r = (GX_PI * cutoff) / 180.0f;
+        f32 cr = cosf(r);
+        f32 d;
+        switch (spot_func) {
+        case GX_SP_FLAT:
+            a0 = -1000.0f * cr; a1 = 1000.0f; break;
+        case GX_SP_COS:
+            a1 = 1.0f / (1.0f - cr); a0 = -cr * a1; break;
+        case GX_SP_COS2:
+            a2 = 1.0f / (1.0f - cr); a1 = -cr * a2; a0 = 0.0f; break;
+        case GX_SP_SHARP:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a0 = cr * (cr - 2.0f) * d; a1 = 2.0f * d; a2 = -d; break;
+        case GX_SP_RING1:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a2 = -4.0f * d; a0 = a2 * cr; a1 = 4.0f * (1.0f + cr) * d; break;
+        case GX_SP_RING2:
+            d = 1.0f / ((1.0f - cr) * (1.0f - cr));
+            a0 = 1.0f - 2.0f * cr * cr * d; a1 = 4.0f * cr * d; a2 = -2.0f * d; break;
+        default: break;
+        }
+    }
+    GXInitLightAttnA(lt_obj, a0, a1, a2);
 }
 void GXInitLightDistAttn(GXLightObj* lt_obj, f32 ref_dist, f32 ref_br, GXDistAttnFn dist_func) {
-    (void)lt_obj; (void)ref_dist; (void)ref_br; (void)dist_func;
+    /* Compute distance attenuation coefficients per dolsdk2004 GXLight.c */
+    f32 k0 = 1.0f, k1 = 0.0f, k2 = 0.0f;
+    if (ref_dist >= 0.0f && ref_br > 0.0f && ref_br < 1.0f) {
+        switch (dist_func) {
+        case GX_DA_GENTLE:
+            k1 = (1.0f - ref_br) / (ref_br * ref_dist); break;
+        case GX_DA_MEDIUM:
+            k1 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist);
+            k2 = 0.5f * (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;
+        case GX_DA_STEEP:
+            k2 = (1.0f - ref_br) / (ref_br * ref_dist * ref_dist); break;
+        default: break;
+        }
+    }
+    GXInitLightAttnK(lt_obj, k0, k1, k2);
 }
-void GXInitLightPos(GXLightObj* lt_obj, f32 x, f32 y, f32 z) { (void)lt_obj; (void)x; (void)y; (void)z; }
-void GXInitLightDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) { (void)lt_obj; (void)nx; (void)ny; (void)nz; }
-void GXInitSpecularDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) { (void)lt_obj; (void)nx; (void)ny; (void)nz; }
+void GXInitLightPos(GXLightObj* lt_obj, f32 x, f32 y, f32 z) {
+    if (!lt_obj) return;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = x; lpos[1] = y; lpos[2] = z;
+}
+void GXInitLightDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) {
+    if (!lt_obj) return;
+    /* SDK stores direction NEGATED */
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = -nx; ldir[1] = -ny; ldir[2] = -nz;
+}
+void GXInitSpecularDir(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz) {
+    if (!lt_obj) return;
+    /* Per dolsdk2004: specular half-angle vector computed from view dir (0,0,1) */
+    f32 vx = -nx, vy = -ny, vz = -nz + 1.0f;
+    f32 mag = vx*vx + vy*vy + vz*vz;
+    if (mag != 0.0f) mag = 1.0f / sqrtf(mag);
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = vx * mag; ldir[1] = vy * mag; ldir[2] = vz * mag;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = nx * GX_SPECULAR_FAR_DIST; lpos[1] = ny * GX_SPECULAR_FAR_DIST; lpos[2] = nz * GX_SPECULAR_FAR_DIST;
+}
 void GXInitSpecularDirHA(GXLightObj* lt_obj, f32 nx, f32 ny, f32 nz, f32 hx, f32 hy, f32 hz) {
-    (void)lt_obj; (void)nx; (void)ny; (void)nz; (void)hx; (void)hy; (void)hz;
+    if (!lt_obj) return;
+    f32* ldir = (f32*)((u8*)lt_obj + 0x34);
+    ldir[0] = hx; ldir[1] = hy; ldir[2] = hz;
+    f32* lpos = (f32*)((u8*)lt_obj + 0x28);
+    lpos[0] = nx * GX_SPECULAR_FAR_DIST; lpos[1] = ny * GX_SPECULAR_FAR_DIST; lpos[2] = nz * GX_SPECULAR_FAR_DIST;
 }
-void GXInitLightColor(GXLightObj* lt_obj, GXColor color) { (void)lt_obj; (void)color; }
-void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) { (void)lt_obj; (void)light; }
+void GXInitLightColor(GXLightObj* lt_obj, GXColor color) {
+    if (!lt_obj) return;
+    /* Pack as R<<24|G<<16|B<<8|A per SDK */
+    u32 packed = ((u32)color.r << 24) | ((u32)color.g << 16) | ((u32)color.b << 8) | color.a;
+    memcpy((u8*)lt_obj + 0x0C, &packed, 4);
+}
+void GXLoadLightObjImm(const GXLightObj* lt_obj, GXLightID light) {
+    pal_gx_load_light_obj(lt_obj, (u32)light);
+}
 void GXLoadLightObjIndx(u32 lt_obj_indx, GXLightID light) { (void)lt_obj_indx; (void)light; }
 void GXSetChanAmbColor(GXChannelID chan, GXColor amb_color) { pal_gx_set_chan_amb_color(chan, amb_color); }
 void GXSetChanMatColor(GXChannelID chan, GXColor mat_color) { pal_gx_set_chan_mat_color(chan, mat_color); }

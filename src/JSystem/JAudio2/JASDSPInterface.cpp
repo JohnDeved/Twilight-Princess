@@ -9,6 +9,7 @@
 #include "JSystem/JAudio2/osdsp_task.h"
 #include "JSystem/JAudio2/JASCriticalSection.h"
 #include "JSystem/JKernel/JKRSolidHeap.h"
+#include <stdint.h>
 #include <dolphin/os.h>
 
 JASDsp::TChannel* JASDsp::CH_BUF;
@@ -435,7 +436,8 @@ void JASDsp::initBuffer() {
     for (u8 i = 0; i < 4; i++) {
         setFXLine(i, NULL, NULL);
     }
-    DsetupTable(0x40, u32(CH_BUF), u32(&DSPRES_FILTER), u32(&DSPADPCM_FILTER), u32(FX_BUF));
+    DsetupTable(0x40, (u32)(uintptr_t)CH_BUF, (u32)(uintptr_t)&DSPRES_FILTER,
+                (u32)(uintptr_t)&DSPADPCM_FILTER, (u32)(uintptr_t)FX_BUF);
     flushBuffer();
 }
 
@@ -455,7 +457,7 @@ int JASDsp::setFXLine(u8 param_0, s16* buffer, JASDsp::FxlineConfig_* param_2) {
         u32 bufsize = param_2->field_0xc * 0xa0;
         puVar3->field_0x4 = buffer;
         JASCalc::bzero(buffer, bufsize);
-        JUT_ASSERT(420, (reinterpret_cast<u32>(buffer) & 0x1f) == 0);
+        JUT_ASSERT(420, (((uintptr_t)buffer) & 0x1f) == 0);
         JUT_ASSERT(421, (bufsize & 0x1f) == 0);
         DCFlushRange(buffer, bufsize);
     } else if (param_2 == NULL || buffer != NULL) {

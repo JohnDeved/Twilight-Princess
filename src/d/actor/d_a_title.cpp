@@ -19,6 +19,9 @@
 #include <setjmp.h>
 #include <signal.h>
 #include "pal/gx/gx_stub_tracker.h"
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
 #endif
 
 class daTit_HIO_c {
@@ -540,6 +543,28 @@ int daTitle_c::Draw() {
     }
 #endif
 
+#if PLATFORM_PC
+    static bool crash_handler_ready = false;
+    bool skip_model_submit = false;
+    if (!crash_handler_ready) {
+        pal_crash_handler_init();
+        crash_handler_ready = true;
+    }
+    sigjmp_buf crash_jump_buffer;
+    sigjmp_buf* prev_target = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &crash_jump_buffer;
+    pal_crash_occurred = 0;
+    if (sigsetjmp(crash_jump_buffer, 1) != 0) {
+        static bool has_logged_submit_crash = false;
+        pal_crash_jmpbuf = prev_target;
+        if (!has_logged_submit_crash) {
+            has_logged_submit_crash = true;
+            fprintf(stderr, "[PAL] daTitle Draw: model submit crash skipped for this frame\n");
+        }
+        skip_model_submit = true;
+    }
+#endif
+
 #if !PLATFORM_PC
     /* GCN: register in deferred display-list pass (setListItem3D/setList).
      * mDoExt_modelUpdateDL updates the locked display-list matrices; the
@@ -548,31 +573,19 @@ int daTitle_c::Draw() {
     mDoExt_modelUpdateDL(mpModel);
     dComIfGd_setList();
 #else
-    /* PC: call unlock/entry/lock directly, bypassing mDoExt_modelDiff
-     * (which calls calcMaterial with uninitialised animation matrices).
-     *
-     * ROOT CAUSE (to be fixed): entry() crashes inside J3DJoint::entryIn()
-     * for the title model — possibly because j3dSys.getDrawBuffer(0) is NULL
-     * when the title actor runs (the draw buffer is initialised later in the
-     * render pass, after the early actors in draw_iter have already run).
-     * Tracked for Phase 5: investigate j3dSys draw-buffer init order vs
-     * the title actor draw_iter index, and fix entry() before enabling Phase 4
-     * visual confirmation.
-     *
-     * For viewCalc: force mode 2 (J3DMdlFlag_UseDefaultJ3D) so viewCalc()
-     * takes J3DCalcViewBaseMtx instead of calcAnmMtx() → J3DJointTree::calc()
-     * which dereferences basicMtxCalc=NULL (not set because BCK entry() skipped). */
-    mpModel->unlock();
-    mpModel->entry();
-    mpModel->lock();
-    {
-        u32 saved_flags = mpModel->mFlags & (J3DMdlFlag_Unk1 | J3DMdlFlag_UseDefaultJ3D);
-        mpModel->offFlag(J3DMdlFlag_Unk1);
-        mpModel->onFlag(J3DMdlFlag_UseDefaultJ3D);  /* force mode 2 */
-        mpModel->viewCalc();
-        mpModel->offFlag(J3DMdlFlag_UseDefaultJ3D);
-        mpModel->onFlag(saved_flags);
+    if (!skip_model_submit) {
+        /* PC: use the regular deferred model path. mDoExt_modelUpdateDL() already
+         * takes the hardened static single-matrix viewCalc path from m_Do_ext.cpp
+         * for the title model, so keep the title draw aligned with the normal J3D
+         * submission flow instead of manually calling entry()/viewCalc() here. */
+        dComIfGd_setListItem3D();
+        mDoExt_modelUpdateDL(mpModel);
+        dComIfGd_setList();
     }
+#endif
+
+#if PLATFORM_PC
+    pal_crash_jmpbuf = prev_target;
 #endif
 
     if (field_0x5f8) {

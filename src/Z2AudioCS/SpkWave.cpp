@@ -2,6 +2,7 @@
 
 #include "JSystem/JAudio2/JASCriticalSection.h"
 #include "JSystem/JUtility/JUTAssert.h"
+#include <stdint.h>
 #include <revolution/os.h>
 #include <revolution/types.h>
 
@@ -78,6 +79,8 @@ WaveData* SpkWave::getWaveData(s32 num) const {
     JUT_ASSERT(139, mWaveData);
     JUT_ASSERT(140, num < getNumOfWaves());
 
-    WaveData* data = (WaveData*)((u32)mWaveData + *(u32*)((u32)mWaveData + num * 4 + 8));
+    uintptr_t waveBase = (uintptr_t)mWaveData;
+    u32 dataOffset = *(u32*)(waveBase + num * 4 + 8);
+    WaveData* data = (WaveData*)(waveBase + dataOffset);
     return data;
 }
