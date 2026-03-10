@@ -1113,6 +1113,7 @@ bool dCamera_c::Run() {
         mMidnaRidingAndVisible = false;
         return false;
     }
+    mpPlayerActor = (fopAc_ac_c*)link;
     mMidnaRidingAndVisible = link->checkMidnaRide() && !(midna != NULL && midna->checkNoDraw());
 #else
     mMidnaRidingAndVisible = link->checkMidnaRide() && !midna->checkNoDraw();
@@ -1468,6 +1469,9 @@ bool dCamera_c::NotRun() {
 #if PLATFORM_PC
     if (link == NULL && mpPlayerActor != NULL && is_player(mpPlayerActor)) {
         link = (daAlink_c*)mpPlayerActor;
+    }
+    if (link != NULL) {
+        mpPlayerActor = (fopAc_ac_c*)link;
     }
     mMidnaRidingAndVisible = (link != NULL) &&
                              link->checkMidnaRide() &&
@@ -3476,11 +3480,29 @@ f32 dCamera_c::getWaterSurfaceHeight(cXyz* param_0) {
 }
 
 void dCamera_c::checkGroundInfo() {
+#if PLATFORM_PC
+    daAlink_c* player = daAlink_getAlinkActorClass();
+    if (player != NULL) {
+        mpPlayerActor = (fopAc_ac_c*)player;
+    } else {
+        player = (daAlink_c*)mpPlayerActor;
+    }
+    if (player == NULL) {
+        static int s_ground_info_missing_player_logs = 0;
+        s_ground_info_missing_player_logs++;
+        if (s_ground_info_missing_player_logs <= 5 ||
+            (s_ground_info_missing_player_logs % 50 == 0 && s_ground_info_missing_player_logs < 500)) {
+            fprintf(stderr, "[PAL] checkGroundInfo: player missing, preserving previous BG state\n");
+        }
+        return;
+    }
+#else
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
-    cXyz gnd_chk_pos = positionOf(mpPlayerActor);
+#endif
+    cXyz gnd_chk_pos = positionOf(player);
     if (check_owner_action(mPadID, 0x8000000)) {
-        gnd_chk_pos = eyePos(mpPlayerActor);
-        gnd_chk_pos.y = positionOf(mpPlayerActor).y;
+        gnd_chk_pos = eyePos(player);
+        gnd_chk_pos.y = positionOf(player).y;
     }
 
     cXyz roof_chk_pos = gnd_chk_pos;
@@ -3515,7 +3537,7 @@ void dCamera_c::checkGroundInfo() {
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
 
     if (check_owner_action(mPadID, 0x100000)
-        && mBG.field_0x0.field_0x58 < attentionPos(mpPlayerActor).y + 40.0f)
+        && mBG.field_0x0.field_0x58 < attentionPos(player).y + 40.0f)
     {
         setComStat(0x800);
         mBG.field_0xc0.field_0x44 = 1;
@@ -3530,7 +3552,7 @@ void dCamera_c::checkGroundInfo() {
         if (!cBgW_CheckBWall(bootsTopVec->y)) {
             mBG.field_0xc0.field_0x44 = 1;
         }
-    } else if (footHeightOf(mpPlayerActor) - mBG.field_0x5c.field_0x58 > mCamSetup.mBGChk.FloorMargin()) {
+    } else if (footHeightOf(player) - mBG.field_0x5c.field_0x58 > mCamSetup.mBGChk.FloorMargin()) {
         mBG.field_0xc0.field_0x44 = 0;
     } else {
         mBG.field_0xc0.field_0x44 = 1;
@@ -11097,6 +11119,7 @@ static int camera_execute(camera_process_class* i_this) {
         set_camera_exec_phase(CAMERA_EXEC_PHASE_GET_PLAYER);
         fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(camera);
         if (player != NULL) {
+            camera->mCamera.mpPlayerActor = player;
             /* Player exists — safe to run full camera logic */
             if (dDemo_c::getCamera() != NULL) {
                 set_camera_exec_phase(CAMERA_EXEC_PHASE_RESET_VIEW);
