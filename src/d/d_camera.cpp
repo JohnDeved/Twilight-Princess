@@ -3481,6 +3481,7 @@ f32 dCamera_c::getWaterSurfaceHeight(cXyz* param_0) {
 
 void dCamera_c::checkGroundInfo() {
 #if PLATFORM_PC
+    set_camera_exec_detail("ground_sync_player");
     daAlink_c* player = daAlink_getAlinkActorClass();
     if (player != NULL) {
         mpPlayerActor = (fopAc_ac_c*)player;
@@ -3499,12 +3500,14 @@ void dCamera_c::checkGroundInfo() {
 #else
     daAlink_c* player = (daAlink_c*)mpPlayerActor;
 #endif
+    set_camera_exec_detail("ground_player_pos");
     cXyz gnd_chk_pos = positionOf(player);
     if (check_owner_action(mPadID, 0x8000000)) {
         gnd_chk_pos = eyePos(player);
         gnd_chk_pos.y = positionOf(player).y;
     }
 
+    set_camera_exec_detail("ground_roof_chk");
     cXyz roof_chk_pos = gnd_chk_pos;
     int var_r24 = 0;
     gnd_chk_pos.y += 20.0f;
@@ -3516,6 +3519,7 @@ void dCamera_c::checkGroundInfo() {
         roof_chk_pos.y = roof_y;
     }
 
+    set_camera_exec_detail("ground_cross");
     dBgS_CamGndChk gnd_chk;
     gnd_chk.ClrCam();
     gnd_chk.SetObj();
@@ -3536,6 +3540,7 @@ void dCamera_c::checkGroundInfo() {
     mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&mBG.field_0x0.field_0x4);
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
 
+    set_camera_exec_detail("ground_player_flags");
     if (check_owner_action(mPadID, 0x100000)
         && mBG.field_0x0.field_0x58 < attentionPos(player).y + 40.0f)
     {
@@ -3561,6 +3566,7 @@ void dCamera_c::checkGroundInfo() {
     mBG.field_0xc0.field_0x1 = 0;
     mBG.field_0xc0.field_0x20 = NULL;
 
+    set_camera_exec_detail("ground_move_bg");
     if (dComIfG_Bgsp().ChkMoveBG(mBG.field_0x5c.field_0x4)) {
         mBG.field_0xc0.field_0x20 = dComIfG_Bgsp().GetActorPointer(mBG.field_0x5c.field_0x4);
         if (mBG.field_0xc0.field_0x20 != NULL) {
@@ -3588,6 +3594,7 @@ void dCamera_c::checkGroundInfo() {
         mBG.field_0xc0.field_0x0 = 0;
     }
 
+    set_camera_exec_detail("ground_room_cam");
     if (mBG.field_0x5c.field_0x0) {
         mBG.field_0xc0.field_0x34 = dComIfG_Bgsp().GetCamMoveBG(mBG.field_0x5c.field_0x4);
     } else {
@@ -3607,6 +3614,7 @@ void dCamera_c::checkGroundInfo() {
     } else {
         mBG.field_0xc0.field_0x40 = 0xff;
     }
+    set_camera_exec_detail("ground_done");
 }
 
 bool dCamera_c::chaseCamera(s32 param_0) {
