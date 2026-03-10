@@ -2483,10 +2483,12 @@ void pal_tev_flush_draw(void) {
      * stage arrow absent), the pos_mtx stays at the fallback identity+translation
      * [0,-100,-200] which leaves all room geometry outside the frustum.
      *
-     * This block fires ONLY when g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN
-     * (per-frame counter, reset to 0 at the start of each frame).  The 3D room
-     * frame has ~7400 RASC draws; title-screen frames have << 1000.  This prevents
-     * the centroid from accumulating title-screen geometry (wrong coordinates).
+     * Activation is still delayed until g_gx_state.draw_calls exceeds
+     * CENTROID_FRAME_DRAWS_MIN (per-frame counter, reset to 0 at the start of
+     * each frame), but sampling starts as soon as qualifying room draws appear.
+     * That lets the fallback camera arm immediately once the gameplay frame
+     * crosses the threshold instead of waiting an extra ~50 room draws, which
+     * was leaving frame 129 black in CI while frame 130 became visible.
      *
      * Once CENTROID_SAMPLES have been accumulated the block computes a LookAt view
      * matrix with eye placed OUTSIDE the near face of the room geometry
@@ -2496,8 +2498,7 @@ void pal_tev_flush_draw(void) {
      * The override fires at most once per process lifetime (static flag).
      * First ~CENTROID_SAMPLES draws still render with the wrong matrix (black),
      * but the remaining ~7400 room draws get the corrected view → pct_nonblack > 0. */
-    if ((passclr_uses_rasc || preset == GX_TEV_SHADER_MODULATE) &&
-        g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
+    if (passclr_uses_rasc || preset == GX_TEV_SHADER_MODULATE) {
         /* s_centroid_sum, s_centroid_n, s_centroid_vz_max are file-scope statics
          * reset at the start of each frame in the gx_frame_draw_calls == 0 block. */
 
@@ -2533,7 +2534,8 @@ void pal_tev_flush_draw(void) {
                 if (vz > s_centroid_vz_max) s_centroid_vz_max = vz;
                 s_centroid_n++;
             }
-            if (s_centroid_n == CENTROID_SAMPLES) {
+            if (s_centroid_n == CENTROID_SAMPLES &&
+                g_gx_state.draw_calls > CENTROID_FRAME_DRAWS_MIN) {
                 /* Centroid of first N RASC draws = approximate room centre */
                 float cx = s_centroid_sum[0] / (float)CENTROID_SAMPLES;
                 float cy = s_centroid_sum[1] / (float)CENTROID_SAMPLES;
