@@ -59,6 +59,7 @@ enum {
 };
 
 static int s_camera_exec_phase = CAMERA_EXEC_PHASE_NONE;
+static const char* s_camera_exec_detail = "none";
 
 static const char* const s_camera_exec_phase_names[] = {
     "none",
@@ -84,6 +85,11 @@ static const char* const s_camera_exec_phase_names[] = {
 
 static inline void set_camera_exec_phase(int phase) {
     s_camera_exec_phase = phase;
+    s_camera_exec_detail = "none";
+}
+
+static inline void set_camera_exec_detail(const char* detail) {
+    s_camera_exec_detail = detail != NULL ? detail : "none";
 }
 
 extern "C" int pal_diag_camera_exec_phase(void) {
@@ -98,8 +104,13 @@ extern "C" const char* pal_diag_camera_exec_phase_name(void) {
     }
     return s_camera_exec_phase_names[phase];
 }
+
+extern "C" const char* pal_diag_camera_exec_detail_name(void) {
+    return s_camera_exec_detail != NULL ? s_camera_exec_detail : "none";
+}
 #else
 static inline void set_camera_exec_phase(int) {}
+static inline void set_camera_exec_detail(const char*) {}
 #endif
 
 namespace {
@@ -1091,6 +1102,7 @@ void dCamera_c::debugDrawInit() {
 }
 
 bool dCamera_c::Run() {
+    set_camera_exec_detail("run_link_midna");
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
 #if PLATFORM_PC
@@ -1122,9 +1134,12 @@ bool dCamera_c::Run() {
     if (stay_no != mRoomCtx.mRoomNo) {
         onRoomChange(stay_no);
     }
+    set_camera_exec_detail("run_ground_info");
     checkGroundInfo();
+    set_camera_exec_detail("run_map_tool");
     setMapToolData();
 
+    set_camera_exec_detail("run_player_flags");
     if (link->checkRollJump() || link->checkGoronRideWait()) {
         setFlag(0x10000);
         setFlag(0x100000);
@@ -1142,11 +1157,14 @@ bool dCamera_c::Run() {
         }
     }
 
+    set_camera_exec_detail("run_monitor");
     updateMonitor();
+    set_camera_exec_detail("run_att");
     Att();
     clrComStat(0xf400);
 
     if (!dComIfGp_evmng_cameraPlay() && !chkFlag(0x20000000)) {
+        set_camera_exec_detail("run_pad");
         updatePad();
         mCamSetup.mCStick.Shift(mPadID);
     }
@@ -1160,12 +1178,14 @@ bool dCamera_c::Run() {
             mPadInfo.mCStick.mLastValue = 0.0f;
     }
 
+    set_camera_exec_detail("run_force_lock");
     if (!checkForceLockTarget()) {
         mLockOnActorID = -1;
     } else {
         mForceLockTimer++;
     }
 
+    set_camera_exec_detail("run_type");
     mNextType = nextType(mCurType);
     if (mNextType != mCurType && onTypeChange(mCurType, mNextType)) {
         if (mCamSetup.CheckFlag(0x8000)) {
@@ -1180,6 +1200,7 @@ bool dCamera_c::Run() {
         setComStat(0x40000);
     }
 
+    set_camera_exec_detail("run_mode");
     mNextMode = nextMode(mCurMode);
     if ((iVar8 != mIsWolf || mNextMode != mCurMode)
         && mCamTypeData[mCurType].field_0x18[mIsWolf][mNextMode] >= 0
@@ -1198,6 +1219,7 @@ bool dCamera_c::Run() {
     }
 
     int style = mCamTypeData[mCurType].field_0x18[mIsWolf][mCurMode];
+    set_camera_exec_detail("run_style");
     if (style >= 0 && mCamStyle != style && onStyleChange(mCamStyle, style)) {
         u32 id = mCamParam.Id(style);
         if (mCamSetup.CheckFlag(0x8000)) {
@@ -1220,6 +1242,7 @@ bool dCamera_c::Run() {
         setComStat(0x80);
     }
 
+    set_camera_exec_detail("run_tilt");
     if (mCamParam.CheckFlag(0x4000) && !check_owner_action(mPadID, 0x4000000)
         && !link->checkMagneBootsOn() && !isPlayerFlying(link))
     {
@@ -1235,6 +1258,7 @@ bool dCamera_c::Run() {
             clrFlag(0x200000);
         }
     } else {
+        set_camera_exec_detail("run_engine");
         sp0F = (this->*engine_tbl[mCamParam.Algorythmn(mCamStyle)])(mCamStyle);
         field_0x170++;
         field_0x160++;
@@ -1246,6 +1270,7 @@ bool dCamera_c::Run() {
     if (!sp0F) {
         mEngineHoldState = 0;
     }
+    set_camera_exec_detail("run_post");
     defaultTriming();
     if (!chkFlag(0x400)) {
         mViewCache.mBank -= mViewCache.mBank * 0.05f;
@@ -1285,6 +1310,7 @@ bool dCamera_c::Run() {
 
     mFovy = mViewCache.mFovy;
     mBank = mViewCache.mBank;
+    set_camera_exec_detail("run_bump");
     bumpCheck(mBumpCheckFlags);
 
     cSAngle angle = mPadInfo.mMainStick.mAngle - mFakeAngleSys.field_0x4;
@@ -1335,6 +1361,7 @@ bool dCamera_c::Run() {
     }
     mBankOverride = cSAngle::_0;
 
+    set_camera_exec_detail("run_water_audio");
     f32 water_height = getWaterSurfaceHeight(&mEye);
     if (water_height > mEye.y) {
         dKy_camera_water_in_status_set(1);
@@ -1382,6 +1409,7 @@ bool dCamera_c::Run() {
         }
     }
 
+    set_camera_exec_detail("run_event_recovery");
     runEventRecoveryTrans();
 
 #if DEBUG
@@ -1427,12 +1455,14 @@ bool dCamera_c::Run() {
 #endif
 
     clrFlag(0x1000);
+    set_camera_exec_detail("run_cleanup");
     mTagCamTool.Clr();
     field_0x89c.Clr();
     return sp0F;
 }
 
 bool dCamera_c::NotRun() {
+    set_camera_exec_detail("notrun_link_midna");
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
 #if PLATFORM_PC
@@ -1447,9 +1477,11 @@ bool dCamera_c::NotRun() {
 #endif
     clrComStat(0x804);
     clrFlag(0x10168C21);
+    set_camera_exec_detail("notrun_ground_info");
     checkGroundInfo();
     clrComStat(0x80);
 
+    set_camera_exec_detail("notrun_event_camera");
     if (dComIfGp_evmng_cameraPlay() || chkFlag(0x20000000)) {
         if (mCurType != specialType[CAM_TYPE_EVENT]) {
             pushInfo(&mSavedView, 1);
@@ -1469,6 +1501,7 @@ bool dCamera_c::NotRun() {
     setComStat(0x14);
     clrFlag(0x80080);
     mFocusLine.Off();
+    set_camera_exec_detail("notrun_post");
     shakeCamera();
     blureCamera();
     field_0x21 = 0;
@@ -1499,6 +1532,7 @@ bool dCamera_c::NotRun() {
     }
     mBankOverride = cSAngle::_0;
 
+    set_camera_exec_detail("notrun_water_audio");
     f32 water_height = getWaterSurfaceHeight(&mEye);
     if (water_height > mEye.y) {
         dKy_camera_water_in_status_set(1);
@@ -1510,6 +1544,7 @@ bool dCamera_c::NotRun() {
 
     mFrameCounter++;
     mTicks++;
+    set_camera_exec_detail("notrun_cleanup");
     mTagCamTool.Clr();
     field_0x89c.Clr();
     return true;
@@ -11087,9 +11122,10 @@ static int camera_execute(camera_process_class* i_this) {
                     if (s_run_crash_log_count <= 5 ||
                         (s_run_crash_log_count % 50 == 0 && s_run_crash_log_count < 500)) {
                         fprintf(stderr,
-                                "[PAL] camera_execute: Run crash at phase=%d:%s, falling back to NotRun\n",
+                                "[PAL] camera_execute: Run crash at phase=%d:%s detail=%s, falling back to NotRun\n",
                                 pal_diag_camera_exec_phase(),
-                                pal_diag_camera_exec_phase_name());
+                                pal_diag_camera_exec_phase_name(),
+                                pal_diag_camera_exec_detail_name());
                     }
                 }
                 if (!run_ok) {

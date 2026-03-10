@@ -122,6 +122,7 @@ extern "C" int pal_is_profile_suppressed(int profname) {
 }
 extern "C" int pal_diag_camera_exec_phase(void);
 extern "C" const char* pal_diag_camera_exec_phase_name(void);
+extern "C" const char* pal_diag_camera_exec_detail_name(void);
 
 static int pal_should_retry_execute_crash(s16 profname) {
     return profname == PROC_CAMERA || profname == PROC_CAMERA2;
@@ -181,10 +182,11 @@ int fpcBs_Execute(base_process_class* i_proc) {
             if (s_retry_exec_log_count <= 5 ||
                 (s_retry_exec_log_count % 50 == 0 && s_retry_exec_log_count < 500)) {
                 fprintf(stderr,
-                        "[PAL] SIGSEGV caught in Execute (prof=%d id=%u phase=%d:%s) — skipping this frame, will retry\n",
+                        "[PAL] SIGSEGV caught in Execute (prof=%d id=%u phase=%d:%s detail=%s) — skipping this frame, will retry\n",
                         i_proc->profname, i_proc->id,
                         pal_diag_camera_exec_phase(),
-                        pal_diag_camera_exec_phase_name());
+                        pal_diag_camera_exec_phase_name(),
+                        pal_diag_camera_exec_detail_name());
             }
             return 0;
         }
