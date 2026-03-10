@@ -1086,7 +1086,18 @@ void dCamera_c::debugDrawInit() {
 bool dCamera_c::Run() {
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
+#if PLATFORM_PC
+    if (link == NULL && mpPlayerActor != NULL && is_player(mpPlayerActor)) {
+        link = (daAlink_c*)mpPlayerActor;
+    }
+    if (link == NULL) {
+        mMidnaRidingAndVisible = false;
+        return false;
+    }
+    mMidnaRidingAndVisible = link->checkMidnaRide() && !(midna != NULL && midna->checkNoDraw());
+#else
     mMidnaRidingAndVisible = link->checkMidnaRide() && !midna->checkNoDraw();
+#endif
     bool sp10 = false;
     bool sp0F = false;
     clrComStat(0x804);
@@ -1417,7 +1428,16 @@ bool dCamera_c::Run() {
 bool dCamera_c::NotRun() {
     daAlink_c* link = daAlink_getAlinkActorClass();
     daMidna_c* midna = daPy_py_c::getMidnaActor();
+#if PLATFORM_PC
+    if (link == NULL && mpPlayerActor != NULL && is_player(mpPlayerActor)) {
+        link = (daAlink_c*)mpPlayerActor;
+    }
+    mMidnaRidingAndVisible = (link != NULL) &&
+                             link->checkMidnaRide() &&
+                             !(midna != NULL && midna->checkNoDraw());
+#else
     mMidnaRidingAndVisible = link->checkMidnaRide() && !midna->checkNoDraw();
+#endif
     clrComStat(0x804);
     clrFlag(0x10168C21);
     checkGroundInfo();
@@ -11044,7 +11064,10 @@ static int camera_execute(camera_process_class* i_this) {
             dComIfGp_offCameraAttentionStatus(0, 0x40);
             if (camera->mCamera.Active()) {
                 set_camera_exec_phase(CAMERA_EXEC_PHASE_RUN);
-                camera->mCamera.Run();
+                if (!camera->mCamera.Run()) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
+                    camera->mCamera.NotRun();
+                }
             } else {
                 set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
                 camera->mCamera.NotRun();
