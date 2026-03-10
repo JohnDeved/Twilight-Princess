@@ -29,6 +29,13 @@
 #endif
 
 #if PLATFORM_PC
+#include <setjmp.h>
+#include <signal.h>
+
+extern "C" void pal_crash_handler_init(void);
+extern sigjmp_buf* pal_crash_jmpbuf;
+extern volatile sig_atomic_t pal_crash_occurred;
+
 enum {
     CAMERA_EXEC_PHASE_NONE = 0,
     CAMERA_EXEC_PHASE_VIEW_SETUP_PRE,
@@ -11064,7 +11071,28 @@ static int camera_execute(camera_process_class* i_this) {
             dComIfGp_offCameraAttentionStatus(0, 0x40);
             if (camera->mCamera.Active()) {
                 set_camera_exec_phase(CAMERA_EXEC_PHASE_RUN);
-                if (!camera->mCamera.Run()) {
+                bool run_ok = false;
+                pal_crash_handler_init();
+                sigjmp_buf run_jb;
+                sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+                pal_crash_jmpbuf = &run_jb;
+                pal_crash_occurred = 0;
+                if (sigsetjmp(run_jb, 1) == 0) {
+                    run_ok = camera->mCamera.Run();
+                    pal_crash_jmpbuf = prev_jb;
+                } else {
+                    static int s_run_crash_log_count = 0;
+                    pal_crash_jmpbuf = prev_jb;
+                    s_run_crash_log_count++;
+                    if (s_run_crash_log_count <= 5 ||
+                        (s_run_crash_log_count % 50 == 0 && s_run_crash_log_count < 500)) {
+                        fprintf(stderr,
+                                "[PAL] camera_execute: Run crash at phase=%d:%s, falling back to NotRun\n",
+                                pal_diag_camera_exec_phase(),
+                                pal_diag_camera_exec_phase_name());
+                    }
+                }
+                if (!run_ok) {
                     set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
                     camera->mCamera.NotRun();
                 }
