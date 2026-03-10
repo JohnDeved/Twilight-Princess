@@ -3485,8 +3485,6 @@ void dCamera_c::checkGroundInfo() {
     daAlink_c* player = daAlink_getAlinkActorClass();
     if (player != NULL) {
         mpPlayerActor = (fopAc_ac_c*)player;
-    } else {
-        player = (daAlink_c*)mpPlayerActor;
     }
     if (player == NULL) {
         static int s_ground_info_missing_player_logs = 0;
@@ -3541,27 +3539,49 @@ void dCamera_c::checkGroundInfo() {
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
 
     set_camera_exec_detail("ground_player_flags");
-    if (check_owner_action(mPadID, 0x100000)
-        && mBG.field_0x0.field_0x58 < attentionPos(player).y + 40.0f)
+    u8 bg_lock = mBG.field_0xc0.field_0x44;
+    set_camera_exec_detail("ground_flag_attn");
+    if (check_owner_action(mPadID, 0x100000) &&
+        mBG.field_0x0.field_0x58 < attentionPos(player).y + 40.0f)
     {
         setComStat(0x800);
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkRide() || player->checkRoofSwitchHang() || player->checkWolfRope()) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (check_owner_action1(mPadID, 0x2110000)) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkSpinnerRide()) {
-        mBG.field_0xc0.field_0x44 = 1;
-    } else if (player->checkMagneBootsOn()) {
-        Vec* bootsTopVec = player->getMagneBootsTopVec();
-        if (!cBgW_CheckBWall(bootsTopVec->y)) {
-            mBG.field_0xc0.field_0x44 = 1;
-        }
-    } else if (footHeightOf(player) - mBG.field_0x5c.field_0x58 > mCamSetup.mBGChk.FloorMargin()) {
-        mBG.field_0xc0.field_0x44 = 0;
+        bg_lock = 1;
     } else {
-        mBG.field_0xc0.field_0x44 = 1;
+        set_camera_exec_detail("ground_flag_ride");
+        if (player->checkRide() || player->checkRoofSwitchHang() || player->checkWolfRope()) {
+            bg_lock = 1;
+        } else {
+            set_camera_exec_detail("ground_flag_owner1");
+            if (check_owner_action1(mPadID, 0x2110000)) {
+                bg_lock = 1;
+            } else {
+                set_camera_exec_detail("ground_flag_spinner");
+                if (player->checkSpinnerRide()) {
+                    bg_lock = 1;
+                } else {
+                    set_camera_exec_detail("ground_flag_magne");
+                    if (player->checkMagneBootsOn()) {
+                        set_camera_exec_detail("ground_flag_magne_top");
+                        Vec* bootsTopVec = player->getMagneBootsTopVec();
+                        if (bootsTopVec != NULL) {
+                            if (!cBgW_CheckBWall(bootsTopVec->y)) {
+                                bg_lock = 1;
+                            }
+                        }
+                    } else {
+                        set_camera_exec_detail("ground_flag_floor");
+                        if (footHeightOf(player) - mBG.field_0x5c.field_0x58 >
+                            mCamSetup.mBGChk.FloorMargin()) {
+                            bg_lock = 0;
+                        } else {
+                            bg_lock = 1;
+                        }
+                    }
+                }
+            }
+        }
     }
+    mBG.field_0xc0.field_0x44 = bg_lock;
 
     mBG.field_0xc0.field_0x1 = 0;
     mBG.field_0xc0.field_0x20 = NULL;
