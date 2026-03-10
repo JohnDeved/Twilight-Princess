@@ -3548,33 +3548,56 @@ void dCamera_c::checkGroundInfo() {
         bg_lock = 1;
     } else {
         set_camera_exec_detail("ground_flag_ride");
-        if (player->checkRide() || player->checkRoofSwitchHang() || player->checkWolfRope()) {
+        bool riding = player->mRideStatus == daAlink_c::RIDETYPE_HORSE ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_BOAR ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_CANOE ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_BOARD ||
+                      player->mRideStatus == daAlink_c::RIDETYPE_SPINNER;
+        if (riding) {
             bg_lock = 1;
         } else {
-            set_camera_exec_detail("ground_flag_owner1");
-            if (check_owner_action1(mPadID, 0x2110000)) {
+            set_camera_exec_detail("ground_flag_roof");
+            if (player->mProcID == daAlink_c::PROC_ROOF_SWITCH_HANG) {
                 bg_lock = 1;
             } else {
-                set_camera_exec_detail("ground_flag_spinner");
-                if (player->checkSpinnerRide()) {
-                    bg_lock = 1;
-                } else {
-                    set_camera_exec_detail("ground_flag_magne");
-                    if (player->checkMagneBootsOn()) {
-                        set_camera_exec_detail("ground_flag_magne_top");
-                        Vec* bootsTopVec = player->getMagneBootsTopVec();
-                        if (bootsTopVec != NULL) {
-                            if (!cBgW_CheckBWall(bootsTopVec->y)) {
-                                bg_lock = 1;
-                            }
-                        }
-                    } else {
-                        set_camera_exec_detail("ground_flag_floor");
-                        if (footHeightOf(player) - mBG.field_0x5c.field_0x58 >
-                            mCamSetup.mBGChk.FloorMargin()) {
-                            bg_lock = 0;
-                        } else {
+                set_camera_exec_detail("ground_flag_wolf_rope_mode");
+                if (player->checkModeFlg(0x20000)) {
+                    set_camera_exec_detail("ground_flag_wolf_rope_actor");
+                    fopAc_ac_c* wolf_rope_actor = player->field_0x280c.getActor();
+                    if (wolf_rope_actor != NULL) {
+                        set_camera_exec_detail("ground_flag_wolf_rope_name");
+                        if (fopAcM_GetName(wolf_rope_actor) == PROC_Obj_Crope) {
                             bg_lock = 1;
+                        }
+                    }
+                }
+                if (bg_lock != 1) {
+                    set_camera_exec_detail("ground_flag_owner1");
+                    if (check_owner_action1(mPadID, 0x2110000)) {
+                        bg_lock = 1;
+                    } else {
+                        set_camera_exec_detail("ground_flag_spinner");
+                        if (player->checkSpinnerRide()) {
+                            bg_lock = 1;
+                        } else {
+                            set_camera_exec_detail("ground_flag_magne");
+                            if (player->checkMagneBootsOn()) {
+                                set_camera_exec_detail("ground_flag_magne_top");
+                                Vec* bootsTopVec = player->getMagneBootsTopVec();
+                                if (bootsTopVec != NULL) {
+                                    if (!cBgW_CheckBWall(bootsTopVec->y)) {
+                                        bg_lock = 1;
+                                    }
+                                }
+                            } else {
+                                set_camera_exec_detail("ground_flag_floor");
+                                if (footHeightOf(player) - mBG.field_0x5c.field_0x58 >
+                                    mCamSetup.mBGChk.FloorMargin()) {
+                                    bg_lock = 0;
+                                } else {
+                                    bg_lock = 1;
+                                }
+                            }
                         }
                     }
                 }
