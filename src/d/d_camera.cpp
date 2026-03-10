@@ -3536,6 +3536,10 @@ void dCamera_c::checkGroundInfo() {
     mBG.field_0x5c.field_0x0 = mBG.field_0x5c.field_0x58 != -1.0e9f;
 
     set_camera_exec_detail("ground_cross_roof");
+#if PLATFORM_PC
+    mBG.field_0x0.field_0x4.SetCam();
+    mBG.field_0x0.field_0x4.ClrObj();
+#endif
     mBG.field_0x0.field_0x4.SetPos(&roof_chk_pos);
     mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&mBG.field_0x0.field_0x4);
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
