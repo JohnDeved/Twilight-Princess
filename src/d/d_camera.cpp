@@ -1141,7 +1141,13 @@ bool dCamera_c::Run() {
     setMapToolData();
 
     set_camera_exec_detail("run_player_flags");
-    if (link->checkRollJump() || link->checkGoronRideWait()) {
+#if PLATFORM_PC
+    if (link->mProcID == daAlink_c::PROC_ROLL_JUMP ||
+        link->mProcID == daAlink_c::PROC_GORON_RIDE_WAIT)
+#else
+    if (link->checkRollJump() || link->checkGoronRideWait())
+#endif
+    {
         setFlag(0x10000);
         setFlag(0x100000);
     } else {
@@ -3537,11 +3543,20 @@ void dCamera_c::checkGroundInfo() {
 
     set_camera_exec_detail("ground_cross_roof");
 #if PLATFORM_PC
-    mBG.field_0x0.field_0x4.SetCam();
-    mBG.field_0x0.field_0x4.ClrObj();
-#endif
+    dBgS_CamGndChk roof_gnd_chk;
+    roof_gnd_chk.OffNormalGrp();
+    roof_gnd_chk.OnWaterGrp();
+    roof_gnd_chk.SetCam();
+    roof_gnd_chk.ClrObj();
+    roof_gnd_chk.SetPos(&roof_chk_pos);
+    mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&roof_gnd_chk);
+    if (mBG.field_0x0.field_0x58 != -1.0e9f) {
+        mBG.field_0x0.field_0x4 = roof_gnd_chk;
+    }
+#else
     mBG.field_0x0.field_0x4.SetPos(&roof_chk_pos);
     mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&mBG.field_0x0.field_0x4);
+#endif
     mBG.field_0x0.field_0x0 = mBG.field_0x0.field_0x58 != -1.0e9f;
 
     set_camera_exec_detail("ground_player_flags");
