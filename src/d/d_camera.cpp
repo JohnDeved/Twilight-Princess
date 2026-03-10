@@ -3544,14 +3544,38 @@ void dCamera_c::checkGroundInfo() {
     set_camera_exec_detail("ground_cross_roof");
 #if PLATFORM_PC
     dBgS_CamGndChk roof_gnd_chk;
+    bool prev_roof_hit = mBG.field_0x0.field_0x0;
+    dBgS_CamGndChk prev_roof_chk = mBG.field_0x0.field_0x4;
+    f32 prev_roof_y = mBG.field_0x0.field_0x58;
     roof_gnd_chk.OffNormalGrp();
     roof_gnd_chk.OnWaterGrp();
     roof_gnd_chk.SetCam();
     roof_gnd_chk.ClrObj();
     roof_gnd_chk.SetPos(&roof_chk_pos);
-    mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&roof_gnd_chk);
-    if (mBG.field_0x0.field_0x58 != -1.0e9f) {
-        mBG.field_0x0.field_0x4 = roof_gnd_chk;
+    pal_crash_handler_init();
+    sigjmp_buf roof_jb;
+    sigjmp_buf* prev_jb = pal_crash_jmpbuf;
+    pal_crash_jmpbuf = &roof_jb;
+    pal_crash_occurred = 0;
+    if (sigsetjmp(roof_jb, 1) == 0) {
+        mBG.field_0x0.field_0x58 = dComIfG_Bgsp().GroundCross(&roof_gnd_chk);
+        pal_crash_jmpbuf = prev_jb;
+        if (mBG.field_0x0.field_0x58 != -1.0e9f) {
+            mBG.field_0x0.field_0x4 = roof_gnd_chk;
+        }
+    } else {
+        static int s_roof_cross_crash_logs = 0;
+        pal_crash_jmpbuf = prev_jb;
+        mBG.field_0x0.field_0x0 = prev_roof_hit;
+        mBG.field_0x0.field_0x4 = prev_roof_chk;
+        mBG.field_0x0.field_0x58 = prev_roof_y;
+        s_roof_cross_crash_logs++;
+        if (s_roof_cross_crash_logs <= 5 ||
+            (s_roof_cross_crash_logs % 50 == 0 && s_roof_cross_crash_logs < 500)) {
+            fprintf(stderr,
+                    "[PAL] checkGroundInfo: roof GroundCross crashed, preserving previous roof state\n");
+        }
+        return;
     }
 #else
     mBG.field_0x0.field_0x4.SetPos(&roof_chk_pos);
