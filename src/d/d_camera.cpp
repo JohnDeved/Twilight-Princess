@@ -28,6 +28,73 @@
 #include "d/d_debug_camera.h"
 #endif
 
+#if PLATFORM_PC
+enum {
+    CAMERA_EXEC_PHASE_NONE = 0,
+    CAMERA_EXEC_PHASE_VIEW_SETUP_PRE,
+    CAMERA_EXEC_PHASE_WINDOW_LOOKUP,
+    CAMERA_EXEC_PHASE_VIEWPORT_LOOKUP,
+    CAMERA_EXEC_PHASE_SET_WINDOW,
+    CAMERA_EXEC_PHASE_GET_PLAYER,
+    CAMERA_EXEC_PHASE_RESET_VIEW,
+    CAMERA_EXEC_PHASE_ATTN_OFF,
+    CAMERA_EXEC_PHASE_RUN,
+    CAMERA_EXEC_PHASE_NOTRUN,
+    CAMERA_EXEC_PHASE_CALC_TRIM,
+    CAMERA_EXEC_PHASE_STORE,
+    CAMERA_EXEC_PHASE_DEMO_QUERY,
+    CAMERA_EXEC_PHASE_DEMO_POS,
+    CAMERA_EXEC_PHASE_DEMO_TARGET,
+    CAMERA_EXEC_PHASE_DEMO_FOVY,
+    CAMERA_EXEC_PHASE_ARROW_LOOKUP,
+    CAMERA_EXEC_PHASE_ARROW_APPLY,
+    CAMERA_EXEC_PHASE_VIEW_SETUP_FINAL,
+};
+
+static int s_camera_exec_phase = CAMERA_EXEC_PHASE_NONE;
+
+static const char* const s_camera_exec_phase_names[] = {
+    "none",
+    "view_setup_pre",
+    "window_lookup",
+    "viewport_lookup",
+    "set_window",
+    "get_player",
+    "reset_view",
+    "attention_off",
+    "run",
+    "notrun",
+    "calc_trim",
+    "store",
+    "demo_query",
+    "demo_pos",
+    "demo_target",
+    "demo_fovy",
+    "arrow_lookup",
+    "arrow_apply",
+    "view_setup_final",
+};
+
+static inline void set_camera_exec_phase(int phase) {
+    s_camera_exec_phase = phase;
+}
+
+extern "C" int pal_diag_camera_exec_phase(void) {
+    return s_camera_exec_phase;
+}
+
+extern "C" const char* pal_diag_camera_exec_phase_name(void) {
+    int phase = s_camera_exec_phase;
+    if (phase < 0 ||
+        phase >= (int)(sizeof(s_camera_exec_phase_names) / sizeof(s_camera_exec_phase_names[0]))) {
+        return "invalid";
+    }
+    return s_camera_exec_phase_names[phase];
+}
+#else
+static inline void set_camera_exec_phase(int) {}
+#endif
+
 namespace {
 
 static f32 limitf(f32 value, f32 min, f32 max) {
@@ -10944,6 +11011,7 @@ static int camera_execute(camera_process_class* i_this) {
      * fully-initialized CamParam data. Skip the body update and just refresh
      * the view matrices from current lookat state. */
     {
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEW_SETUP_PRE);
         /* Always set view matrix FIRST — if subsequent code crashes (caught by
          * the Execute-level sigsetjmp), the view matrix and clipper are already
          * valid for this frame. Without this, a crash anywhere below skips
@@ -10952,33 +11020,44 @@ static int camera_execute(camera_process_class* i_this) {
         view_setup(camera);
 
         int camera_id = get_camera_id(camera);
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_WINDOW_LOOKUP);
         dDlst_window_c* window = get_window(camera_id);
         if (!window) return 1;  /* window not ready */
 
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEWPORT_LOOKUP);
         view_port_class* viewport = window->getViewPort();
         if (!viewport) return 1;  /* viewport not ready */
         f32 aspect = mDoGph_gInf_c::getAspect();
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_SET_WINDOW);
         camera->mCamera.SetWindow(viewport->width, viewport->height);
         fopCamM_SetAspect(camera, aspect);
 
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_GET_PLAYER);
         fopAc_ac_c* player = (fopAc_ac_c*)get_player_actor(camera);
         if (player != NULL) {
             /* Player exists — safe to run full camera logic */
             if (dDemo_c::getCamera() != NULL) {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_RESET_VIEW);
                 camera->mCamera.ResetView();
             }
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_ATTN_OFF);
             dComIfGp_offCameraAttentionStatus(0, 0x40);
             if (camera->mCamera.Active()) {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_RUN);
                 camera->mCamera.Run();
             } else {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_NOTRUN);
                 camera->mCamera.NotRun();
             }
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_CALC_TRIM);
             camera->mCamera.CalcTrimSize();
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_STORE);
             store(camera);
         } else {
             /* No player — try demo camera first (bypassing cameraPlay() guard),
              * then fall back to the stage arrow spawn position if available. */
             bool camera_updated = false;
+            set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_QUERY);
             dDemo_camera_c* demo = dDemo_c::getCamera();
             static int s_cam_diag_n = 0;
             if (s_cam_diag_n < 5) {
@@ -11011,20 +11090,24 @@ static int camera_execute(camera_process_class* i_this) {
             /* Primary: use demo camera position if JStage has set ENABLE flags */
             if (demo != NULL) {
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_POS_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_POS);
                     cXyz eye = demo->getTrans();
                     fopCamM_SetEye(camera, eye.x, eye.y, eye.z);
                     camera_updated = true;
                 }
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_VIEW_TARG_POS_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_TARGET);
                     cXyz center = demo->getTarget();
                     fopCamM_SetCenter(camera, center.x, center.y, center.z);
                 }
                 if (demo->checkEnable(dDemo_camera_c::ENABLE_PROJ_FOVY_e)) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_DEMO_FOVY);
                     fopCamM_SetFovy(camera, demo->getFovy());
                 }
             }
             /* Fallback: use stage arrow spawn data as camera eye if still at default */
             if (!camera_updated) {
+                set_camera_exec_phase(CAMERA_EXEC_PHASE_ARROW_LOOKUP);
                 int stay_no = dComIfGp_roomControl_getStayNo();
                 stage_arrow_class* arrow = dComIfGp_getRoomArrow(stay_no);
                 static bool s_arrow_diag_logged = false;
@@ -11047,6 +11130,7 @@ static int camera_execute(camera_process_class* i_this) {
                     s_arrow_diag_logged = true;
                 }
                 if (arrow != NULL && arrow->num > 0) {
+                    set_camera_exec_phase(CAMERA_EXEC_PHASE_ARROW_APPLY);
                     stage_arrow_data_class* entry = &arrow->m_entries[0];
                     f32 ex = entry->posX, ey = entry->posY, ez = entry->posZ;
                     /* Compute look-at center from spawn angle (angleY = yaw) */
@@ -11068,7 +11152,9 @@ static int camera_execute(camera_process_class* i_this) {
         }
 
         /* Final view_setup with any updated camera state from above */
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_VIEW_SETUP_FINAL);
         view_setup(camera);
+        set_camera_exec_phase(CAMERA_EXEC_PHASE_NONE);
         return 1;
     }
 #else
