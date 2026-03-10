@@ -1781,21 +1781,26 @@ int mDoGph_Painter() {
 
         /* --- Item/3D model draw list (with proper camera setup) --- */
         {
-            static bool s_item3d_enabled = true;
-            if (s_item3d_enabled) {
-                pal_crash_handler_init();
-                sigjmp_buf jb;
-                sigjmp_buf* prev_target = pal_crash_jmpbuf;
-                pal_crash_jmpbuf = &jb;
-                pal_crash_occurred = 0;
-                if (sigsetjmp(jb, 1) == 0) {
-                    drawItem3D();
-                } else {
-                    s_item3d_enabled = false;
-                    fprintf(stderr, "[PAL] item/3D draw crash: permanently skipped\n");
+            pal_crash_handler_init();
+            sigjmp_buf jb;
+            sigjmp_buf* prev_target = pal_crash_jmpbuf;
+            pal_crash_jmpbuf = &jb;
+            pal_crash_occurred = 0;
+            if (sigsetjmp(jb, 1) == 0) {
+                drawItem3D();
+            } else {
+                static bool s_item3d_crash_logged = false;
+                /* drawItem3D() may leave clip/GX state half-updated before the
+                 * crash; restore the normal render state so later passes keep
+                 * running, then retry the item path on the next frame. */
+                GXSetClipMode(GX_CLIP_ENABLE);
+                j3dSys.reinitGX();
+                if (!s_item3d_crash_logged) {
+                    s_item3d_crash_logged = true;
+                    fprintf(stderr, "[PAL] item/3D draw crash: skipped for this frame\n");
                 }
-                pal_crash_jmpbuf = prev_target;
             }
+            pal_crash_jmpbuf = prev_target;
         }
 
         /* --- Fade overlay (must be drawn AFTER all 2D overlays) --- */
