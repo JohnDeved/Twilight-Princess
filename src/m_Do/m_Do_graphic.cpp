@@ -1548,20 +1548,41 @@ static void captureScreenPerspDrawInfo(JPADrawInfo& info) {
 }
 #endif
 
+enum {
+    ITEM3D_PHASE_IDLE = 0,
+    ITEM3D_PHASE_SETUP = 1,
+    ITEM3D_PHASE_LIGHT,
+    ITEM3D_PHASE_VIEW,
+    ITEM3D_PHASE_CLIP_DISABLE,
+    ITEM3D_PHASE_DRAW_LIST,
+    ITEM3D_PHASE_CLIP_ENABLE,
+    ITEM3D_PHASE_REINIT,
+};
+
+static int s_item3d_phase = ITEM3D_PHASE_IDLE;
+
 static void drawItem3D() {
     Mtx item_mtx;
+    s_item3d_phase = ITEM3D_PHASE_SETUP;
     dMenu_Collect3D_c::setupItem3D(item_mtx);
 
     #if DEBUG
     captureScreenSetPort();
     #endif
 
+    s_item3d_phase = ITEM3D_PHASE_LIGHT;
     setLight();
+    s_item3d_phase = ITEM3D_PHASE_VIEW;
     j3dSys.setViewMtx(item_mtx);
+    s_item3d_phase = ITEM3D_PHASE_CLIP_DISABLE;
     GXSetClipMode(GX_CLIP_DISABLE);
+    s_item3d_phase = ITEM3D_PHASE_DRAW_LIST;
     dComIfGd_drawListItem3d();
+    s_item3d_phase = ITEM3D_PHASE_CLIP_ENABLE;
     GXSetClipMode(GX_CLIP_ENABLE);
+    s_item3d_phase = ITEM3D_PHASE_REINIT;
     j3dSys.reinitGX();
+    s_item3d_phase = ITEM3D_PHASE_IDLE;
 }
 
 int mDoGph_Painter() {
@@ -1782,6 +1803,7 @@ int mDoGph_Painter() {
         /* --- Item/3D model draw list (with proper camera setup) --- */
         {
             pal_crash_handler_init();
+            J3DDrawBuffer::palDiagCrashMarkerReset();
             sigjmp_buf jb;
             sigjmp_buf* prev_target = pal_crash_jmpbuf;
             pal_crash_jmpbuf = &jb;
@@ -1797,8 +1819,17 @@ int mDoGph_Painter() {
                 j3dSys.reinitGX();
                 if (!s_item3d_crash_logged) {
                     s_item3d_crash_logged = true;
-                    fprintf(stderr, "[PAL] item/3D draw crash: skipped for this frame\n");
+                    fprintf(stderr,
+                        "[PAL] item/3D draw crash: skipped for this frame "
+                        "(item_phase=%d draw_phase=%d slot=%d pkt=%d packet=%p vptr=%p)\n",
+                            s_item3d_phase,
+                            J3DDrawBuffer::palDiagCrashPhase(),
+                            J3DDrawBuffer::palDiagCrashSlot(),
+                            J3DDrawBuffer::palDiagCrashPacketIndex(),
+                            J3DDrawBuffer::palDiagCrashPacketPtr(),
+                            J3DDrawBuffer::palDiagCrashPacketVptr());
                 }
+                s_item3d_phase = ITEM3D_PHASE_IDLE;
             }
             pal_crash_jmpbuf = prev_target;
         }
